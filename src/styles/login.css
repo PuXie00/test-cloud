@@ -1,0 +1,34 @@
+.login-truss-pattern {
+  background-image:
+    linear-gradient(
+      30deg,
+      color-mix(in srgb, var(--card) 80%, transparent) 12%,
+      transparent 12.5%,
+      transparent 87%,
+      color-mix(in srgb, var(--card) 80%, transparent) 87.5%,
+      color-mix(in srgb, var(--card) 80%, transparent)
+    ),
+    linear-gradient(
+      150deg,
+      color-mix(in srgb, var(--card) 80%, transparent) 12%,
+      transparent 12.5%,
+      transparent 87%,
+      color-mix(in srgb, var(--card) 80%, transparent) 87.5%,
+      color-mix(in srgb, var(--card) 80%, transparent)
+    ),
+    linear-gradient(
+      60deg,
+      color-mix(in srgb, var(--muted) 60%, transparent) 25%,
+      transparent 25.5%,
+      transparent 75%,
+      color-mix(in srgb, var(--muted) 60%, transparent) 75%,
+      color-mix(in srgb, var(--muted) 60%, transparent)
+    );
+  background-size: 80px 140px;
+  background-position: 0 0, 0 0, 40px 70px;
+  opacity: 0.15;
+}
+
+.login-card-glow {
+  box-shadow: 0 0 40px color-mix(in srgb, var(--primary) 12%, transparent);
+}

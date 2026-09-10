@@ -1,0 +1,52 @@
+/**
+ * Embedded host shell (上位机) — suppress browser-only affordances globally.
+ * Text selection and copy remain enabled on form fields via .select-text.
+ */
+
+@layer base {
+  html,
+  body,
+  #root {
+    @apply select-none;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="reset"]),
+  textarea,
+  [contenteditable="true"],
+  .select-text {
+    @apply select-text;
+  }
+
+  /* Shell chrome: hide selection; form fields keep visible highlight for editing. */
+  :where(html, body, #root, button, a, label, p, span, div, h1, h2, h3, h4, h5, h6)::selection {
+    background: transparent;
+    color: inherit;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="reset"])::selection,
+  textarea::selection,
+  [contenteditable="true"]::selection,
+  .select-text::selection,
+  .numeric-input-edit::selection {
+    background: color-mix(in srgb, var(--primary) 38%, transparent);
+    color: inherit;
+  }
+  select{
+    outline: none;
+  }
+
+  img,
+  picture,
+  svg,
+  canvas,
+  video {
+    -webkit-user-drag: none;
+    user-drag: none;
+  }
+}

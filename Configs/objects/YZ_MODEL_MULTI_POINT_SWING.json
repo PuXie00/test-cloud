@@ -1,0 +1,1887 @@
+﻿{
+  "device": {
+    "id": "YZ_MODEL_MULTI_POINT_SWING",
+    "name": "多点摆模型",
+    "type": "model",
+    "description": "多点摆模型设备描述文件(H虚轴高度/P虚轴角度/Y虚轴偏转)",
+    "parentType": "PLC",
+    "version": 1.0
+  },
+  "Attribute": {
+    "configurationAttributes": [
+      {
+        "id": "paramCount",
+        "type": "basic",
+        "label": "参数数量",
+        "addr": "0x0101",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "modelType",
+        "type": "basic",
+        "label": "模型类型",
+        "addr": "0x0102",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 7,
+        "scale": 1,
+        "display": true,
+        "values": [
+          [
+            0,
+            "线性轴"
+          ],
+          [
+            1,
+            "无极旋转轴"
+          ],
+          [
+            2,
+            "单点模型"
+          ],
+          [
+            3,
+            "多级升降模型"
+          ],
+          [
+            4,
+            "无极旋转模型"
+          ],
+          [
+            5,
+            "车模型"
+          ],
+          [
+            6,
+            "两点摆"
+          ],
+          [
+            7,
+            "多点摆"
+          ],
+          [
+            8,
+            "多点倾斜模型"
+          ]
+        ]
+      },
+      {
+        "id": "modelRunDirection",
+        "type": "basic",
+        "label": "模型运行方向",
+        "addr": "0x0103",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 1,
+        "scale": 1,
+        "display": true,
+        "values": [
+          [
+            1,
+            "正向"
+          ],
+          [
+            2,
+            "反向"
+          ]
+        ]
+      },
+      {
+        "id": "pulleyDistance",
+        "type": "basic",
+        "label": "原点到滑轮距离",
+        "addr": "0x0104",
+        "dataType": "uint32",
+        "byteLength": 4,
+        "unit": "mm",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": true,
+        "min": 0,
+        "max": 4294967295,
+        "values": []
+      },
+      {
+        "id": "safetyRadius",
+        "type": "basic",
+        "label": "安全范围半径",
+        "addr": "0x0105",
+        "dataType": "uint32",
+        "byteLength": 4,
+        "unit": "mm",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": true,
+        "min": 0,
+        "max": 4294967295,
+        "values": []
+      },
+      {
+        "id": "initialTiltDirection",
+        "type": "basic",
+        "label": "初始倾斜角度",
+        "addr": "0x0106",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": true,
+        "values": []
+      },
+      {
+        "id": "hangingPointCount",
+        "type": "basic",
+        "label": "吊点坐标数量",
+        "addr": "0x0107",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "hangingPointArray",
+        "type": "basic",
+        "label": "吊点坐标数组",
+        "addr": "0x0108",
+        "dataType": "array",
+        "byteLength": 0,
+        "unit": "",
+        "countRef": "hangingPointCount",
+        "items": [
+          {
+            "id": "x",
+            "type": "basic",
+            "label": "吊点X坐标",
+            "dataType": "int32",
+            "byteLength": 4,
+            "unit": "mm",
+            "scale": 1,
+            "min": -2147483648,
+            "max": 2147483647,
+            "values": []
+          },
+          {
+            "id": "y",
+            "type": "basic",
+            "label": "吊点Y坐标",
+            "dataType": "int32",
+            "byteLength": 4,
+            "unit": "mm",
+            "scale": 1,
+            "min": -2147483648,
+            "max": 2147483647,
+            "values": []
+          }
+        ]
+      },
+      {
+        "id": "axisIdList",
+        "type": "basic",
+        "label": "轴ID列表",
+        "addr": "0x0109",
+        "dataType": "array",
+        "byteLength": 0,
+        "unit": "",
+        "countRef": "hangingPointCount",
+        "items": [
+          {
+            "id": "deviceID",
+            "type": "basic",
+            "label": "模型ID",
+            "addr": "0x0124",
+            "dataType": "uint16",
+            "byteLength": 2,
+            "unit": "",
+            "DefaultValue": 0,
+            "scale": 1,
+            "display": true,
+            "min": 0,
+            "max": 65535,
+            "values": []
+          }
+        ]
+      },
+      {
+        "id": "hMaxStroke",
+        "type": "basic",
+        "label": "高度最大行程",
+        "addr": "0x010A",
+        "dataType": "double",
+        "byteLength": 4,
+        "unit": "mm",
+        "DefaultValue": 0,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 4294967295,
+        "values": []
+      },
+      {
+        "id": "hMinStroke",
+        "type": "basic",
+        "label": "高度最小行程",
+        "addr": "0x010B",
+        "dataType": "double",
+        "byteLength": 4,
+        "unit": "mm",
+        "DefaultValue": 0,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 4294967295,
+        "values": []
+      },
+      {
+        "id": "hDefaultVelocity",
+        "type": "basic",
+        "label": "高度默认速度",
+        "addr": "0x010C",
+        "dataType": "double",
+        "byteLength": 2,
+        "unit": "mm/s",
+        "DefaultValue": 50,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "hDefaultAcceleration",
+        "type": "basic",
+        "label": "高度默认加速度",
+        "addr": "0x010D",
+        "dataType": "double",
+        "byteLength": 2,
+        "unit": "mm/s2",
+        "DefaultValue": 50,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "hDefaultDeceleration",
+        "type": "basic",
+        "label": "高度默认减速度",
+        "addr": "0x010E",
+        "dataType": "double",
+        "byteLength": 2,
+        "unit": "mm/s2",
+        "DefaultValue": 50,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "hMaxAcceleration",
+        "type": "basic",
+        "label": "高度最大加速度",
+        "addr": "0x010F",
+        "dataType": "double",
+        "byteLength": 2,
+        "unit": "mm/s2",
+        "DefaultValue": 200,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "hMaxDeceleration",
+        "type": "basic",
+        "label": "高度最大减速度",
+        "addr": "0x0110",
+        "dataType": "double",
+        "byteLength": 2,
+        "unit": "mm/s2",
+        "DefaultValue": 200,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "hAbnormalDeceleration",
+        "type": "basic",
+        "label": "高度异常减速度",
+        "addr": "0x0111",
+        "dataType": "double",
+        "byteLength": 2,
+        "unit": "mm/s2",
+        "DefaultValue": 1000,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "pMaxStroke",
+        "type": "basic",
+        "label": "角度最大行程",
+        "addr": "0x0112",
+        "dataType": "double",
+        "byteLength": 4,
+        "unit": "deg",
+        "DefaultValue": 0,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 4294967295,
+        "values": []
+      },
+      {
+        "id": "pMinStroke",
+        "type": "basic",
+        "label": "角度最小行程",
+        "addr": "0x0113",
+        "dataType": "double",
+        "byteLength": 4,
+        "unit": "deg",
+        "DefaultValue": 0,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 4294967295,
+        "values": []
+      },
+      {
+        "id": "pDefaultVelocity",
+        "type": "basic",
+        "label": "角度默认速度",
+        "addr": "0x0114",
+        "dataType": "double",
+        "byteLength": 2,
+        "unit": "deg/s",
+        "DefaultValue": 3,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "pMaxVelocity",
+        "type": "basic",
+        "label": "角度最大速度",
+        "addr": "0x0114",
+        "dataType": "double",
+        "byteLength": 2,
+        "unit": "deg/s",
+        "DefaultValue": 3,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "pDefaultAcceleration",
+        "type": "basic",
+        "label": "角度默认加速度",
+        "addr": "0x0115",
+        "dataType": "double",
+        "byteLength": 2,
+        "unit": "deg/s2",
+        "DefaultValue": 3,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "pDefaultDeceleration",
+        "type": "basic",
+        "label": "角度默认减速度",
+        "addr": "0x0116",
+        "dataType": "double",
+        "byteLength": 2,
+        "unit": "deg/s2",
+        "DefaultValue": 3,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "pMaxAcceleration",
+        "type": "basic",
+        "label": "角度最大加速度",
+        "addr": "0x0117",
+        "dataType": "double",
+        "byteLength": 2,
+        "unit": "deg/s2",
+        "DefaultValue": 10,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "pMaxDeceleration",
+        "type": "basic",
+        "label": "角度最大减速度",
+        "addr": "0x0118",
+        "dataType": "double",
+        "byteLength": 2,
+        "unit": "deg/s2",
+        "DefaultValue": 10,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "pAbnormalDeceleration",
+        "type": "basic",
+        "label": "角度异常减速度",
+        "addr": "0x0119",
+        "dataType": "double",
+        "byteLength": 2,
+        "unit": "deg/s2",
+        "DefaultValue": 50,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "yMaxStroke",
+        "type": "basic",
+        "label": "偏转最大行程",
+        "addr": "0x011A",
+        "dataType": "double",
+        "byteLength": 4,
+        "unit": "deg",
+        "DefaultValue": 0,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 4294967295,
+        "values": []
+      },
+      {
+        "id": "yMinStroke",
+        "type": "basic",
+        "label": "偏转最小行程",
+        "addr": "0x011B",
+        "dataType": "double",
+        "byteLength": 4,
+        "unit": "deg",
+        "DefaultValue": 0,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 4294967295,
+        "values": []
+      },
+      {
+        "id": "yDefaultVelocity",
+        "type": "basic",
+        "label": "偏转默认速度",
+        "addr": "0x011C",
+        "dataType": "double",
+        "byteLength": 2,
+        "unit": "deg/s",
+        "DefaultValue": 3,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "yMaxVelocity",
+        "type": "basic",
+        "label": "偏转最大速度",
+        "addr": "0x011E",
+        "dataType": "double",
+        "byteLength": 2,
+        "unit": "deg/s",
+        "DefaultValue": 3,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "yDefaultAcceleration",
+        "type": "basic",
+        "label": "偏转默认加速度",
+        "addr": "0x011D",
+        "dataType": "double",
+        "byteLength": 2,
+        "unit": "deg/s2",
+        "DefaultValue": 3,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "yDefaultDeceleration",
+        "type": "basic",
+        "label": "偏转默认减速度",
+        "addr": "0x011E",
+        "dataType": "double",
+        "byteLength": 2,
+        "unit": "deg/s2",
+        "DefaultValue": 3,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "yMaxAcceleration",
+        "type": "basic",
+        "label": "偏转最大加速度",
+        "addr": "0x011F",
+        "dataType": "double",
+        "byteLength": 2,
+        "unit": "deg/s2",
+        "DefaultValue": 10,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "yMaxDeceleration",
+        "type": "basic",
+        "label": "偏转最大减速度",
+        "addr": "0x0120",
+        "dataType": "double",
+        "byteLength": 2,
+        "unit": "deg/s2",
+        "DefaultValue": 10,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "yAbnormalDeceleration",
+        "type": "basic",
+        "label": "偏转异常减速度",
+        "addr": "0x0121",
+        "dataType": "double",
+        "byteLength": 2,
+        "unit": "deg/s2",
+        "DefaultValue": 50,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "errorCount",
+        "type": "basic",
+        "label": "错误数量",
+        "addr": "0x0122",
+        "dataType": "uint8",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 255,
+        "values": []
+      },
+      {
+        "id": "errorCode",
+        "type": "basic",
+        "label": "错误码",
+        "addr": "0x0123",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      }
+    ],
+    "stateAttributes": [
+      {
+        "id": "deviceID",
+        "type": "basic",
+        "label": "设备ID",
+        "addr": "0x0008",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "modelStatus",
+        "type": "basic",
+        "label": "模型状态",
+        "addr": "0x0125",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "scale": 1,
+        "display": true,
+        "values": [
+          [
+            0,
+            "断电"
+          ],
+          [
+            1,
+            "错误"
+          ],
+          [
+            2,
+            "静止"
+          ],
+          [
+            3,
+            "运动"
+          ]
+        ]
+      },
+      {
+        "id": "virtualAxisHPosition",
+        "type": "basic",
+        "label": "虚轴H位置",
+        "addr": "0x0126",
+        "dataType": "int32",
+        "byteLength": 4,
+        "unit": "mm",
+        "scale": 0.01,
+        "display": true,
+        "min": -2147483648,
+        "max": 2147483647,
+        "values": []
+      },
+      {
+        "id": "virtualAxisPPosition",
+        "type": "basic",
+        "label": "虚轴P位置",
+        "addr": "0x0127",
+        "dataType": "int32",
+        "byteLength": 4,
+        "unit": "deg",
+        "scale": 0.01,
+        "display": true,
+        "min": -2147483648,
+        "max": 2147483647,
+        "values": []
+      },
+      {
+        "id": "virtualAxisYPosition",
+        "type": "basic",
+        "label": "虚轴Y位置",
+        "addr": "0x0128",
+        "dataType": "int32",
+        "byteLength": 4,
+        "unit": "deg",
+        "scale": 0.01,
+        "display": true,
+        "min": -2147483648,
+        "max": 2147483647,
+        "values": []
+      }
+    ]
+  },
+  "Operation": [
+    {
+      "id": "couple",
+      "label": "耦合/解耦",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x0101",
+      "param": [
+        {
+          "id": "deviceID",
+          "type": "basic",
+          "label": "设备ID",
+          "addr": "0x0008",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "display": true,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "coupleFlag",
+          "label": "耦合标志位",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "DefaultValue": 1,
+          "scale": 1,
+          "values": [
+            [
+              1,
+              "耦合"
+            ],
+            [
+              0,
+              "解耦"
+            ]
+          ]
+        },
+        {
+          "id": "hPosition",
+          "label": "虚轴H位置",
+          "dataType": "int32",
+          "byteLength": 4,
+          "unit": "mm",
+          "DefaultValue": 0,
+          "scale": 0.01,
+          "min": -2147483648,
+          "max": 2147483647,
+          "values": []
+        },
+        {
+          "id": "pPosition",
+          "label": "虚轴P位置",
+          "dataType": "int32",
+          "byteLength": 4,
+          "unit": "deg",
+          "DefaultValue": 0,
+          "scale": 0.01,
+          "min": -2147483648,
+          "max": 2147483647,
+          "values": []
+        },
+        {
+          "id": "yPosition",
+          "label": "虚轴Y位置",
+          "dataType": "int32",
+          "byteLength": 4,
+          "unit": "deg",
+          "DefaultValue": 0,
+          "scale": 0.01,
+          "min": -2147483648,
+          "max": 2147483647,
+          "values": []
+        }
+      ],
+      "response": [],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    },
+    {
+      "id": "enable",
+      "label": "模型使能/断使能",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x0102",
+      "param": [
+        {
+          "id": "deviceID",
+          "type": "basic",
+          "label": "设备ID",
+          "addr": "0x0008",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "display": true,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "enableFlag",
+          "label": "使能标志位",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "scale": 1,
+          "values": [
+            [
+              0,
+              "未使能"
+            ],
+            [
+              1,
+              "使能"
+            ]
+          ]
+        }
+      ],
+      "response": [],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": []
+    },
+    {
+      "id": "reset",
+      "label": "模型复位",
+      "transport": "tcp",
+      "type": "button",
+      "group": "basic",
+      "addr": "0x0103",
+      "param": [
+        {
+          "id": "deviceID",
+          "type": "basic",
+          "label": "设备ID",
+          "addr": "0x0008",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "display": true,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        }
+      ],
+      "response": [],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    },
+    {
+      "id": "jog",
+      "label": "模型点动",
+      "transport": "tcp",
+      "type": "holdButton",
+      "group": "basic",
+      "addr": "0x0104",
+      "param": [
+        {
+          "id": "deviceID",
+          "type": "basic",
+          "label": "设备ID",
+          "addr": "0x0008",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "display": true,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "virtualAxisType",
+          "label": "虚轴类型",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "values": [
+            [
+              0,
+              "H"
+            ],
+            [
+              1,
+              "P"
+            ],
+            [
+              2,
+              "Y"
+            ]
+          ]
+        },
+        {
+          "id": "direction",
+          "label": "方向",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "DefaultValue": 1,
+          "scale": 1,
+          "values": [
+            [
+              0,
+              "停止"
+            ],
+            [
+              1,
+              "正向"
+            ],
+            [
+              2,
+              "反向"
+            ]
+          ]
+        },
+        {
+          "id": "velocity",
+          "label": "速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "mm/s",
+          "DefaultValue": 50,
+          "scale": 0.1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "acceleration",
+          "label": "加速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "mm/s2",
+          "DefaultValue": 50,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "deceleration",
+          "label": "减速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "mm/s2",
+          "DefaultValue": 50,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        }
+      ],
+      "response": [
+        {
+          "id": "deviceID"
+        },
+        {
+          "id": "errorCount",
+          "items": [
+            {
+              "id": "errorCode"
+            }
+          ]
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": []
+    },
+    {
+      "id": "moveTarget",
+      "label": "模型目标位置运动",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x0105",
+      "param": [
+        {
+          "id": "deviceID",
+          "type": "basic",
+          "label": "设备ID",
+          "addr": "0x0008",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "display": true,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "hTargetPosition",
+          "label": "H目标位置",
+          "dataType": "uint32",
+          "byteLength": 4,
+          "unit": "mm",
+          "DefaultValue": 0,
+          "scale": 0.1,
+          "min": -2147483648,
+          "max": 2147483648,
+          "values": []
+        },
+        {
+          "id": "hVelocity",
+          "label": "H速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "mm/s",
+          "DefaultValue": 50,
+          "scale": 0.1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "hAcceleration",
+          "label": "H加速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "mm/s2",
+          "DefaultValue": 50,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "hDeceleration",
+          "label": "H减速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "mm/s2",
+          "DefaultValue": 50,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "pTargetPosition",
+          "label": "P目标位置",
+          "dataType": "uint32",
+          "byteLength": 4,
+          "unit": "deg",
+          "DefaultValue": 0,
+          "scale": 0.01,
+          "min": 0,
+          "max": 4294967295,
+          "values": []
+        },
+        {
+          "id": "pVelocity",
+          "label": "P速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "deg/s",
+          "DefaultValue": 0,
+          "scale": 0.1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "pAcceleration",
+          "label": "P加速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "deg/s2",
+          "DefaultValue": 0,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "pDeceleration",
+          "label": "P减速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "deg/s2",
+          "DefaultValue": 0,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "yTargetPosition",
+          "label": "Y目标位置",
+          "dataType": "uint32",
+          "byteLength": 4,
+          "unit": "deg",
+          "DefaultValue": 0,
+          "scale": 0.01,
+          "min": 0,
+          "max": 4294967295,
+          "values": []
+        },
+        {
+          "id": "yVelocity",
+          "label": "Y速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "deg/s",
+          "DefaultValue": 0,
+          "scale": 0.1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "yAcceleration",
+          "label": "Y加速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "deg/s2",
+          "DefaultValue": 0,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "yDeceleration",
+          "label": "Y减速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "deg/s2",
+          "DefaultValue": 0,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "moveDirection",
+          "label": "move方向(无极旋转)",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "values": [
+            [
+              0,
+              "自动"
+            ],
+            [
+              1,
+              "正向"
+            ],
+            [
+              2,
+              "反向"
+            ]
+          ]
+        }
+      ],
+      "response": [
+        {
+          "id": "deviceID"
+        },
+        {
+          "id": "errorCount"
+        },
+        {
+          "id": "errorCode"
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    },
+    {
+      "id": "syncMoveTarget",
+      "label": "同步模型目标位置运动",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x0106",
+      "param": [
+        {
+          "id": "deviceID",
+          "type": "basic",
+          "label": "设备ID",
+          "addr": "0x0008",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "display": true,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "startTimestamp",
+          "label": "启动时间戳",
+          "dataType": "uint64",
+          "byteLength": 8,
+          "unit": "ms",
+          "scale": 1,
+          "min": 0,
+          "max": 18446744073709551615,
+          "values": []
+        },
+        {
+          "id": "hPositionSign",
+          "label": "H位置正负号",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "DefaultValue": 1,
+          "scale": 1,
+          "values": [
+            [
+              0,
+              "负号"
+            ],
+            [
+              1,
+              "正号"
+            ]
+          ]
+        },
+        {
+          "id": "hTargetPosition",
+          "label": "H目标位置",
+          "dataType": "uint32",
+          "byteLength": 4,
+          "unit": "mm",
+          "DefaultValue": 0,
+          "scale": 0.01,
+          "min": 0,
+          "max": 4294967295,
+          "values": []
+        },
+        {
+          "id": "hVelocity",
+          "label": "H速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "mm/s",
+          "DefaultValue": 50,
+          "scale": 0.1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "hAcceleration",
+          "label": "H加速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "mm/s2",
+          "DefaultValue": 50,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "hDeceleration",
+          "label": "H减速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "mm/s2",
+          "DefaultValue": 50,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "pPositionSign",
+          "label": "P位置正负号",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "DefaultValue": 1,
+          "scale": 1,
+          "values": [
+            [
+              0,
+              "负号"
+            ],
+            [
+              1,
+              "正号"
+            ]
+          ]
+        },
+        {
+          "id": "pTargetPosition",
+          "label": "P目标位置",
+          "dataType": "uint32",
+          "byteLength": 4,
+          "unit": "deg",
+          "DefaultValue": 0,
+          "scale": 0.01,
+          "min": 0,
+          "max": 4294967295,
+          "values": []
+        },
+        {
+          "id": "pVelocity",
+          "label": "P速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "deg/s",
+          "DefaultValue": 0,
+          "scale": 0.1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "pAcceleration",
+          "label": "P加速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "deg/s2",
+          "DefaultValue": 0,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "pDeceleration",
+          "label": "P减速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "deg/s2",
+          "DefaultValue": 0,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "yPositionSign",
+          "label": "Y位置正负号",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "DefaultValue": 1,
+          "scale": 1,
+          "values": [
+            [
+              0,
+              "负号"
+            ],
+            [
+              1,
+              "正号"
+            ]
+          ]
+        },
+        {
+          "id": "yTargetPosition",
+          "label": "Y目标位置",
+          "dataType": "uint32",
+          "byteLength": 4,
+          "unit": "deg",
+          "DefaultValue": 0,
+          "scale": 0.01,
+          "min": 0,
+          "max": 4294967295,
+          "values": []
+        },
+        {
+          "id": "yVelocity",
+          "label": "Y速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "deg/s",
+          "DefaultValue": 0,
+          "scale": 0.1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "yAcceleration",
+          "label": "Y加速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "deg/s2",
+          "DefaultValue": 0,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "yDeceleration",
+          "label": "Y减速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "deg/s2",
+          "DefaultValue": 0,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "moveDirection",
+          "label": "move方向(无极旋转)",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "values": [
+            [
+              0,
+              "自动"
+            ],
+            [
+              1,
+              "正向"
+            ],
+            [
+              2,
+              "反向"
+            ]
+          ]
+        }
+      ],
+      "response": [
+        {
+          "id": "deviceID"
+        },
+        {
+          "id": "errorCount",
+          "items": [
+            {
+              "id": "errorCode"
+            }
+          ]
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    },
+    {
+      "id": "stop",
+      "label": "模型停止",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x0107",
+      "param": [
+        {
+          "id": "deviceID",
+          "type": "basic",
+          "label": "设备ID",
+          "addr": "0x0008",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "display": true,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "deceleration",
+          "label": "减速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "mm/s2",
+          "DefaultValue": 50,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        }
+      ],
+      "response": [
+        {
+          "id": "deviceID"
+        },
+        {
+          "id": "errorCount",
+          "items": [
+            {
+              "id": "errorCode"
+            }
+          ]
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": []
+    },
+    {
+      "id": "eStop",
+      "label": "模型急停",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x0108",
+      "param": [
+        {
+          "id": "deviceID",
+          "type": "basic",
+          "label": "设备ID",
+          "addr": "0x0008",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "display": true,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "deceleration",
+          "label": "减速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "mm/s2",
+          "DefaultValue": 1000,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        }
+      ],
+      "response": [],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": []
+    }
+  ],
+  "Configuration": [
+    {
+      "id": "configureModelParam",
+      "label": "配置模型参数(多点摆)",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x012B",
+      "param": [
+        {
+          "id": "paramCount"
+        },
+        {
+          "id": "deviceID"
+        },
+        {
+          "id": "modelType"
+        },
+        {
+          "id": "modelRunDirection"
+        },
+        {
+          "id": "pulleyDistance"
+        },
+        {
+          "id": "safetyRadius"
+        },
+        {
+          "id": "initialTiltDirection"
+        },
+        {
+          "id": "hangingPointCount"
+        },
+        {
+          "id": "hangingPointArray"
+        },
+        {
+          "id": "axisIdList"
+        },
+        {
+          "id": "hMaxStroke"
+        },
+        {
+          "id": "hMinStroke"
+        },
+        {
+          "id": "hDefaultVelocity"
+        },
+        {
+          "id": "hDefaultAcceleration"
+        },
+        {
+          "id": "hDefaultDeceleration"
+        },
+        {
+          "id": "hMaxAcceleration"
+        },
+        {
+          "id": "hMaxDeceleration"
+        },
+        {
+          "id": "hAbnormalDeceleration"
+        },
+        {
+          "id": "pMaxStroke"
+        },
+        {
+          "id": "pMinStroke"
+        },
+        {
+          "id": "pDefaultVelocity"
+        },
+        {
+          "id": "pDefaultAcceleration"
+        },
+        {
+          "id": "pDefaultDeceleration"
+        },
+        {
+          "id": "pMaxAcceleration"
+        },
+        {
+          "id": "pMaxDeceleration"
+        },
+        {
+          "id": "pAbnormalDeceleration"
+        },
+        {
+          "id": "yMaxStroke"
+        },
+        {
+          "id": "yMinStroke"
+        },
+        {
+          "id": "yDefaultVelocity"
+        },
+        {
+          "id": "yDefaultAcceleration"
+        },
+        {
+          "id": "yDefaultDeceleration"
+        },
+        {
+          "id": "yMaxAcceleration"
+        },
+        {
+          "id": "yMaxDeceleration"
+        },
+        {
+          "id": "yAbnormalDeceleration"
+        }
+      ],
+      "response": [
+        {
+          "id": "deviceID"
+        },
+        {
+          "id": "errorCount",
+          "items": [
+            {
+              "id": "errorCode"
+            }
+          ]
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    },
+    {
+      "id": "configureRailBinding",
+      "label": "轨道车绑定配置",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x012D",
+      "param": [
+        {
+          "id": "paramCount",
+          "items": [
+            {
+              "id": "railCount",
+              "label": "轨道数量",
+              "dataType": "uint16",
+              "byteLength": 2,
+              "unit": "",
+              "DefaultValue": 0,
+              "scale": 1,
+              "min": 0,
+              "max": 65535,
+              "values": [],
+              "items": [
+                {
+                  "id": "railNo",
+                  "label": "轨道编号",
+                  "dataType": "uint16",
+                  "byteLength": 2,
+                  "unit": "",
+                  "DefaultValue": 0,
+                  "scale": 1,
+                  "min": 0,
+                  "max": 65535,
+                  "values": []
+                },
+                {
+                  "id": "carCount",
+                  "label": "轨道车数量",
+                  "dataType": "uint16",
+                  "byteLength": 2,
+                  "unit": "",
+                  "DefaultValue": 0,
+                  "scale": 1,
+                  "min": 0,
+                  "max": 65535,
+                  "values": [],
+                  "items": [
+                    {
+                      "id": "cardeviceID",
+                      "label": "车模型编号",
+                      "dataType": "uint16",
+                      "byteLength": 2,
+                      "unit": "",
+                      "DefaultValue": 0,
+                      "scale": 1,
+                      "min": 0,
+                      "max": 65535,
+                      "values": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "response": [
+        {
+          "id": "deviceID"
+        },
+        {
+          "id": "errorCount",
+          "items": [
+            {
+              "id": "errorCode"
+            }
+          ]
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    }
+  ],
+  "Information": [
+    {
+      "id": "readModelInfo",
+      "label": "指令读取模型信息",
+      "transport": "tcp",
+      "type": "button",
+      "group": "basic",
+      "addr": "0x012E",
+      "param": [],
+      "response": [
+        {
+          "id": "paramCount",
+          "items": [
+            {
+              "id": "deviceID"
+            },
+            {
+              "id": "modelStatus"
+            },
+            {
+              "id": "virtualAxisHPosition"
+            },
+            {
+              "id": "virtualAxisPPosition"
+            },
+            {
+              "id": "virtualAxisYPosition"
+            }
+          ]
+        }
+      ],
+      "display": false,
+      "confirmationLevel": "none",
+      "preconditions": []
+    }
+  ],
+  "Monitoring": [
+    {
+      "id": "readModelInfoPolling",
+      "label": "轮序读取模型信息",
+      "transport": "udp",
+      "type": "button",
+      "group": "statusQuery",
+      "addr": "0x012F",
+      "param": [
+        {
+          "id": "deviceID"
+        },
+        {
+          "id": "modelStatus"
+        },
+        {
+          "id": "virtualAxisHPosition"
+        },
+        {
+          "id": "virtualAxisPPosition"
+        },
+        {
+          "id": "virtualAxisYPosition"
+        }
+      ],
+      "response": [
+        {
+          "id": "deviceID"
+        },
+        {
+          "id": "modelStatus"
+        },
+        {
+          "id": "virtualAxisHPosition"
+        },
+        {
+          "id": "virtualAxisPPosition"
+        },
+        {
+          "id": "virtualAxisYPosition"
+        }
+      ],
+      "display": false,
+      "confirmationLevel": "none",
+      "preconditions": []
+    }
+  ]
+}

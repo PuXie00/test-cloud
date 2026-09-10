@@ -1,0 +1,228 @@
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
+import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
+import type { TimelineEditorProps } from "../timeline/timeline-editor";
+import { EditorDock } from "./editor-dock";
+
+const sequence: ActionSequenceConfig = {
+  id: "seq",
+  name: "Seq",
+  trajectoryMode: "non-forced",
+  blocks: [],
+  segments: [],
+};
+
+const { builderState, capturedEditor } = vi.hoisted(() => ({
+  builderState: { current: {} as Record<string, unknown> },
+  capturedEditor: { current: null as TimelineEditorProps | null },
+}));
+
+vi.mock("../timeline/timeline-editor", () => ({
+  TimelineEditor: (props: TimelineEditorProps) => {
+    capturedEditor.current = props;
+    return <div data-testid="timeline-editor" />;
+  },
+}));
+
+vi.mock("../use-action-builder", () => ({
+  useActionBuilder: () => builderState.current,
+}));
+
+vi.mock("../../../hooks/use-selection", () => ({
+  useSelection: () => ({
+    replaceSelection: vi.fn(),
+    selectedId: null,
+    multiSelectedIds: [],
+  }),
+}));
+
+vi.mock("@/app/project/display-length-unit-provider", () => ({
+  useSessionDisplayLengthUnit: () => "mm" as const,
+}));
+
+const handleSelectionChange = vi.fn();
+const handleMoveTimelineBlock = vi.fn();
+const handleResizeDynamicPreset = vi.fn();
+const handleCueDropOnTrack = vi.fn();
+
+const timelineObjects = [
+  {
+    id: 7,
+    name: "模型 7",
+    currentPosition: 0,
+    unit: "mm",
+    axisLabel: "H",
+    enabled: true,
+    enabledAxes: ["v1", "v2", "v3"],
+  },
+  {
+    id: 8,
+    name: "模型 8",
+    currentPosition: 0,
+    unit: "mm",
+    axisLabel: "H",
+    enabled: true,
+    enabledAxes: ["v1", "v2", "v3"],
+  },
+];
+
+const mockBuilder = (overrides: Record<string, unknown> = {}) => {
+  builderState.current = {
+    sequence,
+    selection: null,
+    selectedObjectIds: [7],
+    timelineObjects,
+    cursorMs: 500,
+    timelinePxPerSecond: 16,
+    canPasteBlock: false,
+    dockMode: "sequence",
+    handleSelectionChange,
+    handleCursorChange: vi.fn(),
+    handleMoveTimelineBlock,
+    handleResizeDynamicPreset,
+    handleBlockDelete: vi.fn(),
+    handleBlockCopy: vi.fn(),
+    handleBlockPaste: vi.fn(),
+    handleCueDropOnTrack,
+    handleTimelinePxPerSecondChange: vi.fn(),
+    handleTimelineZoomIn: vi.fn(),
+    handleTimelineZoomOut: vi.fn(),
+    handleSave: vi.fn(),
+    handleTrajectoryModeChange: vi.fn(),
+    sequenceIssues: [],
+    ...overrides,
+  };
+};
+
+afterEach(() => {
+  cleanup();
+  capturedEditor.current = null;
+});
+
+describe("editor dock sequence editor", () => {
+  beforeEach(() => {
+    mockBuilder();
+  });
+
+  it("rewires TimelineEditor to authored selection and shared-preset handlers", () => {
+    render(<EditorDock />);
+    const props = capturedEditor.current;
+    expect(props).not.toBeNull();
+    expect(props!.sequence).toBe(sequence);
+    expect(props!.resolved).toEqual(resolveActionSequence(sequence));
+    expect(props!.selection).toBeNull();
+    expect(props!.onSelectionChange).toBe(handleSelectionChange);
+    expect(props!.onPoseMove).toBe(handleMoveTimelineBlock);
+    expect(props!.onPresetMove).toBe(handleMoveTimelineBlock);
+    expect(props!.onDynamicPresetResize).toBe(handleResizeDynamicPreset);
+    expect(props!.objects).toBe(timelineObjects);
+  });
+
+  it("does not offer an add-action control in the sequence editor header", () => {
+    render(<EditorDock />);
+    expect(screen.queryByRole("button", { name: /添加动作/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "添加位姿" })).toBeNull();
+    expect(screen.queryByLabelText("关闭添加动作")).toBeNull();
+  });
+
+  it("keeps SequenceEditor toolbar when an unknown preset cannot resolve", () => {
+    const broken: ActionSequenceConfig = {
+      id: "seq-broken",
+      name: "Broken",
+      trajectoryMode: "non-forced",
+      blocks: [
+        {
+          id: "bad-preset",
+          kind: "static-preset",
+          presetId: "not-a-preset",
+          atMs: 1000,
+          orderedObjectIds: [7],
+          params: { v1: 0, v2: 0, v3: 0 },
+        },
+      ],
+      segments: [],
+    };
+    mockBuilder({ sequence: broken });
+    expect(() => render(<EditorDock />)).not.toThrow();
+    expect(screen.queryByRole("button", { name: /添加动作/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "保存" })).not.toBeNull();
+    expect(screen.getByText("预设无法解析，可继续编辑块")).not.toBeNull();
+    expect(capturedEditor.current).not.toBeNull();
+    expect(capturedEditor.current!.sequence).toBe(broken);
+    expect(capturedEditor.current!.resolved.totalMs).toBe(0);
+    expect(capturedEditor.current!.resolved.initialPoseByObject).toEqual(new Map());
+  });
+
+  it("toggles trajectory mode from the sequence editor header", () => {
+    const handleTrajectoryModeChange = vi.fn();
+    mockBuilder({ handleTrajectoryModeChange });
+    render(<EditorDock />);
+    const toggle = screen.getByRole("switch", { name: "强制轨迹" });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(toggle);
+    expect(handleTrajectoryModeChange).toHaveBeenCalledWith("forced");
+  });
+
+  it("toggles trajectory mode from forced to non-forced in the sequence editor header", () => {
+    const handleTrajectoryModeChange = vi.fn();
+    mockBuilder({
+      sequence: { ...sequence, trajectoryMode: "forced" },
+      handleTrajectoryModeChange,
+    });
+    render(<EditorDock />);
+    const toggle = screen.getByRole("switch", { name: "强制轨迹" });
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(toggle);
+    expect(handleTrajectoryModeChange).toHaveBeenCalledWith("non-forced");
+  });
+});
+
+describe("editor dock cue editor", () => {
+  it("mounts Cue dock with ActionSequenceConfig (no tracks) without throwing", () => {
+    const authoredSequence: ActionSequenceConfig = {
+      id: "seq",
+      name: "Seq",
+      trajectoryMode: "non-forced",
+      blocks: [
+        {
+          id: "pose-1",
+          kind: "pose",
+          objectId: 7,
+          atMs: 1000,
+          pose: { v1: 10, v2: 0, v3: 0 },
+        },
+      ],
+      segments: [],
+    };
+    mockBuilder({
+      dockMode: "cue",
+      sequences: [authoredSequence],
+      sequence: authoredSequence,
+      selectedCueId: "cue-1",
+      cues: [
+        {
+          id: "cue-1",
+          name: "Cue 1",
+          targets: { "7": { v1: 10, v2: 0, v3: 0 } },
+        },
+      ],
+      programs: [],
+      getTimelineObject: (objectId: number) =>
+        timelineObjects.find((object) => object.id === objectId),
+      handleCueUpdate: vi.fn(),
+      handleCueTargetChange: vi.fn(),
+      handleCueAddObjects: vi.fn(),
+      handleCueRemoveObject: vi.fn(),
+      handleCueDelete: vi.fn(),
+      handleCueCaptureFromScene: vi.fn(),
+      handleCuePreview: vi.fn(),
+    });
+    expect(() => render(<EditorDock />)).not.toThrow();
+    expect(screen.getByLabelText("Cue 名称")).not.toBeNull();
+    expect(screen.getByDisplayValue("Cue 1")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "加入当前选择" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "添加物体" })).toBeNull();
+  });
+});

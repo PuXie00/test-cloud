@@ -1,0 +1,80 @@
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "monitoryuezhong",
+  "asar": false,
+  "npmRebuild": false,
+  "electronDownload": {
+    "mirror": "https://npmmirror.com/mirrors/electron/"
+  },
+  "directories": {
+    "output": "release/${version}"
+  },
+  "files": [
+    "dist-electron",
+    "dist"
+  ],
+  "extraFiles": [
+    {
+      "from": "Configs",
+      "to": "Configs",
+      "filter": [
+        "**/*"
+      ]
+    },
+    {
+      "from": "YXZ.exe",
+      "to": "YXZ.exe",
+      "filter": [
+        "**/*"
+      ]
+    },
+    {
+      "from": "Runtime",
+      "to": "Runtime",
+      "filter": [
+        "**/*"
+      ]
+    },
+    {
+      "from": "config",
+      "to": "config",
+      "filter": [
+        "**/*"
+      ]
+    }
+
+  ],
+  "mac": {
+    "artifactName": "${productName}_${version}.${ext}",
+    "target": [
+      "dmg",
+      "zip"
+    ]
+  },
+  "win": {
+    "icon": "public/favicon.ico",
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      }
+    ],
+    "artifactName": "${productName}_${version}.${ext}"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "deleteAppDataOnUninstall": false,
+    "installerIcon": "public/favicon.ico",
+    "uninstallerIcon": "public/favicon.ico",
+    "installerHeaderIcon": "public/favicon.ico"
+  },
+  "publish": {
+    "provider": "generic",
+    "channel": "latest",
+    "url": "https://github.com/electron-vite/electron-vite-react/releases/download/v0.9.9/"
+  }
+}

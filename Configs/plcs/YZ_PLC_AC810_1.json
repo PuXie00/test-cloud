@@ -1,0 +1,2303 @@
+﻿{
+  "device": {
+    "id": "AC810_1",
+    "name": "AC810 PLC非环网版本",
+    "type": "PLC",
+    "description": "AC810 PLC 设备描述文件(C口128轴/D口128轴)",
+    "parentType": "system",
+    "version": 1.0
+  },
+  "HardwareParameters": {
+    "networkType": "1",
+    "maxAxisPerC": 64,
+    "maxAxisPerD": 0,
+    "ip": "192.168.1.30"
+  },
+  "Attribute": {
+    "configurationAttributes": [
+      {
+        "id": "paramCount",
+        "type": "basic",
+        "label": "参数数量",
+        "addr": "0x1001",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "deviceID",
+        "type": "basic",
+        "label": "设备ID",
+        "addr": "0x3000",
+        "dataType": "uint32",
+        "byteLength": 4,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": true,
+        "min": 0,
+        "max": 4294967295,
+        "values": []
+      },
+      {
+        "id": "motionFlag",
+        "type": "basic",
+        "label": "运动标志位",
+        "addr": "0x1003",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 1,
+        "scale": 1,
+        "display": true,
+        "min": 0,
+        "max": 1,
+        "values": [
+          [
+            0,
+            "断开时停止"
+          ],
+          [
+            1,
+            "断开时继续"
+          ]
+        ]
+      },
+      {
+        "id": "errorCount",
+        "type": "basic",
+        "label": "错误数量",
+        "addr": "0x1004",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "errorCode",
+        "type": "basic",
+        "label": "错误码",
+        "addr": "0x1005",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "ruleId",
+        "type": "basic",
+        "label": "规则ID",
+        "addr": "0x1006",
+        "dataType": "string",
+        "byteLength": 20,
+        "unit": "",
+        "DefaultValue": "",
+        "scale": 1,
+        "display": false,
+        "values": []
+      },
+      {
+        "id": "autoId",
+        "type": "basic",
+        "label": "自动ID",
+        "addr": "0x1007",
+        "dataType": "string",
+        "byteLength": 20,
+        "unit": "",
+        "DefaultValue": "",
+        "scale": 1,
+        "display": false,
+        "values": []
+      },
+      {
+        "id": "deviceType",
+        "type": "basic",
+        "label": "设备类型",
+        "addr": "0x1008",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": true,
+        "values": [
+          [
+            0,
+            "线性轴"
+          ],
+          [
+            1,
+            "无极旋转轴"
+          ],
+          [
+            2,
+            "单点模型"
+          ],
+          [
+            3,
+            "多级升降模型"
+          ],
+          [
+            4,
+            "无极旋转模型"
+          ],
+          [
+            5,
+            "车模型"
+          ],
+          [
+            6,
+            "两点摆"
+          ],
+          [
+            7,
+            "多点摆"
+          ],
+          [
+            8,
+            "四点"
+          ],
+          [
+            9,
+            "多点倾斜"
+          ]
+        ]
+      },
+      {
+        "id": "busNo",
+        "type": "basic",
+        "label": "总线编号",
+        "addr": "0x100A",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": true,
+        "values": [
+          [
+            0,
+            "C口"
+          ],
+          [
+            1,
+            "D口"
+          ]
+        ]
+      },
+      {
+        "id": "deviceIndex",
+        "type": "basic",
+        "label": "设备索引",
+        "addr": "0x100B",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "switchFlag",
+        "type": "basic",
+        "label": "切换标志位",
+        "addr": "0x100C",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "values": [
+          [
+            1,
+            "仿真"
+          ],
+          [
+            0,
+            "实际"
+          ]
+        ]
+      },
+      {
+        "id": "syncGroupId",
+        "type": "basic",
+        "label": "同步组ID",
+        "addr": "0x100D",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "startMode",
+        "type": "basic",
+        "label": "启动方式",
+        "addr": "0x100E",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "values": [
+          [
+            0,
+            "从头启动"
+          ],
+          [
+            1,
+            "从当前位置就近启动"
+          ],
+          [
+            2,
+            "同步启动"
+          ]
+        ]
+      },
+      {
+        "id": "runDirection",
+        "type": "basic",
+        "label": "运行方向",
+        "addr": "0x100F",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 1,
+        "scale": 1,
+        "display": false,
+        "values": [
+          [
+            1,
+            "正向"
+          ],
+          [
+            2,
+            "反向"
+          ]
+        ]
+      },
+      {
+        "id": "speedScale",
+        "type": "basic",
+        "label": "速度倍率",
+        "addr": "0x1010",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 100,
+        "scale": 0.01,
+        "display": false,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "loopCount",
+        "type": "basic",
+        "label": "循环次数",
+        "addr": "0x1011",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "autoPositionCheckFlag",
+        "type": "basic",
+        "label": "自动位置检测标志位",
+        "addr": "0x1012",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "values": [
+          [
+            1,
+            "开启"
+          ],
+          [
+            0,
+            "关闭"
+          ]
+        ]
+      },
+      {
+        "id": "startTimestamp",
+        "type": "basic",
+        "label": "启动时间戳",
+        "addr": "0x1013",
+        "dataType": "uint64",
+        "byteLength": 8,
+        "unit": "ms",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 18446744073709551615,
+        "values": []
+      },
+      {
+        "id": "enableFlag",
+        "type": "basic",
+        "label": "启动标志位",
+        "addr": "0x1014",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "values": [
+          [
+            1,
+            "启动"
+          ],
+          [
+            0,
+            "停止"
+          ]
+        ]
+      },
+      {
+        "id": "checksum",
+        "type": "basic",
+        "label": "CRC校验码",
+        "addr": "0x1015",
+        "dataType": "uint32",
+        "byteLength": 4,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 4294967295,
+        "values": []
+      },
+      {
+        "id": "curveType",
+        "type": "basic",
+        "label": "曲线类型",
+        "addr": "0x1016",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 1,
+        "scale": 1,
+        "display": true,
+        "values": [
+          [
+            1,
+            "梯形"
+          ],
+          [
+            2,
+            "三次曲线"
+          ],
+          [
+            3,
+            "S曲线"
+          ]
+        ]
+      },
+      {
+        "id": "totalDuration",
+        "type": "basic",
+        "label": "总时长",
+        "addr": "0x1017",
+        "dataType": "uint32",
+        "byteLength": 4,
+        "unit": "ms",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": true,
+        "min": 0,
+        "max": 4294967295,
+        "values": []
+      },
+      {
+        "id": "timelineCount",
+        "type": "basic",
+        "label": "时间线数量",
+        "addr": "0x1018",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "ruleEnableFlag",
+        "type": "basic",
+        "label": "规则默认启动标志位",
+        "addr": "0x1019",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "values": [
+          [
+            1,
+            "默认启动"
+          ],
+          [
+            0,
+            "默认停止"
+          ]
+        ]
+      },
+      {
+        "id": "expressionItemCount",
+        "type": "basic",
+        "label": "表达式项数量",
+        "addr": "0x101A",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "compareType",
+        "type": "basic",
+        "label": "比较方式",
+        "addr": "0x101B",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 1,
+        "scale": 1,
+        "display": false,
+        "values": [
+          [
+            1,
+            "等于"
+          ],
+          [
+            2,
+            "小于"
+          ],
+          [
+            3,
+            "大于"
+          ],
+          [
+            4,
+            "大于等于"
+          ],
+          [
+            5,
+            "小于等于"
+          ],
+          [
+            6,
+            "不等于"
+          ]
+        ]
+      },
+      {
+        "id": "compareValue",
+        "type": "basic",
+        "label": "比较值",
+        "addr": "0x101C",
+        "dataType": "uint32",
+        "byteLength": 4,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 4294967295,
+        "values": []
+      },
+      {
+        "id": "ruleMode",
+        "type": "basic",
+        "label": "规则模式",
+        "addr": "0x101D",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 1,
+        "scale": 1,
+        "display": false,
+        "values": [
+          [
+            1,
+            "条件成立执行动作"
+          ],
+          [
+            2,
+            "条件不成立执行动作"
+          ]
+        ]
+      },
+      {
+        "id": "actionTargetCount",
+        "type": "basic",
+        "label": "动作目标数量",
+        "addr": "0x101E",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "pointCount",
+        "type": "basic",
+        "label": "点数量",
+        "addr": "0x1021",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "timeArray",
+        "type": "basic",
+        "label": "时间点数组",
+        "addr": "0x1022",
+        "dataType": "array",
+        "countRef": "pointCount",
+        "items": [
+          {
+            "id": "timePoint",
+            "type": "basic",
+            "label": "时间点",
+            "dataType": "uint32",
+            "byteLength": 4,
+            "unit": "ms",
+            "scale": 1,
+            "min": 0,
+            "max": 4294967295,
+            "values": []
+          }
+        ]
+      },
+      {
+        "id": "positionArray",
+        "type": "basic",
+        "label": "位置点数组",
+        "addr": "0x1023",
+        "dataType": "array",
+        "countRef": "pointCount",
+        "items": [
+          {
+            "id": "posPoint",
+            "type": "basic",
+            "label": "位置点",
+            "dataType": "int32",
+            "byteLength": 4,
+            "unit": "mm",
+            "scale": 0.01,
+            "min": -2147483648,
+            "max": 2147483647,
+            "values": []
+          }
+        ]
+      },
+      {
+        "id": "targetType",
+        "type": "basic",
+        "label": "目标类型",
+        "addr": "0x1024",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "values": [
+          [
+            0,
+            "轴"
+          ],
+          [
+            1,
+            "模型"
+          ]
+        ]
+      },
+      {
+        "id": "targetCount",
+        "type": "basic",
+        "label": "目标数量",
+        "addr": "0x1025",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "targetNo",
+        "type": "basic",
+        "label": "目标编号",
+        "addr": "0x1026",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "dataType",
+        "type": "basic",
+        "label": "数据类型",
+        "addr": "0x1027",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 1,
+        "scale": 1,
+        "display": false,
+        "values": [
+          [
+            1,
+            "运行状态"
+          ],
+          [
+            2,
+            "位置"
+          ],
+          [
+            3,
+            "到位状态"
+          ],
+          [
+            4,
+            "报警状态"
+          ],
+          [
+            5,
+            "信号值"
+          ]
+        ]
+      },
+      {
+        "id": "aggregateMode",
+        "type": "basic",
+        "label": "聚合方式",
+        "addr": "0x1028",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 1,
+        "scale": 1,
+        "display": false,
+        "values": [
+          [
+            1,
+            "单个"
+          ],
+          [
+            2,
+            "全部"
+          ]
+        ]
+      },
+      {
+        "id": "calculateMode",
+        "type": "basic",
+        "label": "计算方式",
+        "addr": "0x1029",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 1,
+        "scale": 1,
+        "display": false,
+        "values": [
+          [
+            1,
+            "原值"
+          ],
+          [
+            2,
+            "最大值"
+          ],
+          [
+            3,
+            "最小值"
+          ],
+          [
+            4,
+            "最大差值"
+          ],
+          [
+            5,
+            "平均值"
+          ],
+          [
+            6,
+            "绝对值"
+          ],
+          [
+            7,
+            "偏差"
+          ]
+        ]
+      },
+      {
+        "id": "coefficient",
+        "type": "basic",
+        "label": "系数正负",
+        "addr": "0x102A",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "values": [
+          [
+            1,
+            "正"
+          ],
+          [
+            0,
+            "负"
+          ]
+        ]
+      },
+      {
+        "id": "coefficientValue",
+        "type": "basic",
+        "label": "系数值",
+        "addr": "0x102B",
+        "dataType": "uint8",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 255,
+        "values": []
+      },
+      {
+        "id": "actionType",
+        "type": "basic",
+        "label": "动作类型",
+        "addr": "0x102C",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 1,
+        "scale": 1,
+        "display": false,
+        "values": [
+          [
+            1,
+            "禁止启动"
+          ],
+          [
+            2,
+            "启动运动"
+          ],
+          [
+            3,
+            "停止"
+          ]
+        ]
+      },
+      {
+        "id": "actionMode",
+        "type": "basic",
+        "label": "动作生效模式",
+        "addr": "0x102D",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "values": [
+          [
+            0,
+            "仅触发目标"
+          ],
+          [
+            1,
+            "全部候选目标"
+          ]
+        ]
+      },
+      {
+        "id": "actionParam",
+        "type": "basic",
+        "label": "动作参数",
+        "addr": "0x102E",
+        "dataType": "int32",
+        "byteLength": 4,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": -2147483648,
+        "max": 2147483647,
+        "values": []
+      },
+      {
+        "id": "actionNo",
+        "type": "basic",
+        "label": "动作编号",
+        "addr": "0x102F",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "ruleNo",
+        "type": "basic",
+        "label": "规则编号",
+        "addr": "0x1030",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "configFlag",
+        "label": "配置状态",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 1,
+        "scale": 1,
+        "values": [
+          [
+            0,
+            "配置完成"
+          ],
+          [
+            1,
+            "开始配置"
+          ]
+        ]
+      }
+    ],
+    "stateAttributes": [
+      {
+        "id": "deviceID",
+        "type": "basic",
+        "label": "设备ID",
+        "addr": "0x0300",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "successFlag",
+        "type": "basic",
+        "label": "成功标志位",
+        "addr": "0x1031",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "scale": 1,
+        "display": false,
+        "values": [
+          [
+            1,
+            "成功"
+          ],
+          [
+            0,
+            "失败"
+          ]
+        ]
+      },
+      {
+        "id": "slaveCount_C",
+        "type": "basic",
+        "label": "C从站数量",
+        "addr": "0x1032",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "slaveCount_D",
+        "type": "basic",
+        "label": "D从站数量",
+        "addr": "0x103E",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "slaveID",
+        "type": "basic",
+        "label": "从站ID",
+        "addr": "0x1033",
+        "dataType": "uint32",
+        "byteLength": 4,
+        "unit": "",
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 4294967295,
+        "values": []
+      },
+      {
+        "id": "slaveType",
+        "type": "basic",
+        "label": "从站类型",
+        "addr": "0x1034",
+        "dataType": "uint8",
+        "byteLength": 1,
+        "unit": "",
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 255,
+        "values": []
+      },
+      {
+        "id": "communicationStatus",
+        "type": "basic",
+        "label": "通讯状态",
+        "addr": "0x1035",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "scale": 1,
+        "display": false,
+        "values": [
+          [
+            0,
+            "正常"
+          ],
+          [
+            1,
+            "异常"
+          ]
+        ]
+      },
+      {
+        "id": "plcTimestamp",
+        "type": "basic",
+        "label": "PLC接收时间戳",
+        "addr": "0x1036",
+        "dataType": "uint64",
+        "byteLength": 8,
+        "unit": "ms",
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 18446744073709551615,
+        "values": []
+      },
+      {
+        "id": "masterStatus",
+        "type": "basic",
+        "label": "主控状态",
+        "addr": "0x1037",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "scale": 1,
+        "display": false,
+        "values": [
+          [
+            0,
+            "初始化"
+          ],
+          [
+            1,
+            "运行"
+          ],
+          [
+            2,
+            "挂起"
+          ],
+          [
+            3,
+            "配置中"
+          ]
+        ]
+      },
+      {
+        "id": "simulationStatus",
+        "type": "basic",
+        "label": "仿真实际状态",
+        "addr": "0x1038",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "scale": 1,
+        "display": false,
+        "values": [
+          [
+            1,
+            "仿真"
+          ],
+          [
+            0,
+            "实际"
+          ]
+        ]
+      },
+      {
+        "id": "busStatus",
+        "type": "basic",
+        "label": "总线状态",
+        "addr": "0x1039",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "scale": 1,
+        "display": false,
+        "values": [
+          [
+            0,
+            "正常"
+          ],
+          [
+            1,
+            "异常"
+          ]
+        ]
+      },
+      {
+        "id": "ruleStartStatus",
+        "type": "basic",
+        "label": "规则启动状态",
+        "addr": "0x103A",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "scale": 1,
+        "display": false,
+        "values": [
+          [
+            1,
+            "已启动"
+          ],
+          [
+            0,
+            "已停止"
+          ]
+        ]
+      },
+      {
+        "id": "autoRunStatus",
+        "type": "basic",
+        "label": "自动运行状态",
+        "addr": "0x103B",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "scale": 1,
+        "display": false,
+        "values": [
+          [
+            1,
+            "运行中"
+          ],
+          [
+            0,
+            "未运行"
+          ]
+        ]
+      },
+      {
+        "id": "PLCNo",
+        "type": "basic",
+        "label": "PLC型号",
+        "addr": "0x103C",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "scale": 1,
+        "display": false,
+        "values": [
+          [
+            1,
+            "AM401"
+          ],
+          [
+            2,
+            "AM600"
+          ],
+          [
+            3,
+            "AC801"
+          ],
+          [
+            4,
+            "AC802"
+          ],
+          [
+            5,
+            "AC810"
+          ],
+          [
+            6,
+            "AM522"
+          ]
+        ]
+      },
+      {
+        "id": "HoistId",
+        "type": "basic",
+        "label": "葫芦ID",
+        "addr": "0x103D",
+        "dataType": "uint32",
+        "byteLength": 4,
+        "unit": "",
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 4294967295,
+        "values": []
+      }
+    ]
+  },
+  "Operation": [
+    {
+      "id": "simulationSwitch",
+      "label": "仿真和实际切换",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x1001",
+      "param": [
+        {
+          "id": "switchFlag",
+          "label": "切换标志位",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "scale": 1,
+          "values": [
+            [
+              1,
+              "仿真"
+            ],
+            [
+              0,
+              "实际"
+            ]
+          ]
+        }
+      ],
+      "response": [],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    },
+    {
+      "id": "AllStop",
+      "label": "总停止",
+      "transport": "tcp",
+      "type": "button",
+      "group": "basic",
+      "addr": "0x1002",
+      "param": [],
+      "response": [],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    },
+    {
+      "id": "busReset",
+      "label": "总线复位",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x1003",
+      "param": [
+        {
+          "id": "busNo",
+          "label": "总线编号",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "scale": 1,
+          "values": [
+            [
+              0,
+              "C口"
+            ],
+            [
+              1,
+              "D口"
+            ]
+          ]
+        }
+      ],
+      "response": [],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    },
+    {
+      "id": "plcReset",
+      "label": "PLC复位",
+      "transport": "tcp",
+      "type": "button",
+      "group": "basic",
+      "addr": "0x1004",
+      "param": [],
+      "response": [],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    },
+    {
+      "id": "actionPrepare",
+      "label": "动作准备/调用",
+      "transport": "udp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x1005",
+      "param": [
+        {
+          "id": "syncGroupId",
+          "label": "同步组ID",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "startMode",
+          "label": "启动方式",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "min": 0,
+          "max": 2,
+          "values": [
+            [
+              0,
+              "从头启动"
+            ],
+            [
+              1,
+              "从当前位置就近启动"
+            ],
+            [
+              2,
+              "同步启动"
+            ]
+          ]
+        },
+        {
+          "id": "runDirection",
+          "label": "运行方向",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "DefaultValue": 1,
+          "scale": 1,
+          "min": 0,
+          "max": 2,
+          "values": [
+            [
+              1,
+              "正向"
+            ],
+            [
+              2,
+              "反向"
+            ]
+          ]
+        },
+        {
+          "id": "speedScale",
+          "label": "速度倍率",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "DefaultValue": 100,
+          "scale": 0.01,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "loopCount",
+          "label": "循环次数",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "autoPositionCheckFlag",
+          "label": "自动位置检测标志位",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "min": 0,
+          "max": 1,
+          "values": [
+            [
+              1,
+              "开启"
+            ],
+            [
+              0,
+              "关闭"
+            ]
+          ]
+        }
+      ],
+      "response": [
+        {
+          "id": "plcNo"
+        },
+        {
+          "id": "actionNo"
+        },
+        {
+          "id": "errorCount"
+        },
+        {
+          "id": "errorCode"
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    },
+    {
+      "id": "actionSyncCall",
+      "label": "动作同步调用",
+      "transport": "udp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x1006",
+      "param": [
+        {
+          "id": "syncGroupId",
+          "label": "同步组ID",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "startMode",
+          "label": "启动方式",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "min": 0,
+          "max": 2,
+          "values": [
+            [
+              0,
+              "从头启动"
+            ],
+            [
+              1,
+              "从当前位置就近启动"
+            ],
+            [
+              2,
+              "同步启动"
+            ]
+          ]
+        },
+        {
+          "id": "runDirection",
+          "label": "运行方向",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "DefaultValue": 1,
+          "scale": 1,
+          "min": 0,
+          "max": 2,
+          "values": [
+            [
+              1,
+              "正向"
+            ],
+            [
+              2,
+              "反向"
+            ]
+          ]
+        },
+        {
+          "id": "speedScale",
+          "label": "速度倍率",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "DefaultValue": 100,
+          "scale": 0.01,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "loopCount",
+          "label": "循环次数",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "autoPositionCheckFlag",
+          "label": "自动位置检测标志位",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "min": 0,
+          "max": 1,
+          "values": [
+            [
+              1,
+              "开启"
+            ],
+            [
+              0,
+              "关闭"
+            ]
+          ]
+        },
+        {
+          "id": "startTimestamp",
+          "label": "启动时间戳",
+          "dataType": "uint64",
+          "byteLength": 8,
+          "unit": "ms",
+          "scale": 1,
+          "min": 0,
+          "max": 18446744073709551615,
+          "values": []
+        }
+      ],
+      "response": [
+        {
+          "id": "plcNo"
+        },
+        {
+          "id": "actionNo"
+        },
+        {
+          "id": "errorCount"
+        },
+        {
+          "id": "errorCode"
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    },
+    {
+      "id": "stopAction",
+      "label": "停止动作",
+      "transport": "udp",
+      "type": "button",
+      "group": "basic",
+      "addr": "0x1007",
+      "param": [],
+      "response": [
+        {
+          "id": "plcNo"
+        },
+        {
+          "id": "actionNo"
+        },
+        {
+          "id": "errorCount"
+        },
+        {
+          "id": "errorCode"
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    },
+    {
+      "id": "ruleStart",
+      "label": "规则启动",
+      "transport": "udp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x1008",
+      "param": [
+        {
+          "id": "enableFlag",
+          "label": "启动标志位",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "scale": 1,
+          "values": [
+            [
+              1,
+              "启动"
+            ],
+            [
+              0,
+              "停止"
+            ]
+          ]
+        }
+      ],
+      "response": [
+        {
+          "id": "ruleNo"
+        },
+        {
+          "id": "errorCount"
+        },
+        {
+          "id": "errorCode"
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    },
+    {
+      "id": "ruleDelete",
+      "label": "规则删除",
+      "transport": "udp",
+      "type": "button",
+      "group": "basic",
+      "addr": "0x1009",
+      "param": [],
+      "response": [
+        {
+          "id": "ruleNo"
+        },
+        {
+          "id": "errorCount"
+        },
+        {
+          "id": "errorCode"
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    },
+    {
+      "id": "safetyProtectSwitch",
+      "label": "安全防护开关",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x1040",
+      "param": [
+        {
+          "id": "enableFlag",
+          "label": "防护开关",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "DefaultValue": 1,
+          "scale": 1,
+          "values": [
+            [
+              0,
+              "关闭"
+            ],
+            [
+              1,
+              "开启"
+            ]
+          ]
+        }
+      ],
+      "response": [],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": []
+    }
+  ],
+  "Configuration": [
+    {
+      "id": "addAxis",
+      "label": "同步轴列表",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x1010",
+      "param": [
+        {
+          "id": "deviceId"
+        },
+        {
+          "id": "deviceType"
+        },
+        {
+          "id": "deviceIndex"
+        },
+        {
+          "id": "busNo"
+        }
+      ],
+      "response": [],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    },
+    {
+      "id": "addModel",
+      "label": "增加模型",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x1011",
+      "param": [
+        {
+          "id": "deviceId"
+        },
+        {
+          "id": "deviceType"
+        }
+      ],
+      "response": [],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    },
+    {
+      "id": "DeleteModel",
+      "label": "删除模型",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x1012",
+      "param": [
+        {
+          "id": "deviceId"
+        },
+        {
+          "id": "deviceType"
+        }
+      ],
+      "response": [],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    },
+    {
+      "id": "downloadPLCInfo",
+      "label": "下载PLC信息",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x1014",
+      "param": [
+        {
+          "id": "plcNo"
+        }
+      ],
+      "response": [
+        {
+          "id": "checksum"
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": []
+    },
+    {
+      "id": "clearConfig",
+      "label": "清空配置信息",
+      "transport": "udp",
+      "type": "button",
+      "group": "basic",
+      "addr": "0x1015",
+      "param": [],
+      "response": [],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": []
+    },
+    {
+      "id": "actionDataSave",
+      "label": "动作数据保存",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x1016",
+      "param": [
+        {
+          "id": "checksum"
+        },
+        {
+          "id": "curveType"
+        },
+        {
+          "id": "totalDuration"
+        },
+        {
+          "id": "timelineCount",
+          "items": [
+            {
+              "id": "modelNo"
+            },
+            {
+              "id": "virtualAxisType"
+            },
+            {
+              "id": "pointCount"
+            },
+            {
+              "id": "timeArray"
+            },
+            {
+              "id": "positionArray"
+            }
+          ]
+        }
+      ],
+      "response": [
+        {
+          "id": "actionNo"
+        },
+        {
+          "id": "errorCount",
+          "items": [
+            {
+              "id": "errorCode"
+            }
+          ]
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    },
+    {
+      "id": "ruleSave",
+      "label": "规则引擎保存",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x1017",
+      "param": [
+        {
+          "id": "ruleEnableFlag"
+        },
+        {
+          "id": "checksum"
+        },
+        {
+          "id": "expressionItemCount"
+        },
+        {
+          "id": "expressionItemList",
+          "dataType": "array",
+          "countRef": "expressionItemCount",
+          "items": [
+            {
+              "id": "plcNo"
+            },
+            {
+              "id": "targetType"
+            },
+            {
+              "id": "targetCount"
+            },
+            {
+              "id": "targetNo"
+            },
+            {
+              "id": "dataType"
+            },
+            {
+              "id": "virtualAxisType"
+            },
+            {
+              "id": "aggregateMode"
+            },
+            {
+              "id": "calculateMode"
+            },
+            {
+              "id": "coefficient"
+            },
+            {
+              "id": "coefficientValue"
+            }
+          ]
+        },
+        {
+          "id": "compareType"
+        },
+        {
+          "id": "compareValue"
+        },
+        {
+          "id": "ruleMode"
+        },
+        {
+          "id": "actionTargetCount"
+        },
+        {
+          "id": "actionTargetList",
+          "dataType": "array",
+          "countRef": "actionTargetCount",
+          "items": [
+            {
+              "id": "plcNo"
+            },
+            {
+              "id": "targetType"
+            },
+            {
+              "id": "targetCount"
+            },
+            {
+              "id": "targetNo"
+            },
+            {
+              "id": "actionType"
+            },
+            {
+              "id": "actionMode"
+            },
+            {
+              "id": "actionParam"
+            }
+          ]
+        }
+      ],
+      "response": [
+        {
+          "id": "ruleNo"
+        },
+        {
+          "id": "errorCount",
+          "items": [
+            {
+              "id": "errorCode"
+            }
+          ]
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    },
+    {
+      "id": "disconnectMotionConfig",
+      "label": "连接断开运动配置",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x1018",
+      "param": [
+        {
+          "id": "motionFlag"
+        }
+      ],
+      "response": [],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    },
+    {
+      "id": "notifyConfigState",
+      "label": "开始和结束配置",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x1019",
+      "param": [
+        {
+          "id": "configFlag"
+        }
+      ],
+      "response": [],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": []
+    }
+  ],
+  "Information": [
+    {
+      "id": "projectVerify",
+      "label": "工程匹配整体校验",
+      "transport": "tcp",
+      "type": "button",
+      "group": "statusQuery",
+      "addr": "0x101A",
+      "param": [],
+      "response": [
+        {
+          "id": "checksum",
+          "label": "校验码",
+          "dataType": "uint32",
+          "byteLength": 4,
+          "unit": "",
+          "scale": 1,
+          "values": []
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    },
+    {
+      "id": "scanMaster",
+      "label": "扫描主控",
+      "transport": "udp",
+      "type": "button",
+      "group": "statusQuery",
+      "addr": "0x101B",
+      "param": [],
+      "response": [
+        {
+          "id": "PLCNo"
+        },
+        {
+          "id": "slaveCount_C",
+          "items": [
+            {
+              "id": "busNo"
+            },
+            {
+              "id": "slaveID"
+            },
+            {
+              "id": "HoistId"
+            },
+            {
+              "id": "communicationStatus"
+            }
+          ]
+        },
+        {
+          "id": "slaveCount_D",
+          "items": [
+            {
+              "id": "busNo"
+            },
+            {
+              "id": "slaveID"
+            },
+            {
+              "id": "HoistId"
+            },
+            {
+              "id": "communicationStatus"
+            }
+          ]
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": []
+    },
+    {
+      "id": "slaveCommError",
+      "label": "从站通讯错误诊断",
+      "transport": "udp",
+      "type": "button",
+      "group": "statusQuery",
+      "addr": "0x101C",
+      "param": [],
+      "response": [
+        {
+          "id": "errorCount",
+          "label": "错误数量",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "scale": 1,
+          "values": [],
+          "items": [
+            {
+              "id": "slaveID",
+              "label": "从站编号",
+              "dataType": "uint16",
+              "byteLength": 2,
+              "unit": "",
+              "scale": 1,
+              "values": []
+            },
+            {
+              "id": "errorCode",
+              "label": "错误码",
+              "dataType": "uint16",
+              "byteLength": 2,
+              "unit": "",
+              "scale": 1,
+              "values": []
+            }
+          ]
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": []
+    },
+    {
+      "id": "readRuleList",
+      "label": "规则列表读取",
+      "transport": "udp",
+      "type": "button",
+      "group": "statusQuery",
+      "addr": "0x101D",
+      "param": [],
+      "response": [
+        {
+          "id": "ruleCount",
+          "label": "规则数量",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "scale": 1,
+          "values": [],
+          "items": [
+            {
+              "id": "ruleId",
+              "label": "规则ID",
+              "dataType": "string",
+              "byteLength": 20,
+              "unit": "",
+              "scale": 1,
+              "values": []
+            },
+            {
+              "id": "checksum64",
+              "label": "校验码",
+              "dataType": "uint64",
+              "byteLength": 8,
+              "unit": "",
+              "scale": 1,
+              "values": []
+            }
+          ]
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": []
+    },
+    {
+      "id": "autoListRead",
+      "label": "自动列表读取",
+      "transport": "udp",
+      "type": "button",
+      "group": "statusQuery",
+      "addr": "0x101E",
+      "param": [],
+      "response": [
+        {
+          "id": "autoCount",
+          "label": "自动数量",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "scale": 1,
+          "values": [],
+          "items": [
+            {
+              "id": "autoId",
+              "label": "自动ID",
+              "dataType": "string",
+              "byteLength": 20,
+              "unit": "",
+              "scale": 1,
+              "values": []
+            },
+            {
+              "id": "checksum64",
+              "label": "校验码",
+              "dataType": "uint64",
+              "byteLength": 8,
+              "unit": "",
+              "scale": 1,
+              "values": []
+            }
+          ]
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": []
+    },
+    {
+      "id": "clockSync",
+      "label": "时钟同步",
+      "transport": "tcp",
+      "type": "button",
+      "group": "statusQuery",
+      "addr": "0x101F",
+      "param": [],
+      "response": [
+        {
+          "id": "plcTimestamp",
+          "label": "PLC接收时间戳",
+          "dataType": "uint64",
+          "byteLength": 8,
+          "unit": "ms",
+          "scale": 1,
+          "values": []
+        }
+      ],
+      "display": false,
+      "confirmationLevel": "none",
+      "preconditions": []
+    }
+  ],
+  "Monitoring": [
+    {
+      "id": "readMasterStatusPolling",
+      "label": "轮序读取主控状态",
+      "transport": "udp",
+      "type": "button",
+      "group": "statusQuery",
+      "addr": "0x1020",
+      "param": [],
+      "response": [
+        {
+          "id": "deviceId"
+        },
+        {
+          "id": "plcModel"
+        },
+        {
+          "id": "masterStatus"
+        },
+        {
+          "id": "simulationStatus"
+        },
+        {
+          "id": "busStatus"
+        },
+        {
+          "id": "ruleStartStatus"
+        },
+        {
+          "id": "ruleId"
+        },
+        {
+          "id": "autoRunStatus"
+        },
+        {
+          "id": "autoId"
+        }
+      ],
+      "display": false,
+      "confirmationLevel": "none",
+      "preconditions": []
+    }
+  ]
+}

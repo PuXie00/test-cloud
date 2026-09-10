@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "1.3.0-draft",
+  "meta": {
+    "id": "a7ed1569-d3ec-4799-af77-34611c846d3e",
+    "name": "1",
+    "createdAt": "2026-08-19T05:43:25.491Z",
+    "modifiedAt": "2026-08-25T11:52:32.020Z",
+    "author": "当前用户",
+    "status": "draft",
+    "wizard": {
+      "currentStep": "objects",
+      "completedSteps": [],
+      "skippedSteps": [],
+      "simulationOnly": true,
+      "wizardCompleted": false
+    }
+  },
+  "setup": {
+    "plcs": [
+      {
+        "id": 1,
+        "masterTypeId": "AC802_0",
+        "ip": "192.168.1.30"
+      }
+    ],
+    "motors": [
+      {
+        "id": 2,
+        "productModel": "YZ_AXIS_HOIST_500KG",
+        "plcId": 1,
+        "busNo": 0,
+        "axisType": 0,
+        "nodeAddress": null,
+        "discoveryId": null,
+        "controlledObjectId": null,
+        "axisKey": null,
+        "params": {
+          "maxAxisVelocity": 500,
+          "workingStroke": 253,
+          "reductionRatio": 15,
+          "axisDirection": 1,
+          "positionError": 100,
+          "deviceid": 0,
+          "defaultVelocity": 50,
+          "defaultAcceleration": 50,
+          "defaultDeceleration": 50,
+          "maximumStroke": 300,
+          "syncPositionError": 100,
+          "rangeProtectEnable": 1,
+          "weightLow": 0,
+          "weightHigh": 0,
+          "loadLow": 0,
+          "loadHigh": 0
+        }
+      }
+    ],
+    "controlledObjects": [],
+    "alignment": {}
+  },
+  "motion": {
+    "positionCues": [],
+    "actionSequences": [],
+    "programs": []
+  },
+  "rules": {
+    "rules": []
+  },
+  "view": {
+    "target": [
+      0,
+      0,
+      0
+    ],
+    "alpha": -0.7853981633974483,
+    "beta": 1.0471975511965976,
+    "zoomRadius": 14,
+    "orthoHalfHeight": 7,
+    "preset": "persp",
+    "focalLengthMm": 50,
+    "gridSize": 20
+  },
+  "snapshots": []
+}

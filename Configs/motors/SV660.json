@@ -1,0 +1,1354 @@
+{
+  "device": {
+    "id": "YZ_AXIS_HOIST_500KG",
+    "name": "500KG 数控葫芦轴",
+    "type": "axis",
+    "description": "500KG 数控葫芦的单轴设备描述文件",
+    "parentType": "PLC",
+    "version": 1.0
+  },
+  "HardwareParameters": {
+    "driveModel": "SV660",
+    "encoderBits": 23
+  },
+  "Attribute": {
+    "configurationAttributes": [
+      {
+        "id": "paramCount",
+        "type": "basic",
+        "label": "参数数量",
+        "addr": "0x0001",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "axisType",
+        "type": "basic",
+        "label": "轴类型",
+        "addr": "0x0002",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": true,
+        "values": [
+          [
+            0,
+            "线性轴"
+          ],
+          [
+            1,
+            "无极旋转轴"
+          ]
+        ]
+      },
+      {
+        "id": "maxAxisVelocity",
+        "type": "basic",
+        "label": "最大轴速度",
+        "addr": "0x0003",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "mm/s",
+        "DefaultValue": 500,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "workingStroke",
+        "type": "basic",
+        "label": "工作行程",
+        "addr": "0x0004",
+        "dataType": "uint32",
+        "byteLength": 4,
+        "unit": "mm",
+        "DefaultValue": 253,
+        "scale": 1,
+        "display": true,
+        "min": 0,
+        "max": 4294967295,
+        "values": []
+      },
+      {
+        "id": "reductionRatio",
+        "type": "basic",
+        "label": "减速比",
+        "addr": "0x0005",
+        "dataType": "uint32",
+        "byteLength": 4,
+        "unit": "",
+        "DefaultValue": 15,
+        "scale": 1,
+        "display": true,
+        "min": 0,
+        "max": 4294967295,
+        "values": []
+      },
+      {
+        "id": "axisDirection",
+        "type": "basic",
+        "label": "轴方向",
+        "addr": "0x0006",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "DefaultValue": 1,
+        "scale": 1,
+        "display": true,
+        "values": [
+          [
+            0,
+            "正向"
+          ],
+          [
+            1,
+            "反向"
+          ]
+        ]
+      },
+      {
+        "id": "positionError",
+        "type": "basic",
+        "label": "位置偏差",
+        "addr": "0x0007",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "mm",
+        "DefaultValue": 100,
+        "scale": 1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "deviceId",
+        "type": "basic",
+        "label": "设备ID",
+        "addr": "0x0008",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "errorCount",
+        "type": "basic",
+        "label": "错误数量",
+        "addr": "0x0009",
+        "dataType": "uint8",
+        "byteLength": 1,
+        "unit": "",
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 255,
+        "values": []
+      },
+      {
+        "id": "errorCode",
+        "type": "basic",
+        "label": "错误码",
+        "addr": "0x000A",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "scale": 1,
+        "display": false,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "defaultVelocity",
+        "type": "basic",
+        "label": "默认运行速度",
+        "addr": "0x0014",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "mm/s",
+        "DefaultValue": 50,
+        "scale": 0.1,
+        "display": true,
+        "min": 1,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "defaultAcceleration",
+        "type": "basic",
+        "label": "默认加速度",
+        "addr": "0x0015",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "mm/s2",
+        "DefaultValue": 50,
+        "scale": 1,
+        "display": true,
+        "min": 1,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "defaultDeceleration",
+        "type": "basic",
+        "label": "默认减速度",
+        "addr": "0x0016",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "mm/s2",
+        "DefaultValue": 50,
+        "scale": 1,
+        "display": true,
+        "min": 1,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "maximumStroke",
+        "type": "basic",
+        "label": "最大运行行程",
+        "addr": "0x0017",
+        "dataType": "int32",
+        "byteLength": 4,
+        "unit": "mm",
+        "DefaultValue": 300,
+        "scale": 0.1,
+        "display": true,
+        "min": 0,
+        "max": 4294967295,
+        "values": []
+      },
+      {
+        "id": "weightLow",
+        "type": "basic",
+        "label": "称重下限",
+        "addr": "0x001A",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "weightHigh",
+        "type": "basic",
+        "label": "称重上限",
+        "addr": "0x001D",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "loadLow",
+        "type": "basic",
+        "label": "力矩下限",
+        "addr": "0x001B",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      },
+      {
+        "id": "loadHigh",
+        "type": "basic",
+        "label": "力矩上限",
+        "addr": "0x001C",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "DefaultValue": 0,
+        "scale": 1,
+        "display": true,
+        "min": 0,
+        "max": 65535,
+        "values": []
+      }
+    ],
+    "stateAttributes": [
+      {
+        "id": "axisStatus",
+        "type": "basic",
+        "label": "轴状态",
+        "addr": "0x000C",
+        "dataType": "enum",
+        "byteLength": 1,
+        "unit": "",
+        "scale": 1,
+        "display": true,
+        "values": [
+          [
+            0,
+            "断电"
+          ],
+          [
+            1,
+            "错误"
+          ],
+          [
+            2,
+            "静止"
+          ],
+          [
+            3,
+            "运动"
+          ]
+        ]
+      },
+      {
+        "id": "actualPosition",
+        "type": "basic",
+        "label": "实际位置",
+        "addr": "0x000D",
+        "dataType": "int32",
+        "byteLength": 4,
+        "unit": "mm",
+        "scale": 0.01,
+        "display": true,
+        "values": []
+      },
+      {
+        "id": "actualSpeed",
+        "type": "basic",
+        "label": "实际速度",
+        "addr": "0x000E",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "mm/s",
+        "scale": 0.1,
+        "display": true,
+        "values": []
+      },
+      {
+        "id": "actualLoadRate",
+        "type": "basic",
+        "label": "负载率",
+        "addr": "0x000F",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "%",
+        "scale": 0.1,
+        "display": true,
+        "values": []
+      },
+      {
+        "id": "actualTemperature",
+        "type": "basic",
+        "label": "温度",
+        "addr": "0x0010",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "degC",
+        "scale": 1,
+        "display": true,
+        "values": []
+      },
+      {
+        "id": "actualTorque",
+        "type": "basic",
+        "label": "力矩",
+        "addr": "0x0011",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "scale": 1,
+        "display": true,
+        "values": []
+      },
+      {
+        "id": "actualWeight",
+        "type": "variable",
+        "label": "称重",
+        "addr": "0x0012",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "scale": 1,
+        "display": true,
+        "values": []
+      },
+      {
+        "id": "driveAlarmCode",
+        "type": "basic",
+        "label": "驱动报警码",
+        "addr": "0x0013",
+        "dataType": "uint16",
+        "byteLength": 2,
+        "unit": "",
+        "scale": 1,
+        "display": true,
+        "values": []
+      }
+    ]
+  },
+  "Operation": [
+    {
+      "id": "enable",
+      "label": "轴使能/断使能",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x0001",
+      "param": [
+        {
+          "id": "deviceId",
+          "type": "basic",
+          "label": "设备ID",
+          "addr": "0x0008",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "display": true,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "enableFlag",
+          "label": "使能标志位",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "scale": 1,
+          "values": [
+            [
+              0,
+              "未使能"
+            ],
+            [
+              1,
+              "使能"
+            ]
+          ]
+        }
+      ],
+      "response": [],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": []
+    },
+    {
+      "id": "resetAlarm",
+      "label": "报警复位",
+      "transport": "tcp",
+      "type": "button",
+      "group": "basic",
+      "addr": "0x0002",
+      "param": [
+        {
+          "id": "deviceId",
+          "type": "basic",
+          "label": "设备ID",
+          "addr": "0x0008",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "display": true,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        }
+      ],
+      "response": [],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    },
+    {
+      "id": "setposition",
+      "label": "轴设定位置",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x0003",
+      "param": [
+        {
+          "id": "deviceId",
+          "type": "basic",
+          "label": "设备ID",
+          "addr": "0x0008",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "display": true,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "positionSign",
+          "label": "位置正负号",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "scale": 1,
+          "values": [
+            [
+              0,
+              "负号"
+            ],
+            [
+              1,
+              "正号"
+            ]
+          ]
+        },
+        {
+          "id": "position",
+          "label": "位置",
+          "dataType": "uint32",
+          "byteLength": 4,
+          "unit": "mm",
+          "DefaultValue": 0,
+          "scale": 0.01,
+          "min": 0,
+          "max": 4294967295,
+          "values": []
+        }
+      ],
+      "response": [],
+      "display": true,
+      "confirmationLevel": "normal",
+      "preconditions": []
+    },
+    {
+      "id": "clear731Alarm",
+      "label": "清除731报警",
+      "transport": "tcp",
+      "type": "button",
+      "group": "basic",
+      "addr": "0x0004",
+      "param": [],
+      "response": [],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": []
+    },
+    {
+      "id": "lightSlave",
+      "label": "点亮从站灯带",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x0005",
+      "param": [
+        {
+          "id": "lightFlag",
+          "label": "点亮标志位",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "scale": 1,
+          "values": [
+            [
+              1,
+              "点亮"
+            ],
+            [
+              0,
+              "熄灭"
+            ]
+          ]
+        }
+      ],
+      "response": [],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": [
+        {
+          "state": "online",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": "jog",
+      "label": "点动",
+      "transport": "tcp",
+      "type": "holdButton",
+      "group": "basic",
+      "addr": "0x0006",
+      "param": [
+        {
+          "id": "deviceId",
+          "type": "basic",
+          "label": "设备ID",
+          "addr": "0x0008",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "display": true,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "rangeProtectEnable",
+          "type": "basic",
+          "label": "范围保护",
+          "addr": "0x0019",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "DefaultValue": 1,
+          "scale": 1,
+          "display": true,
+          "values": [
+            [
+              0,
+              "关闭"
+            ],
+            [
+              1,
+              "开启"
+            ]
+          ]
+        },
+        {
+          "id": "direction",
+          "label": "方向",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "DefaultValue": 1,
+          "scale": 1,
+          "values": [
+            [
+              0,
+              "停止"
+            ],
+            [
+              1,
+              "正向"
+            ],
+            [
+              2,
+              "反向"
+            ]
+          ]
+        },
+        {
+          "id": "velocity",
+          "label": "速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "mm/s",
+          "DefaultValue": 50,
+          "scale": 0.1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "acceleration",
+          "label": "加速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "mm/s2",
+          "DefaultValue": 50,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "deceleration",
+          "label": "减速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "mm/s2",
+          "DefaultValue": 50,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        }
+      ],
+      "response": [
+        {
+          "id": "deviceId"
+        },
+        {
+          "id": "errorCount",
+          "items": [
+            {
+              "id": "errorCode"
+            }
+          ]
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": []
+    },
+    {
+      "id": "moveAbs",
+      "label": "绝对位置运动",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x0007",
+      "param": [
+        {
+          "id": "deviceId",
+          "type": "basic",
+          "label": "设备ID",
+          "addr": "0x0008",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "display": true,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "rangeProtectEnable",
+          "type": "basic",
+          "label": "范围保护",
+          "addr": "0x0019",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "DefaultValue": 1,
+          "scale": 1,
+          "display": true,
+          "values": [
+            [
+              0,
+              "关闭"
+            ],
+            [
+              1,
+              "开启"
+            ]
+          ]
+        },
+        {
+          "id": "positionSign",
+          "label": "位置正负号",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "DefaultValue": 1,
+          "scale": 1,
+          "values": [
+            [
+              0,
+              "负号"
+            ],
+            [
+              1,
+              "正号"
+            ]
+          ]
+        },
+        {
+          "id": "position",
+          "label": "位置",
+          "dataType": "uint32",
+          "byteLength": 4,
+          "unit": "mm",
+          "DefaultValue": 50,
+          "scale": 0.01,
+          "min": 0,
+          "max": 4294967295,
+          "values": []
+        },
+        {
+          "id": "velocity",
+          "label": "速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "mm/s",
+          "DefaultValue": 50,
+          "scale": 0.1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "acceleration",
+          "label": "加速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "mm/s2",
+          "DefaultValue": 50,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "deceleration",
+          "label": "减速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "mm/s2",
+          "DefaultValue": 50,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "moveDirection",
+          "label": "move方向(无极旋转轴)",
+          "dataType": "enum",
+          "byteLength": 1,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "values": [
+            [
+              0,
+              "自动"
+            ],
+            [
+              1,
+              "正向"
+            ],
+            [
+              2,
+              "反向"
+            ]
+          ]
+        }
+      ],
+      "response": [
+        {
+          "id": "deviceId"
+        },
+        {
+          "id": "errorCount",
+          "items": [
+            {
+              "id": "errorCode"
+            }
+          ]
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": []
+    },
+    {
+      "id": "stop",
+      "label": "停止",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x0008",
+      "param": [
+        {
+          "id": "deviceId",
+          "type": "basic",
+          "label": "设备ID",
+          "addr": "0x0008",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "display": true,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "deceleration",
+          "label": "减速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "mm/s2",
+          "DefaultValue": 50,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        }
+      ],
+      "response": [
+        {
+          "id": "deviceId"
+        },
+        {
+          "id": "errorCount",
+          "items": [
+            {
+              "id": "errorCode"
+            }
+          ]
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": []
+    },
+    {
+      "id": "eStop",
+      "label": "急停",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x0009",
+      "param": [
+        {
+          "id": "deviceId",
+          "type": "basic",
+          "label": "设备ID",
+          "addr": "0x0008",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "DefaultValue": 0,
+          "scale": 1,
+          "display": true,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        },
+        {
+          "id": "deceleration",
+          "label": "减速度",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "mm/s2",
+          "DefaultValue": 1000,
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": []
+        }
+      ],
+      "response": [
+        {
+          "id": "deviceId"
+        },
+        {
+          "id": "errorCount",
+          "items": [
+            {
+              "id": "errorCode"
+            }
+          ]
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": [
+        {
+          "state": "online",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": "torqueTest",
+      "label": "转矩检测",
+      "transport": "udp",
+      "type": "button",
+      "group": "basic",
+      "addr": "0x000A",
+      "param": [],
+      "response": [],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": []
+    },
+    {
+      "id": "brakeTest",
+      "label": "刹车检测",
+      "transport": "udp",
+      "type": "button",
+      "group": "basic",
+      "addr": "0x000B",
+      "param": [],
+      "response": [],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": []
+    },
+    {
+      "id": "commTest",
+      "label": "通讯检测",
+      "transport": "udp",
+      "type": "button",
+      "group": "basic",
+      "addr": "0x000C",
+      "param": [],
+      "response": [],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": []
+    }
+  ],
+  "Config": [
+    {
+      "id": "axisParam",
+      "label": "配置轴参数",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x0020",
+      "param": [
+        {
+          "id": "paramCount"
+        },
+        {
+          "id": "deviceId"
+        },
+        {
+          "id": "workingStroke"
+        },
+        {
+          "id": "reductionRatio"
+        },
+        {
+          "id": "axisDirection"
+        },
+        {
+          "id": "positionError"
+        },
+        {
+          "id": "maxAxisVelocity"
+        },
+        {
+          "id": "weightLow"
+        },
+        {
+          "id": "weightHigh"
+        },
+        {
+          "id": "loadLow"
+        },
+        {
+          "id": "loadHigh"
+        }
+      ],
+      "response": [
+        {
+          "id": "deviceId"
+        },
+        {
+          "id": "errorCount",
+          "items": [
+            {
+              "id": "errorCode"
+            }
+          ]
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": []
+    },
+    {
+      "id": "axis_runconfig",
+      "label": "配置轴运行参数",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x0023",
+      "param": [
+        {
+          "id": "paramCount"
+        },
+        {
+          "id": "deviceId"
+        },
+        {
+          "id": "defaultVelocity"
+        },
+        {
+          "id": "defaultAcceleration"
+        },
+        {
+          "id": "defaultDeceleration"
+        },
+        {
+          "id": "maximumStroke"
+        }
+      ],
+      "response": [
+        {
+          "id": "deviceId"
+        },
+        {
+          "id": "errorCount",
+          "items": [
+            {
+              "id": "errorCode"
+            }
+          ]
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": []
+    }
+  ],
+  "Information": [
+    {
+      "id": "readAxisState",
+      "label": "指令读取轴信息",
+      "transport": "tcp",
+      "type": "button",
+      "group": "statusQuery",
+      "addr": "0x0021",
+      "param": [],
+      "response": [
+        {
+          "id": "paramCount",
+          "label": "参数数量",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": [],
+          "items": [
+            {
+              "id": "deviceId"
+            },
+            {
+              "id": "paramCount",
+              "items": [
+                {
+                  "id": "axisStatus"
+                },
+                {
+                  "id": "actualPosition"
+                },
+                {
+                  "id": "actualSpeed"
+                },
+                {
+                  "id": "actualLoadRate"
+                },
+                {
+                  "id": "actualTemperature"
+                },
+                {
+                  "id": "actualTorque"
+                },
+                {
+                  "id": "actualWeight"
+                },
+                {
+                  "id": "driveAlarmCode"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "display": false,
+      "confirmationLevel": "none",
+      "preconditions": []
+    },
+    {
+      "id": "readAxisParam",
+      "label": "读取轴参数",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x0022",
+      "param": [],
+      "response": [
+        {
+          "id": "paramCount",
+          "label": "参数数量",
+          "dataType": "uint16",
+          "byteLength": 2,
+          "unit": "",
+          "scale": 1,
+          "min": 0,
+          "max": 65535,
+          "values": [],
+          "items": [
+            {
+              "id": "paramCount"
+            },
+            {
+              "id": "deviceId"
+            },
+            {
+              "id": "axisType"
+            },
+            {
+              "id": "axisDirection"
+            },
+            {
+              "id": "workingStroke"
+            },
+            {
+              "id": "reductionRatio"
+            },
+            {
+              "id": "positionError"
+            },
+            {
+              "id": "maxAxisVelocity"
+            }
+          ]
+        }
+      ],
+      "display": false,
+      "confirmationLevel": "none",
+      "preconditions": []
+    },
+    {
+      "id": "readrunconfig",
+      "label": "读取轴运行参数",
+      "transport": "tcp",
+      "type": "formButton",
+      "group": "basic",
+      "addr": "0x0024",
+      "param": [],
+      "response": [
+        {
+          "id": "paramCount"
+        },
+        {
+          "id": "deviceId"
+        },
+        {
+          "id": "defaultVelocity"
+        },
+        {
+          "id": "defaultAcceleration"
+        },
+        {
+          "id": "defaultDeceleration"
+        },
+        {
+          "id": "maximumStroke"
+        }
+      ],
+      "display": true,
+      "confirmationLevel": "none",
+      "preconditions": []
+    }
+  ],
+  "Monitoring": [
+    {
+      "id": "readAxisInfoPolling",
+      "label": "轮序读取轴信息",
+      "transport": "udp",
+      "type": "formButton",
+      "group": "statusQuery",
+      "addr": "0x0030",
+      "param": [
+        {
+          "id": "paramCount",
+          "items": [
+            {
+              "id": "axisStatus"
+            },
+            {
+              "id": "actualPosition"
+            },
+            {
+              "id": "actualSpeed"
+            },
+            {
+              "id": "actualLoadRate"
+            },
+            {
+              "id": "actualTemperature"
+            },
+            {
+              "id": "actualTorque"
+            },
+            {
+              "id": "actualWeight"
+            },
+            {
+              "id": "driveAlarmCode"
+            }
+          ]
+        }
+      ],
+      "response": [
+        {
+          "id": "deviceId"
+        },
+        {
+          "id": "paramCount",
+          "items": [
+            {
+              "id": "axisStatus"
+            },
+            {
+              "id": "actualPosition"
+            },
+            {
+              "id": "actualSpeed"
+            },
+            {
+              "id": "actualLoadRate"
+            },
+            {
+              "id": "actualTemperature"
+            },
+            {
+              "id": "actualTorque"
+            },
+            {
+              "id": "actualWeight"
+            },
+            {
+              "id": "driveAlarmCode"
+            }
+          ]
+        }
+      ],
+      "display": false,
+      "confirmationLevel": "none",
+      "preconditions": []
+    }
+  ]
+}

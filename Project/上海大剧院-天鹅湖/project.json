@@ -1,0 +1,201 @@
+{
+  "schemaVersion": "1.3.0-draft",
+  "meta": {
+    "id": "sh-ballet",
+    "name": "上海大剧院-天鹅湖",
+    "createdAt": "2024-06-12T09:30:00Z",
+    "modifiedAt": "2024-09-18T11:05:00Z",
+    "author": "Tech_02",
+    "status": "active",
+    "wizard": {
+      "currentStep": "hardware",
+      "completedSteps": [
+        "objects"
+      ],
+      "skippedSteps": [
+        "hardware",
+        "binding"
+      ],
+      "simulationOnly": true,
+      "wizardCompleted": false
+    }
+  },
+  "setup": {
+    "plcs": [],
+    "motors": [],
+    "controlledObjects": [
+      {
+        "id": 2,
+        "name": "舞台升降台 A",
+        "controlType": 2,
+        "enabledVirtualAxes": [
+          "v1"
+        ],
+        "shapePreset": "cube",
+        "shapeDimensions": {
+          "width": 3000,
+          "height": 300,
+          "depth": 2000
+        },
+        "dimensions": {
+          "w": 3000,
+          "h": 300,
+          "d": 2000
+        },
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "centerOffset": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "color": "#dee3e6",
+        "driveAxes": [
+          {
+            "key": "0"
+          }
+        ],
+        "motionParams": {
+          "move": {
+            "speed": 50,
+            "minAngle": 0,
+            "maxAngle": 1000,
+            "accelTime": 2,
+            "minAccelTime": 1,
+            "emergencyDecelTime": 0.1,
+            "acceleration": 25,
+            "deceleration": 25,
+            "maxAcceleration": 50,
+            "maxDeceleration": 50,
+            "abnormalDeceleration": 500
+          }
+        },
+        "pulleyDistance": 0,
+        "modelRunDirection": 1,
+        "maxAxisVelocity": 200,
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "params": {}
+      },
+      {
+        "id": 1,
+        "name": "旋转台 B",
+        "controlType": 10,
+        "enabledVirtualAxes": [
+          "v1"
+        ],
+        "shapePreset": "cyl",
+        "shapeDimensions": {
+          "diameter": 1500,
+          "height": 200
+        },
+        "dimensions": {
+          "w": 1500,
+          "h": 200,
+          "d": 1500
+        },
+        "position": {
+          "x": 4000,
+          "y": 0,
+          "z": 0
+        },
+        "centerOffset": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "color": "#bac3ff",
+        "driveAxes": [
+          {
+            "key": "0"
+          }
+        ],
+        "motionParams": {
+          "rotation": {
+            "speed": 30,
+            "minAngle": 0,
+            "maxAngle": 360,
+            "accelTime": 2,
+            "minAccelTime": 1,
+            "emergencyDecelTime": 0.1,
+            "acceleration": 15,
+            "deceleration": 15,
+            "maxAcceleration": 30,
+            "maxDeceleration": 30,
+            "abnormalDeceleration": 300
+          }
+        },
+        "pulleyDistance": 0,
+        "modelRunDirection": 1,
+        "maxAxisVelocity": 60,
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "params": {}
+      }
+    ],
+    "alignment": {}
+  },
+  "motion": {
+    "positionCues": [
+      {
+        "id": "cue-curtain",
+        "name": "幕启",
+        "durationMs": 8000,
+        "targets": {
+          "1": {
+            "v1": 0
+          },
+          "2": {
+            "v1": 2500
+          }
+        }
+      }
+    ],
+    "actionSequences": [],
+    "programs": [
+      {
+        "id": "prog-ballet",
+        "name": "天鹅湖",
+        "chapters": [
+          {
+            "id": "ch-1",
+            "name": "第一幕",
+            "items": [
+              {
+                "kind": "cue",
+                "refId": "cue-curtain"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "rules": {
+    "rules": []
+  },
+  "snapshots": [],
+  "view": {
+    "target": [
+      0,
+      0,
+      0
+    ],
+    "alpha": -0.7853981633974483,
+    "beta": 1.0471975511965976,
+    "zoomRadius": 14,
+    "orthoHalfHeight": 7,
+    "preset": "persp",
+    "focalLengthMm": 50,
+    "gridSize": 20
+  }
+}
