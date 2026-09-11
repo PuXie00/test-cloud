@@ -3,6 +3,7 @@ import {
   LIBRARY_ITEM_MIME,
   cueIdFromLibraryDrag,
   readLibraryDrag,
+  sequenceProgramItemFromLibrary,
   writeLibraryDrag,
 } from "./library-dnd";
 
@@ -46,5 +47,13 @@ describe("library-dnd", () => {
       getData: vi.fn(() => ""),
     };
     expect(cueIdFromLibraryDrag(transfer as unknown as DataTransfer)).toBeNull();
+  });
+
+  it("maps sequence library drags to program items and ignores Cue", () => {
+    expect(sequenceProgramItemFromLibrary({ kind: "cue", id: "cue-1" })).toBeNull();
+    expect(sequenceProgramItemFromLibrary({ kind: "sequence", id: 12 })).toEqual({
+      kind: "sequence",
+      refId: 12,
+    });
   });
 });

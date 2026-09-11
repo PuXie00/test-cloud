@@ -7,7 +7,7 @@ import { useProject } from "@/app/project/use-project";
 import { motionProgramToLegacyProgram } from "../components/program-panel/resolve-program-motion";
 import { isControlProgramEmpty, programPageCount, sliceProgramPage } from "../components/program-panel/program-utils";
 import { type Program } from "../components/program-panel/program-data";
-import { ProgramContext, type PageItems, type ProgramContextValue } from "./program-context";
+import { ProgramContext, type ProgramContextValue } from "./program-context";
 
 export type { PageItems } from "./program-context";
 export { useProgram } from "./program-context";
@@ -109,16 +109,11 @@ export const ProgramProvider = ({ children }: ProgramProviderProps) => {
     [program.chapters, currentChapterId]
   );
 
-  const totalPages = useMemo(
-    () => programPageCount(currentChapter?.items ?? []),
-    [currentChapter],
-  );
+  const totalPages = useMemo(() => programPageCount(currentChapter?.items ?? []), [currentChapter]);
 
   const pageItems = useMemo(
-    (): PageItems => ({
-      sequences: sliceProgramPage(currentChapter?.items ?? [], currentPageIndex),
-    }),
-    [currentChapter, currentPageIndex],
+    () => ({ sequences: sliceProgramPage(currentChapter?.items ?? [], currentPageIndex) }),
+    [currentChapter, currentPageIndex]
   );
 
   const isProgramEmpty = useMemo(

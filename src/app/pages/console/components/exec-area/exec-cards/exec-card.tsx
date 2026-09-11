@@ -21,8 +21,6 @@ const formatTime = (ms: number) => {
 
 const sourceLabel = (source: ExecCardSource) => {
   switch (source.kind) {
-    case "button":
-      return `B${source.slotIndex + 1}`;
     case "fader":
       return `F${source.slotIndex + 1}`;
     case "program":
@@ -54,7 +52,7 @@ export const ExecCardView = ({
   const isPaused = card.status === "paused";
   const isCompleted = card.status === "completed";
   const isError = card.status === "error" || card.emergencyStopped;
-  const maxSpeed = card.kind === "cue" ? 150 : 200;
+  const maxSpeed = 200;
 
   return (
     <div
@@ -64,9 +62,7 @@ export const ExecCardView = ({
           ? "ring-1 ring-destructive/60 animate-pulse"
           : isCompleted
             ? ""
-            : card.kind === "cue"
-              ? "ring-1 ring-primary/40"
-              : "ring-1 ring-show/40",
+            : "ring-1 ring-show/40",
       )}
     >
       <div className="flex min-h-0 items-center gap-1.5">
@@ -75,7 +71,7 @@ export const ExecCardView = ({
           {card.name}
         </span>
         <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-label-caps text-muted-foreground">
-          {card.kind === "cue" ? "Cue" : "Seq"}
+          Seq
         </span>
         <span className="shrink-0 font-mono text-mono-sm tabular-nums text-muted-foreground">
           {sourceLabel(card.source)}
@@ -95,7 +91,7 @@ export const ExecCardView = ({
             <div
               className={cn(
                 "h-full rounded-full transition-[width]",
-                isError ? "bg-destructive" : card.kind === "cue" ? "bg-primary" : "bg-show",
+                isError ? "bg-destructive" : "bg-show",
               )}
               style={{ width: `${progressPercent}%` }}
             />

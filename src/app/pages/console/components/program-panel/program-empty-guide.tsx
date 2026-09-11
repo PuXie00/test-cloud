@@ -9,7 +9,7 @@ export const ProgramEmptyGuide = () => (
     <div className="space-y-1.5">
       <p className="text-body-md font-medium text-foreground">尚未编排节目</p>
       <p className="max-w-[220px] text-body-sm text-muted-foreground">
-        请先在动作界面创建 Cue、动作序列，并组装为节目章节后再回到控制界面执行。
+        请先在动作界面创建动作序列，并组装为节目章节后再回到控制界面执行。
       </p>
     </div>
     <GoToSequencesButton />

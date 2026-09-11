@@ -163,16 +163,14 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
     );
   });
 
-  it("rehydrates ActionBuilder when Program writes motion", async () => {
+  it("rehydrates ActionBuilder when Program writes motion with program origin", async () => {
     const { result } = renderBuilderProjectAndStore();
     await openFixtureProject(result);
-    const before = result.current.project.currentProject!.document!.motion.actionSequences.length;
+    const before = result.current.builder.sequences.length;
     const chapterId = result.current.program.program.chapters[0]!.id;
     act(() => result.current.program.addSequence(chapterId));
     expect(result.current.project.documentRevision.origin).toBe("program");
-    expect(result.current.project.currentProject!.document!.motion.actionSequences.length).toBe(
-      before + 1,
-    );
+    expect(result.current.builder.sequences.length).toBe(before + 1);
     const motionAfter = result.current.project.currentProject!.document!.motion;
     const revisionAfter = result.current.project.documentRevision.value;
     await act(async () => {

@@ -1,7 +1,6 @@
-import { ChevronDown, ChevronRight, MoreVertical } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/app/components/ui/utils";
-import { useConsoleMode } from "../../hooks/use-console-mode";
 import { PROGRAM_SLOTS_PER_PAGE, type Chapter, type ChapterItem } from "./program-data";
 import { programPageCount, sliceProgramPage } from "./program-utils";
 import { PageSection } from "./page-section";
@@ -31,9 +30,9 @@ export const ChapterSection = ({
   onItemDragStart,
   onDoubleClickItem,
 }: ChapterSectionProps) => {
-  const { mode } = useConsoleMode();
   const [expanded, setExpanded] = useState(isCurrent);
-  const pages = Array.from({ length: programPageCount(chapter.items) }, (_, pageIndex) =>
+  const totalPages = programPageCount(chapter.items);
+  const pages = Array.from({ length: totalPages }, (_, pageIndex) =>
     sliceProgramPage(chapter.items, pageIndex),
   );
 

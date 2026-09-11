@@ -5,12 +5,7 @@ import {
   validateActionSequence,
   type SequenceValidationContext,
 } from "./action-sequence/validate-sequence";
-import {
-  isSequenceProgramItemRef,
-  type ControlledObjectConfig,
-  type MotorConfig,
-  type ProjectDocument,
-} from "./project-document-types";
+import { isSequenceProgramItemRef, type ControlledObjectConfig, type MotorConfig, type ProjectDocument } from "./project-document-types";
 import { motionKindForVirtualAxis } from "./virtual-axis-mapping";
 import { resolveVirtualAxisMaxVelocity } from "./virtual-axis-max-velocity";
 

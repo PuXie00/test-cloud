@@ -32,6 +32,7 @@ docs
 !src/app/pages/console/hooks/use-project-store.persist.test.tsx
 !src/app/pages/console/hooks/use-object-deletion.test.tsx
 !src/app/pages/console/hooks/project-configuration-history.integration.test.tsx
+!src/app/pages/console/hooks/use-program.persist.test.tsx
 !src/app/pages/console/hooks/setup-entity-id.test.ts
 !src/app/pages/console/hooks/monitor-polling.test.ts
 !src/app/pages/console/hooks/motor-config.test.ts

@@ -604,6 +604,11 @@ describe("project configuration history integration", () => {
     expect(resolveMotionLaunchBlock(docAfterDelete, "sequence", sequenceId)).toBeTruthy();
     expect(
       getProgramRepairIssues(docAfterDelete, "prog-gz-main").some(
+        (issue) => issue.itemId === cueId,
+      ),
+    ).toBe(false);
+    expect(
+      getProgramRepairIssues(docAfterDelete, "prog-gz-main").some(
         (issue) => issue.itemId === sequenceId,
       ),
     ).toBe(false);

@@ -66,7 +66,7 @@ export const ChapterItemRow = ({
         {slotLabel}
       </span>
       <span className="shrink-0 text-muted-foreground" aria-hidden>
-        ║
+        { "║" }
       </span>
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="min-w-0 truncate text-body-md text-foreground">{name}</span>

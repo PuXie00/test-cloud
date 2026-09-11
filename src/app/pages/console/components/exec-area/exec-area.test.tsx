@@ -29,10 +29,9 @@ import {
   resolveMotionLaunchBlock,
 } from "@/app/project/project-motion-readiness";
 import { ConsoleModeProvider } from "../../hooks/use-console-mode";
-import type { ButtonSlotState, FaderSlotState } from "../../hooks/use-executor-slots";
+import type { FaderSlotState } from "../../hooks/use-executor-slots";
 import type { ChapterItem, Program } from "../program-panel/program-data";
 import { PageSection } from "../program-panel/page-section";
-import { ButtonSlot } from "./executors/button-slot";
 import { FaderSlot } from "./executors/fader-slot";
 
 const {
@@ -40,7 +39,6 @@ const {
   launchMock,
   stopSequenceMock,
   localSequenceTransport,
-  buttonSlotsRef,
   faderSlotsRef,
   documentRef,
   capturedTriggers,
@@ -55,9 +53,6 @@ const {
     syncCall: vi.fn(),
     stopAction: vi.fn(),
   },
-  buttonSlotsRef: {
-    current: [] as ButtonSlotState[],
-  },
   faderSlotsRef: {
     current: [] as FaderSlotState[],
   },
@@ -65,7 +60,6 @@ const {
     current: null as ProjectDocument | null,
   },
   capturedTriggers: {
-    onTriggerCue: null as null | ((slotIndex: number, cueId: string) => void),
     onTriggerSequence: null as null | ((slotIndex: number, sequenceId: number) => void),
   },
   programState: {
@@ -181,7 +175,6 @@ vi.mock("../../hooks/use-executor-slots", async () => {
   return {
     ...actual,
     useExecutorSlots: () => ({
-      buttonSlots: buttonSlotsRef.current,
       faderSlots: faderSlotsRef.current,
       setFaderValue: vi.fn(),
       setSlotRunning: vi.fn(),
@@ -223,31 +216,17 @@ vi.mock("./executors/executors", async () => {
   );
   return {
     Executors: (props: {
-      onTriggerCue: (slotIndex: number, cueId: string) => void;
       onTriggerSequence: (slotIndex: number, sequenceId: number) => void;
     }) => {
-      capturedTriggers.onTriggerCue = props.onTriggerCue;
       capturedTriggers.onTriggerSequence = props.onTriggerSequence;
       return (
         <>
           <actual.Executors {...props} />
           <button
             type="button"
-            onClick={() => props.onTriggerCue(0, "cue-empty")}
-          >
-            force-cue-empty
-          </button>
-          <button
-            type="button"
             onClick={() => props.onTriggerSequence(0, 14)}
           >
             force-seq-empty
-          </button>
-          <button
-            type="button"
-            onClick={() => props.onTriggerCue(1, "cue-ok")}
-          >
-            force-cue-ok
           </button>
           <button
             type="button"
@@ -266,7 +245,7 @@ vi.mock("../../hooks/sequence-execution", () => ({
     ok: true,
     name: args.sequenceId === 15 ? "正常序列" : args.sequenceId,
     speedPercent: 100,
-    sequenceHandle: { actionId: 1, syncGroupId: 1 },
+    sequenceHandle: { actionNo: 1, syncGroupId: 1 },
   })),
   stopSequence: (...args: unknown[]) => stopSequenceMock(...args),
   getLocalSequenceTransport: () => localSequenceTransport,
@@ -389,9 +368,8 @@ const makeDocument = (): ProjectDocument => ({
             id: "ch-1",
             name: "章节 1",
             items: [
-              { kind: "cue", refId: "cue-empty" },
               { kind: "sequence", refId: 14 },
-              { kind: "cue", refId: "cue-ok" },
+              { kind: "sequence", refId: 15 },
             ],
           },
         ],
@@ -407,13 +385,16 @@ const emptySequenceItem: ChapterItem = {
   kind: "sequence",
   sequence: { id: 14, name: "空序列", durationMs: 0 },
 };
+const okSequenceItem: ChapterItem = {
+  kind: "sequence",
+  sequence: { id: 15, name: "正常序列", durationMs: 2000 },
+};
 
 afterEach(() => {
   cleanup();
   launchMock.mockClear();
   stopSequenceMock.mockClear();
   toastWarning.mockClear();
-  capturedTriggers.onTriggerCue = null;
   capturedTriggers.onTriggerSequence = null;
   documentRef.current = null;
   programState.current = {
@@ -455,7 +436,7 @@ describe("project-motion-readiness (pure)", () => {
     const document = makeDocument();
     expect(
       getProgramRepairIssues(document, "program-a").map((issue) => issue.itemId),
-    ).toEqual(["cue-empty", 14]);
+    ).toEqual([14]);
     expect(
       getProgramRepairIssues(document, "program-a").every(
         (issue) => issue.code === "program-ref-empty",
@@ -463,12 +444,12 @@ describe("project-motion-readiness (pure)", () => {
     ).toBe(true);
 
     document.motion.programs[0]!.chapters[0]!.items.push({
-      kind: "cue",
-      refId: "cue-missing",
+      kind: "sequence",
+      refId: 99,
     });
     const withMissing = getProgramRepairIssues(document, "program-a");
-    expect(withMissing.map((issue) => issue.itemId)).toContain("cue-missing");
-    expect(withMissing.find((issue) => issue.itemId === "cue-missing")?.code).toBe(
+    expect(withMissing.map((issue) => issue.itemId)).toContain(99);
+    expect(withMissing.find((issue) => issue.itemId === 99)?.code).toBe(
       "program-ref-empty",
     );
   });
@@ -487,19 +468,8 @@ describe("project-motion-readiness (pure)", () => {
   });
 });
 
-describe("ButtonSlot / FaderSlot GO gate", () => {
-  it("disables GO for repair-required cue/sequence and exposes warning reason", () => {
-    const cueSlot: ButtonSlotState = {
-      index: 0,
-      label: "B1",
-      cue: {
-        id: "cue-empty",
-        name: "空 Cue",
-        durationMs: 1000,
-        targets: {},
-      },
-      isRunning: false,
-    };
+describe("FaderSlot GO gate", () => {
+  it("disables GO for a repair-required sequence and exposes the warning reason", () => {
     const seqSlot: FaderSlotState = {
       index: 0,
       label: "F1",
@@ -511,43 +481,27 @@ describe("ButtonSlot / FaderSlot GO gate", () => {
       faderValue: 100,
       isRunning: false,
     };
-    const onGoCue = vi.fn();
     const onGoSeq = vi.fn();
 
     render(
       withMode(
-        <>
-          <ButtonSlot
-            slot={cueSlot}
-            repairMessage="Cue 无目标，待修复"
-            onGo={onGoCue}
-            onAssignFromDrag={vi.fn()}
-          />
-          <FaderSlot
-            slot={seqSlot}
-            repairMessage="动作序列无轨道，待修复"
-            onGo={onGoSeq}
-            onFaderChange={vi.fn()}
-            onAssignFromDrag={vi.fn()}
-          />
-        </>,
+        <FaderSlot
+          slot={seqSlot}
+          repairMessage="动作序列无轨道，待修复"
+          onGo={onGoSeq}
+          onFaderChange={vi.fn()}
+          onAssignFromDrag={vi.fn()}
+        />,
       ),
     );
 
-    const cueGo = screen.getAllByRole("button", { name: /GO/i })[0] as HTMLButtonElement;
-    const seqGo = screen.getAllByRole("button", { name: /GO/i })[1] as HTMLButtonElement;
-    expect(cueGo.disabled).toBe(true);
+    const seqGo = screen.getByRole("button", { name: /GO/i }) as HTMLButtonElement;
     expect(seqGo.disabled).toBe(true);
-    expect(cueGo.getAttribute("aria-describedby")).toBeTruthy();
     expect(seqGo.getAttribute("aria-describedby")).toBeTruthy();
-    const cueReason = document.getElementById(cueGo.getAttribute("aria-describedby")!);
     const seqReason = document.getElementById(seqGo.getAttribute("aria-describedby")!);
-    expect(cueReason?.textContent).toMatch(/待修复/);
     expect(seqReason?.textContent).toMatch(/待修复/);
 
-    fireEvent.click(cueGo);
     fireEvent.click(seqGo);
-    expect(onGoCue).not.toHaveBeenCalled();
     expect(onGoSeq).not.toHaveBeenCalled();
   });
 
@@ -555,19 +509,20 @@ describe("ButtonSlot / FaderSlot GO gate", () => {
     const onGo = vi.fn();
     render(
       withMode(
-        <ButtonSlot
+        <FaderSlot
           slot={{
             index: 0,
-            label: "B1",
-            cue: {
-              id: "cue-ok",
-              name: "正常 Cue",
-              durationMs: 1000,
-              targets: { "co-1": 10 },
+            label: "F1",
+            sequence: {
+              id: 15,
+              name: "正常序列",
+              durationMs: 2000,
             },
+            faderValue: 100,
             isRunning: false,
           }}
           onGo={onGo}
+          onFaderChange={vi.fn()}
           onAssignFromDrag={vi.fn()}
         />,
       ),
@@ -582,30 +537,6 @@ describe("ButtonSlot / FaderSlot GO gate", () => {
 describe("ExecArea launch guard", () => {
   beforeEach(() => {
     documentRef.current = makeDocument();
-    buttonSlotsRef.current = [
-      {
-        index: 0,
-        label: "B1",
-        cue: {
-          id: "cue-empty",
-          name: "空 Cue",
-          durationMs: 1000,
-          targets: {},
-        },
-        isRunning: false,
-      },
-      {
-        index: 1,
-        label: "B2",
-        cue: {
-          id: "cue-ok",
-          name: "正常 Cue",
-          durationMs: 1000,
-          targets: { "co-1": 10 },
-        },
-        isRunning: false,
-      },
-    ];
     faderSlotsRef.current = [
       {
         index: 0,
@@ -629,41 +560,46 @@ describe("ExecArea launch guard", () => {
         faderValue: 100,
         isRunning: false,
       },
+      ...Array.from({ length: 14 }, (_, idx) => ({
+        index: idx + 2,
+        label: `F${idx + 3}`,
+        sequence: null,
+        faderValue: 100,
+        isRunning: false,
+      })),
     ];
   });
 
-  it("blocks launch for empty cue/sequence even when trigger is forced", async () => {
+  it("blocks launch for an empty sequence even when trigger is forced", async () => {
     render(withMode(<ExecArea />));
 
     const goButtons = screen.getAllByRole("button", { name: /GO/i }) as HTMLButtonElement[];
+    expect(goButtons).toHaveLength(16);
     expect(goButtons[0]!.disabled).toBe(true);
+    expect(goButtons[1]!.disabled).toBe(false);
     expect(goButtons[2]!.disabled).toBe(true);
 
-    const healthyCueGo = goButtons[1]!;
-    expect(healthyCueGo.disabled).toBe(false);
-    fireEvent.click(healthyCueGo);
-    expect(launchMock).toHaveBeenCalledTimes(1);
+    fireEvent.click(goButtons[1]!);
+    await waitFor(() => {
+      expect(launchMock).toHaveBeenCalledTimes(1);
+    });
     launchMock.mockClear();
 
     fireEvent.click(goButtons[0]!);
-    fireEvent.click(goButtons[2]!);
     expect(launchMock).not.toHaveBeenCalled();
 
-    expect(capturedTriggers.onTriggerCue).toBeTruthy();
     expect(capturedTriggers.onTriggerSequence).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "force-cue-empty" }));
     fireEvent.click(screen.getByRole("button", { name: "force-seq-empty" }));
     expect(launchMock).not.toHaveBeenCalled();
     expect(toastWarning).toHaveBeenCalled();
     expect(String(toastWarning.mock.calls[0]?.[0])).toMatch(/待修复|待编排|无目标|无轨道/);
 
-    fireEvent.click(screen.getByRole("button", { name: "force-cue-ok" }));
     fireEvent.click(screen.getByRole("button", { name: "force-seq-ok" }));
     await waitFor(() => {
-      expect(launchMock).toHaveBeenCalledTimes(2);
+      expect(launchMock).toHaveBeenCalledTimes(1);
     });
-    expect(launchMock.mock.calls[1]?.[0]).toMatchObject({
+    expect(launchMock.mock.calls[0]?.[0]).toMatchObject({
       kind: "sequence",
       name: "正常序列",
       durationMs: null,
@@ -681,7 +617,7 @@ describe("PageSection readiness wiring", () => {
           pageIndex={0}
           pageTotal={1}
           isCurrent
-          sequences={[emptySequenceItem]}
+          sequences={[emptySequenceItem, okSequenceItem]}
           onClickHeader={vi.fn()}
           onAddSequence={vi.fn()}
           onItemDragStart={() => vi.fn()}
@@ -692,6 +628,11 @@ describe("PageSection readiness wiring", () => {
 
     const emptySeqRow = screen.getByRole("treeitem", { name: /空序列/i });
     expect(emptySeqRow.getAttribute("aria-label")).toMatch(/待修复|待编排|无轨道/);
+    expect(emptySeqRow.getAttribute("title")).toMatch(/待修复|待编排|无轨道/);
+
+    const okSeqRow = screen.getByRole("treeitem", { name: /^正常序列$/i });
+    expect(okSeqRow.getAttribute("aria-label")).toBe("正常序列");
+    expect(okSeqRow.getAttribute("title")).toBeFalsy();
   });
 });
 
@@ -705,7 +646,7 @@ describe("program panel launch guards", () => {
         {
           id: "ch-1",
           name: "章节 1",
-          items: [emptySequenceItem],
+          items: [emptySequenceItem, okSequenceItem],
         },
       ],
     };
@@ -720,9 +661,8 @@ describe("program panel launch guards", () => {
             name: "章节 1",
             type: "chapter",
             children: [
-              { id: "cue-empty", name: "空 Cue", type: "cue" },
               { id: "14", name: "空序列", type: "sequence" },
-              { id: "cue-ok", name: "正常 Cue", type: "cue" },
+              { id: "15", name: "正常序列", type: "sequence" },
             ],
           },
         ],
@@ -730,38 +670,40 @@ describe("program panel launch guards", () => {
     ];
   });
 
-  it("console ProgramPanel blocks double-click launch for unrepaired items", () => {
+  it("console ProgramPanel blocks double-click launch for unrepaired items", async () => {
     render(withMode(<ConsoleProgramPanel />));
     expect(
-      screen.getByLabelText(/节目引用空 Cue「cue-empty」，待修复/),
+      screen.getByLabelText(/节目引用空动作序列「14」，待修复/),
     ).toBeTruthy();
 
-    fireEvent.doubleClick(screen.getByRole("treeitem", { name: /空 Cue/i }));
     fireEvent.doubleClick(screen.getByRole("treeitem", { name: /空序列/i }));
     expect(launchMock).not.toHaveBeenCalled();
     expect(toastWarning).toHaveBeenCalled();
     expect(String(toastWarning.mock.calls[0]?.[0])).toMatch(/待修复|待编排|无目标|无轨道/);
 
     toastWarning.mockClear();
-    fireEvent.doubleClick(screen.getByRole("treeitem", { name: /^正常 Cue$/i }));
-    expect(launchMock).toHaveBeenCalledTimes(1);
+    fireEvent.doubleClick(screen.getByRole("treeitem", { name: /^正常序列$/i }));
+    await waitFor(() => {
+      expect(launchMock).toHaveBeenCalledTimes(1);
+    });
     expect(toastWarning).not.toHaveBeenCalled();
   });
 
-  it("action-builder ProgramPanel blocks handleLaunch for unrepaired items", () => {
+  it("action-builder ProgramPanel blocks handleLaunch for unrepaired items", async () => {
     render(withMode(<ActionBuilderProgramPanel />));
     expect(
-      screen.getByLabelText(/节目引用空 Cue「cue-empty」，待修复/),
+      screen.getByLabelText(/节目引用空动作序列「14」，待修复/),
     ).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "运行 空 Cue" }));
     fireEvent.click(screen.getByRole("button", { name: "运行 空序列" }));
     expect(launchMock).not.toHaveBeenCalled();
     expect(toastWarning).toHaveBeenCalled();
 
     toastWarning.mockClear();
-    fireEvent.click(screen.getByRole("button", { name: "运行 正常 Cue" }));
-    expect(launchMock).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "运行 正常序列" }));
+    await waitFor(() => {
+      expect(launchMock).toHaveBeenCalledTimes(1);
+    });
     expect(toastWarning).not.toHaveBeenCalled();
   });
 });
@@ -787,7 +729,7 @@ const noopCardHandlers = {
 
 const runningCard = (overrides: Partial<ExecCard>): ExecCard => ({
   id: "card",
-  kind: "cue",
+  kind: "sequence",
   name: "Item",
   source: { kind: "program" },
   durationMs: 1000,
@@ -800,7 +742,7 @@ const runningCard = (overrides: Partial<ExecCard>): ExecCard => ({
 });
 
 describe("execution cards", () => {
-  it("keeps a sequence card running after wall-clock exceeds 编排时长 while cue cards auto-complete", () => {
+  it("keeps a sequence card running after wall-clock exceeds 编排时长", () => {
     const authoredSequenceMs = 2000;
     const sequenceCard = runningCard({
       id: "seq-card",
@@ -808,21 +750,12 @@ describe("execution cards", () => {
       name: "正常序列",
       durationMs: null,
     });
-    const cueCard = runningCard({
-      id: "cue",
-      kind: "cue",
-      name: "正常 Cue",
-      durationMs: 1000,
-    });
 
-    const next = advanceRunningCards([sequenceCard, cueCard], authoredSequenceMs + 500);
+    const next = advanceRunningCards([sequenceCard], authoredSequenceMs + 500);
     expect(next).toBeTruthy();
     const sequence = next!.find((card) => card.kind === "sequence");
-    const cue = next!.find((card) => card.kind === "cue");
     expect(sequence?.status).toBe("running");
     expect(sequence?.elapsedMs).toBe(authoredSequenceMs + 500);
-    expect(cue?.status).toBe("completed");
-    expect(cue?.elapsedMs).toBe(1000);
   });
 
   it("renders elapsed wall time and C++ 运行中 without percentage for sequence cards", () => {
@@ -878,7 +811,7 @@ describe("execution cards", () => {
                 name: "正常序列",
                 durationMs: null,
                 source: { kind: "program" },
-                sequenceHandle: { actionId: 9, syncGroupId: 3 },
+                sequenceHandle: { actionNo: 9, syncGroupId: 3 },
               })
             }
           >
@@ -902,7 +835,7 @@ describe("execution cards", () => {
     fireEvent.click(screen.getByRole("button", { name: "skip-running" }));
     expect(stopSequenceMock).toHaveBeenCalledTimes(1);
     expect(stopSequenceMock).toHaveBeenCalledWith(
-      { actionId: 9, syncGroupId: 3 },
+      { actionNo: 9, syncGroupId: 3 },
       localSequenceTransport,
     );
     expect(screen.getByRole("button", { name: "skip-completed" })).not.toBeNull();

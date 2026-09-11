@@ -44,6 +44,13 @@ export const cueIdFromLibraryDrag = (dataTransfer: DataTransfer): string | null 
   return payload.id;
 };
 
+export const sequenceProgramItemFromLibrary = (
+  payload: LibraryDragPayload,
+): { kind: "sequence"; refId: number } | null => {
+  if (payload.kind !== "sequence") return null;
+  return { kind: "sequence", refId: payload.id };
+};
+
 export const writeProgramItemDrag = (
   dataTransfer: DataTransfer,
   payload: ProgramItemDragPayload,

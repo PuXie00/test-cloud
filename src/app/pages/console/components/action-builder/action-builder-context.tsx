@@ -870,12 +870,10 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
 
   const handleProgramItemInsert = useCallback(
     (chapterId: string, item: ProgramItemInput, index?: number) => {
-      const entity =
-        item.kind === "cue"
-          ? motionRef.current.cues.find((cue) => cue.id === item.refId)
-          : motionRef.current.sequences.find((seq) => seq.id === item.refId);
+      if (item.kind !== "sequence") return;
+      const entity = motionRef.current.sequences.find((seq) => seq.id === item.refId);
       if (!entity) return;
-      const node: ProgramNode = { id: String(item.refId), name: entity.name, type: item.kind };
+      const node: ProgramNode = { id: String(item.refId), name: entity.name, type: "sequence" };
       updatePrograms((current) =>
         current.map((program) => ({
           ...program,

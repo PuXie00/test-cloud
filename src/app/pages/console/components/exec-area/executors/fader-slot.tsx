@@ -8,7 +8,7 @@ type FaderSlotProps = {
   repairMessage?: string | null;
   onGo: () => void;
   onFaderChange: (value: number) => void;
-  onAssignFromDrag: (payload: { chapterId: string; index: number; kind: "cue" | "sequence" }) => void;
+  onAssignFromDrag: (payload: { chapterId: string; index: number; kind: "sequence" }) => void;
 };
 
 export const FaderSlot = ({
