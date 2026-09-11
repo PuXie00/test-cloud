@@ -43,7 +43,7 @@ const makeObject = (
 
 const origin = { v1: 0, v2: 0, v3: 0 };
 
-const emptySequence = (id = "seq-empty"): ActionSequenceConfig => ({
+const emptySequence = (id = 1): ActionSequenceConfig => ({
   id,
   name: "Empty",
   trajectoryMode: "non-forced",
@@ -51,7 +51,7 @@ const emptySequence = (id = "seq-empty"): ActionSequenceConfig => ({
   segments: [],
 });
 
-const validSequence = (id = "seq-ok"): ActionSequenceConfig => ({
+const validSequence = (id = 2): ActionSequenceConfig => ({
   id,
   name: "Ok",
   trajectoryMode: "non-forced",
@@ -95,7 +95,7 @@ describe("validateProjectDocument sequence refs", () => {
         positionCues: [],
         actionSequences: [
           {
-            id: "seq-bad",
+            id: 3,
             name: "Bad",
             trajectoryMode: "non-forced",
             blocks: [
@@ -124,12 +124,13 @@ describe("validateProjectDocument sequence refs", () => {
         positionCues: [],
         actionSequences: [
           {
-            id: "seq-refs",
+            id: 4,
             name: "Refs",
             trajectoryMode: "non-forced",
             blocks: [
               { id: "pose", kind: "pose", objectId: 98, atMs: 1000, pose: origin },
-              { id: "cmd", kind: "set-enabled", objectId: 97, atMs: 0, enabled: true },
+              { id: "cmd", kind: "instruction",
+      presetId: "set-enabled", objectId: 97, atMs: 0, instr: { enabled: true } },
               {
                 id: "preset",
                 kind: "static-preset",
@@ -156,7 +157,7 @@ describe("validateProjectDocument sequence refs", () => {
     const document = documentOf({
       motion: {
         positionCues: [],
-        actionSequences: [emptySequence("seq-present")],
+        actionSequences: [emptySequence(1)],
         programs: [
           {
             id: "p-bad",
@@ -167,7 +168,7 @@ describe("validateProjectDocument sequence refs", () => {
                 name: "Ch",
                 items: [
                   { kind: "cue", refId: "missing-cue-ref" },
-                  { kind: "sequence", refId: "missing-seq-ref" },
+                  { kind: "sequence", refId: 17 },
                 ],
               },
             ],
@@ -178,7 +179,7 @@ describe("validateProjectDocument sequence refs", () => {
     const result = validateProjectDocument(document);
     expect(result.ok).toBe(false);
     expect(result.errors.some((error) => error.includes("missing-cue-ref"))).toBe(true);
-    expect(result.errors.some((error) => error.includes("missing-seq-ref"))).toBe(true);
+    expect(result.errors.some((error) => error.includes(17))).toBe(true);
   });
 
   it("still reports cue unknown objects and disabled axes", () => {
@@ -223,7 +224,7 @@ describe("project-motion-readiness sequence gate", () => {
         positionCues: [],
         actionSequences: [
           {
-            id: "seq-invalid",
+            id: 98,
             name: "Invalid",
             trajectoryMode: "non-forced",
             blocks: [
@@ -241,8 +242,8 @@ describe("project-motion-readiness sequence gate", () => {
                 id: "ch",
                 name: "Ch",
                 items: [
-                  { kind: "sequence", refId: "seq-invalid" },
-                  { kind: "sequence", refId: "seq-missing" },
+                  { kind: "sequence", refId: 98 },
+                  { kind: "sequence", refId: 96 },
                 ],
               },
             ],
@@ -250,17 +251,18 @@ describe("project-motion-readiness sequence gate", () => {
         ],
       },
     });
-    expect(getMotionItemRepairIssue(document, "sequence", "seq-missing")?.code).toBe(
+    expect(getMotionItemRepairIssue(document, "sequence", 96)?.code).toBe(
       "empty-sequence",
     );
-    expect(getMotionItemRepairIssue(document, "sequence", "seq-invalid")?.code).toBe(
+    expect(getMotionItemRepairIssue(document, "sequence", 98)?.code).toBe(
       "empty-sequence",
     );
-    expect(resolveMotionLaunchBlock(document, "sequence", "seq-invalid")).not.toBeNull();
-    expect(getProgramRepairIssues(document, "prog").map((issue) => issue.itemId).sort()).toEqual([
-      "seq-invalid",
-      "seq-missing",
-    ]);
+    expect(resolveMotionLaunchBlock(document, "sequence", 98)).not.toBeNull();
+    expect(
+      getProgramRepairIssues(document, "prog")
+        .map((issue) => issue.itemId)
+        .sort((left, right) => Number(left) - Number(right)),
+    ).toEqual([96, 98]);
   });
 
   it("allows a sequence that exists and has no error-severity issues", () => {
@@ -271,8 +273,8 @@ describe("project-motion-readiness sequence gate", () => {
         programs: [],
       },
     });
-    expect(getMotionItemRepairIssue(document, "sequence", "seq-ok")).toBeNull();
-    expect(resolveMotionLaunchBlock(document, "sequence", "seq-ok")).toBeNull();
+    expect(getMotionItemRepairIssue(document, "sequence", 2)).toBeNull();
+    expect(resolveMotionLaunchBlock(document, "sequence", 2)).toBeNull();
   });
 });
 

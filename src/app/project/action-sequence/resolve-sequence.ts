@@ -1,12 +1,12 @@
-import { cloneAxisProfiles, createDefaultAxisProfiles } from "./motion-profile";
+import { cloneAxisProfiles, createDefaultAxisProfiles, syncAxisProfileToTravel } from "./motion-profile";
 import { resolvePreset } from "./preset-registry";
 import type {
   ActionSequenceConfig,
   DynamicPresetBlock,
+  InstructionBlock,
   ModelPose,
   MotionSegmentConfig,
   MotionSegmentSettings,
-  SetEnabledBlock,
 } from "./types";
 
 export type ResolvedPosePoint = {
@@ -35,23 +35,24 @@ export type ResolvedMotionSegment = {
 };
 
 export type ResolvedActionSequence = {
-  id: string;
+  id: number;
   initialPoseByObject: Map<number, ResolvedPosePoint>;
   poses: ResolvedPosePoint[];
   posesByObject: Map<number, ResolvedPosePoint[]>;
   segments: ResolvedMotionSegment[];
-  commands: SetEnabledBlock[];
+  commands: InstructionBlock[];
   totalMs: number;
 };
 
 const clonePose = (pose: ModelPose): ModelPose => ({ v1: pose.v1, v2: pose.v2, v3: pose.v3 });
 
-const cloneCommand = (block: SetEnabledBlock): SetEnabledBlock => ({
+const cloneCommand = (block: InstructionBlock): InstructionBlock => ({
   id: block.id,
-  kind: "set-enabled",
+  kind: "instruction",
+  presetId: "set-enabled",
   objectId: block.objectId,
   atMs: block.atMs,
-  enabled: block.enabled,
+  instr: { enabled: block.instr.enabled },
   ...(block.label !== undefined ? { label: block.label } : {}),
 });
 
@@ -82,6 +83,26 @@ export type ReconcileSegmentOptions = {
   ) => Partial<Record<"v1" | "v2" | "v3", number>> | undefined;
 };
 
+const AXES = ["v1", "v2", "v3"] as const;
+
+const syncSettingsToTravel = (
+  settings: MotionSegmentSettings,
+  segment: ResolvedMotionSegment,
+  minAccelTimeByAxis: Partial<Record<"v1" | "v2" | "v3", number>> | undefined,
+): MotionSegmentSettings => {
+  const profiles = { ...settings.profiles };
+  for (const axis of AXES) {
+    const travel = Math.abs(segment.toPose[axis] - segment.fromPose[axis]);
+    profiles[axis] = syncAxisProfileToTravel(
+      profiles[axis],
+      travel,
+      segment.durationMs,
+      minAccelTimeByAxis?.[axis],
+    );
+  }
+  return { profiles };
+};
+
 export const reconcileSegmentConfigs = (
   resolvedSegments: ResolvedMotionSegment[],
   existing: MotionSegmentConfig[],
@@ -103,7 +124,11 @@ export const reconcileSegmentConfigs = (
     return [{
       fromRef: segment.fromRef,
       toRef: segment.toRef,
-      settings,
+      settings: syncSettingsToTravel(
+        settings,
+        segment,
+        options?.minAccelTimeByObject?.(segment.objectId),
+      ),
     }];
   });
 
@@ -130,7 +155,7 @@ const requireDynamicOwner = (
 
 export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedActionSequence => {
   const timed: ResolvedPosePoint[] = [];
-  const commands: SetEnabledBlock[] = [];
+  const commands: InstructionBlock[] = [];
   let totalMs = 0;
 
   for (const block of sequence.blocks) {
@@ -148,7 +173,7 @@ export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedA
       continue;
     }
 
-    if (block.kind === "set-enabled") {
+    if (block.kind === "instruction") {
       commands.push(cloneCommand(block));
       totalMs = Math.max(totalMs, block.atMs);
       continue;

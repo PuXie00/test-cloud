@@ -7,12 +7,13 @@ import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
 import { SelectionContextBar } from "./selection-context-bar";
 
 const sequence: ActionSequenceConfig = {
-  id: "seq",
+  id: 1,
   name: "Seq",
   trajectoryMode: "non-forced",
   blocks: [
     { id: "pose", kind: "pose", objectId: 7, atMs: 1000, pose: { v1: 1, v2: 2, v3: 3 } },
-    { id: "enable", kind: "set-enabled", objectId: 7, atMs: 500, enabled: true },
+    { id: "enable", kind: "instruction",
+      presetId: "set-enabled", objectId: 7, atMs: 500, instr: { enabled: true } },
   ],
   segments: [],
 };

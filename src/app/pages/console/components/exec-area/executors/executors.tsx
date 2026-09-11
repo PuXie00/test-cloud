@@ -9,7 +9,7 @@ import { FaderSlot } from "./fader-slot";
 
 type ExecutorsProps = {
   onTriggerCue: (slotIndex: number, cueId: string) => void;
-  onTriggerSequence: (slotIndex: number, sequenceId: string) => void;
+  onTriggerSequence: (slotIndex: number, sequenceId: number) => void;
 };
 
 export const Executors = ({ onTriggerCue, onTriggerSequence }: ExecutorsProps) => {

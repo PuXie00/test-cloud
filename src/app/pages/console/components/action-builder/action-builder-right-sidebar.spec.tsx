@@ -5,7 +5,7 @@ import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
 import { ActionBuilderRightSidebar } from "./action-builder-right-sidebar";
 
 const broken: ActionSequenceConfig = {
-  id: "seq-broken",
+  id: 97,
   name: "Broken",
   trajectoryMode: "non-forced",
   blocks: [
@@ -76,7 +76,7 @@ describe("action builder right sidebar", () => {
   it("does not show a trajectory switch in the right panel when nothing is selected", () => {
     mockBuilder({
       sequence: {
-        id: "seq",
+        id: 1,
         name: "Seq",
         trajectoryMode: "non-forced",
         blocks: [],

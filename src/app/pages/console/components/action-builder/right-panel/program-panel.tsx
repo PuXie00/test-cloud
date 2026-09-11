@@ -11,6 +11,7 @@ import { useProject } from "@/app/project/use-project";
 import { useExecCards } from "../../../hooks/use-exec-cards";
 import { startLocalAuthoredSequence } from "../../../hooks/sequence-execution";
 import { useActionBuilder } from "../use-action-builder";
+import type { ProgramItemInput } from "../action-builder-context-types";
 import {
   isLibraryDrag,
   isProgramItemDrag,
@@ -22,18 +23,14 @@ import { resolveActionSequence } from "@/app/project/action-sequence/resolve-seq
 import { estimateArrivalMs } from "../editor-dock/transition-math";
 import { formatTime, type ProgramNode } from "../timeline/timeline-data";
 
-type ItemMeta = {
-  kind: "cue" | "sequence";
-  refId: string;
-  name: string;
-  /** Cue 无固定时长（取决于起始位置），为 null；运行时按当前位置估算 */
-  durationMs: number | null;
-};
+type ItemMeta =
+  | { kind: "cue"; refId: string; name: string; durationMs: number | null }
+  | { kind: "sequence"; refId: number; name: string; durationMs: number | null };
 
 type ChapterSectionProps = {
   chapter: ProgramNode;
   itemMetaById: Map<string, ItemMeta>;
-  onInsert: (chapterId: string, item: { kind: "cue" | "sequence"; refId: string }, index?: number) => void;
+  onInsert: (chapterId: string, item: ProgramItemInput, index?: number) => void;
   onRemove: (chapterId: string, index: number) => void;
   onMove: (chapterId: string, fromIndex: number, toIndex: number) => void;
   onLaunch: (meta: ItemMeta) => void;
@@ -64,7 +61,13 @@ const ChapterSection = ({
 
     const libraryPayload = readLibraryDrag(event.dataTransfer);
     if (libraryPayload) {
-      onInsert(chapter.id, { kind: libraryPayload.kind, refId: libraryPayload.id }, index);
+      onInsert(
+        chapter.id,
+        libraryPayload.kind === "cue"
+          ? { kind: "cue", refId: libraryPayload.id }
+          : { kind: "sequence", refId: libraryPayload.id },
+        index,
+      );
       return;
     }
     const programPayload = readProgramItemDrag(event.dataTransfer);

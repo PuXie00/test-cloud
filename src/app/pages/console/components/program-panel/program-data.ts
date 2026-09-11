@@ -7,7 +7,7 @@ export type PositionCue = {
 };
 
 export type ActionSequence = {
-  id: string;
+  id: number;
   name: string;
   note?: string;
   /** Display duration from `resolveActionSequence`; not an authored field. */

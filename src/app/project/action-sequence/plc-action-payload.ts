@@ -1,7 +1,11 @@
 import type { ActionDataSaveItem, PlcCompiledAction } from "@shared/csocket/action-data-save";
 
-export const toActionDataSaveItems = (compiled: PlcCompiledAction): ActionDataSaveItem[] => [
+export const toActionDataSaveItems = (
+  compiled: PlcCompiledAction,
+  actionNo: number,
+): ActionDataSaveItem[] => [
   {
+    actionNo,
     checksum: compiled.checksum,
     trajectoryMode: compiled.trajectoryMode,
     totalDuration: compiled.totalDuration,

@@ -8,7 +8,7 @@ const sequenceOf = (
   blocks: TimelineBlock[],
   extra?: Partial<ActionSequenceConfig>,
 ): ActionSequenceConfig => ({
-  id: "seq",
+  id: 1,
   name: "Seq",
   trajectoryMode: "non-forced",
   blocks,
@@ -50,7 +50,8 @@ const sequence: ActionSequenceConfig = sequenceOf(
       atMs: 5000,
       pose: { v1: 50, v2: 0, v3: 0 },
     },
-    { id: "disable", kind: "set-enabled", objectId: 7, atMs: 500, enabled: false },
+    { id: "disable", kind: "instruction",
+      presetId: "set-enabled", objectId: 7, atMs: 500, instr: { enabled: false } },
   ],
   {
     trajectoryMode: "forced",
@@ -65,7 +66,8 @@ const sequence: ActionSequenceConfig = sequenceOf(
 describe("toActionDataSaveItems", () => {
   it("maps arrays, counts, and trajectoryMode without separate initial-pose fields", () => {
     const compiled = compilePlcAction(sequence, context);
-    const items = toActionDataSaveItems(compiled);
+    const items = toActionDataSaveItems(compiled, 7);
+    expect(items[0].actionNo).toBe(7);
     expect(items[0].trajectoryMode).toBe("forced");
     expect(items[0].trajectoryMode).toBe(compiled.trajectoryMode);
     expect(items[0].checksum).toBe(compiled.checksum);
@@ -79,10 +81,11 @@ describe("toActionDataSaveItems", () => {
 
   it("maps a command-only compile to events and zero timelines", () => {
     const compiled = compilePlcAction(
-      sequenceOf([{ id: "enable", kind: "set-enabled", objectId: 7, atMs: 1000, enabled: true }]),
+      sequenceOf([{ id: "enable", kind: "instruction",
+      presetId: "set-enabled", objectId: 7, atMs: 1000, instr: { enabled: true } }]),
       context,
     );
-    const items = toActionDataSaveItems(compiled);
+    const items = toActionDataSaveItems(compiled, 3);
     expect(items[0].timelineCount).toBe(0);
     expect(items[0].timelineList).toEqual([]);
     expect(items[0].eventCount).toBe(1);

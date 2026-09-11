@@ -33,6 +33,13 @@ export const tryKinematics = (
   distance: number,
   durationMs: number,
 ): MotionProfileKinematics | null => {
+  if (profile.kind === "idle") {
+    try {
+      return calculateMotionProfileKinematics(profile, 0, durationMs);
+    } catch {
+      return null;
+    }
+  }
   if (durationMs <= 0 || distance <= 0) return null;
   try {
     return calculateMotionProfileKinematics(profile, distance, durationMs);
@@ -46,6 +53,7 @@ export const phaseFloorWarningMessages = (
   durationMs: number,
   minAccelMs: number | undefined,
 ): string[] => {
+  if (profile.kind === "idle") return [];
   const warnings: string[] = [];
   if (minAccelMs !== undefined) {
     const roundedMinMs = Math.round(minAccelMs);
@@ -68,6 +76,9 @@ export const axisHasWarning = (
   axisContext: MotionProfileAxisContext,
 ): boolean => {
   const axisProfile = profiles[axis];
+  if (axisProfile.kind === "idle" || Math.abs(axisContext.travel[axis] ?? 0) === 0) {
+    return false;
+  }
   const axisMinAccelMs = minAccelMsOf(axis, axisContext);
   if (
     phaseFloorWarningMessages(

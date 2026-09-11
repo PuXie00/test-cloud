@@ -56,6 +56,14 @@ const trapezoidMeta: ProfileKindMeta = {
     ),
 };
 
+const idleMeta: ProfileKindMeta = {
+  kind: "idle",
+  label: "静止",
+  createProfile: () => ({ kind: "idle" }),
+  handles: () => [],
+  applyHandleDrag: (profile) => profile,
+};
+
 export const PROFILE_KIND_OPTIONS: ReadonlyArray<{
   kind: MotionProfile["kind"];
   label: string;
@@ -65,6 +73,7 @@ const PROFILE_KIND_REGISTRY: Readonly<
   Record<MotionProfile["kind"], ProfileKindMeta>
 > = {
   trapezoid: trapezoidMeta,
+  idle: idleMeta,
 };
 
 export const profileKindMeta = (

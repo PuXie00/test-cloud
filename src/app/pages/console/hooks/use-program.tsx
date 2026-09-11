@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { allocateSequenceIdsInProject } from "@/app/project/action-sequence/sequence-id";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
 import type { ProjectDocument, ProjectMotion } from "@/app/project/project-document-types";
 import { legacyProgramToMotion } from "@/app/project/motion-persist";
@@ -291,7 +292,13 @@ export const ProgramProvider = ({ children }: ProgramProviderProps) => {
       if (hydratingRef.current) return;
       if (!currentProject?.document) return;
       const current = programRef.current;
-      const id = `seq-${Date.now().toString(36)}`;
+      let id: number;
+      try {
+        [id] = allocateSequenceIdsInProject(currentProject.document.motion.actionSequences, 1);
+      } catch (error) {
+        setLastPersistError(error instanceof Error ? error.message : "动作序列 id 已满（1~65535）");
+        return;
+      }
       let found = false;
       const nextProgram: Program = {
         ...current,

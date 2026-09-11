@@ -213,6 +213,7 @@ export type PositionCueConfig = {
 import type {
   ActionSequenceConfig,
   DynamicPresetBlock,
+  InstructionBlock,
   ModelPose,
   MotionProfile,
   MotionSegmentConfig,
@@ -220,7 +221,7 @@ import type {
   PoseBlock,
   PresetBlockBase,
   PresetParamValue,
-  SetEnabledBlock,
+  SetEnabledInstruction,
   StaticPresetBlock,
   TimelineBlock,
   TrapezoidAxisProfile,
@@ -229,6 +230,7 @@ import type {
 export type {
   ActionSequenceConfig,
   DynamicPresetBlock,
+  InstructionBlock,
   ModelPose,
   MotionProfile,
   MotionSegmentConfig,
@@ -236,7 +238,7 @@ export type {
   PoseBlock,
   PresetBlockBase,
   PresetParamValue,
-  SetEnabledBlock,
+  SetEnabledInstruction,
   StaticPresetBlock,
   TimelineBlock,
   TrapezoidAxisProfile,
@@ -244,7 +246,7 @@ export type {
 
 export type ProgramItemRef =
   | { kind: "cue"; refId: string }
-  | { kind: "sequence"; refId: string };
+  | { kind: "sequence"; refId: number };
 
 export type ProgramChapterConfig = {
   id: string;

@@ -98,7 +98,7 @@ vi.mock("../use-action-builder", () => ({
 
 const sequence: ActionSequenceConfig = {
 
-  id: "seq",
+  id: 1,
 
   name: "Seq",
 
@@ -110,7 +110,8 @@ const sequence: ActionSequenceConfig = {
 
     { id: "later", kind: "pose", objectId: 7, atMs: 2500, pose: { v1: 4, v2: 5, v3: 6 } },
 
-    { id: "enable", kind: "set-enabled", objectId: 7, atMs: 500, enabled: true },
+    { id: "enable", kind: "instruction",
+      presetId: "set-enabled", objectId: 7, atMs: 500, instr: { enabled: true } },
 
     {
 
@@ -542,7 +543,7 @@ describe("SequencePropertiesPanel edits", () => {
 
     expect(handlers.onReplaceBlock).toHaveBeenCalledWith(
 
-      expect.objectContaining({ id: "enable", enabled: false }),
+      expect.objectContaining({ id: "enable", instr: { enabled: false } }),
 
     );
 

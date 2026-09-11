@@ -57,13 +57,13 @@ export const validateProjectDocument = (doc: ProjectDocument): ValidationResult 
     }
   }
 
-  const pushUnknownSequenceObject = (sequenceId: string, objectId: number | string) => {
+  const pushUnknownSequenceObject = (sequenceId: number, objectId: number | string) => {
     errors.push(`sequence ${sequenceId}: unknown object ${objectId}`);
   };
 
   for (const seq of doc.motion.actionSequences) {
     for (const block of seq.blocks) {
-      if (block.kind === "pose" || block.kind === "set-enabled") {
+      if (block.kind === "pose" || block.kind === "instruction") {
         if (!objectById.has(block.objectId)) {
           pushUnknownSequenceObject(seq.id, block.objectId);
         }

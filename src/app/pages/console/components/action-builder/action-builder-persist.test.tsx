@@ -403,7 +403,7 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
       segments: [],
     });
     expect(created).not.toHaveProperty("initialPoses");
-    expect(created?.id).toEqual(expect.any(String));
+    expect(created?.id).toEqual(expect.any(Number));
     const programItem = result.current.program.program.chapters
       .find((chapter) => chapter.id === chapterId)
       ?.items.find(

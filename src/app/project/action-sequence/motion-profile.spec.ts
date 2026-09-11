@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { MotionProfile } from "./types";
+import type { MotionProfile, TrapezoidAxisProfile } from "./types";
 import {
   applyTrapezoidHandleDrag,
   calculateMotionProfileKinematics,
@@ -7,7 +7,9 @@ import {
   cloneMotionProfile,
   createDefaultAxisProfile,
   createDefaultAxisProfiles,
+  createIdleAxisProfile,
   cruiseMsOf,
+  syncAxisProfileToTravel,
   evaluateMotionProfile,
   motionProfilePhaseBoundaries,
   ratiosFromProfile,
@@ -18,10 +20,12 @@ import {
   withTrapezoidDecelMs,
 } from "./motion-profile";
 
-const trap = (accelMs = 200, decelMs = 200): MotionProfile => ({
+const trap = (accelMs = 200, decelMs = 200): TrapezoidAxisProfile => ({
   kind: "trapezoid",
   params: { accelMs, decelMs },
 });
+
+const idle = (): MotionProfile => ({ kind: "idle" });
 
 describe("trapezoid axis motion profile", () => {
   it("defaults from minAccelTime in milliseconds", () => {
@@ -98,6 +102,7 @@ describe("trapezoid axis motion profile", () => {
     const cloned = cloneMotionProfile(source);
     expect(cloned).toEqual(source);
     expect(cloned).not.toBe(source);
+    if (cloned.kind !== "trapezoid") throw new Error("expected trapezoid clone");
     expect(cloned.params).not.toBe(source.params);
 
     const axisSource = createDefaultAxisProfiles(1000);
@@ -105,6 +110,9 @@ describe("trapezoid axis motion profile", () => {
     expect(axisCloned).toEqual(axisSource);
     expect(axisCloned).not.toBe(axisSource);
     expect(axisCloned.v1).not.toBe(axisSource.v1);
+    if (axisCloned.v1.kind !== "trapezoid" || axisSource.v1.kind !== "trapezoid") {
+      throw new Error("expected trapezoid");
+    }
     expect(axisCloned.v1.params).not.toBe(axisSource.v1.params);
   });
 
@@ -173,6 +181,7 @@ describe("trapezoid axis motion profile", () => {
 
   it("clamps accel-end drag so cruise stays positive when duration is enough", () => {
     const next = applyTrapezoidHandleDrag(trap(200, 200), "accel-end", 0.95, 1000);
+    if (next.kind !== "trapezoid") throw new Error("expected trapezoid");
     expect(next.params.accelMs + next.params.decelMs).toBeLessThan(1000);
     expect(next.params.decelMs).toBeCloseTo(200, 10);
     expect(next.params.accelMs).toBeGreaterThan(0);
@@ -180,6 +189,7 @@ describe("trapezoid axis motion profile", () => {
 
   it("clamps decel-start drag so cruise stays positive when duration is enough", () => {
     const next = applyTrapezoidHandleDrag(trap(200, 200), "decel-start", 0.05, 1000);
+    if (next.kind !== "trapezoid") throw new Error("expected trapezoid");
     expect(next.params.accelMs + next.params.decelMs).toBeLessThan(1000);
     expect(next.params.accelMs).toBeCloseTo(200, 10);
     expect(next.params.decelMs).toBeGreaterThan(0);
@@ -187,16 +197,19 @@ describe("trapezoid axis motion profile", () => {
 
   it("floors handle drag at minAccelMs when duration is enough", () => {
     const accel = applyTrapezoidHandleDrag(trap(200, 200), "accel-end", 0.05, 1000, 100);
+    if (accel.kind !== "trapezoid") throw new Error("expected trapezoid");
     expect(accel.params.accelMs).toBe(100);
     expect(accel.params.decelMs).toBe(200);
 
     const decel = applyTrapezoidHandleDrag(trap(200, 200), "decel-start", 0.95, 1000, 100);
+    if (decel.kind !== "trapezoid") throw new Error("expected trapezoid");
     expect(decel.params.decelMs).toBe(100);
     expect(decel.params.accelMs).toBe(200);
   });
 
   it("writes requested time when duration cannot fit a legal cruise", () => {
     const next = applyTrapezoidHandleDrag(trap(200, 200), "accel-end", 0.5, 300, 200);
+    if (next.kind !== "trapezoid") throw new Error("expected trapezoid");
     expect(next.params.accelMs).toBeCloseTo(150, 10);
     expect(next.params.decelMs).toBe(200);
     expect(next.params.accelMs + next.params.decelMs).toBeGreaterThan(300);
@@ -220,5 +233,57 @@ describe("trapezoid axis motion profile", () => {
       kind: "trapezoid",
       params: { accelMs: 200, decelMs: 900 },
     });
+  });
+});
+
+describe("idle axis motion profile", () => {
+  it("validateMotionProfile accepts idle and still rejects trapezoid accelMs 0", () => {
+    expect(validateMotionProfile(idle())).toEqual([]);
+    expect(validateMotionProfile({
+      kind: "trapezoid",
+      params: { accelMs: 0, decelMs: 200 },
+    })).not.toEqual([]);
+  });
+
+  it("idle sampling and evaluation are identically zero", () => {
+    expect(sampleVelocityNorm(idle(), 0, 1000)).toBe(0);
+    expect(sampleVelocityNorm(idle(), 0.5, 1000)).toBe(0);
+    expect(sampleVelocityNorm(idle(), 1, 1000)).toBe(0);
+    expect(evaluateMotionProfile(idle(), 0.5, 1000)).toBe(0);
+    expect(motionProfilePhaseBoundaries(idle(), 1000)).toEqual([]);
+  });
+
+  it("idle kinematics are zeros with cruise equal to duration", () => {
+    const result = calculateMotionProfileKinematics(idle(), 0, 3000);
+    expect(result).toEqual({
+      peakVelocity: 0,
+      acceleration: 0,
+      deceleration: 0,
+      accelDurationSec: 0,
+      cruiseDurationSec: 3,
+      decelDurationSec: 0,
+    });
+  });
+
+  it("cloneMotionProfile clones idle without params", () => {
+    const source = idle();
+    const cloned = cloneMotionProfile(source);
+    expect(cloned).toEqual({ kind: "idle" });
+    expect(cloned).not.toBe(source);
+  });
+
+  it("syncAxisProfileToTravel writes idle at 0 travel and restores default trapezoid from idle", () => {
+    expect(syncAxisProfileToTravel(trap(200, 200), 0, 5000, 1)).toEqual({ kind: "idle" });
+    expect(syncAxisProfileToTravel({ kind: "idle" }, 100, 5000, 1)).toEqual({
+      kind: "trapezoid",
+      params: { accelMs: 1000, decelMs: 1000 },
+    });
+    const moving = trap(300, 400);
+    expect(syncAxisProfileToTravel(moving, 50, 5000, 1)).toEqual(moving);
+  });
+
+  it("createIdleAxisProfile returns a distinct idle object", () => {
+    expect(createIdleAxisProfile()).toEqual({ kind: "idle" });
+    expect(createIdleAxisProfile()).not.toBe(createIdleAxisProfile());
   });
 });

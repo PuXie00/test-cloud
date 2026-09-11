@@ -88,13 +88,18 @@ describe("MotionProfileEditor", () => {
   });
 
   it("editing V2 accel time does not change v1 in onChange payload", () => {
-    const { onChange } = renderEditor();
+    const { onChange } = renderEditor({
+      axisContext: axisContext({ travel: { v1: 900, v2: 10, v3: 0 } }),
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "V2" }));
     changeSpinbutton("加速时间", "1500");
 
     expect(onChange).toHaveBeenCalledTimes(1);
     const next = onChange.mock.calls[0]![0] as AxisMotionProfiles;
+    if (next.v1.kind !== "trapezoid" || next.v2.kind !== "trapezoid") {
+      throw new Error("expected trapezoid axes");
+    }
     expect(next.v1.params.accelMs).toBe(1000);
     expect(next.v2.params.accelMs).toBe(1500);
   });
@@ -115,6 +120,7 @@ describe("MotionProfileEditor", () => {
     });
 
     expect(container.querySelector('[data-testid="velocity-max"]')).toBeNull();
+    expect(screen.queryByRole("slider", { name: "加速结束" })).toBeNull();
   });
 
   it("shows 未知曲线 and no sliders for an unknown kind on the current axis", () => {
@@ -184,7 +190,31 @@ describe("MotionProfileEditor", () => {
       }),
     });
 
-    expect(container.querySelectorAll('[data-testid="time-tick"]')).toHaveLength(3);
+    expect(container.querySelectorAll('[data-testid="time-tick"]')).toHaveLength(2);
     expect(container.querySelector('[data-testid="velocity-max"]')).not.toBeNull();
+  });
+
+  it("shows idle chart and read-only zero phases when the selected axis has no travel", () => {
+    renderEditor({
+      value: {
+        v1: { kind: "idle" },
+        v2: { kind: "trapezoid", params: { accelMs: 1000, decelMs: 1000 } },
+        v3: { kind: "idle" },
+      },
+      axisContext: axisContext({
+        enabledAxes: ["v1"],
+        travel: { v1: 0, v2: 0, v3: 0 },
+        minAccelTimeByAxis: { v1: 1 },
+      }),
+      segmentContext: { fromRef: "a", toRef: "b" },
+    });
+
+    expect(screen.queryByRole("slider", { name: "加速结束" })).toBeNull();
+    expect(screen.getByText("静止")).not.toBeNull();
+    expect(screen.getByRole("spinbutton", { name: "加速时间" })).toHaveProperty("readOnly", true);
+    expect(screen.getByRole("spinbutton", { name: "加速时间" })).toHaveValue(0);
+    expect(screen.getByRole("spinbutton", { name: "减速时间" })).toHaveValue(0);
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByLabelText("峰值速度").textContent).toContain("0");
   });
 });

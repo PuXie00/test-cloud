@@ -138,8 +138,9 @@ export const VelocityChart = ({
   onProfileChange,
 }: VelocityChartProps) => {
   const plotRef = useRef<SVGSVGElement>(null);
-  const { kind, params } = profile;
-  const { accelMs, decelMs } = params;
+  const { kind } = profile;
+  const accelMs = kind === "trapezoid" ? profile.params.accelMs : 0;
+  const decelMs = kind === "trapezoid" ? profile.params.decelMs : 0;
   const cruiseMs = Math.max(0, durationMs - accelMs - decelMs);
   const tAccel = durationMs > 0 ? accelMs / durationMs : 0;
   const tCruiseEnd = durationMs > 0 ? (accelMs + cruiseMs) / durationMs : 1;
@@ -156,8 +157,10 @@ export const VelocityChart = ({
     limits.peakVelocity > limits.maxVelocity;
   const meta = profileKindMeta(kind);
   const handles = meta?.handles(profile, durationMs) ?? [];
-  const canDrawProfile = kind === "trapezoid" && meta != null;
-  const editable = Boolean(onProfileChange) && !disabled && canDrawProfile;
+  const canDrawTrapezoid = kind === "trapezoid" && meta != null;
+  const canDrawIdle = kind === "idle";
+  const canDrawProfile = canDrawTrapezoid;
+  const editable = Boolean(onProfileChange) && !disabled && canDrawTrapezoid;
 
   const tNormFromClientX = (clientX: number): number => {
     const svg = plotRef.current;
@@ -225,10 +228,12 @@ export const VelocityChart = ({
     );
   };
 
-  const interiorTicks: Array<{ id: TimeTickId; tNorm: number; label: string }> = [
-    { id: "accel-end", tNorm: tAccel, label: formatSec(accelMs) },
-    { id: "cruise-end", tNorm: tCruiseEnd, label: formatSec(accelMs + cruiseMs) },
-  ];
+  const interiorTicks: Array<{ id: TimeTickId; tNorm: number; label: string }> = canDrawIdle
+    ? []
+    : [
+        { id: "accel-end", tNorm: tAccel, label: formatSec(accelMs) },
+        { id: "cruise-end", tNorm: tCruiseEnd, label: formatSec(accelMs + cruiseMs) },
+      ];
   const tickLeftPercents = staggerTickPercents(
     interiorTicks.map((tick) => (plotX(tick.tNorm) / VIEW_WIDTH) * 100),
   );
@@ -284,6 +289,18 @@ export const VelocityChart = ({
                 />
               ))
             : null}
+          {canDrawIdle ? (
+            <line
+              data-testid="idle-velocity"
+              x1={plotLeft}
+              y1={plotBottom}
+              x2={plotRight}
+              y2={plotBottom}
+              className="stroke-primary"
+              strokeWidth={1.2}
+              vectorEffect="non-scaling-stroke"
+            />
+          ) : null}
           {canDrawProfile ? (
             <>
               <PhaseShape

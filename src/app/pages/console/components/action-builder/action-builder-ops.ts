@@ -90,8 +90,8 @@ export const createCueItem = (
   targets: collectTargets(objectIds, lookup),
 });
 
-export const createEmptySequence = (name?: string): ActionSequenceConfig => ({
-  id: nextId("seq"),
+export const createEmptySequence = (id: number, name?: string): ActionSequenceConfig => ({
+  id,
   name: name ?? "新建动作序列",
   trajectoryMode: "non-forced",
   blocks: [],
@@ -100,6 +100,7 @@ export const createEmptySequence = (name?: string): ActionSequenceConfig => ({
 
 /** 由两个姿态 Cue 组合生成过渡动作序列：起始位姿来自 from，到达位姿来自 to */
 export const buildTransitionSequence = (
+  id: number,
   from: CueItem,
   to: CueItem,
   durationMs: number,
@@ -131,7 +132,7 @@ export const buildTransitionSequence = (
     });
   }
   return {
-    id: nextId("seq"),
+    id,
     name: `${from.name} → ${to.name}`,
     trajectoryMode: "non-forced",
     blocks,

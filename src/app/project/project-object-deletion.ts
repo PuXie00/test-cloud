@@ -29,7 +29,7 @@ export type ObjectDeletionImpact = {
   trackCount: number;
   blockCount: number;
   emptyCueIds: string[];
-  emptySequenceIds: string[];
+  emptySequenceIds: number[];
   affectedRuleIds: string[];
 };
 
@@ -107,7 +107,7 @@ export const analyzeObjectDeletion = (
   let sequenceCount = 0;
   let trackCount = 0;
   let blockCount = 0;
-  const emptySequenceIds: string[] = [];
+  const emptySequenceIds: number[] = [];
   for (const sequence of document.motion.actionSequences) {
     const referenced = sequenceObjectIds(sequence);
     const removed = [...referenced].filter((objectId) => deletedIds.has(objectId));
@@ -180,7 +180,7 @@ const blockReferencesDeletedObject = (
   block: TimelineBlock,
   deletedIds: Set<number>,
 ): boolean => {
-  if (block.kind === "pose" || block.kind === "set-enabled") {
+  if (block.kind === "pose" || block.kind === "instruction") {
     return deletedIds.has(block.objectId);
   }
   return block.orderedObjectIds.some((objectId) => deletedIds.has(objectId));
@@ -222,7 +222,7 @@ const stripSequenceObjects = (
   }
   const blocks: TimelineBlock[] = [];
   for (const block of sequence.blocks) {
-    if (block.kind === "pose" || block.kind === "set-enabled") {
+    if (block.kind === "pose" || block.kind === "instruction") {
       if (!deletedIds.has(block.objectId)) blocks.push(block);
       continue;
     }
@@ -234,7 +234,7 @@ const stripSequenceObjects = (
 
 const stripDroppedSequenceProgramRefs = (
   programs: ProgramConfig[],
-  droppedSequenceIds: Set<string>,
+  droppedSequenceIds: Set<number>,
 ): ProgramConfig[] => {
   if (droppedSequenceIds.size === 0) return programs;
   let changed = false;
@@ -325,7 +325,7 @@ export const applyObjectDeletion = (
   });
 
   let sequencesChanged = false;
-  const droppedSequenceIds = new Set<string>();
+  const droppedSequenceIds = new Set<number>();
   const actionSequences: ActionSequenceConfig[] = [];
   for (const sequence of document.motion.actionSequences) {
     const next = stripSequenceObjects(sequence, deletedIds);

@@ -23,6 +23,7 @@ export type PlcCompiledAction = {
 }
 
 export type ActionDataSaveItem = {
+  actionNo: number
   checksum: number
   trajectoryMode: TrajectoryMode
   totalDuration: number

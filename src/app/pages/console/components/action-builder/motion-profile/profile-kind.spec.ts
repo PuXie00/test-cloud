@@ -48,9 +48,17 @@ describe("profile kind registry", () => {
     const meta = profileKindMeta("trapezoid")!;
     const profile = trap(1000, 1000);
     const next = meta.applyHandleDrag(profile, "accel-end", 0.95, 5000, 1000);
-
+    if (next.kind !== "trapezoid") throw new Error("expected trapezoid");
     expect(next.params.accelMs + next.params.decelMs).toBeLessThan(5000);
     expect(next.params.decelMs).toBe(1000);
     expect(next.params.accelMs).toBeGreaterThan(1000);
+  });
+
+  it("returns idle meta with no handles and identity drag", () => {
+    const meta = profileKindMeta("idle");
+    expect(meta?.label).toBe("静止");
+    const idle = { kind: "idle" as const };
+    expect(meta!.handles(idle, 5000)).toEqual([]);
+    expect(meta!.applyHandleDrag(idle, "accel-end", 0.5, 5000)).toEqual(idle);
   });
 });

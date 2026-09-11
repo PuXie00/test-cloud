@@ -128,57 +128,6 @@ export class CsocketApiService {
 
   /** 订阅 client 下行并按语义通道广播（只调用一次） */
   wireClientEvents(): void {
-    // 测试模拟用
-    setInterval(() => {
-      // this.broadcast(CSOCKET_CHANNELS.readAxisInfoPolling, {success: true, data: [{
-      //   deviceId: 2,
-      //   axisStatus: 3,
-      //   actualPosition: Number((Math.random() * 1000).toFixed(1)), // 随机生成0-1000之间的随机数，保留1位小数
-      //   actualSpeed: Number((Math.random() * 100).toFixed(1)), // 随机生成0-100之间的随机数，保留1位小数
-      //   actualLoadRate: 1,
-      //   actualTemperature: 1,
-      //   actualTorque: 1,
-      //   actualWeight: 1,
-      //   driveAlarmCode: 0,
-      // },{
-      //   deviceId: 3,
-      //   axisStatus: 3,
-      //   actualPosition: Number((Math.random() * 1000).toFixed(1)), // 随机生成0-1000之间的随机数，保留1位小数
-      //   actualSpeed: Number((Math.random() * 100).toFixed(1)), // 随机生成0-100之间的随机数，保留1位小数
-      //   actualLoadRate: 1,
-      //   actualTemperature: 1,
-      //   actualTorque: 1,
-      //   actualWeight: 1,
-      //   driveAlarmCode: 0,
-      // }]} )
-      // this.broadcast(CSOCKET_CHANNELS.readModelInfoPolling, {success: true, data: [{
-      //   deviceId: 6,
-      //   modelStatus: 17,
-      //   virtualAxisHPosition: Number((Math.random() * 1000).toFixed(1)), // 随机生成0-1000之间的随机数，保留1位小数
-      //   virtualAxisPPosition: 0,
-      //   virtualAxisYPosition: 0,
-      // }]} )
-      // 模拟plc
-      // this.plcMasterStatus.ingestTcpConn({
-      //   success: true,
-      //   data: [{ deviceId: 1, connected: 0 }],
-      // })
-      // const next = this.plcMasterStatus.ingestPlc({
-      //   success: true,
-      //   data: [{
-      //     deviceId: 1,
-      //     plcModel: 1,
-      //     masterStatus: 1,
-      //     simulationStatus: 0,
-      //     busStatus: 0,
-      //     ruleStartStatus: 0,
-      //     ruleId: 0,
-      //     autoRunStatus: 0,
-      //     autoId: 0,
-      //   }],
-      // })
-      // if (next) this.broadcastMasterStatus(next)
-    }, 1000)
     if (this.wired) return
     this.wired = true
 
@@ -747,6 +696,13 @@ export class CsocketApiService {
   stopActionPlc(items: { deviceId: number }[], opts?: CsocketSendOpts) {
     return this.sendBuilt('Operation|stopAction', '0x1007', items ?? [], opts)
   }
+  // 动作数据保存
+  actionDataSavePlc(
+    items: ActionDataSaveItem[],
+    opts?: CsocketSendOpts,
+  ) {
+    return this.sendBuilt('Config|actionDataSave', '0x104A', items, opts)
+  }
   // 规则启动
   ruleStartPlc(items: { enableFlag: number }[], opts?: CsocketSendOpts) {
     return this.sendBuilt('Operation|ruleStart', '0x1008', items, opts)
@@ -812,13 +768,7 @@ export class CsocketApiService {
   clearConfigPlc(items?: unknown[], opts?: CsocketSendOpts) {
     return this.sendBuilt('Config|clearConfig', '0x1049', items ?? [], opts)
   }
-  // 动作数据保存
-  actionDataSavePlc(
-    items: ActionDataSaveItem[],
-    opts?: CsocketSendOpts,
-  ) {
-    return this.sendBuilt('Config|actionDataSave', '0x104A', items, opts)
-  }
+  
   // 断开运动配置关联
   disconnectMotionConfigPlc(
     items: { motionFlag: number }[],

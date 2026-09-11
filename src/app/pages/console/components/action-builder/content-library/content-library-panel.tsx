@@ -49,7 +49,7 @@ const sequenceDurationMs = (sequence: ActionSequenceConfig): number => {
 
 const LONG_PRESS_MS = 500;
 
-const entryId = (entry: LibraryEntry): string =>
+const entryId = (entry: LibraryEntry): string | number =>
   entry.kind === "cue" ? entry.cue.id : entry.sequence.id;
 
 const entryName = (entry: LibraryEntry): string =>
@@ -85,7 +85,7 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
   const [filter, setFilter] = useState<LibraryFilter>("all");
   const [search, setSearch] = useState("");
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
-  const [chapterMenuFor, setChapterMenuFor] = useState<string | null>(null);
+  const [chapterMenuFor, setChapterMenuFor] = useState<string | number | null>(null);
   const longPressRef = useRef<number | null>(null);
 
   const chapters = useMemo(() => collectChapters(programs), [programs]);
@@ -142,7 +142,7 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
       return;
     }
     if (dockMode === "sequence" && selectedSequenceId === entry.sequence.id) {
-      handleSequenceSelect("");
+      handleSequenceSelect(null);
       return;
     }
     handleSequenceSelect(entry.sequence.id);
@@ -151,7 +151,12 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
   const handleRowDragStart = (entry: LibraryEntry) => (event: DragEvent) => {
     clearLongPress();
     setChapterMenuFor(null);
-    writeLibraryDrag(event.dataTransfer, { kind: entry.kind, id: entryId(entry) });
+    writeLibraryDrag(
+      event.dataTransfer,
+      entry.kind === "cue"
+        ? { kind: "cue", id: entry.cue.id }
+        : { kind: "sequence", id: entry.sequence.id },
+    );
   };
 
   const handleCueRowDragOver = (cue: CueItem) => (event: DragEvent) => {
@@ -184,7 +189,12 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
           role="menuitem"
           onClick={(event) => {
             event.stopPropagation();
-            handleProgramItemInsert(chapter.id, { kind: entry.kind, refId: entryId(entry) });
+            handleProgramItemInsert(
+              chapter.id,
+              entry.kind === "cue"
+                ? { kind: "cue", refId: entry.cue.id }
+                : { kind: "sequence", refId: entry.sequence.id },
+            );
             setChapterMenuFor(null);
           }}
           className="flex w-full px-3 py-2 text-left text-body-sm text-foreground hover:bg-muted"

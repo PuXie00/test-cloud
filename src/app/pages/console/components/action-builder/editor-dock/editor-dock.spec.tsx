@@ -7,7 +7,7 @@ import type { TimelineEditorProps } from "../timeline/timeline-editor";
 import { EditorDock } from "./editor-dock";
 
 const sequence: ActionSequenceConfig = {
-  id: "seq",
+  id: 1,
   name: "Seq",
   trajectoryMode: "non-forced",
   blocks: [],
@@ -129,7 +129,7 @@ describe("editor dock sequence editor", () => {
 
   it("keeps SequenceEditor toolbar when an unknown preset cannot resolve", () => {
     const broken: ActionSequenceConfig = {
-      id: "seq-broken",
+      id: 97,
       name: "Broken",
       trajectoryMode: "non-forced",
       blocks: [
@@ -182,7 +182,7 @@ describe("editor dock sequence editor", () => {
 describe("editor dock cue editor", () => {
   it("mounts Cue dock with ActionSequenceConfig (no tracks) without throwing", () => {
     const authoredSequence: ActionSequenceConfig = {
-      id: "seq",
+      id: 1,
       name: "Seq",
       trajectoryMode: "non-forced",
       blocks: [

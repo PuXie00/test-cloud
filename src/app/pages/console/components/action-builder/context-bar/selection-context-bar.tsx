@@ -14,7 +14,7 @@ import { SequenceContextBar } from "./sequence-context-bar";
 export type ContextSelection =
   | { kind: "block"; blockId: string }
   | { kind: "object"; objectId: number }
-  | { kind: "sequence"; sequenceId: string };
+  | { kind: "sequence"; sequenceId: number };
 
 type SelectionContextBarProps = {
   sequence: ActionSequenceConfig | null;

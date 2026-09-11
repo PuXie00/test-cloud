@@ -1,6 +1,10 @@
 import { collectMotorOverspeedHits } from "@/app/kinematics/motor-overspeed";
 import type { MotorOverspeedObject } from "@/app/kinematics/motor-overspeed";
 import { getPresetDefinition } from "./preset-registry";
+import {
+  isInstructionPresetId,
+  validateInstructionInstr,
+} from "./instruction-registry";
 import { resolveActionSequence, type ResolvedActionSequence, type ResolvedMotionSegment } from "./resolve-sequence";
 import { calculateMotionProfileKinematics, validateMotionProfile } from "./motion-profile";
 import type {
@@ -25,6 +29,8 @@ export type SequenceIssueCode =
   | "invalid-dynamic-range"
   | "limit-exceeded"
   | "command-conflict"
+  | "unknown-instruction"
+  | "invalid-instruction"
   | "unresolved-segment"
   | "boundary-discontinuity"
   | "long-idle"
@@ -32,6 +38,7 @@ export type SequenceIssueCode =
   | "missing-motion-limit"
   | "phase-shorter-than-min-accel"
   | "insufficient-cruise"
+  | "idle-on-moving-axis"
   | "motor-overspeed";
 
 export type SequenceIssue = {
@@ -83,7 +90,7 @@ const posesEqualOn = (left: ModelPose, right: ModelPose, axes: VirtualAxisId[]):
 const referencedObjectIds = (sequence: ActionSequenceConfig): Set<number> => {
   const ids = new Set<number>();
   for (const block of sequence.blocks) {
-    if (block.kind === "pose" || block.kind === "set-enabled") {
+    if (block.kind === "pose" || block.kind === "instruction") {
       ids.add(block.objectId);
       continue;
     }
@@ -233,6 +240,28 @@ const collectAuthoredIssues = (
     if (block.kind === "static-preset" || block.kind === "dynamic-preset") {
       validatePresetBlock(block, issues);
     }
+    if (block.kind === "instruction") {
+      if (!isInstructionPresetId(block.presetId)) {
+        issues.push({
+          severity: "error",
+          code: "unknown-instruction",
+          message: `unknown instruction ${block.presetId}`,
+          blockId: block.id,
+          objectId: block.objectId,
+        });
+      } else {
+        const instrErrors = validateInstructionInstr(block.presetId, block.instr);
+        if (instrErrors.length > 0) {
+          issues.push({
+            severity: "error",
+            code: "invalid-instruction",
+            message: instrErrors.join("; "),
+            blockId: block.id,
+            objectId: block.objectId,
+          });
+        }
+      }
+    }
   }
 
   for (const item of sequence.segments) {
@@ -281,7 +310,8 @@ const collectAuthoredIssues = (
   }
 
   const commands = sequence.blocks.filter(
-    (block): block is Extract<TimelineBlock, { kind: "set-enabled" }> => block.kind === "set-enabled",
+    (block): block is Extract<TimelineBlock, { kind: "instruction" }> =>
+      block.kind === "instruction",
   );
   const grouped = new Map<string, typeof commands>();
   for (const block of commands) {
@@ -291,8 +321,12 @@ const collectAuthoredIssues = (
     else grouped.set(key, [block]);
   }
   for (const group of grouped.values()) {
-    const hasEnable = group.some((block) => block.enabled);
-    const hasDisable = group.some((block) => !block.enabled);
+    const hasEnable = group.some(
+      (block) => block.presetId === "set-enabled" && block.instr.enabled,
+    );
+    const hasDisable = group.some(
+      (block) => block.presetId === "set-enabled" && !block.instr.enabled,
+    );
     if (!hasEnable || !hasDisable) continue;
     const first = group[0];
     if (first === undefined) continue;
@@ -359,16 +393,25 @@ const checkSegmentKinematics = (
     if (travel === 0) continue;
 
     const profile = profiles[axis];
-    if (validateMotionProfile(profile).length > 0) continue;
-
-    const limit = object.limits[axis];
-    const maxVelocity = limit?.maxVelocity;
-    const minAccelTime = limit?.minAccelTime;
     const location = {
       segmentKey: segment.key,
       objectId: object.id,
       ...(blockId ? { blockId } : {}),
     };
+    if (profile.kind === "idle") {
+      issues.push({
+        severity: "error",
+        code: "idle-on-moving-axis",
+        message: `axis ${axis} is idle but has travel on segment ${segment.fromRef} -> ${segment.toRef}`,
+        ...location,
+      });
+      continue;
+    }
+    if (validateMotionProfile(profile).length > 0) continue;
+
+    const limit = object.limits[axis];
+    const maxVelocity = limit?.maxVelocity;
+    const minAccelTime = limit?.minAccelTime;
     if (!isPositiveFinite(maxVelocity) || !isPositiveFinite(minAccelTime)) {
       issues.push({
         severity: "error",

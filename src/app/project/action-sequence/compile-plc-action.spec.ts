@@ -22,8 +22,7 @@ const unlimitedAxis = (): AxisLimit => ({
   min: -1_000_000,
   max: 1_000_000,
   maxVelocity: 1_000_000,
-  maxAcceleration: 1_000_000,
-  maxDeceleration: 1_000_000,
+  minAccelTime: 0.001,
 });
 
 const limitsFor = (axes: readonly VirtualAxisId[]) =>
@@ -46,7 +45,7 @@ const sequenceOf = (
   blocks: TimelineBlock[],
   extra?: Partial<ActionSequenceConfig>,
 ): ActionSequenceConfig => ({
-  id: "seq",
+  id: 1,
   name: "Seq",
   trajectoryMode: "non-forced",
   blocks,
@@ -75,7 +74,8 @@ const laterInitialSequence: ActionSequenceConfig = sequenceOf(
       atMs: 5000,
       pose: { v1: 50, v2: 0, v3: 0 },
     },
-    { id: "disable", kind: "set-enabled", objectId: 7, atMs: 500, enabled: false },
+    { id: "disable", kind: "instruction",
+      presetId: "set-enabled", objectId: 7, atMs: 500, instr: { enabled: false } },
   ],
   {
     trajectoryMode: "forced",
@@ -166,7 +166,8 @@ describe("compilePlcAction", () => {
 
   it("compiles a command-only sequence with events and no timelines", () => {
     const compiled = compilePlcAction(
-      sequenceOf([{ id: "enable", kind: "set-enabled", objectId: 7, atMs: 1000, enabled: true }]),
+      sequenceOf([{ id: "enable", kind: "instruction",
+      presetId: "set-enabled", objectId: 7, atMs: 1000, instr: { enabled: true } }]),
       threeAxisContext,
     );
     expect(compiled.timelines).toEqual([]);

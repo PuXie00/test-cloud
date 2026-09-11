@@ -18,6 +18,7 @@ import { createDefaultAxisProfiles } from "@/app/project/action-sequence/motion-
 import { validateActionSequence } from "@/app/project/action-sequence/validate-sequence";
 import type { SequenceIssue } from "@/app/project/action-sequence/validate-sequence";
 import { sequenceValidationContextFromSetup } from "@/app/project/project-motion-readiness";
+import { allocateSequenceIdsInProject } from "@/app/project/action-sequence/sequence-id";
 import type { ActionSequenceConfig, ModelPose, MotionSegmentSettings, TimelineBlock } from "@/app/project/action-sequence/types";
 import type { ProjectMotion, VirtualAxisId } from "@/app/project/project-document-types";
 import {
@@ -81,7 +82,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   const { currentProject, updateCurrentDocument, documentRevision } = useProject();
 
   const [sequences, setSequences] = useState<ActionSequenceConfig[]>([]);
-  const [selectedSequenceId, setSelectedSequenceId] = useState<string>("");
+  const [selectedSequenceId, setSelectedSequenceId] = useState<number | null>(null);
   const [selection, setSelection] = useState<SequenceSelection>(null);
   const [selectedObjectIds, setSelectedObjectIds] = useState<number[]>([]);
   const [cursorMs, setCursorMs] = useState(0);
@@ -143,7 +144,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         setCues([]);
         setPrograms([]);
         setTimelineObjects([]);
-        setSelectedSequenceId("");
+        setSelectedSequenceId(null);
         setSelectedCueId(null);
         setTransitionDraft(null);
         setCombineFromCueId(null);
@@ -204,7 +205,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     setSelectedSequenceId((prev) =>
       bundle.sequences.some((item) => item.id === prev)
         ? prev
-        : (bundle.sequences[0]?.id ?? ""),
+        : (bundle.sequences[0]?.id ?? null),
     );
     setSelectedCueId((prev) =>
       prev && bundle.cues.some((item) => item.id === prev) ? prev : null,
@@ -267,7 +268,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   const contextSelection = useMemo((): ContextSelection | null => {
     if (selectedBlockId) return { kind: "block", blockId: selectedBlockId };
     if (selectedObjectIds.length === 1) return { kind: "object", objectId: selectedObjectIds[0] };
-    if (selectedSequenceId) return { kind: "sequence", sequenceId: selectedSequenceId };
+    if (selectedSequenceId !== null) return { kind: "sequence", sequenceId: selectedSequenceId };
     return null;
   }, [selectedBlockId, selectedObjectIds, selectedSequenceId]);
 
@@ -279,7 +280,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
 
   const updateSelectedSequence = useCallback(
     (updater: (current: ActionSequenceConfig) => ActionSequenceConfig | null): boolean => {
-      if (!selectedSequenceId) return false;
+      if (selectedSequenceId === null) return false;
       const current = motionRef.current.sequences.find((item) => item.id === selectedSequenceId);
       if (!current) return false;
       const next = updater(current);
@@ -316,7 +317,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     [commitMotionProjection],
   );
 
-  const handleSequenceSelect = useCallback((sequenceId: string) => {
+  const handleSequenceSelect = useCallback((sequenceId: number | null) => {
     setSelectedSequenceId(sequenceId);
     setSelectedCueId(null);
     setTransitionDraft(null);
@@ -502,10 +503,11 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         for (const objectId of objectIds) {
           const block: TimelineBlock = {
             id: nextId("blk"),
-            kind: "set-enabled",
+            kind: "instruction",
+            presetId: "set-enabled",
             objectId,
             atMs: cursorMs,
-            enabled,
+            instr: { enabled },
           };
           const result = insertTimelineBlock(next, block);
           if (!result.ok) continue;
@@ -533,7 +535,14 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
 
   const handleCreateSequence = useCallback(
     (_objectIds: number[]) => {
-      const next = createEmptySequence();
+      let id: number;
+      try {
+        [id] = allocateSequenceIdsInProject(motionRef.current.sequences, 1);
+      } catch (error) {
+        setLastPersistError(error instanceof Error ? error.message : "动作序列 id 已满（1~65535）");
+        return;
+      }
+      const next = createEmptySequence(id);
       const nextSequences = [...motionRef.current.sequences, next];
       if (!commitMotionProjection({ ...motionRef.current, sequences: nextSequences })) return;
       handleSequenceSelect(next.id);
@@ -755,7 +764,14 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       const from = motionRef.current.cues.find((item) => item.id === draft.fromCueId);
       const to = motionRef.current.cues.find((item) => item.id === draft.toCueId);
       if (!from || !to) return;
-      const next = buildTransitionSequence(from, to, durationMs, getTimelineObject);
+      let id: number;
+      try {
+        [id] = allocateSequenceIdsInProject(motionRef.current.sequences, 1);
+      } catch (error) {
+        setLastPersistError(error instanceof Error ? error.message : "动作序列 id 已满（1~65535）");
+        return;
+      }
+      const next = buildTransitionSequence(id, from, to, durationMs, getTimelineObject);
       const nextSequences = [...motionRef.current.sequences, next];
       if (!commitMotionProjection({ ...motionRef.current, sequences: nextSequences })) return;
       setTransitionDraft(null);
@@ -859,7 +875,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
           ? motionRef.current.cues.find((cue) => cue.id === item.refId)
           : motionRef.current.sequences.find((seq) => seq.id === item.refId);
       if (!entity) return;
-      const node: ProgramNode = { id: item.refId, name: entity.name, type: item.kind };
+      const node: ProgramNode = { id: String(item.refId), name: entity.name, type: item.kind };
       updatePrograms((current) =>
         current.map((program) => ({
           ...program,

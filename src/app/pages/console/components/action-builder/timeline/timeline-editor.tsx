@@ -3,7 +3,7 @@ import type {
   ActionSequenceConfig,
   DynamicPresetBlock,
   PoseBlock,
-  SetEnabledBlock,
+  InstructionBlock,
   StaticPresetBlock,
   TimelineBlock,
 } from "@/app/project/action-sequence/types";
@@ -78,9 +78,9 @@ const authoredPosesFor = (sequence: ActionSequenceConfig, objectId: number): Pos
     (block): block is PoseBlock => block.kind === "pose" && block.objectId === objectId,
   );
 
-const commandsFor = (sequence: ActionSequenceConfig, objectId: number): SetEnabledBlock[] =>
+const commandsFor = (sequence: ActionSequenceConfig, objectId: number): InstructionBlock[] =>
   sequence.blocks.filter(
-    (block): block is SetEnabledBlock => block.kind === "set-enabled" && block.objectId === objectId,
+    (block): block is InstructionBlock => block.kind === "instruction" && block.objectId === objectId,
   );
 
 const staticPresetsFor = (sequence: ActionSequenceConfig, objectId: number): StaticPresetBlock[] =>

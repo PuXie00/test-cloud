@@ -120,6 +120,7 @@ describe("VelocityChart", () => {
 
     expect(onProfileChange).toHaveBeenCalled();
     const next = onProfileChange.mock.calls.at(-1)?.[0] as MotionProfile;
+    if (next.kind !== "trapezoid") throw new Error("expected trapezoid");
     expect(next.params.accelMs).toBeGreaterThan(1000);
     expect(next.params.decelMs).toBe(1000);
   });
@@ -225,7 +226,21 @@ describe("VelocityChart", () => {
 
     expect(onProfileChange).toHaveBeenCalledTimes(1);
     const next = onProfileChange.mock.calls[0]![0] as MotionProfile;
+    if (next.kind !== "trapezoid") throw new Error("expected trapezoid");
     expect(next.params.accelMs).toBeCloseTo(1025, 0);
     expect(next.params.decelMs).toBe(1000);
+  });
+
+  it("draws a v=0 idle line and no trapezoid handles", () => {
+    const { container } = render(
+      <VelocityChart
+        profile={{ kind: "idle" }}
+        durationMs={5000}
+        onProfileChange={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("slider", { name: "加速结束" })).toBeNull();
+    expect(container.querySelector('[data-testid="idle-velocity"]')).not.toBeNull();
+    expect(container.querySelector("[data-phase='accel']")).toBeNull();
   });
 });

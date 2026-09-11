@@ -111,7 +111,7 @@ describe("transition-math", () => {
     const durationMs = 8000;
     const fromPose = { v1: 0, v2: 0, v3: 0 };
     const toPose = { v1: 2000, v2: 0, v3: 0 };
-    const sequence = buildTransitionSequence(CUE_A, CUE_B, durationMs);
+    const sequence = buildTransitionSequence(1, CUE_A, CUE_B, durationMs);
     expect(sequence.name).toBe("开场 → 谢幕");
     expect(sequence.trajectoryMode).toBe("non-forced");
     expect(sequence).not.toHaveProperty("initialPoses");
@@ -167,7 +167,7 @@ describe("transition-math", () => {
       }
       return OBJECTS.find((object) => object.id === id);
     };
-    const sequence = buildTransitionSequence(CUE_A, CUE_B, 5000, lookup);
+    const sequence = buildTransitionSequence(1, CUE_A, CUE_B, 5000, lookup);
     const objectOne = sequence.segments.find((segment) => {
       const from = sequence.blocks.find((block) => block.id === segment.fromRef);
       return from?.kind === "pose" && from.objectId === 1;

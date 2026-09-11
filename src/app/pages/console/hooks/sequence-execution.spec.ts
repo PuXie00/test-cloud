@@ -31,7 +31,7 @@ const context = {
 };
 
 const validSequence: ActionSequenceConfig = {
-  id: "seq",
+  id: 1,
   name: "Seq",
   trajectoryMode: "forced",
   blocks: [
@@ -60,16 +60,17 @@ const invalidSequence: ActionSequenceConfig = {
 };
 
 const commandOnlySequence: ActionSequenceConfig = {
-  id: "seq-cmd",
+  id: 3,
   name: "Cmd",
   trajectoryMode: "non-forced",
   blocks: [
     {
       id: "enable",
-      kind: "set-enabled",
+      kind: "instruction",
+      presetId: "set-enabled",
       objectId: 7,
       atMs: 1000,
-      enabled: true,
+      instr: { enabled: true },
     },
   ],
   segments: [],
@@ -88,7 +89,6 @@ const createTransport = (): InstrumentedTransport => {
     calls,
     saveAction: vi.fn(async () => {
       calls.push("save");
-      return { actionNo: 42 };
     }),
     syncCall: vi.fn(async () => {
       calls.push("sync");
@@ -145,9 +145,17 @@ describe("downloadSequence", () => {
 
   it("passes compiled save items with timelineCount and checksum", async () => {
     const transport = createTransport();
-    await downloadSequence(validSequence, context, transport);
-    const expected = toActionDataSaveItems(compilePlcAction(validSequence, context));
+    const downloaded = await downloadSequence(validSequence, context, transport);
+    const expected = toActionDataSaveItems(
+      compilePlcAction(validSequence, context),
+      validSequence.id,
+    );
     expect(transport.saveAction).toHaveBeenCalledWith(expected);
+    expect(downloaded).toMatchObject({
+      ok: true,
+      actionNo: validSequence.id,
+      sequenceId: validSequence.id,
+    });
     expect(expected[0]?.timelineCount).toBeGreaterThan(0);
     expect(typeof expected[0]?.checksum).toBe("number");
   });
@@ -195,7 +203,7 @@ describe("startLocalAuthoredSequence", () => {
 
     expect(transport.calls).toEqual(["save", "sync"]);
     expect(transport.syncCall).toHaveBeenCalledWith({
-      actionNo: 42,
+      actionNo: validSequence.id,
       syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID,
       startTimestamp: expect.any(Number),
       speedScale: 1,
@@ -205,7 +213,7 @@ describe("startLocalAuthoredSequence", () => {
       ok: true,
       name: "Seq",
       speedPercent: 100,
-      sequenceHandle: { actionNo: 42, syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID },
+      sequenceHandle: { actionNo: validSequence.id, syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID },
     });
     expect(started).not.toHaveProperty("durationMs");
   });
@@ -248,13 +256,11 @@ describe("createLocalSequenceTransport", () => {
     vi.unstubAllGlobals();
   });
 
-  it("returns a numeric actionNo without touching window.csocketApi", async () => {
+  it("does not assign actionNo and does not touch window.csocketApi", async () => {
     const actionDataSavePlc = vi.fn();
     vi.stubGlobal("window", { csocketApi: { actionDataSavePlc } });
     const transport = createLocalSequenceTransport();
-    const result = await transport.saveAction([]);
-    expect(typeof result.actionNo).toBe("number");
-    expect(Number.isFinite(result.actionNo)).toBe(true);
+    await expect(transport.saveAction([])).resolves.toBeUndefined();
     expect(actionDataSavePlc).not.toHaveBeenCalled();
     await expect(
       transport.syncCall({
@@ -271,14 +277,14 @@ describe("createLocalSequenceTransport", () => {
 });
 
 describe("createCsocketSequenceTransport", () => {
-  it("saveAction parses actionNo from CppAckResult.data[0]", async () => {
+  it("saveAction requires a successful ack and ignores firmware actionNo", async () => {
     const api = createMockCsocketApi({ success: true, data: [{ actionNo: 42 }] });
     const transport = createCsocketSequenceTransport(api);
-    await expect(transport.saveAction([])).resolves.toEqual({ actionNo: 42 });
+    await expect(transport.saveAction([])).resolves.toBeUndefined();
     expect(api.actionDataSavePlc).toHaveBeenCalled();
   });
 
-  it("throws for CsocketResult { ok: false }, success: false, and missing actionNo", async () => {
+  it("throws for CsocketResult { ok: false } and success: false", async () => {
     const failedWrap = createMockCsocketApi({
       ok: false,
       code: "E",
@@ -294,9 +300,7 @@ describe("createCsocketSequenceTransport", () => {
     );
 
     const missingNo = createMockCsocketApi({ success: true, data: [{}] });
-    await expect(createCsocketSequenceTransport(missingNo).saveAction([])).rejects.toThrow(
-      /actionNo/i,
-    );
+    await expect(createCsocketSequenceTransport(missingNo).saveAction([])).resolves.toBeUndefined();
   });
 
   it("maps sync and stop onto existing csocket methods and voids trajectoryMode at the adapter", async () => {

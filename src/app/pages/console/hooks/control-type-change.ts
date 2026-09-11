@@ -250,7 +250,7 @@ const rewriteSequenceRemovedAxes = (
   let rewrittenBlocks = 0;
 
   const blocks = sequence.blocks.map((block) => {
-    if (block.kind === "set-enabled") return block;
+    if (block.kind === "instruction") return block;
     if (block.kind === "pose") {
       const removed = removedByObject.get(block.objectId);
       if (!removed || removed.size === 0) return block;

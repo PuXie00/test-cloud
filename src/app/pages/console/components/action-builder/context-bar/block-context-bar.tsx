@@ -2,6 +2,7 @@ import { MoreHorizontal } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { cn } from "@/app/components/ui/utils";
 import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-input";
+import { instructionBlockTitle } from "@/app/project/action-sequence/instruction-registry";
 import type { ModelPose, TimelineBlock } from "@/app/project/action-sequence/types";
 import type { VirtualAxisId } from "@/app/project/project-document-types";
 import { VIRTUAL_AXIS_IDS } from "../timeline/timeline-data";
@@ -69,12 +70,14 @@ const ContextNumericCell = ({
   </ContextCell>
 );
 
-const BLOCK_TITLES: Record<TimelineBlock["kind"], string> = {
+const BLOCK_TITLES: Record<Exclude<TimelineBlock["kind"], "instruction">, string> = {
   pose: "位姿",
-  "set-enabled": "使能指令",
   "static-preset": "静态预设",
   "dynamic-preset": "动态预设",
 };
+
+const blockTitle = (block: TimelineBlock): string =>
+  block.kind === "instruction" ? instructionBlockTitle(block) : BLOCK_TITLES[block.kind];
 
 type PoseCellsProps = {
   pose: ModelPose;
@@ -132,7 +135,7 @@ export const BlockContextBar = ({
   children,
 }: BlockContextBarProps) => {
   const [menuOpen, setMenuOpen] = useState(false);
-  const resolvedTitle = title ?? (block ? BLOCK_TITLES[block.kind] : "");
+  const resolvedTitle = title ?? (block ? blockTitle(block) : "");
 
   return (
     <div className="flex h-14 shrink-0 items-stretch bg-card">
@@ -153,11 +156,11 @@ export const BlockContextBar = ({
 
       {pose && onPoseChange ? <PoseCells pose={pose} onPoseChange={onPoseChange} /> : null}
 
-      {block?.kind === "set-enabled" && onReplaceBlock ? (
+      {block?.kind === "instruction" && block.presetId === "set-enabled" && onReplaceBlock ? (
         <>
           <ContextCell label="使能" highlighted>
             <span className="font-mono text-mono-md tabular-nums text-foreground">
-              {block.enabled ? "开" : "关"}
+              {block.instr.enabled ? "开" : "关"}
             </span>
           </ContextCell>
           <ContextNumericCell

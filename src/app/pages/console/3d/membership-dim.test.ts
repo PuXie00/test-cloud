@@ -11,8 +11,8 @@ const cueA: CueItem = { id: "cue-a", name: "A", targets: { "1": { v1: 0 }, "2": 
 const cueB: CueItem = { id: "cue-b", name: "B", targets: { "2": { v1: 0 }, "3": { v1: 0 } } };
 
 const sequence: ActionSequenceConfig = {
-  id: "seq",
-  name: "seq",
+  id: 1,
+  name: "Seq",
   trajectoryMode: "forced",
   blocks: [
     { id: "p", kind: "pose", objectId: 1, atMs: 0, pose: { v1: 0, v2: 0, v3: 0 } },

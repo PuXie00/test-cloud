@@ -20,7 +20,7 @@ type PreviewWindow = { csocketApi?: { enableModel: ReturnType<typeof vi.fn> } };
 const previewWindow = globalThis as typeof globalThis & { window?: PreviewWindow };
 
 const sequence: ActionSequenceConfig = {
-  id: "seq",
+  id: 1,
   name: "Seq",
   trajectoryMode: "non-forced",
   blocks: [
@@ -51,7 +51,7 @@ const sequence: ActionSequenceConfig = {
 };
 
 const timedPreviewSequence: ActionSequenceConfig = {
-  id: "seq",
+  id: 1,
   name: "Seq",
   trajectoryMode: "non-forced",
   blocks: [
@@ -91,7 +91,8 @@ describe("evaluateResolvedSequence", () => {
       ...sequence,
       blocks: [
         ...sequence.blocks,
-        { id: "enable", kind: "set-enabled", objectId: 7, atMs: 250, enabled: true },
+        { id: "enable", kind: "instruction",
+      presetId: "set-enabled", objectId: 7, atMs: 250, instr: { enabled: true } },
       ],
     });
     evaluateResolvedSequence(resolved, 1000);
@@ -100,7 +101,7 @@ describe("evaluateResolvedSequence", () => {
 
   it("holds the timed initial pose before its authored time", () => {
     const resolved = resolveActionSequence({
-      id: "seq",
+      id: 1,
       name: "Seq",
       trajectoryMode: "non-forced",
       blocks: [
@@ -146,7 +147,8 @@ describe("evaluateResolvedSequence", () => {
       name: "Commands",
       trajectoryMode: "non-forced",
       blocks: [
-        { id: "enable", kind: "set-enabled", objectId: 7, atMs: 1000, enabled: true },
+        { id: "enable", kind: "instruction",
+      presetId: "set-enabled", objectId: 7, atMs: 1000, instr: { enabled: true } },
       ],
       segments: [],
     });
@@ -169,7 +171,7 @@ describe("evaluateResolvedSequence", () => {
 
   it("reaches each dynamic-wave sample exactly and restarts the next segment with acceleration", () => {
     const resolved = resolveActionSequence({
-      id: "seq",
+      id: 1,
       name: "Seq",
       trajectoryMode: "non-forced",
       blocks: [
@@ -222,7 +224,7 @@ describe("evaluateResolvedSequence", () => {
     expect(pose.v3).toBe(0);
 
     const resolved = resolveActionSequence({
-      id: "seq",
+      id: 1,
       name: "Seq",
       trajectoryMode: "non-forced",
       blocks: [

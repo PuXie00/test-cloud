@@ -51,7 +51,7 @@ describe("motion-persist authored sequences", () => {
 
   it("round-trips authored sequences without generating axis tracks", () => {
     const sequence: ActionSequenceConfig = {
-      id: "seq",
+      id: 1,
       name: "Seq",
       trajectoryMode: "non-forced",
       blocks: [
@@ -75,7 +75,7 @@ describe("motion-persist authored sequences", () => {
 
   it("never persists generated preset poses", () => {
     const dynamicPreset: ActionSequenceConfig = {
-      id: "seq-wave",
+      id: 6,
       name: "Wave",
       trajectoryMode: "non-forced",
       blocks: [
@@ -114,7 +114,7 @@ describe("motion-persist authored sequences", () => {
 
   it("never persists default motion segments the user has not reviewed", () => {
     const sequence: ActionSequenceConfig = {
-      id: "seq",
+      id: 1,
       name: "Seq",
       trajectoryMode: "non-forced",
       blocks: [
@@ -137,7 +137,7 @@ describe("motion-persist authored sequences", () => {
 
   it("hydrates authored sequences by clone without axis tracks", () => {
     const sequence: ActionSequenceConfig = {
-      id: "seq",
+      id: 1,
       name: "Seq",
       trajectoryMode: "non-forced",
       blocks: [
@@ -164,7 +164,7 @@ describe("motion-persist authored sequences", () => {
 
   it("legacy program persist clones existing sequences and does not synthesize tracks", () => {
     const sequence: ActionSequenceConfig = {
-      id: "seq",
+      id: 1,
       name: "Original",
       trajectoryMode: "non-forced",
       blocks: [
@@ -194,11 +194,11 @@ describe("motion-persist authored sequences", () => {
             items: [
               {
                 kind: "sequence",
-                sequence: { id: "seq", name: "Renamed by program", durationMs: 9999 },
+                sequence: { id: 1, name: "Renamed by program", durationMs: 9999 },
               },
               {
                 kind: "sequence",
-                sequence: { id: "ghost", name: "Ghost", durationMs: 1 },
+                sequence: { id: 99, name: "Ghost", durationMs: 1 },
               },
             ],
           },
@@ -209,12 +209,12 @@ describe("motion-persist authored sequences", () => {
     expect(persisted.actionSequences).toEqual([sequence]);
     expect(persisted.actionSequences[0]).not.toBe(sequence);
     expect(persisted.actionSequences[0]).not.toHaveProperty("tracks");
-    expect(persisted.actionSequences.some((item) => item.id === "ghost")).toBe(false);
+    expect(persisted.actionSequences.some((item) => item.id === 99)).toBe(false);
   });
 
   it("program panel display duration uses resolved totalMs", () => {
     const sequence: ActionSequenceConfig = {
-      id: "seq",
+      id: 1,
       name: "Seq",
       trajectoryMode: "non-forced",
       blocks: [
@@ -239,7 +239,7 @@ describe("motion-persist authored sequences", () => {
             {
               id: "ch",
               name: "Ch",
-              items: [{ kind: "sequence", refId: "seq" }],
+              items: [{ kind: "sequence", refId: 1 }],
             },
           ],
         },
@@ -247,13 +247,13 @@ describe("motion-persist authored sequences", () => {
     });
     expect(program?.chapters[0]?.items[0]).toEqual({
       kind: "sequence",
-      sequence: { id: "seq", name: "Seq", durationMs: 1000 },
+      sequence: { id: 1, name: "Seq", durationMs: 1000 },
     });
   });
 
   it("does not throw when projecting a program whose sequence has an unknown preset", () => {
     const sequence: ActionSequenceConfig = {
-      id: "seq",
+      id: 1,
       name: "Seq",
       trajectoryMode: "non-forced",
       blocks: [
@@ -279,7 +279,7 @@ describe("motion-persist authored sequences", () => {
             {
               id: "ch",
               name: "Ch",
-              items: [{ kind: "sequence", refId: "seq" }],
+              items: [{ kind: "sequence", refId: 1 }],
             },
           ],
         },
@@ -289,7 +289,7 @@ describe("motion-persist authored sequences", () => {
     const program = motionProgramToLegacyProgram(motion);
     expect(program?.chapters[0]?.items[0]).toEqual({
       kind: "sequence",
-      sequence: { id: "seq", name: "Seq", durationMs: 0 },
+      sequence: { id: 1, name: "Seq", durationMs: 0 },
     });
   });
 });

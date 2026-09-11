@@ -66,7 +66,7 @@ const {
   },
   capturedTriggers: {
     onTriggerCue: null as null | ((slotIndex: number, cueId: string) => void),
-    onTriggerSequence: null as null | ((slotIndex: number, sequenceId: string) => void),
+    onTriggerSequence: null as null | ((slotIndex: number, sequenceId: number) => void),
   },
   programState: {
     current: {
@@ -83,14 +83,14 @@ const {
       ],
       sequences: [
         {
-          id: "sequence-empty",
+          id: 14,
           name: "空序列",
           trajectoryMode: "non-forced" as const,
           blocks: [],
           segments: [],
         },
         {
-          id: "sequence-ok",
+          id: 15,
           name: "正常序列",
           trajectoryMode: "non-forced" as const,
           blocks: [
@@ -118,7 +118,7 @@ const {
       }>,
       dockMode: "cue" as const,
       selectedCueId: null as string | null,
-      selectedSequenceId: null as string | null,
+      selectedSequenceId: null as number | null,
       combineFromCueId: null as string | null,
       selectedObjectIds: [] as string[],
       getTimelineObject: () => null,
@@ -225,7 +225,7 @@ vi.mock("./executors/executors", async () => {
   return {
     Executors: (props: {
       onTriggerCue: (slotIndex: number, cueId: string) => void;
-      onTriggerSequence: (slotIndex: number, sequenceId: string) => void;
+      onTriggerSequence: (slotIndex: number, sequenceId: number) => void;
     }) => {
       capturedTriggers.onTriggerCue = props.onTriggerCue;
       capturedTriggers.onTriggerSequence = props.onTriggerSequence;
@@ -240,7 +240,7 @@ vi.mock("./executors/executors", async () => {
           </button>
           <button
             type="button"
-            onClick={() => props.onTriggerSequence(0, "sequence-empty")}
+            onClick={() => props.onTriggerSequence(0, 14)}
           >
             force-seq-empty
           </button>
@@ -252,7 +252,7 @@ vi.mock("./executors/executors", async () => {
           </button>
           <button
             type="button"
-            onClick={() => props.onTriggerSequence(1, "sequence-ok")}
+            onClick={() => props.onTriggerSequence(1, 15)}
           >
             force-seq-ok
           </button>
@@ -263,9 +263,9 @@ vi.mock("./executors/executors", async () => {
 });
 
 vi.mock("../../hooks/sequence-execution", () => ({
-  startLocalAuthoredSequence: vi.fn(async (args: { sequenceId: string }) => ({
+  startLocalAuthoredSequence: vi.fn(async (args: { sequenceId: number }) => ({
     ok: true,
-    name: args.sequenceId === "sequence-ok" ? "正常序列" : args.sequenceId,
+    name: args.sequenceId === 15 ? "正常序列" : args.sequenceId,
     speedPercent: 100,
     sequenceHandle: { actionNo: 1, syncGroupId: 1 },
   })),
@@ -343,14 +343,14 @@ const makeDocument = (): ProjectDocument => ({
     ],
     actionSequences: [
       {
-        id: "sequence-empty",
+        id: 14,
         name: "空序列",
         trajectoryMode: "non-forced",
         blocks: [],
         segments: [],
       },
       {
-        id: "sequence-ok",
+        id: 15,
         name: "正常序列",
         trajectoryMode: "non-forced",
         blocks: [
@@ -365,16 +365,17 @@ const makeDocument = (): ProjectDocument => ({
         segments: [],
       },
       {
-        id: "sequence-command",
+        id: 16,
         name: "指令序列",
         trajectoryMode: "non-forced",
         blocks: [
           {
             id: "enable-1",
-            kind: "set-enabled",
+            kind: "instruction",
+            presetId: "set-enabled",
             objectId: FIXTURE_OBJECT_ID,
             atMs: 1000,
-            enabled: true,
+            instr: { enabled: true },
           },
         ],
         segments: [],
@@ -390,7 +391,7 @@ const makeDocument = (): ProjectDocument => ({
             name: "章节 1",
             items: [
               { kind: "cue", refId: "cue-empty" },
-              { kind: "sequence", refId: "sequence-empty" },
+              { kind: "sequence", refId: 14 },
               { kind: "cue", refId: "cue-ok" },
             ],
           },
@@ -418,7 +419,7 @@ const okCueItem: ChapterItem = {
 };
 const emptySequenceItem: ChapterItem = {
   kind: "sequence",
-  sequence: { id: "sequence-empty", name: "空序列", durationMs: 0 },
+  sequence: { id: 14, name: "空序列", durationMs: 0 },
 };
 
 afterEach(() => {
@@ -444,7 +445,7 @@ describe("project-motion-readiness (pure)", () => {
     const emptySequence = getMotionItemRepairIssue(
       document,
       "sequence",
-      "sequence-empty",
+      14,
     );
     expect(emptyCue?.code).toBe("empty-cue");
     expect(emptySequence?.code).toBe("empty-sequence");
@@ -452,12 +453,12 @@ describe("project-motion-readiness (pure)", () => {
     expect(document.motion.positionCues[0]).not.toHaveProperty("needsRepair");
     expect(document.motion.actionSequences[0]).not.toHaveProperty("needsRepair");
     expect(getMotionItemRepairIssue(document, "cue", "cue-ok")).toBeNull();
-    expect(getMotionItemRepairIssue(document, "sequence", "sequence-ok")).toBeNull();
-    expect(getMotionItemRepairIssue(document, "sequence", "sequence-command")).toBeNull();
+    expect(getMotionItemRepairIssue(document, "sequence", 15)).toBeNull();
+    expect(getMotionItemRepairIssue(document, "sequence", 16)).toBeNull();
 
     // kind+id namespaces are distinct; missing must not look executable (null)
     const cueAsSequence = getMotionItemRepairIssue(document, "sequence", "cue-empty");
-    const sequenceAsCue = getMotionItemRepairIssue(document, "cue", "sequence-empty");
+    const sequenceAsCue = getMotionItemRepairIssue(document, "cue", 14);
     expect(cueAsSequence).not.toBeNull();
     expect(sequenceAsCue).not.toBeNull();
     expect(cueAsSequence?.code).not.toBe("empty-cue");
@@ -468,7 +469,7 @@ describe("project-motion-readiness (pure)", () => {
     const document = makeDocument();
     expect(
       getProgramRepairIssues(document, "program-a").map((issue) => issue.itemId),
-    ).toEqual(["cue-empty", "sequence-empty"]);
+    ).toEqual(["cue-empty", 14]);
     expect(
       getProgramRepairIssues(document, "program-a").every(
         (issue) => issue.code === "program-ref-empty",
@@ -492,11 +493,11 @@ describe("project-motion-readiness (pure)", () => {
     expect(resolveMotionLaunchBlock(document, "cue", "cue-empty")?.code).toBe("empty-cue");
     expect(resolveMotionLaunchBlock(document, "sequence", "nope")).not.toBeNull();
     expect(resolveMotionLaunchBlock(document, "cue", "cue-ok")).toBeNull();
-    expect(resolveMotionLaunchBlock(document, "sequence", "sequence-empty")?.code).toBe(
+    expect(resolveMotionLaunchBlock(document, "sequence", 14)?.code).toBe(
       "empty-sequence",
     );
-    expect(resolveMotionLaunchBlock(document, "sequence", "sequence-ok")).toBeNull();
-    expect(resolveMotionLaunchBlock(document, "sequence", "sequence-command")).toBeNull();
+    expect(resolveMotionLaunchBlock(document, "sequence", 15)).toBeNull();
+    expect(resolveMotionLaunchBlock(document, "sequence", 16)).toBeNull();
   });
 });
 
@@ -517,7 +518,7 @@ describe("ButtonSlot / FaderSlot GO gate", () => {
       index: 0,
       label: "F1",
       sequence: {
-        id: "sequence-empty",
+        id: 14,
         name: "空序列",
         durationMs: 0,
       },
@@ -624,7 +625,7 @@ describe("ExecArea launch guard", () => {
         index: 0,
         label: "F1",
         sequence: {
-          id: "sequence-empty",
+          id: 14,
           name: "空序列",
           durationMs: 0,
         },
@@ -635,7 +636,7 @@ describe("ExecArea launch guard", () => {
         index: 1,
         label: "F2",
         sequence: {
-          id: "sequence-ok",
+          id: 15,
           name: "正常序列",
           durationMs: 2000,
         },
@@ -744,7 +745,7 @@ describe("program panel launch guards", () => {
             type: "chapter",
             children: [
               { id: "cue-empty", name: "空 Cue", type: "cue" },
-              { id: "sequence-empty", name: "空序列", type: "sequence" },
+              { id: "14", name: "空序列", type: "sequence" },
               { id: "cue-ok", name: "正常 Cue", type: "cue" },
             ],
           },
@@ -826,7 +827,7 @@ describe("execution cards", () => {
   it("keeps a sequence card running after wall-clock exceeds 编排时长 while cue cards auto-complete", () => {
     const authoredSequenceMs = 2000;
     const sequenceCard = runningCard({
-      id: "seq",
+      id: "seq-card",
       kind: "sequence",
       name: "正常序列",
       durationMs: null,
@@ -852,7 +853,7 @@ describe("execution cards", () => {
     render(
       <ExecCardView
         card={runningCard({
-          id: "seq",
+          id: "seq-card",
           kind: "sequence",
           name: "正常序列",
           durationMs: null,
@@ -870,7 +871,7 @@ describe("execution cards", () => {
     render(
       <ExecCardView
         card={runningCard({
-          id: "seq",
+          id: "seq-card",
           kind: "sequence",
           name: "正常序列",
           durationMs: null,

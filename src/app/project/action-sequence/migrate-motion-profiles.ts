@@ -20,7 +20,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const isNewAxisProfile = (value: unknown): value is MotionProfile => {
-  if (!isRecord(value) || value.kind !== "trapezoid" || !isRecord(value.params)) return false;
+  if (!isRecord(value)) return false;
+  if (value.kind === "idle") return value.params === undefined;
+  if (value.kind !== "trapezoid" || !isRecord(value.params)) return false;
   return Number.isFinite(value.params.accelMs) && Number.isFinite(value.params.decelMs);
 };
 
@@ -75,8 +77,8 @@ export const migrateSegmentSettings = (
 const blockTimeMs = (block: TimelineBlock, role: "from" | "to"): number | undefined => {
   switch (block.kind) {
     case "pose":
+    case "instruction":
     case "static-preset":
-    case "set-enabled":
       return block.atMs;
     case "dynamic-preset":
       return role === "from" ? block.startMs : block.endMs;

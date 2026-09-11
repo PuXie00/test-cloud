@@ -7,7 +7,7 @@ import { TimelineEditor } from "./timeline-editor";
 import { createTimelineProps, installTimelinePaneWidth } from "./timeline-test-helpers";
 
 const sequence: ActionSequenceConfig = {
-  id: "seq",
+  id: 1,
   name: "Seq",
   trajectoryMode: "non-forced",
   blocks: [
@@ -278,7 +278,7 @@ describe("timeline interaction", () => {
 
   it("allows scrubbing an empty sequence", () => {
     const empty: ActionSequenceConfig = {
-      id: "empty",
+      id: 1,
       name: "Empty",
       trajectoryMode: "non-forced",
       blocks: [],
@@ -300,7 +300,7 @@ describe("timeline interaction", () => {
     expect(used!.style.width).toBe(`${TIMELINE_PAD_LEFT + msToPx(4000, 100)}px`);
     unmount();
     const empty: ActionSequenceConfig = {
-      id: "empty",
+      id: 1,
       name: "Empty",
       trajectoryMode: "non-forced",
       blocks: [],

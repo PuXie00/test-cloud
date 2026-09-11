@@ -383,7 +383,7 @@ describe("formatObjectDeletionImpact", () => {
       trackCount: 2,
       blockCount: 5,
       emptyCueIds: ["cue-empty"],
-      emptySequenceIds: ["seq-empty"],
+      emptySequenceIds: [1],
       affectedRuleIds: [],
     });
 
@@ -438,7 +438,7 @@ describe("formatObjectDeletionImpact", () => {
       trackCount: 1,
       blockCount: 1,
       emptyCueIds: [],
-      emptySequenceIds: ["seq-empty"],
+      emptySequenceIds: [1],
       affectedRuleIds: [],
     });
     expect(sequencesOnly.warningLines).toHaveLength(1);

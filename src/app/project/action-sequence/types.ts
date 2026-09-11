@@ -4,6 +4,8 @@ export type { TrajectoryMode } from "@shared/action-sequence";
 
 export type ModelPose = { v1: number; v2: number; v3: number };
 
+export type IdleAxisProfile = { kind: "idle" };
+
 export type TrapezoidAxisProfile = {
   kind: "trapezoid";
   params: {
@@ -12,7 +14,7 @@ export type TrapezoidAxisProfile = {
   };
 };
 
-export type MotionProfile = TrapezoidAxisProfile;
+export type MotionProfile = IdleAxisProfile | TrapezoidAxisProfile;
 
 export type AxisMotionProfiles = {
   v1: MotionProfile;
@@ -29,14 +31,19 @@ export type PoseBlock = {
   label?: string;
 };
 
-export type SetEnabledBlock = {
+export type SetEnabledInstr = { enabled: boolean };
+
+export type SetEnabledInstruction = {
   id: string;
-  kind: "set-enabled";
+  kind: "instruction";
+  presetId: "set-enabled";
   objectId: number;
   atMs: number;
-  enabled: boolean;
+  instr: SetEnabledInstr;
   label?: string;
 };
+
+export type InstructionBlock = SetEnabledInstruction;
 
 export type PresetParamValue = number | string | boolean;
 export type PresetBlockBase = {
@@ -61,7 +68,7 @@ export type DynamicPresetBlock = PresetBlockBase & {
 
 export type TimelineBlock =
   | PoseBlock
-  | SetEnabledBlock
+  | InstructionBlock
   | StaticPresetBlock
   | DynamicPresetBlock;
 
@@ -76,7 +83,7 @@ export type MotionSegmentConfig = {
 };
 
 export type ActionSequenceConfig = {
-  id: string;
+  id: number;
   name: string;
   note?: string;
   trajectoryMode: TrajectoryMode;

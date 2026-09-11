@@ -43,7 +43,7 @@ const sequenceOf = (
   blocks: TimelineBlock[],
   extra?: Partial<ActionSequenceConfig>,
 ): ActionSequenceConfig => ({
-  id: "seq",
+  id: 1,
   name: "Seq",
   trajectoryMode: "non-forced",
   blocks,
@@ -88,8 +88,35 @@ const travel900 = (profiles: AxisMotionProfiles = axisProfiles()): ActionSequenc
 describe("validateActionSequence", () => {
   it("allows command-only sequences without warnings", () => {
     expect(codesOf(sequenceOf([
-      { id: "enable", kind: "set-enabled", objectId: 7, atMs: 1000, enabled: true },
+      { id: "enable", kind: "instruction",
+      presetId: "set-enabled", objectId: 7, atMs: 1000, instr: { enabled: true } },
     ]))).toEqual([]);
+  });
+
+  it("blocks an unknown instruction presetId", () => {
+    expect(codesOf(sequenceOf([
+      {
+        id: "x",
+        kind: "instruction",
+        presetId: "nope",
+        objectId: 7,
+        atMs: 0,
+        instr: { enabled: true },
+      } as never,
+    ]))).toContain("unknown-instruction");
+  });
+
+  it("blocks invalid set-enabled instr", () => {
+    expect(codesOf(sequenceOf([
+      {
+        id: "x",
+        kind: "instruction",
+        presetId: "set-enabled",
+        objectId: 7,
+        atMs: 0,
+        instr: { enabled: true, extra: 1 },
+      } as never,
+    ]))).toContain("invalid-instruction");
   });
 
   it("does not treat a timed first pose as missing-initial-pose", () => {
@@ -112,8 +139,10 @@ describe("validateActionSequence", () => {
   it("blocks contradictory enable events", () => {
     const issues = validateActionSequence(
       sequenceOf([
-        { id: "a", kind: "set-enabled", objectId: 7, atMs: 500, enabled: true },
-        { id: "b", kind: "set-enabled", objectId: 7, atMs: 500, enabled: false },
+        { id: "a", kind: "instruction",
+      presetId: "set-enabled", objectId: 7, atMs: 500, instr: { enabled: true } },
+        { id: "b", kind: "instruction",
+      presetId: "set-enabled", objectId: 7, atMs: 500, instr: { enabled: false } },
       ]),
       ctx([{ id: 7, enabledVirtualAxes: ["v1"], limits: {} }]),
     );
@@ -400,6 +429,25 @@ describe("validateActionSequence", () => {
     expect(codesOf(travel900(), contextWith({
       maxVelocity: 374,
     }))).toContain("limit-exceeded");
+  });
+
+  it("blocks a moving axis whose profile is idle", () => {
+    const issues = validateActionSequence(
+      travel900({
+        v1: { kind: "idle" },
+        v2: { kind: "idle" },
+        v3: { kind: "idle" },
+      }),
+      contextWith({ maxVelocity: 10_000 }),
+    );
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        severity: "error",
+        code: "idle-on-moving-axis",
+        objectId: 7,
+        segmentKey: "start->end",
+      }),
+    );
   });
 
   it("does not block when computed acceleration or deceleration would exceed a derived max", () => {
@@ -767,8 +815,10 @@ describe("validateActionSequence", () => {
   it("same-time matching enable events are not a command conflict", () => {
     const issues = validateActionSequence(
       sequenceOf([
-        { id: "a", kind: "set-enabled", objectId: 7, atMs: 500, enabled: true },
-        { id: "b", kind: "set-enabled", objectId: 7, atMs: 500, enabled: true },
+        { id: "a", kind: "instruction",
+      presetId: "set-enabled", objectId: 7, atMs: 500, instr: { enabled: true } },
+        { id: "b", kind: "instruction",
+      presetId: "set-enabled", objectId: 7, atMs: 500, instr: { enabled: true } },
       ]),
       ctx(),
     );

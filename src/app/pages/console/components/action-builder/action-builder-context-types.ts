@@ -28,12 +28,14 @@ export type TransitionDraft = {
   toCueId: string;
 };
 
-export type ProgramItemInput = { kind: "cue" | "sequence"; refId: string };
+export type ProgramItemInput =
+  | { kind: "cue"; refId: string }
+  | { kind: "sequence"; refId: number };
 
 export type ActionBuilderContextValue = {
   sequences: ActionSequenceConfig[];
   sequence: ActionSequenceConfig | null;
-  selectedSequenceId: string;
+  selectedSequenceId: number | null;
   selection: SequenceSelection;
   selectedBlockId: string | null;
   selectedObjectIds: number[];
@@ -56,7 +58,7 @@ export type ActionBuilderContextValue = {
   timelinePxPerSecond: number;
   canPasteBlock: boolean;
   setActiveRightTab: (tab: ActionRightTab) => void;
-  handleSequenceSelect: (sequenceId: string) => void;
+  handleSequenceSelect: (sequenceId: number | null) => void;
   handleSelectionChange: (selection: SequenceSelection) => void;
   handleObjectSelect: (objectId: number) => void;
   handleObjectsSelect: (objectIds: number[]) => void;

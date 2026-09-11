@@ -35,7 +35,7 @@ describe("library-dnd", () => {
 
   it("does not treat a sequence library drag as a Cue drop", () => {
     const transfer = fakeTransfer();
-    writeLibraryDrag(transfer as unknown as DataTransfer, { kind: "sequence", id: "seq-1" });
+    writeLibraryDrag(transfer as unknown as DataTransfer, { kind: "sequence", id: 1 });
     expect(cueIdFromLibraryDrag(transfer as unknown as DataTransfer)).toBeNull();
     expect(readLibraryDrag(transfer as unknown as DataTransfer)?.kind).toBe("sequence");
   });

@@ -96,7 +96,7 @@ describe("validateActionSequence motor-overspeed", () => {
   });
 
   const sequence: ActionSequenceConfig = {
-    id: "seq-1",
+    id: 1,
     name: "multi",
     trajectoryMode: "forced",
     blocks: [

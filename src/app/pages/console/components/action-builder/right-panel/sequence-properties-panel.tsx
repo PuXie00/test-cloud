@@ -4,6 +4,7 @@ import { TabBar } from "@/app/components/ics/tab-bar";
 import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-input";
 import { cn } from "@/app/components/ui/utils";
 import { getPresetDefinition } from "@/app/project/action-sequence/preset-registry";
+import { instructionBlockTitle } from "@/app/project/action-sequence/instruction-registry";
 import type { ResolvedActionSequence, ResolvedPosePoint } from "@/app/project/action-sequence/resolve-sequence";
 import type {
   ActionSequenceConfig,
@@ -12,7 +13,6 @@ import type {
   MotionSegmentSettings,
   PoseBlock,
   PresetParamValue,
-  SetEnabledBlock,
   StaticPresetBlock,
   TimelineBlock,
 } from "@/app/project/action-sequence/types";
@@ -440,16 +440,21 @@ export const SequencePropertiesPanel = ({
     );
   }
 
-  if (block.kind === "set-enabled") {
-    const command: SetEnabledBlock = block;
+  if (block.kind === "instruction" && block.presetId === "set-enabled") {
+    const command = block;
     return (
-      <PropertiesShell title="使能指令" onDelete={() => onDeleteBlock(command.id)}>
+      <PropertiesShell title={instructionBlockTitle(command)} onDelete={() => onDeleteBlock(command.id)}>
         <Field label="使能">
           <input
             type="checkbox"
             aria-label="使能"
-            checked={command.enabled}
-            onChange={() => onReplaceBlock({ ...command, enabled: !command.enabled })}
+            checked={command.instr.enabled}
+            onChange={() =>
+              onReplaceBlock({
+                ...command,
+                instr: { enabled: !command.instr.enabled },
+              })
+            }
             className="h-4 w-4 accent-primary"
           />
         </Field>

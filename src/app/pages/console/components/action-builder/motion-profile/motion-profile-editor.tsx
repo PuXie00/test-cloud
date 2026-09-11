@@ -184,6 +184,7 @@ const ProfileKindSelect = ({
   onChange: (profile: MotionProfile) => void;
 }) => {
   const currentMeta = profileKindMeta(profile.kind);
+  const isIdle = profile.kind === "idle";
   const selectedKind =
     currentMeta?.kind ?? PROFILE_KIND_OPTIONS[0]?.kind ?? profile.kind;
 
@@ -211,26 +212,38 @@ const ProfileKindSelect = ({
       >
         曲线类型
       </span>
-      <select
-        aria-label="曲线类型"
-        value={selectedKind}
-        disabled={disabled}
-        onChange={(event) => handleKindChange(event.currentTarget.value)}
-        className={cn(
-          "rounded-md border border-border/60 bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring",
-          summary
-            ? "mt-0.5 h-8 w-full px-2 text-body-sm"
-            : inline
-              ? "h-8 min-w-28 px-2 text-body-sm"
-              : "h-9 px-3 text-body-md",
-        )}
-      >
-        {PROFILE_KIND_OPTIONS.map((option) => (
-          <option key={option.kind} value={option.kind}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      {isIdle ? (
+        <p
+          aria-label="曲线类型"
+          className={cn(
+            "text-foreground",
+            summary ? "mt-0.5 h-8 px-2 text-body-sm leading-8" : "text-body-sm",
+          )}
+        >
+          静止
+        </p>
+      ) : (
+        <select
+          aria-label="曲线类型"
+          value={selectedKind}
+          disabled={disabled}
+          onChange={(event) => handleKindChange(event.currentTarget.value)}
+          className={cn(
+            "rounded-md border border-border/60 bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring",
+            summary
+              ? "mt-0.5 h-8 w-full px-2 text-body-sm"
+              : inline
+                ? "h-8 min-w-28 px-2 text-body-sm"
+                : "h-9 px-3 text-body-md",
+          )}
+        >
+          {PROFILE_KIND_OPTIONS.map((option) => (
+            <option key={option.kind} value={option.kind}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      )}
     </label>
   );
 };
@@ -302,17 +315,19 @@ export const MotionProfileEditor = ({
     : pickDefaultAxis(enabledAxes, axisContext.travel);
   const currentProfile = value[currentAxis];
   const otherAxes = enabledAxes.filter((axis) => axis !== currentAxis);
-  const kindMeta = profileKindMeta(currentProfile.kind);
   const unit = getVirtualAxisCanonicalUnit(currentAxis, axisContext.controlType);
   const travelDistance = Math.abs(axisContext.travel[currentAxis] ?? 0);
-  const kinematics = tryKinematics(currentProfile, travelDistance, axisContext.durationMs);
+  const displayProfile: MotionProfile =
+    travelDistance === 0 || currentProfile.kind === "idle" ? { kind: "idle" } : currentProfile;
+  const kindMeta = profileKindMeta(displayProfile.kind);
+  const kinematics = tryKinematics(displayProfile, travelDistance, axisContext.durationMs);
   const limits =
     travelDistance > 0 && kinematics
       ? toChartLimits(kinematics, currentAxis, axisContext)
       : undefined;
   const minAccelMs = minAccelMsOf(currentAxis, axisContext);
   const currentWarnings = phaseFloorWarningMessages(
-    currentProfile,
+    displayProfile,
     axisContext.durationMs,
     minAccelMs,
   );
@@ -336,10 +351,10 @@ export const MotionProfileEditor = ({
         <section className="rounded-md bg-muted p-3" aria-label="区间摘要">
           <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
             <ProfileKindSelect
-              profile={currentProfile}
+              profile={displayProfile}
               durationMs={axisContext.durationMs}
               minAccelMs={minAccelMs}
-              disabled={disabled}
+              disabled={disabled || displayProfile.kind === "idle"}
               summary
               onChange={(profile) => handleProfileChange(currentAxis, profile)}
             />
@@ -392,14 +407,18 @@ export const MotionProfileEditor = ({
 
         <div className="h-40 overflow-visible">
           <VelocityChart
-            profile={currentProfile}
+            profile={displayProfile}
             durationMs={axisContext.durationMs}
             velocityUnit={`${unit}/s`}
             limits={limits}
-            disabled={disabled}
+            disabled={disabled || displayProfile.kind === "idle"}
             compact
             minAccelMs={minAccelMs}
-            onProfileChange={(profile) => handleProfileChange(currentAxis, profile)}
+            onProfileChange={
+              displayProfile.kind === "idle"
+                ? undefined
+                : (profile) => handleProfileChange(currentAxis, profile)
+            }
           />
         </div>
 
@@ -412,13 +431,14 @@ export const MotionProfileEditor = ({
           </div>
           {kindMeta ? (
             <TrapezoidProfileEditor
-              value={currentProfile}
+              value={displayProfile}
               onChange={(profile) => handleProfileChange(currentAxis, profile)}
               durationMs={axisContext.durationMs}
               disabled={disabled}
               compact
               showKindSelect={false}
               timeUnit="s"
+              readOnly={displayProfile.kind === "idle"}
             />
           ) : (
             <p className="text-body-sm text-muted-foreground">未知曲线</p>
@@ -531,22 +551,26 @@ export const MotionProfileEditor = ({
   return (
     <div className="flex flex-col gap-3">
       <ProfileKindSelect
-        profile={currentProfile}
+        profile={displayProfile}
         durationMs={axisContext.durationMs}
         minAccelMs={minAccelMs}
-        disabled={disabled}
+        disabled={disabled || displayProfile.kind === "idle"}
         onChange={(profile) => handleProfileChange(currentAxis, profile)}
       />
 
       <div className="h-44 overflow-visible">
         <VelocityChart
-          profile={currentProfile}
+          profile={displayProfile}
           durationMs={axisContext.durationMs}
           velocityUnit={`${unit}/s`}
           limits={limits}
-          disabled={disabled}
+          disabled={disabled || displayProfile.kind === "idle"}
           minAccelMs={minAccelMs}
-          onProfileChange={(profile) => handleProfileChange(currentAxis, profile)}
+          onProfileChange={
+            displayProfile.kind === "idle"
+              ? undefined
+              : (profile) => handleProfileChange(currentAxis, profile)
+          }
         />
       </div>
 
@@ -575,23 +599,24 @@ export const MotionProfileEditor = ({
 
       {kindMeta ? (
         <TrapezoidProfileEditor
-          value={currentProfile}
+          value={displayProfile}
           onChange={(profile) => handleProfileChange(currentAxis, profile)}
           durationMs={axisContext.durationMs}
           disabled={disabled}
           showKindSelect={false}
+          readOnly={displayProfile.kind === "idle"}
         />
       ) : (
         <p className="text-body-sm text-muted-foreground">未知曲线</p>
       )}
 
       <PhaseFloorWarnings
-        profile={currentProfile}
+        profile={displayProfile}
         durationMs={axisContext.durationMs}
         minAccelMs={minAccelMs}
       />
 
-      <AxisMetrics axis={currentAxis} profile={currentProfile} axisContext={axisContext} />
+      <AxisMetrics axis={currentAxis} profile={displayProfile} axisContext={axisContext} />
 
       {otherAxes.length > 0 ? (
         <details>

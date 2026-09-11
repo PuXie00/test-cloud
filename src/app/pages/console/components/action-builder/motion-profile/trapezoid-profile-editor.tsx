@@ -14,6 +14,7 @@ export type TrapezoidProfileEditorProps = {
   compact?: boolean;
   showKindSelect?: boolean;
   timeUnit?: "ms" | "s";
+  readOnly?: boolean;
 };
 
 const formatTime = (valueMs: number, timeUnit: "ms" | "s"): string => {
@@ -103,8 +104,11 @@ export const TrapezoidProfileEditor = ({
   compact = false,
   showKindSelect = true,
   timeUnit = "ms",
+  readOnly = false,
 }: TrapezoidProfileEditorProps) => {
   const cruiseMs = cruiseMsOf(value, durationMs);
+  const accelMs = value.kind === "trapezoid" ? value.params.accelMs : 0;
+  const decelMs = value.kind === "trapezoid" ? value.params.decelMs : 0;
 
   const handleAccelerationChange = (nextMs: number) => {
     const nextProfile = withTrapezoidAccelMs(value, nextMs);
@@ -124,7 +128,6 @@ export const TrapezoidProfileEditor = ({
           <select
             aria-label="曲线类型"
             value="trapezoid"
-            readOnly
             disabled={disabled}
             className={cn(
               "rounded-md border border-border/60 bg-input-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring",
@@ -139,11 +142,12 @@ export const TrapezoidProfileEditor = ({
       <div className={cn("grid grid-cols-3", compact ? "gap-2" : "gap-3")}>
         <PhaseField
           label="加速时间"
-          value={value.params.accelMs}
+          value={accelMs}
           disabled={disabled}
           compact={compact}
+          readOnly={readOnly}
           timeUnit={timeUnit}
-          onValueCommit={handleAccelerationChange}
+          onValueCommit={readOnly ? undefined : handleAccelerationChange}
         />
         <PhaseField
           label="匀速时间"
@@ -155,11 +159,12 @@ export const TrapezoidProfileEditor = ({
         />
         <PhaseField
           label="减速时间"
-          value={value.params.decelMs}
+          value={decelMs}
           disabled={disabled}
           compact={compact}
+          readOnly={readOnly}
           timeUnit={timeUnit}
-          onValueCommit={handleDecelerationChange}
+          onValueCommit={readOnly ? undefined : handleDecelerationChange}
         />
       </div>
     </div>

@@ -1,8 +1,8 @@
 import type { DragEvent } from "react";
 import type {
   DynamicPresetBlock,
+  InstructionBlock,
   ModelPose,
-  SetEnabledBlock,
   StaticPresetBlock,
 } from "@/app/project/action-sequence/types";
 import type { ResolvedMotionSegment, ResolvedPosePoint } from "@/app/project/action-sequence/resolve-sequence";
@@ -28,7 +28,7 @@ export type TimelineTrackProps = {
   objectId: number;
   objectName: string;
   poses: TimelineTrackPose[];
-  commands: SetEnabledBlock[];
+  commands: InstructionBlock[];
   staticPresets: StaticPresetBlock[];
   dynamicPresets: DynamicPresetBlock[];
   resolvedInitialPose?: ResolvedPosePoint;
@@ -196,7 +196,7 @@ export const TimelineTrack = ({
           key={command.id}
           blockId={command.id}
           atMs={command.atMs}
-          enabled={command.enabled}
+          enabled={command.instr.enabled}
           selected={isBlockSelected(selection, command.id)}
           invalid={invalidTargets?.blockIds.has(command.id) ?? false}
           invalidMessage={invalidTargets?.blockMessage.get(command.id)}

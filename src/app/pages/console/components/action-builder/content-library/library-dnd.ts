@@ -4,10 +4,9 @@ export const LIBRARY_ITEM_MIME = "application/x-library-item";
 /** 章节内条目重排拖拽 */
 export const PROGRAM_ITEM_MIME = "application/x-program-item";
 
-export type LibraryDragPayload = {
-  kind: "cue" | "sequence";
-  id: string;
-};
+export type LibraryDragPayload =
+  | { kind: "cue"; id: string }
+  | { kind: "sequence"; id: number };
 
 export type ProgramItemDragPayload = {
   chapterId: string;
@@ -27,8 +26,11 @@ export const readLibraryDrag = (dataTransfer: DataTransfer): LibraryDragPayload 
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as Partial<LibraryDragPayload>;
-    if ((parsed.kind === "cue" || parsed.kind === "sequence") && typeof parsed.id === "string") {
-      return { kind: parsed.kind, id: parsed.id };
+    if (parsed.kind === "cue" && typeof parsed.id === "string") {
+      return { kind: "cue", id: parsed.id };
+    }
+    if (parsed.kind === "sequence" && typeof parsed.id === "number" && Number.isInteger(parsed.id)) {
+      return { kind: "sequence", id: parsed.id };
     }
   } catch {
     return null;

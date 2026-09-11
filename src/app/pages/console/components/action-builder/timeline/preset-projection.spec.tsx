@@ -10,7 +10,7 @@ import { TimelineEditor } from "./timeline-editor";
 import { createTimelineProps, installTimelinePaneWidth } from "./timeline-test-helpers";
 
 const sequenceWithSharedSlope: ActionSequenceConfig = {
-  id: "seq",
+  id: 1,
   name: "Shared slope",
   trajectoryMode: "non-forced",
   blocks: [
@@ -28,7 +28,7 @@ const sequenceWithSharedSlope: ActionSequenceConfig = {
 };
 
 const sequenceWithDynamicLevel: ActionSequenceConfig = {
-  id: "seq-dynamic",
+  id: 2,
   name: "Dynamic level",
   trajectoryMode: "non-forced",
   blocks: [
@@ -48,23 +48,25 @@ const sequenceWithDynamicLevel: ActionSequenceConfig = {
 };
 
 const sequenceWithCommands: ActionSequenceConfig = {
-  id: "seq-cmd",
+  id: 3,
   name: "Commands",
   trajectoryMode: "non-forced",
   blocks: [
     {
       id: "enable-1",
-      kind: "set-enabled",
+      kind: "instruction",
+      presetId: "set-enabled",
       objectId: 7,
       atMs: 0,
-      enabled: true,
+      instr: { enabled: true },
     },
     {
       id: "disable-1",
-      kind: "set-enabled",
+      kind: "instruction",
+      presetId: "set-enabled",
       objectId: 7,
       atMs: 1500,
-      enabled: false,
+      instr: { enabled: false },
     },
   ],
   segments: [],

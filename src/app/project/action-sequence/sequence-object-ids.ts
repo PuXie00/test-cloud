@@ -4,7 +4,7 @@ import type { ActionSequenceConfig } from "./types";
 export const sequenceObjectIds = (sequence: ActionSequenceConfig): Set<number> => {
   const ids = new Set<number>();
   for (const block of sequence.blocks) {
-    if (block.kind === "pose" || block.kind === "set-enabled") {
+    if (block.kind === "pose" || block.kind === "instruction") {
       ids.add(block.objectId);
       continue;
     }

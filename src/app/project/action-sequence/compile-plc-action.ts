@@ -5,6 +5,7 @@ import type {
 } from "@shared/csocket/action-data-save";
 import type { TrajectoryMode } from "@shared/action-sequence";
 import { evaluateResolvedSequence } from "./evaluate-sequence";
+import { instructionToPlcEvent } from "./instruction-registry";
 import { motionProfilePhaseBoundaries } from "./motion-profile";
 import { resolveActionSequence, type ResolvedMotionSegment } from "./resolve-sequence";
 import type { ActionSequenceConfig, ModelPose } from "./types";
@@ -187,14 +188,7 @@ export const compilePlcAction = (
     }),
   );
 
-  const events = sortEvents(
-    resolved.commands.map((command) => ({
-      modelNo: command.objectId,
-      atMs: command.atMs,
-      kind: "set-enabled" as const,
-      enabled: command.enabled,
-    })),
-  );
+  const events = sortEvents(resolved.commands.map(instructionToPlcEvent));
 
   const totalDuration = resolved.totalMs;
   return {

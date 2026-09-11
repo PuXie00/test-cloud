@@ -6,7 +6,7 @@ import type { CueItem } from "../timeline/timeline-data";
 import { cueDropPoseForObject } from "../action-builder-ops";
 
 const sequence: ActionSequenceConfig = {
-  id: "seq",
+  id: 1,
   name: "Seq",
   trajectoryMode: "non-forced",
   blocks: [
@@ -69,7 +69,7 @@ describe("cue drop pose copy", () => {
 
   it("uses Cue values and zero for unspecified axes on the first dropped pose", () => {
     const empty: ActionSequenceConfig = {
-      id: "empty",
+      id: 1,
       name: "empty",
       trajectoryMode: "non-forced",
       blocks: [],

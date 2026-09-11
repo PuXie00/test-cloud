@@ -5,7 +5,7 @@ import { selectionFromBlockIds } from "../sequence-selection";
 import { collectMarqueeBlockIds } from "./timeline-marquee";
 
 const sequence: ActionSequenceConfig = {
-  id: "seq",
+  id: 1,
   name: "Seq",
   trajectoryMode: "non-forced",
   blocks: [
@@ -13,10 +13,11 @@ const sequence: ActionSequenceConfig = {
     { id: "later", kind: "pose", objectId: 7, atMs: 4000, pose: { v1: 2, v2: 0, v3: 0 } },
     {
       id: "enable",
-      kind: "set-enabled",
+      kind: "instruction",
+      presetId: "set-enabled",
       objectId: 8,
       atMs: 2500,
-      enabled: true,
+      instr: { enabled: true },
     },
     {
       id: "dynamic-1",

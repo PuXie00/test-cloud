@@ -1,4 +1,4 @@
-import type { AxisMotionProfiles, MotionProfile } from "./types";
+import type { AxisMotionProfiles, IdleAxisProfile, MotionProfile, TrapezoidAxisProfile } from "./types";
 
 export type MotionProfileKinematics = {
   peakVelocity: number;
@@ -16,14 +16,40 @@ const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
 const clampMs = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
 
-export const cruiseMsOf = (profile: MotionProfile, durationMs: number): number =>
-  durationMs - profile.params.accelMs - profile.params.decelMs;
+const idleKinematics = (durationMs: number): MotionProfileKinematics => ({
+  peakVelocity: 0,
+  acceleration: 0,
+  deceleration: 0,
+  accelDurationSec: 0,
+  cruiseDurationSec: durationMs > 0 ? durationMs / 1000 : 0,
+  decelDurationSec: 0,
+});
+
+export const createIdleAxisProfile = (): IdleAxisProfile => ({ kind: "idle" });
+
+export const syncAxisProfileToTravel = (
+  profile: MotionProfile,
+  travel: number,
+  durationMs: number,
+  minAccelTimeSec?: number,
+): MotionProfile => {
+  if (travel === 0) return createIdleAxisProfile();
+  if (profile.kind === "idle") {
+    return createDefaultAxisProfile(durationMs, minAccelTimeSec);
+  }
+  return profile;
+};
+
+export const cruiseMsOf = (profile: MotionProfile, durationMs: number): number => {
+  if (profile.kind === "idle") return durationMs;
+  return durationMs - profile.params.accelMs - profile.params.decelMs;
+};
 
 export const ratiosFromProfile = (
   profile: MotionProfile,
   durationMs: number,
 ): { accelRatio: number; decelRatio: number } | null => {
-  if (durationMs <= 0) return null;
+  if (profile.kind !== "trapezoid" || durationMs <= 0) return null;
   return {
     accelRatio: profile.params.accelMs / durationMs,
     decelRatio: profile.params.decelMs / durationMs,
@@ -33,7 +59,7 @@ export const ratiosFromProfile = (
 export const createDefaultAxisProfile = (
   durationMs: number,
   minAccelTimeSec?: number,
-): MotionProfile => {
+): TrapezoidAxisProfile => {
   const ms =
     minAccelTimeSec !== undefined &&
     Number.isFinite(minAccelTimeSec) &&
@@ -57,10 +83,10 @@ export const createDefaultAxisProfiles = (
   v3: createDefaultAxisProfile(durationMs, minAccelTimeByAxis?.v3),
 });
 
-export const cloneMotionProfile = (profile: MotionProfile): MotionProfile => ({
-  kind: "trapezoid",
-  params: { ...profile.params },
-});
+export const cloneMotionProfile = (profile: MotionProfile): MotionProfile => {
+  if (profile.kind === "idle") return { kind: "idle" };
+  return { kind: "trapezoid", params: { ...profile.params } };
+};
 
 export const cloneAxisProfiles = (profiles: AxisMotionProfiles): AxisMotionProfiles => ({
   v1: cloneMotionProfile(profiles.v1),
@@ -69,6 +95,7 @@ export const cloneAxisProfiles = (profiles: AxisMotionProfiles): AxisMotionProfi
 });
 
 export const validateMotionProfile = (profile: MotionProfile): string[] => {
+  if (profile.kind === "idle") return [];
   const { accelMs, decelMs } = profile.params;
   const errors: string[] = [];
   if (!Number.isFinite(accelMs) || accelMs <= 0) {
@@ -87,6 +114,7 @@ const assertLegalCruiseRatios = (
   profile: MotionProfile,
   durationMs: number,
 ): { accelRatio: number; decelRatio: number } | null => {
+  if (profile.kind !== "trapezoid") return null;
   const ratios = ratiosFromProfile(profile, durationMs);
   if (
     !ratios ||
@@ -103,6 +131,7 @@ export const sampleVelocityNorm = (
   tNorm: number,
   durationMs: number,
 ): number => {
+  if (profile.kind === "idle") return 0;
   if (profile.kind !== "trapezoid") {
     throw new Error("unsupported motion profile kind");
   }
@@ -139,6 +168,7 @@ export const applyTrapezoidHandleDrag = (
   durationMs: number,
   minAccelMs?: number,
 ): MotionProfile => {
+  if (profile.kind !== "trapezoid") return profile;
   const minMs = Math.max(TRAPEZOID_EPSILON_MS, minAccelMs ?? TRAPEZOID_EPSILON_MS);
   const { accelMs, decelMs } = profile.params;
   const otherMs = handleId === "accel-end" ? decelMs : accelMs;
@@ -158,6 +188,7 @@ export const withTrapezoidAccelMs = (
   profile: MotionProfile,
   nextAccelMs: number,
 ): MotionProfile | null => {
+  if (profile.kind !== "trapezoid") return null;
   if (!Number.isFinite(nextAccelMs) || nextAccelMs <= 0) return null;
   return {
     kind: "trapezoid",
@@ -172,6 +203,7 @@ export const withTrapezoidDecelMs = (
   profile: MotionProfile,
   nextDecelMs: number,
 ): MotionProfile | null => {
+  if (profile.kind !== "trapezoid") return null;
   if (!Number.isFinite(nextDecelMs) || nextDecelMs <= 0) return null;
   return {
     kind: "trapezoid",
@@ -187,6 +219,7 @@ export const evaluateMotionProfile = (
   normalizedTime: number,
   durationMs: number,
 ): number => {
+  if (profile.kind === "idle") return 0;
   const ratios = assertLegalCruiseRatios(profile, durationMs);
   if (!ratios) {
     throw new Error("invalid trapezoid motion profile");
@@ -228,6 +261,7 @@ export const calculateMotionProfileKinematics = (
   distance: number,
   durationMs: number,
 ): MotionProfileKinematics => {
+  if (profile.kind === "idle") return idleKinematics(durationMs);
   const ratios = assertLegalCruiseRatios(profile, durationMs);
   if (!ratios) {
     throw new Error("motion profile and duration must be valid");

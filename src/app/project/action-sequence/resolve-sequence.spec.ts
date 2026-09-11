@@ -8,7 +8,7 @@ import type {
   ModelPose,
   TimelineBlock,
 } from "./types";
-import { createDefaultAxisProfiles } from "./motion-profile";
+import { createDefaultAxisProfile, createDefaultAxisProfiles } from "./motion-profile";
 
 const origin: ModelPose = { v1: 0, v2: 0, v3: 0 };
 
@@ -18,11 +18,17 @@ const axisProfiles = (accelMs: number, decelMs: number): AxisMotionProfiles => (
   v3: { kind: "trapezoid", params: { accelMs, decelMs } },
 });
 
+const movingV1IdleOthers = (accelMs: number, decelMs: number): AxisMotionProfiles => ({
+  v1: { kind: "trapezoid", params: { accelMs, decelMs } },
+  v2: { kind: "idle" },
+  v3: { kind: "idle" },
+});
+
 const sequenceOf = (
   blocks: TimelineBlock[],
   extra?: Partial<ActionSequenceConfig>,
 ): ActionSequenceConfig => ({
-  id: "seq",
+  id: 1,
   name: "Seq",
   trajectoryMode: "non-forced",
   blocks,
@@ -112,7 +118,7 @@ describe("resolveActionSequence", () => {
 
   it("expands one static preset into linked model poses", () => {
     const resolved = resolveActionSequence({
-      id: "seq",
+      id: 1,
       name: "Seq",
       trajectoryMode: "non-forced",
       blocks: [
@@ -132,7 +138,7 @@ describe("resolveActionSequence", () => {
 
   it("uses exact sourceRef conventions and includes the initial pose among timed poses", () => {
     const resolved = resolveActionSequence({
-      id: "seq",
+      id: 1,
       name: "Seq",
       trajectoryMode: "non-forced",
       blocks: [
@@ -227,9 +233,9 @@ describe("resolveActionSequence", () => {
   it("sorts commands by atMs then stable id", () => {
     const resolved = resolveActionSequence(
       sequenceOf([
-        { id: "b", kind: "set-enabled", objectId: 8, atMs: 500, enabled: false },
-        { id: "z", kind: "set-enabled", objectId: 7, atMs: 100, enabled: true },
-        { id: "a", kind: "set-enabled", objectId: 7, atMs: 500, enabled: true },
+        { id: "b", kind: "instruction", presetId: "set-enabled", objectId: 8, atMs: 500, instr: { enabled: false } },
+        { id: "z", kind: "instruction", presetId: "set-enabled", objectId: 7, atMs: 100, instr: { enabled: true } },
+        { id: "a", kind: "instruction", presetId: "set-enabled", objectId: 7, atMs: 500, instr: { enabled: true } },
       ]),
     );
 
@@ -239,10 +245,11 @@ describe("resolveActionSequence", () => {
   it("copies authored commands so mutating resolved commands cannot alias them", () => {
     const authoredCommand = {
       id: "enable-1",
-      kind: "set-enabled" as const,
+      kind: "instruction" as const,
+      presetId: "set-enabled" as const,
       objectId: 7,
       atMs: 400,
-      enabled: true,
+      instr: { enabled: true },
       label: "开",
     };
     const authored = sequenceOf([authoredCommand]);
@@ -256,16 +263,17 @@ describe("resolveActionSequence", () => {
     if (resolvedCommand === undefined) {
       throw new Error("expected a resolved command");
     }
-    resolvedCommand.enabled = false;
+    resolvedCommand.instr.enabled = false;
     resolvedCommand.atMs = 1;
     resolvedCommand.label = "改";
 
     expect(authoredCommand).toEqual({
       id: "enable-1",
-      kind: "set-enabled",
+      kind: "instruction",
+      presetId: "set-enabled",
       objectId: 7,
       atMs: 400,
-      enabled: true,
+      instr: { enabled: true },
       label: "开",
     });
     expect(authored.blocks[0]).toEqual(authoredCommand);
@@ -276,12 +284,14 @@ describe("resolveActionSequence", () => {
     expect(resolveActionSequence(sequenceOf([])).initialPoseByObject.size).toBe(0);
     expect(
       resolveActionSequence(
-        sequenceOf([{ id: "enable", kind: "set-enabled", objectId: 7, atMs: 750, enabled: true }]),
+        sequenceOf([{ id: "enable", kind: "instruction",
+      presetId: "set-enabled", objectId: 7, atMs: 750, instr: { enabled: true } }]),
       ).totalMs,
     ).toBe(750);
     expect(
       resolveActionSequence(
-        sequenceOf([{ id: "enable", kind: "set-enabled", objectId: 7, atMs: 750, enabled: true }]),
+        sequenceOf([{ id: "enable", kind: "instruction",
+      presetId: "set-enabled", objectId: 7, atMs: 750, instr: { enabled: true } }]),
       ).initialPoseByObject.size,
     ).toBe(0);
 
@@ -300,7 +310,8 @@ describe("resolveActionSequence", () => {
         sequenceOf([
           dynamic,
           { id: "pose-late", kind: "pose", objectId: 9, atMs: 2500, pose: origin },
-          { id: "enable", kind: "set-enabled", objectId: 7, atMs: 3000, enabled: true },
+          { id: "enable", kind: "instruction",
+      presetId: "set-enabled", objectId: 7, atMs: 3000, instr: { enabled: true } },
         ]),
       ).totalMs,
     ).toBe(4000);
@@ -358,7 +369,9 @@ describe("resolveActionSequence", () => {
     );
     for (const segment of internals) {
       expect(segment.settings.profiles).not.toBe(profiles);
-      expect(segment.settings.profiles.v1.params).not.toBe(profiles.v1.params);
+      const clonedV1 = segment.settings.profiles.v1;
+      if (clonedV1.kind !== "trapezoid") throw new Error("expected trapezoid");
+      expect(clonedV1.params).not.toBe(profiles.v1.params);
     }
     expect(internals.every((segment) => !("ownerPresetId" in segment))).toBe(true);
     expect(resolved.segments.filter((segment) => segment.configurable)).toEqual([]);
@@ -370,7 +383,7 @@ describe("resolveActionSequence", () => {
       profiles: axisProfiles(225, 375),
     };
     const authored: ActionSequenceConfig = {
-      id: "seq",
+      id: 1,
       name: "Seq",
       trajectoryMode: "non-forced",
       blocks: [
@@ -412,11 +425,13 @@ describe("resolveActionSequence", () => {
     const matched = resolved.segments[0];
     expect(matched?.settings).not.toBe(authoredSettings);
     expect(matched?.settings.profiles).not.toBe(authoredSettings.profiles);
-    expect(matched?.settings.profiles.v1.params).not.toBe(authoredSettings.profiles.v1.params);
+    const matchedV1 = matched?.settings.profiles.v1;
+    if (matchedV1?.kind !== "trapezoid") throw new Error("expected trapezoid v1");
+    expect(matchedV1.params).not.toBe(authoredSettings.profiles.v1.params);
     if (matched === undefined) {
       throw new Error("expected matched segment");
     }
-    matched.settings.profiles.v1.params.accelMs = 900;
+    matchedV1.params.accelMs = 900;
     expect(authoredSettings.profiles.v1.params.accelMs).toBe(225);
     expect(authored.segments[0]?.settings.profiles.v1.params.accelMs).toBe(225);
   });
@@ -468,17 +483,19 @@ describe("resolveActionSequence", () => {
     const blocks: TimelineBlock[] = [
       {
         id: "z",
-        kind: "set-enabled",
+        kind: "instruction",
+        presetId: "set-enabled",
         objectId: 7,
         atMs: 800,
-        enabled: true,
+        instr: { enabled: true },
       },
       {
         id: "a",
-        kind: "set-enabled",
+        kind: "instruction",
+        presetId: "set-enabled",
         objectId: 7,
         atMs: 100,
-        enabled: false,
+        instr: { enabled: false },
       },
       {
         id: "lvl-1",
@@ -499,7 +516,7 @@ describe("resolveActionSequence", () => {
       },
     ];
     const authored: ActionSequenceConfig = {
-      id: "seq",
+      id: 1,
       name: "Seq",
       trajectoryMode: "non-forced",
       blocks,
@@ -685,25 +702,22 @@ describe("reconcileSegmentConfigs", () => {
       {
         fromRef: "pose-1",
         toRef: "preset:lvl-1:7:0",
-        settings: { profiles: axisProfiles(100, 300) },
+        settings: { profiles: movingV1IdleOthers(100, 300) },
       },
     ]);
     expect(persisted[0]).not.toBe(existingReviewed);
     expect(persisted[0]?.settings).not.toBe(existingReviewed.settings);
-    expect(persisted[0]?.settings.profiles.v1.params).not.toBe(
-      existingReviewed.settings.profiles.v1.params,
-    );
-    if (persisted[0] === undefined) {
-      throw new Error("expected reviewed profile config");
-    }
-    persisted[0].settings.profiles.v1.params.accelMs = 900;
+    const persistedV1 = persisted[0]?.settings.profiles.v1;
+    if (persistedV1?.kind !== "trapezoid") throw new Error("expected trapezoid v1");
+    expect(persistedV1.params).not.toBe(existingReviewed.settings.profiles.v1.params);
+    persistedV1.params.accelMs = 900;
     expect(existingReviewed.settings.profiles.v1.params.accelMs).toBe(100);
     expect(authored.segments[1]?.settings.profiles.v1.params.accelMs).toBe(100);
   });
 
   it("persists every configurable adjacency including default profiles", () => {
     const authored: ActionSequenceConfig = {
-      id: "seq",
+      id: 1,
       name: "Seq",
       trajectoryMode: "non-forced",
       blocks: [
@@ -732,23 +746,89 @@ describe("reconcileSegmentConfigs", () => {
       settings: { profiles: createDefaultAxisProfiles(2000) },
     });
     const persisted = reconcileSegmentConfigs(first.segments, []);
+    const expectedProfiles = {
+      v1: createDefaultAxisProfile(2000),
+      v2: { kind: "idle" as const },
+      v3: { kind: "idle" as const },
+    };
     expect(persisted).toEqual([
       {
         fromRef: "pose-1",
         toRef: "pose-2",
-        settings: { profiles: createDefaultAxisProfiles(2000) },
+        settings: { profiles: expectedProfiles },
       },
     ]);
-    expect(persisted[0]?.settings.profiles.v1.params).not.toBe(
-      first.segments[0]?.settings.profiles.v1.params,
-    );
+    const persistedV1 = persisted[0]?.settings.profiles.v1;
+    const firstV1 = first.segments[0]?.settings.profiles.v1;
+    if (persistedV1?.kind !== "trapezoid" || firstV1?.kind !== "trapezoid") {
+      throw new Error("expected trapezoid v1");
+    }
+    expect(persistedV1.params).not.toBe(firstV1.params);
     const reloaded = resolveActionSequence({ ...authored, segments: persisted });
-    expect(reloaded.segments[0]?.settings).toEqual({
-      profiles: createDefaultAxisProfiles(2000),
-    });
+    expect(reloaded.segments[0]?.settings).toEqual({ profiles: expectedProfiles });
     expect(reloaded.segments[0]?.settings).not.toBe(first.segments[0]?.settings);
-    expect(reloaded.segments[0]?.settings.profiles.v1.params).not.toBe(
-      persisted[0]?.settings.profiles.v1.params,
+    const reloadedV1 = reloaded.segments[0]?.settings.profiles.v1;
+    if (reloadedV1?.kind !== "trapezoid") throw new Error("expected trapezoid v1");
+    expect(reloadedV1.params).not.toBe(persistedV1.params);
+  });
+
+  it("writes idle for zero-travel axes and restores default trapezoid when travel returns", () => {
+    const authored: ActionSequenceConfig = {
+      id: 1,
+      name: "Seq",
+      trajectoryMode: "non-forced",
+      blocks: [
+        { id: "a", kind: "pose", objectId: 7, atMs: 0, pose: { v1: 100, v2: 5, v3: 0 } },
+        { id: "b", kind: "pose", objectId: 7, atMs: 5000, pose: { v1: 100, v2: 15, v3: 0 } },
+      ],
+      segments: [
+        { fromRef: "a", toRef: "b", settings: { profiles: axisProfiles(200, 200) } },
+      ],
+    };
+    const resolved = resolveActionSequence(authored);
+    const persisted = reconcileSegmentConfigs(resolved.segments, authored.segments, {
+      minAccelTimeByObject: () => ({ v2: 1 }),
+    });
+    expect(persisted[0]?.settings.profiles.v1).toEqual({ kind: "idle" });
+    expect(persisted[0]?.settings.profiles.v3).toEqual({ kind: "idle" });
+    expect(persisted[0]?.settings.profiles.v2).toEqual({
+      kind: "trapezoid",
+      params: { accelMs: 200, decelMs: 200 },
+    });
+
+    const idleAuthored: ActionSequenceConfig = {
+      ...authored,
+      blocks: [
+        { id: "a", kind: "pose", objectId: 7, atMs: 0, pose: { v1: 0, v2: 5, v3: 0 } },
+        { id: "b", kind: "pose", objectId: 7, atMs: 5000, pose: { v1: 80, v2: 15, v3: 0 } },
+      ],
+      segments: [
+        {
+          fromRef: "a",
+          toRef: "b",
+          settings: {
+            profiles: {
+              v1: { kind: "idle" },
+              v2: { kind: "trapezoid", params: { accelMs: 200, decelMs: 200 } },
+              v3: { kind: "idle" },
+            },
+          },
+        },
+      ],
+    };
+    const restored = reconcileSegmentConfigs(
+      resolveActionSequence(idleAuthored).segments,
+      idleAuthored.segments,
+      { minAccelTimeByObject: () => ({ v1: 1, v2: 1 }) },
     );
+    expect(restored[0]?.settings.profiles.v1).toEqual({
+      kind: "trapezoid",
+      params: { accelMs: 1000, decelMs: 1000 },
+    });
+    expect(restored[0]?.settings.profiles.v2).toEqual({
+      kind: "trapezoid",
+      params: { accelMs: 200, decelMs: 200 },
+    });
+    expect(restored[0]?.settings.profiles.v3).toEqual({ kind: "idle" });
   });
 });

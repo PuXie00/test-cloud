@@ -48,8 +48,8 @@ export const motionToProgramNodes = (motion: ProjectMotion): ProgramNode[] => {
         }
         const sequence = seqById.get(item.refId);
         return {
-          id: item.refId,
-          name: sequence?.name ?? item.refId,
+          id: String(item.refId),
+          name: sequence?.name ?? String(item.refId),
           type: "sequence" as const,
         };
       }),

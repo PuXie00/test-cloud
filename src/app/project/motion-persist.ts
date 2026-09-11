@@ -47,7 +47,11 @@ const programNodeToChapter = (node: ProgramNode): ProgramChapterConfig => ({
   name: node.name,
   items: (node.children ?? []).flatMap((child): ProgramItemRef[] => {
     if (child.type === "cue") return [{ kind: "cue", refId: child.id }];
-    if (child.type === "sequence") return [{ kind: "sequence", refId: child.id }];
+    if (child.type === "sequence") {
+      const refId = Number(child.id);
+      if (!Number.isInteger(refId)) return [];
+      return [{ kind: "sequence", refId }];
+    }
     return [];
   }),
 });

@@ -14,6 +14,7 @@ import {
   type ControlTypeCode,
 } from "./control-type-code";
 import { PROJECT_SCHEMA_VERSION, type VirtualAxisId } from "./project-document-types";
+import { INSTRUCTION_PRESET_IDS } from "./action-sequence/instruction-registry";
 
 const CURRENT_WIZARD_STEPS = ["objects", "hardware", "binding", "review"] as const;
 const SHAPE_PRESETS = Object.keys(SHAPE_DIMENSION_KEYS) as ShapePresetId[];
@@ -566,12 +567,18 @@ const validateCue = (value: unknown, path: string, a: StructuralAssertions): voi
   }
 };
 
-const TIMELINE_BLOCK_KINDS = ["pose", "set-enabled", "static-preset", "dynamic-preset"] as const;
-const MOTION_PROFILE_KINDS = ["trapezoid"] as const;
+const TIMELINE_BLOCK_KINDS = ["pose", "instruction", "static-preset", "dynamic-preset"] as const;
+const MOTION_PROFILE_KINDS = ["trapezoid", "idle"] as const;
 
 const validateMotionProfile = (value: unknown, path: string, a: StructuralAssertions): void => {
   const profile = a.record(value, path);
   a.enum(profile.kind, MOTION_PROFILE_KINDS, `${path}.kind`);
+  if (profile.kind === "idle") {
+    if (profile.params !== undefined) {
+      a.fail(`${path}.params`, "idle profiles must not have params");
+    }
+    return;
+  }
   const params = a.record(profile.params, `${path}.params`);
   a.finite(params.accelMs, `${path}.params.accelMs`);
   a.finite(params.decelMs, `${path}.params.decelMs`);
@@ -627,10 +634,22 @@ const validateTimelineBlock = (value: unknown, path: string, a: StructuralAssert
       a.nonNegativeFinite(block.atMs, `${path}.atMs`);
       validateModelPose(block.pose, `${path}.pose`, a);
       break;
-    case "set-enabled":
+    case "instruction":
       validateSetupEntityId(block.objectId, `${path}.objectId`, a);
       a.nonNegativeFinite(block.atMs, `${path}.atMs`);
-      a.boolean(block.enabled, `${path}.enabled`);
+      a.enum(block.presetId, INSTRUCTION_PRESET_IDS, `${path}.presetId`);
+      if (block.enabled !== undefined) {
+        a.fail(`${path}.enabled`, "instruction enabled must live in instr");
+      }
+      {
+        const instr = a.record(block.instr, `${path}.instr`);
+        a.boolean(instr.enabled, `${path}.instr.enabled`);
+        for (const key of Object.keys(instr)) {
+          if (key !== "enabled") {
+            a.fail(keyedPath(`${path}.instr`, key), "unknown instruction parameter");
+          }
+        }
+      }
       break;
     case "static-preset":
       validatePresetBlockBase(block, path, a);
@@ -647,7 +666,7 @@ const validateTimelineBlock = (value: unknown, path: string, a: StructuralAssert
 
 const validateSequence = (value: unknown, path: string, a: StructuralAssertions): void => {
   const sequence = a.record(value, path);
-  a.string(sequence.id, `${path}.id`);
+  validateSetupEntityId(sequence.id, `${path}.id`, a);
   a.string(sequence.name, `${path}.name`);
   a.optionalString(sequence.note, `${path}.note`);
   a.enum(sequence.trajectoryMode, TRAJECTORY_MODES, `${path}.trajectoryMode`);
@@ -688,7 +707,11 @@ const validateProgram = (value: unknown, path: string, a: StructuralAssertions):
       const itemPath = indexedPath(`${chapterPath}.items`, itemIndex);
       const reference = a.record(chapterItem, itemPath);
       a.enum(reference.kind, ["cue", "sequence"], `${itemPath}.kind`);
-      a.string(reference.refId, `${itemPath}.refId`);
+      if (reference.kind === "sequence") {
+        validateSetupEntityId(reference.refId, `${itemPath}.refId`, a);
+      } else {
+        a.string(reference.refId, `${itemPath}.refId`);
+      }
     });
   });
 };
@@ -698,9 +721,21 @@ const validateMotion = (value: unknown, path: string, a: StructuralAssertions): 
   a.array(motion.positionCues, `${path}.positionCues`).forEach((cue, index) =>
     validateCue(cue, indexedPath(`${path}.positionCues`, index), a),
   );
-  a.array(motion.actionSequences, `${path}.actionSequences`).forEach((sequence, index) =>
+  const sequences = a.array(motion.actionSequences, `${path}.actionSequences`);
+  sequences.forEach((sequence, index) =>
     validateSequence(sequence, indexedPath(`${path}.actionSequences`, index), a),
   );
+  const usedSequenceIds = new Map<number, string>();
+  sequences.forEach((item, index) => {
+    const sequence = a.record(item, indexedPath(`${path}.actionSequences`, index));
+    const ownerPath = indexedPath(`${path}.actionSequences`, index) + ".id";
+    const id = validateSetupEntityId(sequence.id, ownerPath, a);
+    const existing = usedSequenceIds.get(id);
+    if (existing !== undefined) {
+      a.fail(ownerPath, `duplicate sequence id ${id} (also at ${existing})`);
+    }
+    usedSequenceIds.set(id, ownerPath);
+  });
   a.array(motion.programs, `${path}.programs`).forEach((program, index) =>
     validateProgram(program, indexedPath(`${path}.programs`, index), a),
   );

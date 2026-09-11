@@ -4,8 +4,8 @@ import { sequenceObjectIds } from "./sequence-object-ids";
 import type { ActionSequenceConfig } from "./types";
 
 const sequenceOf = (blocks: ActionSequenceConfig["blocks"]): ActionSequenceConfig => ({
-  id: "seq",
-  name: "seq",
+  id: 1,
+  name: "Seq",
   trajectoryMode: "forced",
   blocks,
   segments: [],
@@ -16,7 +16,8 @@ describe("sequenceObjectIds", () => {
     const ids = sequenceObjectIds(
       sequenceOf([
         { id: "p", kind: "pose", objectId: 1, atMs: 0, pose: { v1: 0, v2: 0, v3: 0 } },
-        { id: "e", kind: "set-enabled", objectId: 2, atMs: 0, enabled: true },
+        { id: "e", kind: "instruction",
+      presetId: "set-enabled", objectId: 2, atMs: 0, instr: { enabled: true } },
       ]),
     );
     expect([...ids].sort()).toEqual([1, 2]);

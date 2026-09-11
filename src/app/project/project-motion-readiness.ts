@@ -11,7 +11,7 @@ import { resolveVirtualAxisMaxVelocity } from "./virtual-axis-max-velocity";
 
 export type MotionRepairIssue = {
   code: "empty-cue" | "empty-sequence" | "program-ref-empty";
-  itemId: string;
+  itemId: string | number;
   message: string;
 };
 
@@ -56,7 +56,10 @@ export const sequenceValidationContextFromSetup = (
   ),
 });
 
-const sequenceHasBlockingIssues = (document: ProjectDocument, sequenceId: string): boolean => {
+const sequenceHasBlockingIssues = (
+  document: ProjectDocument,
+  sequenceId: string | number,
+): boolean => {
   const sequence = document.motion.actionSequences.find((entry) => entry.id === sequenceId);
   if (!sequence) return true;
   try {
@@ -75,7 +78,7 @@ const sequenceHasBlockingIssues = (document: ProjectDocument, sequenceId: string
 export const getMotionItemRepairIssue = (
   document: ProjectDocument,
   kind: "cue" | "sequence",
-  itemId: string,
+  itemId: string | number,
 ): MotionRepairIssue | null => {
   if (kind === "cue") {
     const cue = document.motion.positionCues.find((entry) => entry.id === itemId);
@@ -128,7 +131,7 @@ export const getMotionItemRepairIssue = (
 export const resolveMotionLaunchBlock = (
   document: ProjectDocument | null | undefined,
   kind: "cue" | "sequence",
-  itemId: string,
+  itemId: string | number,
 ): MotionRepairIssue | null => {
   if (!document) {
     return {

@@ -24,7 +24,7 @@ const sequenceOf = (
   overrides: Partial<ActionSequenceConfig> & Record<string, unknown>,
 ): ActionSequenceConfig =>
   ({
-    id: "seq",
+    id: 1,
     name: "Seq",
     trajectoryMode: "non-forced",
     blocks: [],
@@ -80,6 +80,18 @@ describe("migrateSegmentSettings", () => {
     expect(next.profiles).not.toBe(profiles);
     expect(next.profiles.v1).not.toBe(profiles.v1);
     expect(next.profiles.v1.params).not.toBe(profiles.v1.params);
+    expect(next.profiles.v2).not.toBe(profiles.v2);
+    expect(next.profiles.v3).not.toBe(profiles.v3);
+  });
+
+  it("keeps idle axes instead of rewriting them to default trapezoids", () => {
+    const profiles = {
+      v1: trap(100, 200),
+      v2: { kind: "idle" as const },
+      v3: { kind: "idle" as const },
+    };
+    const next = migrateSegmentSettings({ profiles }, 9000);
+    expect(next.profiles).toEqual(profiles);
     expect(next.profiles.v2).not.toBe(profiles.v2);
     expect(next.profiles.v3).not.toBe(profiles.v3);
   });

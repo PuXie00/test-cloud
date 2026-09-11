@@ -6,7 +6,7 @@ import { createEmptyDocument } from "@/app/project/project-document-empty";
 import { ContentLibraryPanel } from "./content-library-panel";
 
 const sequence: ActionSequenceConfig = {
-  id: "seq-1",
+  id: 1,
   name: "共享斜面",
   trajectoryMode: "non-forced",
   blocks: [
@@ -56,7 +56,7 @@ const mockBuilder = (overrides: Record<string, unknown> = {}) => {
     sequences: [sequence],
     dockMode: "sequence",
     selectedCueId: null,
-    selectedSequenceId: "seq-1",
+    selectedSequenceId: 1,
     combineFromCueId: null,
     programs: [],
     selectedObjectIds: [7],
@@ -92,14 +92,14 @@ describe("content library panel", () => {
     mockBuilder({
       sequences: [
         {
-          id: "empty",
+          id: 1,
           name: "空序列",
           trajectoryMode: "non-forced",
           blocks: [],
           segments: [],
         },
       ],
-      selectedSequenceId: "empty",
+      selectedSequenceId: null,
     });
     render(<ContentLibraryPanel />);
     expect(screen.getByRole("button", { name: "空序列，待修复" })).not.toBeNull();
@@ -107,7 +107,7 @@ describe("content library panel", () => {
 
   it("marks a sequence with blocking validation issues as needing repair", () => {
     const invalid: ActionSequenceConfig = {
-      id: "seq-invalid",
+      id: 98,
       name: "坏序列",
       trajectoryMode: "non-forced",
       blocks: [
@@ -127,7 +127,7 @@ describe("content library panel", () => {
     projectState.current = { document };
     mockBuilder({
       sequences: [invalid],
-      selectedSequenceId: "seq-invalid",
+      selectedSequenceId: 98,
     });
     render(<ContentLibraryPanel />);
     expect(screen.getByRole("button", { name: "坏序列，待修复" })).not.toBeNull();
@@ -136,7 +136,7 @@ describe("content library panel", () => {
   it("deselects the current sequence when its library row is clicked again", () => {
     render(<ContentLibraryPanel />);
     fireEvent.click(screen.getByRole("button", { name: "共享斜面" }));
-    expect(builderState.current.handleSequenceSelect).toHaveBeenCalledWith("");
+    expect(builderState.current.handleSequenceSelect).toHaveBeenCalledWith(null);
   });
 
   it("selects a different sequence from the library", () => {
@@ -144,7 +144,7 @@ describe("content library panel", () => {
       sequences: [
         sequence,
         {
-          id: "seq-2",
+          id: 2,
           name: "第二序列",
           trajectoryMode: "non-forced",
           blocks: [],
@@ -154,14 +154,14 @@ describe("content library panel", () => {
     });
     render(<ContentLibraryPanel />);
     fireEvent.click(screen.getByRole("button", { name: "第二序列，待修复" }));
-    expect(builderState.current.handleSequenceSelect).toHaveBeenCalledWith("seq-2");
+    expect(builderState.current.handleSequenceSelect).toHaveBeenCalledWith(2);
   });
 
   it("deselects the current cue when its library row is clicked again", () => {
     mockBuilder({
       dockMode: "cue",
       selectedCueId: "cue-1",
-      selectedSequenceId: "",
+      selectedSequenceId: null,
     });
     render(<ContentLibraryPanel />);
     fireEvent.click(screen.getByRole("button", { name: "开场" }));

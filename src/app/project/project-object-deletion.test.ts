@@ -109,7 +109,7 @@ const cascadeDocument = (): ProjectDocument => {
     targets: { [String(OBJECT_A)]: { v1: 2 }, [String(OBJECT_B)]: { v1: 3 } },
   };
   const seqUntouched = {
-    id: "sequence-untouched",
+    id: 11,
     name: "Seq Untouched",
     trajectoryMode: "non-forced" as const,
     blocks: [
@@ -124,7 +124,7 @@ const cascadeDocument = (): ProjectDocument => {
     segments: [],
   };
   const seqEmptyAfter = {
-    id: "sequence-empty-after-delete",
+    id: 12,
     name: "Seq Empty After",
     trajectoryMode: "non-forced" as const,
     blocks: [
@@ -137,16 +137,17 @@ const cascadeDocument = (): ProjectDocument => {
       },
       {
         id: "b-a-2",
-        kind: "set-enabled" as const,
+        kind: "instruction" as const,
+        presetId: "set-enabled" as const,
         objectId: OBJECT_A,
         atMs: 0,
-        enabled: true,
+        instr: { enabled: true },
       },
     ],
     segments: [],
   };
   const seqKeep = {
-    id: "sequence-keep",
+    id: 13,
     name: "Seq Keep",
     trajectoryMode: "non-forced" as const,
     blocks: [
@@ -178,8 +179,8 @@ const cascadeDocument = (): ProjectDocument => {
           items: [
             { kind: "cue" as const, refId: "cue-empty-after-delete" },
             { kind: "cue" as const, refId: "cue-keep" },
-            { kind: "sequence" as const, refId: "sequence-empty-after-delete" },
-            { kind: "sequence" as const, refId: "sequence-keep" },
+            { kind: "sequence" as const, refId: 12 },
+            { kind: "sequence" as const, refId: 13 },
           ],
         },
       ],
@@ -252,7 +253,7 @@ describe("analyzeObjectDeletion / applyObjectDeletion", () => {
       trackCount: 2,
       blockCount: 3,
       emptyCueIds: ["cue-empty-after-delete"],
-      emptySequenceIds: ["sequence-empty-after-delete"],
+      emptySequenceIds: [12],
       affectedRuleIds: [],
     });
 
@@ -281,18 +282,18 @@ describe("analyzeObjectDeletion / applyObjectDeletion", () => {
     ).toMatchObject({ targets: {} });
     expect(
       next.motion.actionSequences.find(
-        (sequence) => sequence.id === "sequence-empty-after-delete",
+        (sequence) => sequence.id === 12,
       ),
     ).toBeUndefined();
     expect(JSON.stringify(next.motion.programs)).not.toContain(
-      "sequence-empty-after-delete",
+      12,
     );
     expect(next.rules).toBe(document.rules);
     expect(next.motion.positionCues.find((c) => c.id === "cue-untouched")).toBe(
       document.motion.positionCues.find((c) => c.id === "cue-untouched"),
     );
-    expect(next.motion.actionSequences.find((s) => s.id === "sequence-untouched")).toBe(
-      document.motion.actionSequences.find((s) => s.id === "sequence-untouched"),
+    expect(next.motion.actionSequences.find((s) => s.id === 11)).toBe(
+      document.motion.actionSequences.find((s) => s.id === 11),
     );
     expect(next.setup.motors.find((m) => m.id === MOTOR_B_1)).toBe(
       document.setup.motors.find((m) => m.id === MOTOR_B_1),
@@ -396,7 +397,7 @@ describe("analyzeObjectDeletion / applyObjectDeletion", () => {
     const document = cascadeDocument();
     document.motion.actionSequences = [
       {
-        id: "seq-only",
+        id: 5,
         name: "Only",
         trajectoryMode: "non-forced",
         blocks: [
@@ -412,23 +413,23 @@ describe("analyzeObjectDeletion / applyObjectDeletion", () => {
       },
     ];
     document.motion.programs[0].chapters[0].items = [
-      { kind: "sequence", refId: "seq-only" },
+      { kind: "sequence", refId: 5 },
     ];
     const next = applyObjectDeletion(document, [OBJECT_A]);
     expect(next.motion.actionSequences).toEqual([]);
-    expect(JSON.stringify(next.motion.programs)).not.toContain("seq-only");
+    expect(JSON.stringify(next.motion.programs)).not.toContain(5);
   });
 
   it("keeps a preset when remaining participants meet minObjects", () => {
     const document = cascadeDocument();
     document.setup.controlledObjects.push(makeObject(OBJECT_C, "Object C"));
     const keep = document.motion.actionSequences.find(
-      (sequence) => sequence.id === "sequence-keep",
+      (sequence) => sequence.id === 13,
     )!;
     keep.blocks.push(staticSlopePreset("preset-keep", [OBJECT_A, OBJECT_B, OBJECT_C]));
     const next = applyObjectDeletion(document, [OBJECT_A]);
     const sequence = next.motion.actionSequences.find(
-      (entry) => entry.id === "sequence-keep",
+      (entry) => entry.id === 13,
     );
     const preset = sequence?.blocks.find((block) => block.id === "preset-keep");
     expect(preset).toMatchObject({
@@ -440,12 +441,12 @@ describe("analyzeObjectDeletion / applyObjectDeletion", () => {
   it("drops a preset when remaining participants fall below minObjects", () => {
     const document = cascadeDocument();
     const keep = document.motion.actionSequences.find(
-      (sequence) => sequence.id === "sequence-keep",
+      (sequence) => sequence.id === 13,
     )!;
     keep.blocks.push(staticSlopePreset("preset-drop", [OBJECT_A, OBJECT_B]));
     const next = applyObjectDeletion(document, [OBJECT_A]);
     const sequence = next.motion.actionSequences.find(
-      (entry) => entry.id === "sequence-keep",
+      (entry) => entry.id === 13,
     );
     expect(sequence?.blocks.some((block) => block.id === "preset-drop")).toBe(false);
   });
@@ -454,7 +455,7 @@ describe("analyzeObjectDeletion / applyObjectDeletion", () => {
     const next = applyObjectDeletion(cascadeDocument(), [OBJECT_A]);
     expect(
       next.motion.actionSequences.some(
-        (sequence) => sequence.id === "sequence-empty-after-delete",
+        (sequence) => sequence.id === 12,
       ),
     ).toBe(false);
     expect(
@@ -463,11 +464,11 @@ describe("analyzeObjectDeletion / applyObjectDeletion", () => {
         .flatMap((chapter) => chapter.items)
         .some(
           (item) =>
-            item.kind === "sequence" && item.refId === "sequence-empty-after-delete",
+            item.kind === "sequence" && item.refId === 12,
         ),
     ).toBe(false);
     const keep = next.motion.actionSequences.find(
-      (sequence) => sequence.id === "sequence-keep",
+      (sequence) => sequence.id === 13,
     );
     expect(keep).toBeTruthy();
     expect(keep?.blocks).toHaveLength(1);
@@ -481,7 +482,7 @@ describe("analyzeObjectDeletion / applyObjectDeletion", () => {
     ).toMatchObject({ targets: {} });
     expect(
       analyzeObjectDeletion(cascadeDocument(), [OBJECT_A], "confirm").emptySequenceIds,
-    ).toContain("sequence-empty-after-delete");
+    ).toContain(12);
   });
 });
 
@@ -492,7 +493,7 @@ describe("validateProjectDocument reference consistency (deletion-related)", () 
       (c) => c.id === "cue-empty-after-delete",
     );
     const emptySeq = document.motion.actionSequences.find(
-      (s) => s.id === "sequence-empty-after-delete",
+      (s) => s.id === 12,
     );
     expect(emptyCue?.targets).toEqual({});
     expect(emptySeq).toBeUndefined();
@@ -576,7 +577,7 @@ describe("validateProjectDocument reference consistency (deletion-related)", () 
           name: "Ch",
           items: [
             { kind: "cue", refId: "missing-cue-ref" },
-            { kind: "sequence", refId: "missing-seq-ref" },
+            { kind: "sequence", refId: 17 },
           ],
         },
       ],
@@ -584,6 +585,6 @@ describe("validateProjectDocument reference consistency (deletion-related)", () 
     const result = validateProjectDocument(document);
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.includes("missing-cue-ref"))).toBe(true);
-    expect(result.errors.some((e) => e.includes("missing-seq-ref"))).toBe(true);
+    expect(result.errors.some((e) => e.includes(17))).toBe(true);
   });
 });

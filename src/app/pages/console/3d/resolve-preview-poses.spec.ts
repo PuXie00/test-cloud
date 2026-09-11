@@ -5,7 +5,7 @@ import type { CueItem } from "../components/action-builder/timeline/timeline-dat
 import { resolvePreviewPoses } from "./resolve-preview-poses";
 
 const sequence: ActionSequenceConfig = {
-  id: "seq",
+  id: 1,
   name: "Seq",
   trajectoryMode: "non-forced",
   blocks: [

@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultAxisProfiles } from "@/app/project/action-sequence/motion-profile";
 import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
 import type {
   ActionSequenceConfig,
@@ -26,8 +25,14 @@ const axisProfiles = (accelMs: number, decelMs: number): AxisMotionProfiles => (
   v3: { kind: "trapezoid", params: { accelMs, decelMs } },
 });
 
+const movingV1IdleOthers = (accelMs: number, decelMs: number): AxisMotionProfiles => ({
+  v1: { kind: "trapezoid", params: { accelMs, decelMs } },
+  v2: { kind: "idle" },
+  v3: { kind: "idle" },
+});
+
 const sequenceWithStaticPreset: ActionSequenceConfig = {
-  id: "seq-static",
+  id: 1,
   name: "Static",
   trajectoryMode: "non-forced",
   blocks: [
@@ -44,7 +49,7 @@ const sequenceWithStaticPreset: ActionSequenceConfig = {
 };
 
 const sequenceWithDynamicPreset: ActionSequenceConfig = {
-  id: "seq-dynamic",
+  id: 2,
   name: "Dynamic",
   trajectoryMode: "non-forced",
   blocks: [
@@ -92,7 +97,7 @@ describe("sequence-ops", () => {
 
   it("persists default motion profiles after a successful edit", () => {
     const authored: ActionSequenceConfig = {
-      id: "seq",
+      id: 1,
       name: "Seq",
       trajectoryMode: "non-forced",
       blocks: [
@@ -119,17 +124,17 @@ describe("sequence-ops", () => {
       {
         fromRef: "pose-0",
         toRef: "pose-1",
-        settings: { profiles: createDefaultAxisProfiles(2000) },
+        settings: { profiles: movingV1IdleOthers(400, 400) },
       },
     ]);
     expect(resolveActionSequence(result.sequence).segments[0]?.settings).toEqual({
-      profiles: createDefaultAxisProfiles(2000),
+      profiles: movingV1IdleOthers(400, 400),
     });
   });
 
   it("defaults new segment profiles from minAccelTime when inserting a pose", () => {
     const authored: ActionSequenceConfig = {
-      id: "seq",
+      id: 1,
       name: "Seq",
       trajectoryMode: "non-forced",
       blocks: [
@@ -158,19 +163,16 @@ describe("sequence-ops", () => {
     );
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error(result.reason);
-    expect(result.sequence.segments[0]?.settings.profiles.v1.params).toEqual({
-      accelMs: 1000,
-      decelMs: 1000,
+    expect(result.sequence.segments[0]?.settings.profiles.v1).toEqual({
+      kind: "trapezoid",
+      params: { accelMs: 1000, decelMs: 1000 },
     });
-    expect(result.sequence.segments[0]?.settings.profiles.v2.params).toEqual({
-      accelMs: 500,
-      decelMs: 500,
-    });
+    expect(result.sequence.segments[0]?.settings.profiles.v2).toEqual({ kind: "idle" });
   });
 
   it("preserves accelMs and decelMs when shifting a pose changes segment duration", () => {
     const authored: ActionSequenceConfig = {
-      id: "seq",
+      id: 1,
       name: "Seq",
       trajectoryMode: "non-forced",
       blocks: [
@@ -188,7 +190,7 @@ describe("sequence-ops", () => {
     const shifted = shiftTimelineBlocks(authored, ["pose-b"], 1000);
     const resolved = resolveActionSequence(shifted);
     expect(resolved.segments[0]?.durationMs).toBe(5000);
-    expect(resolved.segments[0]?.settings.profiles).toEqual(axisProfiles(1000, 1000));
+    expect(resolved.segments[0]?.settings.profiles).toEqual(movingV1IdleOthers(1000, 1000));
   });
 
   it("allows a pose on a dynamic preset endpoint and a set-enabled inside the range", () => {
@@ -203,10 +205,11 @@ describe("sequence-ops", () => {
 
     const command = insertTimelineBlock(sequenceWithDynamicPreset, {
       id: "enable-1",
-      kind: "set-enabled",
+      kind: "instruction",
+      presetId: "set-enabled",
       objectId: 7,
       atMs: 1500,
-      enabled: true,
+      instr: { enabled: true },
     });
     expect(command.ok).toBe(true);
     if (!command.ok) throw new Error(command.reason);
@@ -257,7 +260,7 @@ describe("sequence-ops", () => {
 
   it("persists reviewed segment settings and drops deleted-block configs", () => {
     const authored: ActionSequenceConfig = {
-      id: "seq",
+      id: 1,
       name: "Seq",
       trajectoryMode: "non-forced",
       blocks: [
@@ -285,7 +288,7 @@ describe("sequence-ops", () => {
       {
         fromRef: "pose-0",
         toRef: "pose-1",
-        settings: { profiles: axisProfiles(100, 300) },
+        settings: { profiles: movingV1IdleOthers(100, 300) },
       },
     ]);
     const deleted = deleteTimelineBlocks(reviewed, ["pose-1"]);
@@ -308,7 +311,7 @@ describe("sequence-ops", () => {
 
   it("shifts selected blocks by the same delta and clamps so none go below 0", () => {
     const authored: ActionSequenceConfig = {
-      id: "seq",
+      id: 1,
       name: "Seq",
       trajectoryMode: "non-forced",
       blocks: [
@@ -340,7 +343,7 @@ describe("sequence-ops", () => {
 
   it("rejects insertTimelineBlock with atMs: -1 as invalid-time-range", () => {
     const empty: ActionSequenceConfig = {
-      id: "seq",
+      id: 1,
       name: "Seq",
       trajectoryMode: "non-forced",
       blocks: [],
@@ -359,7 +362,7 @@ describe("sequence-ops", () => {
 
   it("deleteTimelineBlocks returns a sequence when a preset id is unknown", () => {
     const authored: ActionSequenceConfig = {
-      id: "seq-unknown",
+      id: 99,
       name: "Unknown",
       trajectoryMode: "non-forced",
       blocks: [

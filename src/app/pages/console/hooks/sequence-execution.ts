@@ -44,13 +44,13 @@ export type DownloadedSequence =
       ok: true;
       actionNo: number;
       checksum: number;
-      sequenceId: string;
+      sequenceId: number;
       modelIds: number[];
     }
   | { ok: false; reason: "validation"; issues: SequenceIssue[] };
 
 export type SequenceExecutionTransport = {
-  saveAction: (items: ActionDataSaveItem[]) => Promise<{ actionNo: number }>;
+  saveAction: (items: ActionDataSaveItem[]) => Promise<void>;
   syncCall: (input: {
     actionNo: number;
     syncGroupId: number;
@@ -138,10 +138,10 @@ export const downloadSequence = async (
     return { ok: false, reason: "validation", issues: [COMPILE_FAILURE_ISSUE] };
   }
 
-  const { actionNo } = await transport.saveAction(toActionDataSaveItems(compiled));
+  await transport.saveAction(toActionDataSaveItems(compiled, sequence.id));
   return {
     ok: true,
-    actionNo,
+    actionNo: sequence.id,
     checksum: compiled.checksum,
     sequenceId: sequence.id,
     modelIds: uniqueSortedModelIds(compiled),
@@ -155,14 +155,11 @@ export const stopSequence = async (
   await transport.stopAction(handle);
 };
 
-export const createLocalSequenceTransport = (): SequenceExecutionTransport => {
-  let nextActionNo = 1;
-  return {
-    saveAction: async () => ({ actionNo: nextActionNo++ }),
-    syncCall: async () => undefined,
-    stopAction: async () => undefined,
-  };
-};
+export const createLocalSequenceTransport = (): SequenceExecutionTransport => ({
+  saveAction: async () => undefined,
+  syncCall: async () => undefined,
+  stopAction: async () => undefined,
+});
 
 let localSequenceTransport: SequenceExecutionTransport | null = null;
 
@@ -198,16 +195,6 @@ const requireSuccessfulAck = (raw: unknown, label: string): CppAckResult => {
   return ack;
 };
 
-const parseSavedActionNo = (raw: unknown): number => {
-  const ack = requireSuccessfulAck(raw, "actionDataSave");
-  const first = ack.data?.[0];
-  const actionNo = isRecord(first) ? first.actionNo : undefined;
-  if (typeof actionNo !== "number" || !Number.isFinite(actionNo)) {
-    throw new Error("actionDataSave missing numeric actionNo");
-  }
-  return actionNo;
-};
-
 /**
  * Placeholder fields until the protocol gate confirms prepare/sync encoding.
  * Do not change electron/main item shapes.
@@ -221,8 +208,7 @@ export const createCsocketSequenceTransport = (
   api: SequenceCsocketClient,
 ): SequenceExecutionTransport => ({
   saveAction: async (items) => {
-    const raw = await api.actionDataSavePlc(items);
-    return { actionNo: parseSavedActionNo(raw) };
+    await requireSuccessfulAck(await api.actionDataSavePlc(items), "actionDataSave");
   },
   syncCall: async (input) => {
     // The C++ contract has not assigned a wire field for this semantic mode yet.
@@ -275,7 +261,7 @@ export const sequenceExecutionContextFromDocument = (
 
 export const startLocalAuthoredSequence = async (args: {
   document: ProjectDocument;
-  sequenceId: string;
+  sequenceId: number;
   faderPercent?: number;
   transport?: SequenceExecutionTransport;
 }): Promise<LocalSequenceStartResult> => {

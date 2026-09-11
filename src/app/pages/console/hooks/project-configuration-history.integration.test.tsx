@@ -374,7 +374,7 @@ const seedCascadeTarget = (
     ),
   ).toBe(true);
 
-  const sequenceId = `seq-cascade-${objectId}`;
+  const sequenceId = 1;
   act(() => {
     result.current.project.updateCurrentDocument(
       (document) => ({
