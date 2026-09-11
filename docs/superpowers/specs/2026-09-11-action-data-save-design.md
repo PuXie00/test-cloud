@@ -111,13 +111,17 @@ Compiled action shape matches the wire item except `actionId` / counts, which `t
 
 ## Data flow
 
+`actionNo` is removed. It was the old PLC-assigned save ACK id. The new protocol only has `actionId` (= `sequence.id`).
+
 1. Validate; blocking issues → do not send.
 2. Resolve + compile.
-3. Save via csocket.
-4. On success, `syncCall` with handle `actionNo = sequence.id`.
-5. Stop still maps `actionNo` → `deviceId` in the existing adapter (out of scope to change).
+3. Save via csocket with `actionId`.
+4. On success, `syncCall` as today (`syncGroupId` etc.). Do not send `actionNo`.
+5. Runtime handle is `{ actionId, syncGroupId }`. Stop still maps `actionId` → `deviceId` in the existing adapter until `stopAction` wire is updated (out of scope).
 
 Local transport does not call the network and treats save as success.
+
+`DownloadedSequence` drops `actionNo` and `checksum`; success result is `{ ok: true, actionId, sequenceId, modelIds }` with `actionId === sequenceId === sequence.id`.
 
 ## Error handling
 
@@ -128,7 +132,7 @@ Local transport does not call the network and treats save as success.
 | ACK `data[0].errorCount > 0` | same as ACK failure; include `data[0]` `errorCode` list in the Error message |
 | Successful ACK with missing `errorCount` | treat as `0` |
 
-Do not parse a PLC-assigned action number. Console already knows `actionId`.
+Do not parse `actionNo` from ACK. Console already knows `actionId`.
 
 ## Testing
 
@@ -136,6 +140,6 @@ Targeted vitest only.
 
 - `trapezoidToCurveSegments`: forward 3-row; reverse signs; triangle cruise `b = 0` and shared startTime; idle 1-row zeros; `d/e/f = 0`; positions continuous at phase boundaries.
 - `compilePlcAction` / `toActionDataSaveItems`: `virtualAxisNo` 1/2/3; disabled axis omitted; events use `enableFlag`; `actionId = sequence.id`; no `checksum` / `timeArray`; >100 segments throws.
-- `sequence-execution`: save payload uses new fields; success ACK does not read PLC `actionNo`; `errorCount > 0` fails; local transport does not touch `window.csocketApi`.
+- `sequence-execution`: save payload uses `actionId`; types/handle have no `actionNo`; `errorCount > 0` fails; local transport does not touch `window.csocketApi`.
 
-Leave preview, motion-profile editor, and unrelated exec-area tests alone unless a type change forces a compile fix.
+Leave preview and motion-profile editor tests alone. Rename `sequenceHandle.actionNo` → `actionId` in exec-area tests that would not compile.
