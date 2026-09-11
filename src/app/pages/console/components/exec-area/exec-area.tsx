@@ -11,7 +11,7 @@ import { Executors } from "./executors/executors";
 type ExecAreaProps = { className?: string };
 
 export const ExecArea = ({ className }: ExecAreaProps) => {
-  const { buttonSlots, faderSlots } = useExecutorSlots();
+  const { faderSlots } = useExecutorSlots();
   const { launch } = useExecCards();
   const { currentProject } = useProject();
 
@@ -22,25 +22,6 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       </div>
       <div className="min-w-0 flex-1">
         <Executors
-          onTriggerCue={(slotIndex, cueId) => {
-            const slot = buttonSlots[slotIndex];
-            if (!slot?.cue) return;
-            const issue = resolveMotionLaunchBlock(
-              currentProject?.document,
-              "cue",
-              cueId,
-            );
-            if (issue) {
-              toast.warning(issue.message);
-              return;
-            }
-            launch({
-              kind: "cue",
-              name: slot.cue.name,
-              durationMs: slot.cue.durationMs,
-              source: { kind: "button", slotIndex },
-            });
-          }}
           onTriggerSequence={(slotIndex, sequenceId) => {
             const slot = faderSlots[slotIndex];
             if (!slot?.sequence) return;

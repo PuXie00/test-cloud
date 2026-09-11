@@ -11,7 +11,7 @@ import {
   getProgramRepairIssues,
   resolveMotionLaunchBlock,
 } from "./project-motion-readiness";
-import type { ControlledObjectConfig, ProgramItemRef, ProjectDocument } from "./project-document-types";
+import type { ProgramItemRef, ControlledObjectConfig, ProjectDocument } from "./project-document-types";
 
 const OBJECT_A = 1;
 const OBJECT_B = 2;
@@ -179,7 +179,7 @@ describe("validateProjectDocument sequence refs", () => {
     const result = validateProjectDocument(document);
     expect(result.ok).toBe(false);
     expect(result.errors.some((error) => error.includes("must be sequence"))).toBe(true);
-    expect(result.errors.some((error) => error.includes("17"))).toBe(true);
+    expect(result.errors.some((error) => error.includes(17))).toBe(true);
     expect(result.errors.some((error) => error.includes("missing-cue-ref"))).toBe(false);
   });
 

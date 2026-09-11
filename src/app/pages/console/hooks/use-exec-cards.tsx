@@ -15,13 +15,12 @@ import {
 } from "./sequence-execution";
 
 export type ExecCardSource =
-  | { kind: "button"; slotIndex: number }
   | { kind: "fader"; slotIndex: number }
   | { kind: "program" }
   | { kind: "external" }
   | { kind: "manual" };
 
-export type ExecCardKind = "cue" | "sequence";
+export type ExecCardKind = "sequence";
 export type ExecCardStatus = "running" | "paused" | "completed" | "error";
 
 export type ExecCard = {

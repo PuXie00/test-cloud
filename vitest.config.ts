@@ -23,6 +23,7 @@ export default defineConfig({
       // Plan-mandated Task 8 suite path; required for
       // `npx vitest run src/app/pages/console/components/exec-area/exec-area.test.tsx`
       'src/app/pages/console/components/exec-area/**/*.{test,spec}.?(c|m)[jt]s?(x)',
+      'src/app/pages/console/components/program-panel/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       'src/app/pages/console/components/system-settings/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       'src/app/pages/console/components/build-debug/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       'src/app/pages/console/components/monitor-grid/**/*.{test,spec}.?(c|m)[jt]s?(x)',

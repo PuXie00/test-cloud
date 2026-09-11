@@ -451,6 +451,7 @@ const seedCascadeTarget = (
       .flatMap((program) => program.chapters)
       .flatMap((chapter) => chapter.items)
       .some((item) => item.kind === "sequence" && item.refId === sequenceId),
+      ),
   ).toBe(true);
   expect(
     result.current.program.program.chapters
@@ -602,6 +603,11 @@ describe("project configuration history integration", () => {
     );
     expect(resolveMotionLaunchBlock(docAfterDelete, "cue", cueId)).toBeTruthy();
     expect(resolveMotionLaunchBlock(docAfterDelete, "sequence", sequenceId)).toBeTruthy();
+    expect(
+      getProgramRepairIssues(docAfterDelete, "prog-gz-main").some(
+        (issue) => issue.itemId === cueId,
+      ),
+    ).toBe(false);
     expect(
       getProgramRepairIssues(docAfterDelete, "prog-gz-main").some(
         (issue) => issue.itemId === sequenceId,

@@ -565,7 +565,7 @@ describe("validateProjectDocument reference consistency (deletion-related)", () 
     expect(missingObject.errors.some((e) => e.includes("996"))).toBe(true);
   });
 
-  it("rejects non-sequence program items and dangling sequence refs", () => {
+  it("reports dangling program sequence refs and rejects leftover Cue items", () => {
     const document = cascadeDocument();
     document.motion.programs[0] = {
       id: "p-bad",
@@ -584,7 +584,7 @@ describe("validateProjectDocument reference consistency (deletion-related)", () 
     const result = validateProjectDocument(document);
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.includes("must be sequence"))).toBe(true);
-    expect(result.errors.some((e) => e.includes("17"))).toBe(true);
+    expect(result.errors.some((e) => e.includes(17))).toBe(true);
     expect(result.errors.some((e) => e.includes("missing-cue-ref"))).toBe(false);
   });
 });

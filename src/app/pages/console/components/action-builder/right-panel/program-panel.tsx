@@ -1,5 +1,5 @@
 import { useMemo, useState, type DragEvent } from "react";
-import { ChevronDown, ChevronRight, Diamond, Play, Plus, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Play, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { PanelHeader } from "@/app/components/ics/panel-header";
 import { cn } from "@/app/components/ui/utils";
@@ -17,15 +17,13 @@ import {
   isProgramItemDrag,
   readLibraryDrag,
   readProgramItemDrag,
+  sequenceProgramItemFromLibrary,
   writeProgramItemDrag,
 } from "../content-library/library-dnd";
 import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
-import { estimateArrivalMs } from "../editor-dock/transition-math";
 import { formatTime, type ProgramNode } from "../timeline/timeline-data";
 
-type ItemMeta =
-  | { kind: "cue"; refId: string; name: string; durationMs: number | null }
-  | { kind: "sequence"; refId: number; name: string; durationMs: number | null };
+type ItemMeta = { kind: "sequence"; refId: number; name: string; durationMs: number | null };
 
 type ChapterSectionProps = {
   chapter: ProgramNode;
@@ -60,14 +58,9 @@ const ChapterSection = ({
     setDragOverIndex(null);
 
     const libraryPayload = readLibraryDrag(event.dataTransfer);
-    if (libraryPayload) {
-      onInsert(
-        chapter.id,
-        libraryPayload.kind === "cue"
-          ? { kind: "cue", refId: libraryPayload.id }
-          : { kind: "sequence", refId: libraryPayload.id },
-        index,
-      );
+    const programItem = libraryPayload ? sequenceProgramItemFromLibrary(libraryPayload) : null;
+    if (programItem) {
+      onInsert(chapter.id, programItem, index);
       return;
     }
     const programPayload = readProgramItemDrag(event.dataTransfer);
@@ -101,7 +94,6 @@ const ChapterSection = ({
         <div className="pb-1">
           {items.map((item, index) => {
             const meta = itemMetaById.get(`${item.type}:${item.id}`);
-            const isCue = item.type === "cue";
             return (
               <div
                 key={`${chapter.id}:${index}:${item.id}`}
@@ -124,11 +116,7 @@ const ChapterSection = ({
                 <span className="w-5 shrink-0 text-right font-mono text-mono-sm tabular-nums text-muted-foreground">
                   {index + 1}
                 </span>
-                {isCue ? (
-                  <Diamond className="h-3 w-3 shrink-0 text-primary" aria-hidden />
-                ) : (
-                  <Play className="h-3 w-3 shrink-0 text-show" aria-hidden />
-                )}
+                <Play className="h-3 w-3 shrink-0 text-show" aria-hidden />
                 <span className="min-w-0 flex-1 truncate text-body-sm text-foreground">
                   {meta?.name ?? item.name}
                 </span>
@@ -173,7 +161,7 @@ const ChapterSection = ({
                 : "border-border/60",
             )}
           >
-            拖入 Cue / 动作（可重复）
+            拖入动作序列（可重复）
           </div>
         </div>
       )}
@@ -185,9 +173,7 @@ const ChapterSection = ({
 export const ProgramPanel = () => {
   const {
     programs,
-    cues,
     sequences,
-    getTimelineObject,
     handleChapterAdd,
     handleProgramItemInsert,
     handleProgramItemRemove,
@@ -199,9 +185,6 @@ export const ProgramPanel = () => {
 
   const itemMetaById = useMemo(() => {
     const map = new Map<string, ItemMeta>();
-    for (const cue of cues) {
-      map.set(`cue:${cue.id}`, { kind: "cue", refId: cue.id, name: cue.name, durationMs: null });
-    }
     for (const sequence of sequences) {
       let durationMs = 0;
       try {
@@ -217,24 +200,12 @@ export const ProgramPanel = () => {
       });
     }
     return map;
-  }, [cues, sequences]);
+  }, [sequences]);
 
   const handleLaunch = (meta: ItemMeta) => {
     const issue = resolveMotionLaunchBlock(document, meta.kind, meta.refId);
     if (issue) {
       toast.warning(issue.message);
-      return;
-    }
-    if (meta.kind === "cue") {
-      const cue = cues.find((item) => item.id === meta.refId);
-      const durationMs =
-        meta.durationMs ?? (cue ? (estimateArrivalMs(cue, getTimelineObject) ?? 0) : 0);
-      launch({
-        kind: "cue",
-        name: meta.name,
-        durationMs,
-        source: { kind: "program" },
-      });
       return;
     }
     if (!document) return;
@@ -279,7 +250,7 @@ export const ProgramPanel = () => {
         {programs.length === 0 && (
           <div className="flex flex-col items-center gap-3 px-4 py-8 text-center">
             <p className="text-body-sm text-muted-foreground">
-              暂无节目。新建章节后，把左侧内容库的 Cue / 动作拖入章节即可编排。
+              暂无节目。新建章节后，把左侧内容库的动作序列拖入章节即可编排。
             </p>
             <button
               type="button"

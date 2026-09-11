@@ -28,9 +28,7 @@ export type TransitionDraft = {
   toCueId: string;
 };
 
-export type ProgramItemInput =
-  | { kind: "cue"; refId: string }
-  | { kind: "sequence"; refId: number };
+export type ProgramItemInput = { kind: "sequence"; refId: number };
 
 export type ActionBuilderContextValue = {
   sequences: ActionSequenceConfig[];

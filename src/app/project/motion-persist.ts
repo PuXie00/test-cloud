@@ -59,11 +59,9 @@ export const legacyProgramToMotion = (program: Program, existing: ProjectMotion)
       ? existing.programs.map((p, index) => (index === 0 ? programToConfig(program) : p))
       : [programToConfig(program)];
 
-  const actionSequences = structuredClone(existing.actionSequences);
-
   return {
     positionCues: existing.positionCues,
-    actionSequences,
+    actionSequences: structuredClone(existing.actionSequences),
     programs,
   };
 };

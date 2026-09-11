@@ -1,13 +1,5 @@
 export const PROGRAM_SLOTS_PER_PAGE = 16;
 
-export type PositionCue = {
-  id: string;
-  name: string;
-  note?: string;
-  durationMs: number;
-  targets: Record<string, number>;
-};
-
 export type ActionSequence = {
   id: number;
   name: string;

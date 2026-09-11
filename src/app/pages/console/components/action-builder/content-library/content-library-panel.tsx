@@ -117,6 +117,7 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
     clearLongPress();
     longPressRef.current = window.setTimeout(() => {
       longPressRef.current = null;
+      if (entry.kind !== "sequence") return;
       setChapterMenuFor(entryId(entry));
     }, LONG_PRESS_MS);
   };
@@ -172,7 +173,9 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
     handleGenerateTransition(payload.id, cue.id);
   };
 
-  const renderChapterMenu = (entry: LibraryEntry) => (
+  const renderChapterMenu = (entry: LibraryEntry) => {
+    if (entry.kind !== "sequence") return null;
+    return (
     <div
       role="menu"
       aria-label="添加到章节"
@@ -191,9 +194,7 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
             event.stopPropagation();
             handleProgramItemInsert(
               chapter.id,
-              entry.kind === "cue"
-                ? { kind: "cue", refId: entry.cue.id }
-                : { kind: "sequence", refId: entry.sequence.id },
+              { kind: "sequence", refId: entry.sequence.id },
             );
             setChapterMenuFor(null);
           }}
@@ -203,7 +204,8 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
         </button>
       ))}
     </div>
-  );
+    );
+  };
 
   const renderRow = (entry: LibraryEntry) => {
     const id = entryId(entry);
@@ -325,7 +327,7 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
           )}
         </div>
 
-        {chapterMenuFor === id && renderChapterMenu(entry)}
+        {chapterMenuFor === id && entry.kind === "sequence" && renderChapterMenu(entry)}
       </div>
     );
   };
