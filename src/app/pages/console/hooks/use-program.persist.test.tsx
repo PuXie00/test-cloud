@@ -11,6 +11,17 @@ import { GZ_2025_RECORD } from "@/app/project/test-fixtures";
 import { ProgramProvider, useProgram } from "./use-program";
 import { useProject } from "@/app/project/use-project";
 
+const stubCsocketOpenProject = () => {
+  const ok = async () => ({ ok: true as const, data: { success: true as const } });
+  window.csocketApi = {
+    openProject: ok,
+    addModelWithDefaultValues: ok,
+    modifyModelType: ok,
+    configureModelParamModel: ok,
+    deleteModelPlc: ok,
+  } as unknown as Window["csocketApi"];
+};
+
 const wrapper = ({ children }: { children: ReactNode }) =>
   createElement(
     ProjectProvider,
@@ -21,10 +32,12 @@ const wrapper = ({ children }: { children: ReactNode }) =>
 describe("ProgramProvider document persist", () => {
   beforeEach(() => {
     installMemoryProjectAPI();
+    stubCsocketOpenProject();
   });
 
   afterEach(() => {
     uninstallMemoryProjectAPI();
+    delete window.csocketApi;
   });
 
   it("addSequence appends an action sequence and a program ref, not a position cue", async () => {
@@ -37,6 +50,9 @@ describe("ProgramProvider document persist", () => {
 
     await act(async () => {
       await result.current.project.openProject(GZ_2025_RECORD.folderName);
+    });
+    await waitFor(() => {
+      expect(result.current.project.currentProject?.document).toBeTruthy();
     });
 
     if (!result.current.program.program.chapters[0]?.id) {

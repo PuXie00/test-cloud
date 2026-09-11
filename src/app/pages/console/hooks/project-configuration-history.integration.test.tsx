@@ -451,7 +451,6 @@ const seedCascadeTarget = (
       .flatMap((program) => program.chapters)
       .flatMap((chapter) => chapter.items)
       .some((item) => item.kind === "sequence" && item.refId === sequenceId),
-      ),
   ).toBe(true);
   expect(
     result.current.program.program.chapters
