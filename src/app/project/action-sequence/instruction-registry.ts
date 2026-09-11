@@ -57,9 +57,8 @@ export const instructionToPlcEvent = (block: InstructionBlock): PlcCompiledEvent
     throw new Error(`cannot compile instruction ${block.presetId}`);
   }
   return {
-    modelNo: block.objectId,
-    atMs: block.atMs,
-    kind: "set-enabled",
-    enabled: block.instr.enabled,
+    modelId: block.objectId,
+    atTime: block.atMs,
+    enableFlag: block.instr.enabled ? 1 : 0,
   };
 };

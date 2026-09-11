@@ -200,7 +200,6 @@ vi.mock("../../hooks/use-program", () => ({
     nextPage: vi.fn(),
     prevPage: vi.fn(),
     addChapter: vi.fn(),
-    addCue: vi.fn(),
     addSequence: vi.fn(),
     isProgramEmpty: programState.current.chapters.length === 0,
   }),
@@ -267,7 +266,7 @@ vi.mock("../../hooks/sequence-execution", () => ({
     ok: true,
     name: args.sequenceId === 15 ? "正常序列" : args.sequenceId,
     speedPercent: 100,
-    sequenceHandle: { actionNo: 1, syncGroupId: 1 },
+    sequenceHandle: { actionId: 1, syncGroupId: 1 },
   })),
   stopSequence: (...args: unknown[]) => stopSequenceMock(...args),
   getLocalSequenceTransport: () => localSequenceTransport,
@@ -404,19 +403,6 @@ const makeDocument = (): ProjectDocument => ({
   snapshots: [],
 });
 
-const emptyCueItem: ChapterItem = {
-  kind: "cue",
-  cue: { id: "cue-empty", name: "空 Cue", durationMs: 1000, targets: {} },
-};
-const okCueItem: ChapterItem = {
-  kind: "cue",
-  cue: {
-    id: "cue-ok",
-    name: "正常 Cue",
-    durationMs: 1000,
-    targets: { "co-1": 10 },
-  },
-};
 const emptySequenceItem: ChapterItem = {
   kind: "sequence",
   sequence: { id: 14, name: "空序列", durationMs: 0 },
@@ -695,24 +681,14 @@ describe("PageSection readiness wiring", () => {
           pageIndex={0}
           pageTotal={1}
           isCurrent
-          cues={[emptyCueItem, okCueItem]}
           sequences={[emptySequenceItem]}
           onClickHeader={vi.fn()}
-          onAddCue={vi.fn()}
           onAddSequence={vi.fn()}
           onItemDragStart={() => vi.fn()}
           itemIndexOffset={0}
         />,
       ),
     );
-
-    const emptyCueRow = screen.getByRole("treeitem", { name: /空 Cue/i });
-    expect(emptyCueRow.getAttribute("aria-label")).toMatch(/待修复|无目标/);
-    expect(emptyCueRow.getAttribute("title")).toMatch(/待修复|无目标/);
-
-    const okCueRow = screen.getByRole("treeitem", { name: /^正常 Cue$/i });
-    expect(okCueRow.getAttribute("aria-label")).toBe("正常 Cue");
-    expect(okCueRow.getAttribute("title")).toBeFalsy();
 
     const emptySeqRow = screen.getByRole("treeitem", { name: /空序列/i });
     expect(emptySeqRow.getAttribute("aria-label")).toMatch(/待修复|待编排|无轨道/);
@@ -729,7 +705,7 @@ describe("program panel launch guards", () => {
         {
           id: "ch-1",
           name: "章节 1",
-          items: [emptyCueItem, emptySequenceItem, okCueItem],
+          items: [emptySequenceItem],
         },
       ],
     };
@@ -902,7 +878,7 @@ describe("execution cards", () => {
                 name: "正常序列",
                 durationMs: null,
                 source: { kind: "program" },
-                sequenceHandle: { actionNo: 9, syncGroupId: 3 },
+                sequenceHandle: { actionId: 9, syncGroupId: 3 },
               })
             }
           >
@@ -926,7 +902,7 @@ describe("execution cards", () => {
     fireEvent.click(screen.getByRole("button", { name: "skip-running" }));
     expect(stopSequenceMock).toHaveBeenCalledTimes(1);
     expect(stopSequenceMock).toHaveBeenCalledWith(
-      { actionNo: 9, syncGroupId: 3 },
+      { actionId: 9, syncGroupId: 3 },
       localSequenceTransport,
     );
     expect(screen.getByRole("button", { name: "skip-completed" })).not.toBeNull();

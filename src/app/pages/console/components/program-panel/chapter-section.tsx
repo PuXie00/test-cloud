@@ -2,7 +2,8 @@ import { ChevronDown, ChevronRight, MoreVertical } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/app/components/ui/utils";
 import { useConsoleMode } from "../../hooks/use-console-mode";
-import type { Chapter, ChapterItem } from "./program-data";
+import { PROGRAM_SLOTS_PER_PAGE, type Chapter, type ChapterItem } from "./program-data";
+import { programPageCount, sliceProgramPage } from "./program-utils";
 import { PageSection } from "./page-section";
 
 type ChapterSectionProps = {
@@ -11,7 +12,6 @@ type ChapterSectionProps = {
   currentPageIndex: number;
   onSelectChapter: () => void;
   onSelectPage: (pageIndex: number) => void;
-  onAddCue: () => void;
   onAddSequence: () => void;
   onItemDragStart: (
     chapterId: string,
@@ -21,32 +21,21 @@ type ChapterSectionProps = {
   onDoubleClickItem?: (item: ChapterItem) => void;
 };
 
-const SLOT = 8;
-
-const splitPages = (items: ChapterItem[]) => {
-  const cues = items.filter((item) => item.kind === "cue");
-  const sequences = items.filter((item) => item.kind === "sequence");
-  const totalPages = Math.max(1, Math.ceil(cues.length / SLOT), Math.ceil(sequences.length / SLOT));
-  return Array.from({ length: totalPages }, (_, pageIndex) => ({
-    cues: cues.slice(pageIndex * SLOT, (pageIndex + 1) * SLOT),
-    sequences: sequences.slice(pageIndex * SLOT, (pageIndex + 1) * SLOT),
-  }));
-};
-
 export const ChapterSection = ({
   chapter,
   isCurrent,
   currentPageIndex,
   onSelectChapter,
   onSelectPage,
-  onAddCue,
   onAddSequence,
   onItemDragStart,
   onDoubleClickItem,
 }: ChapterSectionProps) => {
   const { mode } = useConsoleMode();
   const [expanded, setExpanded] = useState(isCurrent);
-  const pages = splitPages(chapter.items);
+  const pages = Array.from({ length: programPageCount(chapter.items) }, (_, pageIndex) =>
+    sliceProgramPage(chapter.items, pageIndex),
+  );
 
   return (
     <div className="flex flex-col">
@@ -91,21 +80,19 @@ export const ChapterSection = ({
 
       {expanded && (
         <div className="flex flex-col">
-          {pages.map((page, pageIndex) => (
+          {pages.map((sequences, pageIndex) => (
             <PageSection
               key={pageIndex}
               chapterId={chapter.id}
               pageIndex={pageIndex}
               pageTotal={pages.length}
               isCurrent={isCurrent && currentPageIndex === pageIndex}
-              cues={page.cues}
-              sequences={page.sequences}
+              sequences={sequences}
               onClickHeader={() => onSelectPage(pageIndex)}
-              onAddCue={onAddCue}
               onAddSequence={onAddSequence}
               onItemDragStart={onItemDragStart}
               onDoubleClickItem={onDoubleClickItem}
-              itemIndexOffset={pageIndex * SLOT * 2}
+              itemIndexOffset={pageIndex * PROGRAM_SLOTS_PER_PAGE}
             />
           ))}
         </div>

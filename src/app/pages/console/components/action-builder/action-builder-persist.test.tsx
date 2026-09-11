@@ -163,14 +163,16 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
     );
   });
 
-  it("rehydrates ActionBuilder when Program writes motion with program origin", async () => {
+  it("rehydrates ActionBuilder when Program writes motion", async () => {
     const { result } = renderBuilderProjectAndStore();
     await openFixtureProject(result);
-    const before = result.current.builder.cues.length;
+    const before = result.current.project.currentProject!.document!.motion.actionSequences.length;
     const chapterId = result.current.program.program.chapters[0]!.id;
-    act(() => result.current.program.addCue(chapterId));
+    act(() => result.current.program.addSequence(chapterId));
     expect(result.current.project.documentRevision.origin).toBe("program");
-    expect(result.current.builder.cues.length).toBe(before + 1);
+    expect(result.current.project.currentProject!.document!.motion.actionSequences.length).toBe(
+      before + 1,
+    );
     const motionAfter = result.current.project.currentProject!.document!.motion;
     const revisionAfter = result.current.project.documentRevision.value;
     await act(async () => {
@@ -188,11 +190,9 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
       result.current.builder.handleCueUpdate("cue-open", { name: "动作侧改名" });
     });
     expect(result.current.project.documentRevision.origin).toBe("motion");
-    const chapter = result.current.program.program.chapters[0]!;
-    const cueItem = chapter.items.find(
-      (item) => item.kind === "cue" && item.cue.id === "cue-open",
+    expect(result.current.builder.cues.find((cue) => cue.id === "cue-open")?.name).toBe(
+      "动作侧改名",
     );
-    expect(cueItem?.kind === "cue" && cueItem.cue.name).toBe("动作侧改名");
     const motionAfter = result.current.project.currentProject!.document!.motion;
     const revisionAfter = result.current.project.documentRevision.value;
     await act(async () => {
@@ -334,10 +334,6 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
     expect(result.current.program.program.chapters.find((ch) => ch.id === "ch-01")?.name).toBe(
       "第一章-同长",
     );
-    const openItem = result.current.program.program.chapters[0]!.items.find(
-      (item) => item.kind === "cue" && item.cue.id === "cue-open",
-    );
-    expect(openItem?.kind === "cue" && openItem.cue.name).toBe("开场-同长");
   });
 
   it("keeps local projection unchanged when non-tracked persist is rejected", async () => {
@@ -361,20 +357,6 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
     });
     expect(result.current.program.program.chapters[0]!.name).toBe(chapterName);
     expect(result.current.program.lastPersistError).toMatch(/活动事务/);
-  });
-
-  it("Program addCue appends to document.motion.positionCues", async () => {
-    const { result } = renderBuilderProjectAndStore();
-    await openFixtureProject(result);
-    const chapterId = result.current.program.program.chapters[0]!.id;
-    const before =
-      result.current.project.currentProject?.document?.motion.positionCues.length ?? 0;
-    act(() => {
-      result.current.program.addCue(chapterId);
-    });
-    const after =
-      result.current.project.currentProject?.document?.motion.positionCues.length ?? 0;
-    expect(after).toBe(before + 1);
   });
 
   it("Program addSequence persists ActionSequenceConfig and a program ref", async () => {

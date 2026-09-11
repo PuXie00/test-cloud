@@ -1,3 +1,5 @@
+export const PROGRAM_SLOTS_PER_PAGE = 16;
+
 export type PositionCue = {
   id: string;
   name: string;
@@ -14,9 +16,10 @@ export type ActionSequence = {
   durationMs: number;
 };
 
-export type ChapterItem =
-  | { kind: "cue"; cue: PositionCue }
-  | { kind: "sequence"; sequence: ActionSequence };
+export type ChapterItem = {
+  kind: "sequence";
+  sequence: ActionSequence;
+};
 
 export type Chapter = {
   id: string;

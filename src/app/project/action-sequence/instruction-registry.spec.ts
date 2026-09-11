@@ -25,10 +25,9 @@ describe("instruction-registry", () => {
     expect(instructionBlockTitle(enable)).toBe("使能指令");
     expect(instructionBlockTitle(disable)).toBe("断使能指令");
     expect(instructionToPlcEvent(enable)).toEqual({
-      modelNo: 7,
-      atMs: 100,
-      kind: "set-enabled",
-      enabled: true,
+      modelId: 7,
+      atTime: 100,
+      enableFlag: 1,
     });
   });
 });

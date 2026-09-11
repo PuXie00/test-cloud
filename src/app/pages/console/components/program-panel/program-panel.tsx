@@ -26,7 +26,6 @@ export const ProgramPanel = ({ className }: ProgramPanelProps) => {
     nextPage,
     prevPage,
     addChapter,
-    addCue,
     addSequence,
     isProgramEmpty,
   } = useProgram();
@@ -45,21 +44,6 @@ export const ProgramPanel = ({ className }: ProgramPanelProps) => {
 
   const handleDoubleClickItem = (item: ChapterItem) => {
     if (mode === "show") return;
-    if (item.kind === "cue") {
-      const issue = resolveMotionLaunchBlock(document, "cue", item.cue.id);
-      if (issue) {
-        toast.warning(issue.message);
-        return;
-      }
-      launch({
-        kind: "cue",
-        name: item.cue.name,
-        durationMs: item.cue.durationMs,
-        source: { kind: "program" },
-      });
-      return;
-    }
-
     const issue = resolveMotionLaunchBlock(document, "sequence", item.sequence.id);
     if (issue) {
       toast.warning(issue.message);
@@ -126,7 +110,6 @@ export const ProgramPanel = ({ className }: ProgramPanelProps) => {
                 for (let i = currentPageIndex; i > pageIndex; i -= 1) prevPage();
               }
             }}
-            onAddCue={() => addCue(chapter.id)}
             onAddSequence={() => addSequence(chapter.id)}
             onItemDragStart={handleItemDragStart}
             onDoubleClickItem={handleDoubleClickItem}

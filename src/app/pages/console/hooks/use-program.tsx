@@ -5,31 +5,12 @@ import type { ProjectDocument, ProjectMotion } from "@/app/project/project-docum
 import { legacyProgramToMotion } from "@/app/project/motion-persist";
 import { useProject } from "@/app/project/use-project";
 import { motionProgramToLegacyProgram } from "../components/program-panel/resolve-program-motion";
-import { isControlProgramEmpty } from "../components/program-panel/program-utils";
-import { type ChapterItem, type Program } from "../components/program-panel/program-data";
+import { isControlProgramEmpty, programPageCount, sliceProgramPage } from "../components/program-panel/program-utils";
+import { type Program } from "../components/program-panel/program-data";
 import { ProgramContext, type PageItems, type ProgramContextValue } from "./program-context";
 
 export type { PageItems } from "./program-context";
 export { useProgram } from "./program-context";
-
-const SLOT_PER_PAGE = 8;
-
-const getPageItems = (items: ChapterItem[], pageIndex: number): PageItems => {
-  const cues = items.filter((item) => item.kind === "cue");
-  const seqs = items.filter((item) => item.kind === "sequence");
-  const cueStart = pageIndex * SLOT_PER_PAGE;
-  const seqStart = pageIndex * SLOT_PER_PAGE;
-  return {
-    cues: cues.slice(cueStart, cueStart + SLOT_PER_PAGE),
-    sequences: seqs.slice(seqStart, seqStart + SLOT_PER_PAGE),
-  };
-};
-
-const getTotalPages = (items: ChapterItem[]): number => {
-  const cueCount = items.filter((item) => item.kind === "cue").length;
-  const seqCount = items.filter((item) => item.kind === "sequence").length;
-  return Math.max(1, Math.ceil(cueCount / SLOT_PER_PAGE), Math.ceil(seqCount / SLOT_PER_PAGE));
-};
 
 type ProgramProviderProps = { children: ReactNode };
 
@@ -108,7 +89,7 @@ export const ProgramProvider = ({ children }: ProgramProviderProps) => {
     const chapter =
       nextProgram.chapters.find((item) => item.id === nextChapterId) ??
       nextProgram.chapters[0];
-    const total = getTotalPages(chapter?.items ?? []);
+    const total = programPageCount(chapter?.items ?? []);
     const nextPage = projectChanged
       ? 0
       : Math.min(currentPageIndexRef.current, total - 1);
@@ -128,11 +109,16 @@ export const ProgramProvider = ({ children }: ProgramProviderProps) => {
     [program.chapters, currentChapterId]
   );
 
-  const totalPages = useMemo(() => getTotalPages(currentChapter?.items ?? []), [currentChapter]);
+  const totalPages = useMemo(
+    () => programPageCount(currentChapter?.items ?? []),
+    [currentChapter],
+  );
 
   const pageItems = useMemo(
-    () => getPageItems(currentChapter?.items ?? [], currentPageIndex),
-    [currentChapter, currentPageIndex]
+    (): PageItems => ({
+      sequences: sliceProgramPage(currentChapter?.items ?? [], currentPageIndex),
+    }),
+    [currentChapter, currentPageIndex],
   );
 
   const isProgramEmpty = useMemo(
@@ -267,26 +253,6 @@ export const ProgramProvider = ({ children }: ProgramProviderProps) => {
     [mutateProgram],
   );
 
-  const addCue = useCallback(
-    (chapterId: string) => {
-      mutateProgram((current) => ({
-        ...current,
-        chapters: current.chapters.map((chapter) => {
-          if (chapter.id !== chapterId) return chapter;
-          const id = `cue-${Date.now().toString(36)}`;
-          return {
-            ...chapter,
-            items: [
-              ...chapter.items,
-              { kind: "cue", cue: { id, name: `新建 Cue`, durationMs: 3000, targets: {} } },
-            ],
-          };
-        }),
-      }));
-    },
-    [mutateProgram],
-  );
-
   const addSequence = useCallback(
     (chapterId: string) => {
       if (hydratingRef.current) return;
@@ -376,7 +342,6 @@ export const ProgramProvider = ({ children }: ProgramProviderProps) => {
       renameChapter,
       reorderItemInChapter,
       moveItemAcrossChapter,
-      addCue,
       addSequence,
       removeItem,
       isProgramEmpty,
@@ -397,7 +362,6 @@ export const ProgramProvider = ({ children }: ProgramProviderProps) => {
       renameChapter,
       reorderItemInChapter,
       moveItemAcrossChapter,
-      addCue,
       addSequence,
       removeItem,
       lastPersistError,

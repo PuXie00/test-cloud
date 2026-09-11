@@ -2,20 +2,17 @@ import type { ActionDataSaveItem, PlcCompiledAction } from "@shared/csocket/acti
 
 export const toActionDataSaveItems = (
   compiled: PlcCompiledAction,
-  actionNo: number,
+  actionId: number,
 ): ActionDataSaveItem[] => [
   {
-    actionNo,
-    checksum: compiled.checksum,
-    trajectoryMode: compiled.trajectoryMode,
+    actionId,
     totalDuration: compiled.totalDuration,
     timelineCount: compiled.timelines.length,
     timelineList: compiled.timelines.map((timeline) => ({
-      modelNo: timeline.modelNo,
-      virtualAxisType: timeline.virtualAxisType,
-      pointCount: timeline.timeArray.length,
-      timeArray: timeline.timeArray,
-      positionArray: timeline.positionArray,
+      modelId: timeline.modelId,
+      virtualAxisNo: timeline.virtualAxisNo,
+      segmentCount: timeline.segments.length,
+      segmentList: timeline.segments,
     })),
     eventCount: compiled.events.length,
     eventList: compiled.events,

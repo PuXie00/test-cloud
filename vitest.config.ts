@@ -17,6 +17,9 @@ export default defineConfig({
       'src/app/pages/console/hooks/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       'src/app/pages/console/components/right-sidebar/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       'src/app/pages/console/components/action-builder/**/*.{test,spec}.?(c|m)[jt]s?(x)',
+      // Plan-mandated Task 1 suite path; required for
+      // `npx vitest run src/app/pages/console/components/program-panel/resolve-program-motion.test.ts`
+      'src/app/pages/console/components/program-panel/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       // Plan-mandated Task 8 suite path; required for
       // `npx vitest run src/app/pages/console/components/exec-area/exec-area.test.tsx`
       'src/app/pages/console/components/exec-area/**/*.{test,spec}.?(c|m)[jt]s?(x)',

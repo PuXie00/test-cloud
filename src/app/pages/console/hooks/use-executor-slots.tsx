@@ -1,6 +1,11 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import type { PageItems } from "./program-context";
-import type { ChapterItem, PositionCue, ActionSequence } from "../components/program-panel/program-data";
+import {
+  PROGRAM_SLOTS_PER_PAGE,
+  type ChapterItem,
+  type PositionCue,
+  type ActionSequence,
+} from "../components/program-panel/program-data";
 
 export type ButtonSlotState = {
   index: number;
@@ -31,7 +36,7 @@ type ExecutorSlotsProviderProps = {
   pageItems: PageItems;
 };
 
-const SLOT = 8;
+const BUTTON_SLOT_COUNT = 8;
 
 export const ExecutorSlotsProvider = ({ children, pageItems }: ExecutorSlotsProviderProps) => {
   const [faderValues, setFaderValues] = useState<Record<number, number>>({});
@@ -40,21 +45,18 @@ export const ExecutorSlotsProvider = ({ children, pageItems }: ExecutorSlotsProv
 
   const buttonSlots = useMemo<ButtonSlotState[]>(
     () =>
-      Array.from({ length: SLOT }, (_, idx) => {
-        const item = pageItems.cues[idx] as ChapterItem | undefined;
-        return {
-          index: idx,
-          label: `B${idx + 1}`,
-          cue: item?.kind === "cue" ? item.cue : null,
-          isRunning: runningButtons.has(idx),
-        };
-      }),
-    [pageItems.cues, runningButtons]
+      Array.from({ length: BUTTON_SLOT_COUNT }, (_, idx) => ({
+        index: idx,
+        label: `B${idx + 1}`,
+        cue: null,
+        isRunning: runningButtons.has(idx),
+      })),
+    [runningButtons]
   );
 
   const faderSlots = useMemo<FaderSlotState[]>(
     () =>
-      Array.from({ length: SLOT }, (_, idx) => {
+      Array.from({ length: PROGRAM_SLOTS_PER_PAGE }, (_, idx) => {
         const item = pageItems.sequences[idx] as ChapterItem | undefined;
         return {
           index: idx,

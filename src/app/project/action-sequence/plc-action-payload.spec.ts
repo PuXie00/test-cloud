@@ -3,6 +3,7 @@ import { compilePlcAction } from "./compile-plc-action";
 import { createDefaultAxisProfiles } from "./motion-profile";
 import { toActionDataSaveItems } from "./plc-action-payload";
 import type { ActionSequenceConfig, TimelineBlock } from "./types";
+import type { AxisLimit, VirtualAxisId } from "./validate-sequence";
 
 const sequenceOf = (
   blocks: TimelineBlock[],
@@ -16,22 +17,24 @@ const sequenceOf = (
   ...extra,
 });
 
+const unlimitedAxis = (): AxisLimit => ({
+  min: -1_000_000,
+  max: 1_000_000,
+  maxVelocity: 1_000_000,
+  minAccelTime: 0.001,
+});
+
+const limitsFor = (axes: readonly VirtualAxisId[]) =>
+  Object.fromEntries(axes.map((axis) => [axis, unlimitedAxis()])) as Partial<
+    Record<VirtualAxisId, AxisLimit>
+  >;
+
 const context = {
   objects: [{
     id: 7,
     enabledVirtualAxes: ["v1", "v2", "v3"] as const,
-    limits: {
-      v1: {
-        min: -1_000_000,
-        max: 1_000_000,
-        maxVelocity: 1_000_000,
-        maxAcceleration: 1_000_000,
-        maxDeceleration: 1_000_000,
-        minAccelTime: 0.2,
-      },
-    },
+    limits: limitsFor(["v1", "v2", "v3"]),
   }],
-  sampleIntervalMs: 20,
 };
 
 const sequence: ActionSequenceConfig = sequenceOf(
@@ -64,33 +67,38 @@ const sequence: ActionSequenceConfig = sequenceOf(
 );
 
 describe("toActionDataSaveItems", () => {
-  it("maps arrays, counts, and trajectoryMode without separate initial-pose fields", () => {
+  it("fills actionId, counts, curve segments, and enableFlag events", () => {
     const compiled = compilePlcAction(sequence, context);
     const items = toActionDataSaveItems(compiled, 7);
-    expect(items[0].actionNo).toBe(7);
-    expect(items[0].trajectoryMode).toBe("forced");
-    expect(items[0].trajectoryMode).toBe(compiled.trajectoryMode);
-    expect(items[0].checksum).toBe(compiled.checksum);
-    expect(items[0].timelineCount).toBe(compiled.timelines.length);
-    expect(items[0].timelineList[0].pointCount).toBe(items[0].timelineList[0].timeArray.length);
-    expect(items[0].eventCount).toBe(compiled.events.length);
-    expect(items[0].eventList).toEqual(compiled.events);
-    expect(items[0]).not.toHaveProperty("initialPoseCount");
-    expect(items[0]).not.toHaveProperty("initialPoseList");
+    const item = items[0];
+    expect(item.actionId).toBe(7);
+    expect(item).not.toHaveProperty("actionNo");
+    expect(item).not.toHaveProperty("checksum");
+    expect(item).not.toHaveProperty("trajectoryMode");
+    expect(item.timelineCount).toBe(compiled.timelines.length);
+    expect(item.timelineList[0]?.modelId).toBe(7);
+    expect(item.timelineList[0]?.virtualAxisNo).toBe(1);
+    expect(item.timelineList[0]?.segmentCount).toBe(item.timelineList[0]?.segmentList.length);
+    expect(item.eventCount).toBe(1);
+    expect(item.eventList).toEqual([{ modelId: 7, atTime: 500, enableFlag: 0 }]);
   });
 
   it("maps a command-only compile to events and zero timelines", () => {
     const compiled = compilePlcAction(
-      sequenceOf([{ id: "enable", kind: "instruction",
-      presetId: "set-enabled", objectId: 7, atMs: 1000, instr: { enabled: true } }]),
+      sequenceOf([{
+        id: "enable",
+        kind: "instruction",
+        presetId: "set-enabled",
+        objectId: 7,
+        atMs: 1000,
+        instr: { enabled: true },
+      }]),
       context,
     );
     const items = toActionDataSaveItems(compiled, 3);
+    expect(items[0].actionId).toBe(3);
     expect(items[0].timelineCount).toBe(0);
     expect(items[0].timelineList).toEqual([]);
-    expect(items[0].eventCount).toBe(1);
-    expect(items[0].eventList).toEqual([
-      { modelNo: 7, atMs: 1000, kind: "set-enabled", enabled: true },
-    ]);
+    expect(items[0].eventList).toEqual([{ modelId: 7, atTime: 1000, enableFlag: 1 }]);
   });
 });

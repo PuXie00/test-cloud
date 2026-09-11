@@ -29,10 +29,9 @@ export const ChapterItemRow = ({
   onDoubleClick,
   onDragStart,
 }: ChapterItemRowProps) => {
-  const isCue = item.kind === "cue";
-  const name = isCue ? item.cue.name : item.sequence.name;
-  const note = isCue ? item.cue.note : item.sequence.note;
-  const durationMs = isCue ? item.cue.durationMs : item.sequence.durationMs;
+  const name = item.sequence.name;
+  const note = item.sequence.note;
+  const durationMs = item.sequence.durationMs;
   const accessibleWarning = warningMessage ?? (hasWarning ? "待修复" : undefined);
 
   const statusDotClass = isCurrentlyRunning
@@ -67,7 +66,7 @@ export const ChapterItemRow = ({
         {slotLabel}
       </span>
       <span className="shrink-0 text-muted-foreground" aria-hidden>
-        {isCue ? "▶" : "║"}
+        ║
       </span>
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="min-w-0 truncate text-body-md text-foreground">{name}</span>

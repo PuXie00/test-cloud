@@ -2,7 +2,6 @@ import { createContext, useContext } from "react";
 import type { ChapterItem, Program } from "../components/program-panel/program-data";
 
 export type PageItems = {
-  cues: ChapterItem[];
   sequences: ChapterItem[];
 };
 
@@ -25,7 +24,6 @@ export type ProgramContextValue = {
     toChapterId: string,
     toIndex: number,
   ) => void;
-  addCue: (chapterId: string) => void;
   addSequence: (chapterId: string) => void;
   removeItem: (chapterId: string, index: number) => void;
   /** 工程尚无节目/章节，控制界面应显示编排指引 */

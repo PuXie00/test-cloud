@@ -434,7 +434,6 @@ const seedCascadeTarget = (
                           ...chapter,
                           items: [
                             ...chapter.items,
-                            { kind: "cue" as const, refId: cueId },
                             { kind: "sequence" as const, refId: sequenceId },
                           ],
                         },
@@ -451,20 +450,12 @@ const seedCascadeTarget = (
     result.current.project.currentProject!.document!.motion.programs
       .flatMap((program) => program.chapters)
       .flatMap((chapter) => chapter.items)
-      .some(
-        (item) =>
-          (item.kind === "cue" && item.refId === cueId) ||
-          (item.kind === "sequence" && item.refId === sequenceId),
-      ),
+      .some((item) => item.kind === "sequence" && item.refId === sequenceId),
   ).toBe(true);
   expect(
     result.current.program.program.chapters
       .flatMap((chapter) => chapter.items)
-      .some(
-        (item) =>
-          (item.kind === "cue" && item.cue.id === cueId) ||
-          (item.kind === "sequence" && item.sequence.id === sequenceId),
-      ),
+      .some((item) => item.kind === "sequence" && item.sequence.id === sequenceId),
   ).toBe(true);
 
   // Independent motion/program edits establish a history boundary.
@@ -590,12 +581,6 @@ describe("project configuration history integration", () => {
       docAfterDelete.motion.programs
         .flatMap((program) => program.chapters)
         .flatMap((chapter) => chapter.items)
-        .some((item) => item.kind === "cue" && item.refId === cueId),
-    ).toBe(true);
-    expect(
-      docAfterDelete.motion.programs
-        .flatMap((program) => program.chapters)
-        .flatMap((chapter) => chapter.items)
         .some((item) => item.kind === "sequence" && item.refId === sequenceId),
     ).toBe(false);
 
@@ -608,11 +593,6 @@ describe("project configuration history integration", () => {
     expect(
       result.current.program.program.chapters
         .flatMap((chapter) => chapter.items)
-        .some((item) => item.kind === "cue" && item.cue.id === cueId),
-    ).toBe(true);
-    expect(
-      result.current.program.program.chapters
-        .flatMap((chapter) => chapter.items)
         .some((item) => item.kind === "sequence" && item.sequence.id === sequenceId),
     ).toBe(false);
 
@@ -622,11 +602,6 @@ describe("project configuration history integration", () => {
     );
     expect(resolveMotionLaunchBlock(docAfterDelete, "cue", cueId)).toBeTruthy();
     expect(resolveMotionLaunchBlock(docAfterDelete, "sequence", sequenceId)).toBeTruthy();
-    expect(
-      getProgramRepairIssues(docAfterDelete, "prog-gz-main").some(
-        (issue) => issue.itemId === cueId,
-      ),
-    ).toBe(true);
     expect(
       getProgramRepairIssues(docAfterDelete, "prog-gz-main").some(
         (issue) => issue.itemId === sequenceId,

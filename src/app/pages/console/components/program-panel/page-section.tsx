@@ -12,10 +12,8 @@ type PageSectionProps = {
   pageIndex: number;
   pageTotal: number;
   isCurrent: boolean;
-  cues: ChapterItem[];
   sequences: ChapterItem[];
   onClickHeader: () => void;
-  onAddCue: () => void;
   onAddSequence: () => void;
   onItemDragStart: (
     chapterId: string,
@@ -31,10 +29,8 @@ export const PageSection = ({
   pageIndex,
   pageTotal,
   isCurrent,
-  cues,
   sequences,
   onClickHeader,
-  onAddCue,
   onAddSequence,
   onItemDragStart,
   onDoubleClickItem,
@@ -52,9 +48,6 @@ export const PageSection = ({
 
   const resolveItemWarning = (item: ChapterItem) => {
     if (!document) return null;
-    if (item.kind === "cue") {
-      return getMotionItemRepairIssue(document, "cue", item.cue.id);
-    }
     return getMotionItemRepairIssue(document, "sequence", item.sequence.id);
   };
 
@@ -84,13 +77,13 @@ export const PageSection = ({
 
       {expanded && (
         <div className="flex flex-col">
-          {cues.map((item, idx) => {
+          {sequences.map((item, idx) => {
             const issue = resolveItemWarning(item);
             return (
               <ChapterItemRow
-                key={item.kind === "cue" ? item.cue.id : ""}
+                key={item.sequence.id}
                 item={item}
-                slotLabel={`B${idx + 1}`}
+                slotLabel={`F${idx + 1}`}
                 hasWarning={Boolean(issue)}
                 warningMessage={issue?.message}
                 draggable={mode === "rehearsal"}
@@ -99,34 +92,8 @@ export const PageSection = ({
               />
             );
           })}
-          {sequences.map((item, idx) => {
-            const issue = resolveItemWarning(item);
-            return (
-              <ChapterItemRow
-                key={item.kind === "sequence" ? item.sequence.id : ""}
-                item={item}
-                slotLabel={`F${idx + 1}`}
-                hasWarning={Boolean(issue)}
-                warningMessage={issue?.message}
-                draggable={mode === "rehearsal"}
-                onDragStart={onItemDragStart(
-                  chapterId,
-                  item,
-                  itemIndexOffset + cues.length + idx
-                )}
-                onDoubleClick={() => onDoubleClickItem?.(item)}
-              />
-            );
-          })}
           {mode === "rehearsal" && (
             <div className="flex gap-1 px-2 py-2">
-              <button
-                type="button"
-                onClick={onAddCue}
-                className="inline-flex h-8 flex-1 items-center justify-center gap-1 rounded-sm border border-dashed border-border text-body-sm text-muted-foreground hover:bg-muted/30"
-              >
-                <Plus className="h-3 w-3" /> Cue
-              </button>
               <button
                 type="button"
                 onClick={onAddSequence}

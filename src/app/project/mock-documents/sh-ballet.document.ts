@@ -86,7 +86,7 @@ export const SH_BALLET_DOCUMENT: ProjectDocument = {
           {
             id: "ch-1",
             name: "第一幕",
-            items: [{ kind: "cue", refId: "cue-curtain" }],
+            items: [],
           },
         ],
       },

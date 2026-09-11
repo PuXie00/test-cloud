@@ -701,7 +701,7 @@ export class CsocketApiService {
     items: ActionDataSaveItem[],
     opts?: CsocketSendOpts,
   ) {
-    return this.sendBuilt('Config|actionDataSave', '0x104A', items, opts)
+    return this.sendBuilt('Config|actionDataSave', '0x1016', items, opts)
   }
   // 规则启动
   ruleStartPlc(items: { enableFlag: number }[], opts?: CsocketSendOpts) {

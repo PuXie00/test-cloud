@@ -119,7 +119,7 @@ const assertLegalCruiseRatios = (
   if (
     !ratios ||
     validateMotionProfile(profile).length > 0 ||
-    profile.params.accelMs + profile.params.decelMs >= durationMs
+    profile.params.accelMs + profile.params.decelMs > durationMs
   ) {
     return null;
   }

@@ -5,7 +5,12 @@ import {
   validateActionSequence,
   type SequenceValidationContext,
 } from "./action-sequence/validate-sequence";
-import type { ControlledObjectConfig, MotorConfig, ProjectDocument } from "./project-document-types";
+import {
+  isSequenceProgramItemRef,
+  type ControlledObjectConfig,
+  type MotorConfig,
+  type ProjectDocument,
+} from "./project-document-types";
 import { motionKindForVirtualAxis } from "./virtual-axis-mapping";
 import { resolveVirtualAxisMaxVelocity } from "./virtual-axis-max-velocity";
 
@@ -159,6 +164,7 @@ export const getProgramRepairIssues = (
 
   for (const chapter of program.chapters) {
     for (const item of chapter.items) {
+      if (!isSequenceProgramItemRef(item)) continue;
       const key = `${item.kind}:${item.refId}`;
       if (seen.has(key)) continue;
 
@@ -166,19 +172,13 @@ export const getProgramRepairIssues = (
       if (!itemIssue) continue;
 
       seen.add(key);
-      const missing =
-        itemIssue.message === MISSING_CUE_MESSAGE ||
-        itemIssue.message === MISSING_SEQUENCE_MESSAGE;
+      const missing = itemIssue.message === MISSING_SEQUENCE_MESSAGE;
       issues.push({
         code: "program-ref-empty",
         itemId: item.refId,
         message: missing
-          ? item.kind === "cue"
-            ? `节目引用不可用 Cue「${item.refId}」，待修复`
-            : `节目引用不可用动作序列「${item.refId}」，待修复`
-          : item.kind === "cue"
-            ? `节目引用空 Cue「${item.refId}」，待修复`
-            : `节目引用空动作序列「${item.refId}」，待修复`,
+          ? `节目引用不可用动作序列「${item.refId}」，待修复`
+          : `节目引用空动作序列「${item.refId}」，待修复`,
       });
     }
   }

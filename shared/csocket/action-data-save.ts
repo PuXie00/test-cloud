@@ -1,39 +1,41 @@
-import type { TrajectoryMode } from '../action-sequence'
+export type PlcCurveSegment = {
+  startTime: number
+  position: number
+  a: number
+  b: number
+  c: number
+  d: number
+  e: number
+  f: number
+}
 
 export type PlcCompiledTimeline = {
-  modelNo: number
-  virtualAxisType: number
-  timeArray: number[]
-  positionArray: number[]
+  modelId: number
+  virtualAxisNo: number
+  segments: PlcCurveSegment[]
 }
 
 export type PlcCompiledEvent = {
-  modelNo: number
-  atMs: number
-  kind: 'set-enabled'
-  enabled: boolean
+  modelId: number
+  atTime: number
+  enableFlag: 0 | 1
 }
 
 export type PlcCompiledAction = {
-  checksum: number
-  trajectoryMode: TrajectoryMode
   totalDuration: number
   timelines: PlcCompiledTimeline[]
   events: PlcCompiledEvent[]
 }
 
 export type ActionDataSaveItem = {
-  actionNo: number
-  checksum: number
-  trajectoryMode: TrajectoryMode
+  actionId: number
   totalDuration: number
   timelineCount: number
   timelineList: Array<{
-    modelNo: number
-    virtualAxisType: number
-    pointCount: number
-    timeArray: number[]
-    positionArray: number[]
+    modelId: number
+    virtualAxisNo: number
+    segmentCount: number
+    segmentList: PlcCurveSegment[]
   }>
   eventCount: number
   eventList: PlcCompiledEvent[]

@@ -11,7 +11,7 @@ import {
   getProgramRepairIssues,
   resolveMotionLaunchBlock,
 } from "./project-motion-readiness";
-import type { ControlledObjectConfig, ProjectDocument } from "./project-document-types";
+import type { ControlledObjectConfig, ProgramItemRef, ProjectDocument } from "./project-document-types";
 
 const OBJECT_A = 1;
 const OBJECT_B = 2;
@@ -153,7 +153,7 @@ describe("validateProjectDocument sequence refs", () => {
     expect(result.errors.some((error) => error.includes("96"))).toBe(true);
   });
 
-  it("reports dangling program cue and sequence refs", () => {
+  it("rejects non-sequence program items and dangling sequence refs", () => {
     const document = documentOf({
       motion: {
         positionCues: [],
@@ -169,7 +169,7 @@ describe("validateProjectDocument sequence refs", () => {
                 items: [
                   { kind: "cue", refId: "missing-cue-ref" },
                   { kind: "sequence", refId: 17 },
-                ],
+                ] as unknown as ProgramItemRef[],
               },
             ],
           },
@@ -178,8 +178,9 @@ describe("validateProjectDocument sequence refs", () => {
     });
     const result = validateProjectDocument(document);
     expect(result.ok).toBe(false);
-    expect(result.errors.some((error) => error.includes("missing-cue-ref"))).toBe(true);
-    expect(result.errors.some((error) => error.includes(17))).toBe(true);
+    expect(result.errors.some((error) => error.includes("must be sequence"))).toBe(true);
+    expect(result.errors.some((error) => error.includes("17"))).toBe(true);
+    expect(result.errors.some((error) => error.includes("missing-cue-ref"))).toBe(false);
   });
 
   it("still reports cue unknown objects and disabled axes", () => {

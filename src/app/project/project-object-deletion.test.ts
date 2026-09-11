@@ -9,6 +9,7 @@ import {
   PROJECT_SCHEMA_VERSION,
   type ControlledObjectConfig,
   type MotorConfig,
+  type ProgramItemRef,
   type ProjectDocument,
 } from "./project-document-types";
 import { createDefaultSavedView } from "./saved-view";
@@ -177,8 +178,6 @@ const cascadeDocument = (): ProjectDocument => {
           id: "ch-1",
           name: "Chapter",
           items: [
-            { kind: "cue" as const, refId: "cue-empty-after-delete" },
-            { kind: "cue" as const, refId: "cue-keep" },
             { kind: "sequence" as const, refId: 12 },
             { kind: "sequence" as const, refId: 13 },
           ],
@@ -566,7 +565,7 @@ describe("validateProjectDocument reference consistency (deletion-related)", () 
     expect(missingObject.errors.some((e) => e.includes("996"))).toBe(true);
   });
 
-  it("reports dangling program cue and sequence refs", () => {
+  it("rejects non-sequence program items and dangling sequence refs", () => {
     const document = cascadeDocument();
     document.motion.programs[0] = {
       id: "p-bad",
@@ -578,13 +577,14 @@ describe("validateProjectDocument reference consistency (deletion-related)", () 
           items: [
             { kind: "cue", refId: "missing-cue-ref" },
             { kind: "sequence", refId: 17 },
-          ],
+          ] as unknown as ProgramItemRef[],
         },
       ],
     };
     const result = validateProjectDocument(document);
     expect(result.ok).toBe(false);
-    expect(result.errors.some((e) => e.includes("missing-cue-ref"))).toBe(true);
-    expect(result.errors.some((e) => e.includes(17))).toBe(true);
+    expect(result.errors.some((e) => e.includes("must be sequence"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("17"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("missing-cue-ref"))).toBe(false);
   });
 });

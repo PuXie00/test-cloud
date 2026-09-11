@@ -18,8 +18,7 @@ import {
 import type { ProjectDocument } from "@/app/project/project-document-types";
 import { sequenceValidationContextFromSetup } from "@/app/project/project-motion-readiness";
 
-export const SEQUENCE_SAMPLE_INTERVAL_MS = 20;
-/** Local placeholder until firmware confirms actionNo ↔ syncGroupId. */
+/** Local placeholder until firmware confirms actionId ↔ syncGroupId. */
 export const LOCAL_SEQUENCE_SYNC_GROUP_ID = 1;
 
 export type SequenceExecutionObject = {
@@ -30,20 +29,18 @@ export type SequenceExecutionObject = {
 
 export type SequenceExecutionContext = {
   objects: readonly SequenceExecutionObject[];
-  sampleIntervalMs: number;
   hoistObjects?: SequenceValidationContext["hoistObjects"];
 };
 
 export type SequenceRuntimeHandle = {
-  actionNo: number;
+  actionId: number;
   syncGroupId: number;
 };
 
 export type DownloadedSequence =
   | {
       ok: true;
-      actionNo: number;
-      checksum: number;
+      actionId: number;
       sequenceId: number;
       modelIds: number[];
     }
@@ -52,13 +49,12 @@ export type DownloadedSequence =
 export type SequenceExecutionTransport = {
   saveAction: (items: ActionDataSaveItem[]) => Promise<void>;
   syncCall: (input: {
-    actionNo: number;
     syncGroupId: number;
     startTimestamp: number;
     speedScale: number;
     trajectoryMode: TrajectoryMode;
   }) => Promise<void>;
-  stopAction: (input: { actionNo: number; syncGroupId: number }) => Promise<void>;
+  stopAction: (input: { actionId: number; syncGroupId: number }) => Promise<void>;
 };
 
 export type SequenceCsocketClient = {
@@ -101,7 +97,6 @@ const toCompileContext = (context: SequenceExecutionContext): PlcCompileContext 
     enabledVirtualAxes: [...object.enabledVirtualAxes],
     limits: cloneLimits(object.limits),
   })),
-  sampleIntervalMs: context.sampleIntervalMs,
   ...(context.hoistObjects ? { hoistObjects: context.hoistObjects } : {}),
 });
 
@@ -110,8 +105,8 @@ const uniqueSortedModelIds = (
 ): number[] =>
   [
     ...new Set([
-      ...compiled.timelines.map((timeline) => timeline.modelNo),
-      ...compiled.events.map((event) => event.modelNo),
+      ...compiled.timelines.map((timeline) => timeline.modelId),
+      ...compiled.events.map((event) => event.modelId),
     ]),
   ].sort((left, right) => left - right);
 
@@ -141,8 +136,7 @@ export const downloadSequence = async (
   await transport.saveAction(toActionDataSaveItems(compiled, sequence.id));
   return {
     ok: true,
-    actionNo: sequence.id,
-    checksum: compiled.checksum,
+    actionId: sequence.id,
     sequenceId: sequence.id,
     modelIds: uniqueSortedModelIds(compiled),
   };
@@ -195,6 +189,17 @@ const requireSuccessfulAck = (raw: unknown, label: string): CppAckResult => {
   return ack;
 };
 
+const requireSaveAck = (raw: unknown): void => {
+  const ack = requireSuccessfulAck(raw, "actionDataSave");
+  const first = ack.data?.[0];
+  const errorCount =
+    isRecord(first) && typeof first.errorCount === "number" ? first.errorCount : 0;
+  if (errorCount > 0) {
+    const codes = isRecord(first) && "errorCode" in first ? first.errorCode : [];
+    throw new Error(`actionDataSave errorCount=${errorCount} errorCode=${JSON.stringify(codes)}`);
+  }
+};
+
 /**
  * Placeholder fields until the protocol gate confirms prepare/sync encoding.
  * Do not change electron/main item shapes.
@@ -208,7 +213,7 @@ export const createCsocketSequenceTransport = (
   api: SequenceCsocketClient,
 ): SequenceExecutionTransport => ({
   saveAction: async (items) => {
-    await requireSuccessfulAck(await api.actionDataSavePlc(items), "actionDataSave");
+    await requireSaveAck(await api.actionDataSavePlc(items));
   },
   syncCall: async (input) => {
     // The C++ contract has not assigned a wire field for this semantic mode yet.
@@ -230,10 +235,10 @@ export const createCsocketSequenceTransport = (
     );
   },
   stopAction: async (input) => {
-    // UNCONFIRMED: stopActionPlc currently takes `{ deviceId }[]`. Map actionNo → deviceId
+    // UNCONFIRMED: stopActionPlc currently takes `{ deviceId }[]`. Map actionId → deviceId
     // inside this adapter only until firmware confirms the stop payload.
     await requireSuccessfulAck(
-      await api.stopActionPlc([{ deviceId: input.actionNo }]),
+      await api.stopActionPlc([{ deviceId: input.actionId }]),
       "stopAction",
     );
   },
@@ -254,7 +259,6 @@ export const sequenceExecutionContextFromDocument = (
   const validation = sequenceValidationContextFromSetup(document);
   return {
     objects: validation.objects,
-    sampleIntervalMs: SEQUENCE_SAMPLE_INTERVAL_MS,
     ...(validation.hoistObjects ? { hoistObjects: validation.hoistObjects } : {}),
   };
 };
@@ -287,7 +291,6 @@ export const startLocalAuthoredSequence = async (args: {
     }
 
     await transport.syncCall({
-      actionNo: downloaded.actionNo,
       syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID,
       startTimestamp: Date.now(),
       speedScale: fromFader ? mapFaderPercentToSpeedScale(speedPercent) : 1,
@@ -299,7 +302,7 @@ export const startLocalAuthoredSequence = async (args: {
       name: sequence.name,
       speedPercent,
       sequenceHandle: {
-        actionNo: downloaded.actionNo,
+        actionId: downloaded.actionId,
         syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID,
       },
     };

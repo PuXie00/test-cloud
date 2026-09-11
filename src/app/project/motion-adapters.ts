@@ -3,13 +3,14 @@ import type {
   CueItem,
   ProgramNode,
 } from "@/app/pages/console/components/action-builder/timeline/timeline-data";
-import type {
-  ActionSequenceConfig,
-  ControlledObjectConfig,
-  MotorConfig,
-  PositionCueConfig,
-  ProjectMotion,
-  VirtualAxisId,
+import {
+  isSequenceProgramItemRef,
+  type ActionSequenceConfig,
+  type ControlledObjectConfig,
+  type MotorConfig,
+  type PositionCueConfig,
+  type ProjectMotion,
+  type VirtualAxisId,
 } from "./project-document-types";
 import { CONTROL_TYPE_RULES } from "./configuration-rules";
 import type { MotionAxisKind } from "./configuration-types";
@@ -26,7 +27,6 @@ export const positionCueConfigToCueItem = (cue: PositionCueConfig): CueItem => (
 });
 
 export const motionToProgramNodes = (motion: ProjectMotion): ProgramNode[] => {
-  const cueById = new Map(motion.positionCues.map((c) => [c.id, c]));
   const seqById = new Map(motion.actionSequences.map((s) => [s.id, s]));
 
   return motion.programs.map((program) => ({
@@ -37,21 +37,16 @@ export const motionToProgramNodes = (motion: ProjectMotion): ProgramNode[] => {
       id: chapter.id,
       name: chapter.name,
       type: "chapter" as const,
-      children: chapter.items.map((item) => {
-        if (item.kind === "cue") {
-          const cue = cueById.get(item.refId);
-          return {
-            id: item.refId,
-            name: cue?.name ?? item.refId,
-            type: "cue" as const,
-          };
-        }
+      children: chapter.items.flatMap((item) => {
+        if (!isSequenceProgramItemRef(item)) return [];
         const sequence = seqById.get(item.refId);
-        return {
-          id: String(item.refId),
-          name: sequence?.name ?? String(item.refId),
-          type: "sequence" as const,
-        };
+        return [
+          {
+            id: String(item.refId),
+            name: sequence?.name ?? String(item.refId),
+            type: "sequence" as const,
+          },
+        ];
       }),
     })),
   }));

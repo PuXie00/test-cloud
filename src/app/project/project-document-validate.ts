@@ -1,11 +1,10 @@
-import type { ProjectDocument, VirtualAxisId } from "./project-document-types";
+import { isSequenceProgramItemRef, type ProjectDocument, type VirtualAxisId } from "./project-document-types";
 
 export type ValidationResult = { ok: boolean; errors: string[] };
 
 export const validateProjectDocument = (doc: ProjectDocument): ValidationResult => {
   const errors: string[] = [];
   const objectById = new Map(doc.setup.controlledObjects.map((o) => [o.id, o]));
-  const cueIds = new Set(doc.motion.positionCues.map((c) => c.id));
   const seqIds = new Set(doc.motion.actionSequences.map((s) => s.id));
 
   for (const motor of doc.setup.motors) {
@@ -80,10 +79,11 @@ export const validateProjectDocument = (doc: ProjectDocument): ValidationResult 
   for (const program of doc.motion.programs) {
     for (const chapter of program.chapters) {
       for (const item of chapter.items) {
-        if (item.kind === "cue" && !cueIds.has(item.refId)) {
-          errors.push(`program ${program.id}: missing cue ref ${item.refId}`);
+        if (!isSequenceProgramItemRef(item)) {
+          errors.push(`program ${program.id}: item kind must be sequence`);
+          continue;
         }
-        if (item.kind === "sequence" && !seqIds.has(item.refId)) {
+        if (!seqIds.has(item.refId)) {
           errors.push(`program ${program.id}: missing sequence ref ${item.refId}`);
         }
       }

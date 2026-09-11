@@ -92,9 +92,10 @@ describe("trapezoid axis motion profile", () => {
     expect(() => evaluateMotionProfile(trap(200, 200), 0.5, 0)).toThrow(
       new Error("invalid trapezoid motion profile"),
     );
-    expect(() => evaluateMotionProfile(trap(500, 500), 0.5, 1000)).toThrow(
-      new Error("invalid trapezoid motion profile"),
-    );
+    const triangle = evaluateMotionProfile(trap(500, 500), 0.5, 1000);
+    expect(Number.isFinite(triangle)).toBe(true);
+    expect(triangle).toBeGreaterThanOrEqual(0);
+    expect(triangle).toBeLessThanOrEqual(1);
   });
 
   it("clones a profile and axis set with independent references", () => {

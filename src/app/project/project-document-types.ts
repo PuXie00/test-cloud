@@ -244,9 +244,16 @@ export type {
   TrapezoidAxisProfile,
 };
 
-export type ProgramItemRef =
-  | { kind: "cue"; refId: string }
-  | { kind: "sequence"; refId: number };
+export type ProgramItemRef = {
+  kind: "sequence";
+  refId: number;
+};
+
+export const isSequenceProgramItemRef = (item: unknown): item is ProgramItemRef => {
+  if (typeof item !== "object" || item === null) return false;
+  const rec = item as { kind?: unknown; refId?: unknown };
+  return rec.kind === "sequence" && typeof rec.refId === "number" && Number.isInteger(rec.refId);
+};
 
 export type ProgramChapterConfig = {
   id: string;

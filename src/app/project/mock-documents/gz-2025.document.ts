@@ -234,17 +234,12 @@ const GZ_MOTION: ProjectMotion = {
         {
           id: "ch-01",
           name: "第一章 开场",
-          items: [
-            { kind: "cue" as const, refId: "cue-open" },
-            { kind: "cue" as const, refId: "cue-lift" },
-          ],
+          items: [],
         },
         {
           id: "ch-02",
           name: "第二章 高潮",
-          items: [
-            { kind: "cue" as const, refId: "cue-focus" },
-          ],
+          items: [],
         },
       ],
     },
