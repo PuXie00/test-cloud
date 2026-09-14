@@ -2,7 +2,6 @@ import {
   Minus,
   Plus,
   Save,
-  ShieldCheck,
   Trash2,
 } from "lucide-react";
 import { IconButton } from "@/app/components/ics/icon-button";
@@ -76,7 +75,6 @@ export const TimelineToolbar = ({
     >
       <Save className="h-3.5 w-3.5" aria-hidden />
       保存
-      <ShieldCheck className="h-3.5 w-3.5 text-primary" aria-hidden />
     </button>
     <div className="ml-auto flex items-center gap-1">
       <IconButton icon={Minus} label="缩小间隔（块变宽）" onClick={onZoomOut} disabled={!canZoomOut} />
