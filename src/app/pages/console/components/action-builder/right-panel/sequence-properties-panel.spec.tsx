@@ -58,7 +58,7 @@ const { builderState } = vi.hoisted(() => ({
 
     current: {
 
-      getTimelineObject: () => undefined as
+      getTimelineObject: (_objectId?: number) => undefined as
 
         | {
 
@@ -79,6 +79,8 @@ const { builderState } = vi.hoisted(() => ({
           }
 
         | undefined,
+
+      handleApplyPoseAxisWrite: vi.fn(),
 
     },
 
@@ -222,6 +224,8 @@ afterEach(() => {
   cleanup();
 
   builderState.current.getTimelineObject = () => undefined;
+
+  builderState.current.handleApplyPoseAxisWrite.mockClear();
 
   handlers.onReplaceBlock.mockClear();
 
@@ -606,6 +610,134 @@ describe("SequencePropertiesPanel edits", () => {
     expect(within(inspection).queryByRole("checkbox")).toBeNull();
 
     expect(within(inspection).getAllByRole("listitem").length).toBeGreaterThan(0);
+
+  });
+
+
+
+  it("lists only enabledAxes on a single pose", () => {
+
+    builderState.current.getTimelineObject = () => ({
+
+      enabledAxes: ["v1"],
+
+    });
+
+    renderPanel({ selection: { kind: "block", blockId: "pose" } });
+
+    expect(screen.getByLabelText("虚轴1")).not.toBeNull();
+
+    expect(screen.queryByLabelText("虚轴2")).toBeNull();
+
+    expect(screen.queryByLabelText("虚轴3")).toBeNull();
+
+  });
+
+});
+
+
+
+describe("SequencePropertiesPanel multi-pose", () => {
+
+  it("shows the multi-pose editor when every selected block is a pose", () => {
+
+    renderPanel({ selection: { kind: "multi-block", blockIds: ["pose", "later"] } });
+
+    expect(screen.getByRole("heading", { name: "多选位姿" })).not.toBeNull();
+
+    expect(screen.getByText("已选 2 项")).not.toBeNull();
+
+    expect(screen.getByRole("tab", { name: "绝对" })).not.toBeNull();
+
+    expect(screen.getByLabelText("虚轴1")).not.toBeNull();
+
+    expect(screen.queryByLabelText("到达时间")).toBeNull();
+
+  });
+
+
+
+  it("keeps the count-only panel when the selection mixes kinds", () => {
+
+    renderPanel({ selection: { kind: "multi-block", blockIds: ["pose", "enable"] } });
+
+    expect(screen.getByRole("heading", { name: "多选" })).not.toBeNull();
+
+    expect(screen.getByText("已选 2 项")).not.toBeNull();
+
+    expect(screen.queryByRole("heading", { name: "多选位姿" })).toBeNull();
+
+    expect(screen.queryByRole("tab", { name: "绝对" })).toBeNull();
+
+  });
+
+
+
+  it("renders the union of enabledAxes across selected poses", () => {
+
+    builderState.current.getTimelineObject = (objectId: number) =>
+
+      objectId === 7 ? { enabledAxes: ["v1"] } : { enabledAxes: ["v2"] };
+
+    renderPanel({
+
+      sequence: {
+
+        ...sequence,
+
+        blocks: [
+
+          { id: "pose-a", kind: "pose", objectId: 7, atMs: 100, pose: { v1: 1, v2: 0, v3: 0 } },
+
+          { id: "pose-b", kind: "pose", objectId: 8, atMs: 200, pose: { v1: 0, v2: 2, v3: 0 } },
+
+        ],
+
+      },
+
+      selection: { kind: "multi-block", blockIds: ["pose-a", "pose-b"] },
+
+    });
+
+    expect(screen.getByLabelText("虚轴1")).not.toBeNull();
+
+    expect(screen.getByLabelText("虚轴2")).not.toBeNull();
+
+    expect(screen.queryByLabelText("虚轴3")).toBeNull();
+
+  });
+
+
+
+  it("shows a mixed absolute value as --", () => {
+
+    renderPanel({ selection: { kind: "multi-block", blockIds: ["pose", "later"] } });
+
+    expect(screen.getByLabelText("虚轴1").textContent).toContain("--");
+
+  });
+
+
+
+  it("resets the relative draft to 0 after a batch write", () => {
+
+    renderPanel({ selection: { kind: "multi-block", blockIds: ["pose", "later"] } });
+
+    fireEvent.click(screen.getByRole("tab", { name: "相对" }));
+
+    expect(screen.getByLabelText("虚轴1").textContent).toContain("0");
+
+    stepUp("虚轴1");
+
+    expect(builderState.current.handleApplyPoseAxisWrite).toHaveBeenCalledWith(
+
+      ["pose", "later"],
+
+      { mode: "rel", axis: "v1", value: 1 },
+
+    );
+
+    expect(screen.getByLabelText("虚轴1").textContent).toContain("0");
 
   });
 

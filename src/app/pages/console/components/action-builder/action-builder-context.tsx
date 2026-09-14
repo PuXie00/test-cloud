@@ -32,9 +32,11 @@ import {
   nextId,
 } from "./action-builder-ops";
 import {
+  applyPoseAxisWrite,
   copyTimelineBlocks,
   deleteTimelineBlocks,
   insertTimelineBlock,
+  type PoseAxisWrite,
   type SequenceEditOptions,
   moveTimelineBlock,
   pasteTimelineBlocks,
@@ -382,6 +384,24 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     (block: TimelineBlock): boolean =>
       applySequenceEdit((current) => replaceTimelineBlock(current, block, sequenceEditOptions)),
     [applySequenceEdit, sequenceEditOptions],
+  );
+
+  const handleApplyPoseAxisWrite = useCallback(
+    (blockIds: readonly string[], write: PoseAxisWrite): boolean =>
+      applySequenceEdit((current) =>
+        applyPoseAxisWrite(current, blockIds, write, {
+          ...sequenceEditOptions,
+          objectInfo: (objectId) => {
+            const object = getTimelineObject(objectId);
+            if (object === undefined) return undefined;
+            return {
+              enabledAxes: object.enabledAxes,
+              rangeByAxis: object.rangeByAxis,
+            };
+          },
+        }),
+      ),
+    [applySequenceEdit, getTimelineObject, sequenceEditOptions],
   );
 
   const handleMoveTimelineBlock = useCallback(
@@ -963,6 +983,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleCursorChange,
       handleInsertTimelineBlock,
       handleReplaceTimelineBlock,
+      handleApplyPoseAxisWrite,
       handleMoveTimelineBlock,
       handleShiftTimelineBlocks,
       handleShiftTimelineBlocksEnd,
@@ -1035,6 +1056,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleCursorChange,
       handleInsertTimelineBlock,
       handleReplaceTimelineBlock,
+      handleApplyPoseAxisWrite,
       handleMoveTimelineBlock,
       handleShiftTimelineBlocks,
       handleShiftTimelineBlocksEnd,

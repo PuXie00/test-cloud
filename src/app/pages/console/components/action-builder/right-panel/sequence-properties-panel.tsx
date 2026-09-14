@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { clampNumeric } from "@/app/components/ics/numeric-input-utils";
 import { TabBar } from "@/app/components/ics/tab-bar";
 import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-input";
@@ -20,12 +20,17 @@ import {
   MotionProfileEditor,
   type MotionProfileAxisContext,
 } from "../motion-profile/motion-profile-editor";
-import { motionProfileSegmentStatus } from "../motion-profile/motion-profile-status";
+import {
+  motionProfileSegmentStatus,
+  resolveEnabledAxes,
+} from "../motion-profile/motion-profile-status";
 import { EmptySelectionState } from "./empty-selection-state";
 import { lookupSequenceSelection, type SequenceSelection } from "../sequence-selection";
+import type { PoseAxisWrite } from "../sequence-ops";
 import { VIRTUAL_AXIS_IDS, type ControlledObject } from "../timeline/timeline-data";
 import { useActionBuilder } from "../use-action-builder";
 import { getVirtualAxisCanonicalUnit } from "../virtual-axis-display";
+import type { VirtualAxisId } from "@/app/project/project-document-types";
 
 export type SequencePropertiesPanelProps = {
   sequence: ActionSequenceConfig;
@@ -119,6 +124,62 @@ const POSE_MODE_TABS = [
 
 const ZERO_POSE: ModelPose = { v1: 0, v2: 0, v3: 0 };
 
+const poseAxisLabel = (axis: VirtualAxisId): string =>
+  `虚轴${VIRTUAL_AXIS_IDS.indexOf(axis) + 1}`;
+
+const poseSelectionKey = (poses: readonly PoseBlock[]): string =>
+  poses.map((block) => `${block.id}:${block.pose.v1},${block.pose.v2},${block.pose.v3}`).join("|");
+
+const intersectAxisRange = (
+  ranges: readonly { min: number; max: number }[],
+): { min?: number; max?: number } => {
+  if (ranges.length === 0) return {};
+  const min = Math.max(...ranges.map((range) => range.min));
+  const max = Math.min(...ranges.map((range) => range.max));
+  if (min > max) return {};
+  return { min, max };
+};
+
+const PoseAxisRow = ({
+  axis,
+  value,
+  mixed = false,
+  unit,
+  min,
+  max,
+  onChange,
+  onCommit,
+}: {
+  axis: VirtualAxisId;
+  value: number;
+  mixed?: boolean;
+  unit?: string;
+  min?: number;
+  max?: number;
+  onChange: (value: number) => void;
+  onCommit: (value: number) => void;
+}) => {
+  const axisLabel = poseAxisLabel(axis);
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-12 shrink-0 text-body-sm text-foreground">{axisLabel}</span>
+      <UnitAwareNumericInput
+        aria-label={axisLabel}
+        value={value}
+        mixed={mixed}
+        unit={unit}
+        step={poseAxisStep(axis)}
+        precision={1}
+        min={min}
+        max={max}
+        onChange={onChange}
+        onCommit={onCommit}
+        className="w-full border-border border"
+      />
+    </div>
+  );
+};
+
 const axisContextFromObject = (
   object: ControlledObject | undefined,
   travel: ModelPose,
@@ -154,11 +215,13 @@ const PoseAxesEditor = ({
     setMode(next);
   };
 
-  const handleDraftChange = (axis: (typeof VIRTUAL_AXIS_IDS)[number], value: number) => {
+  const enabledAxes = resolveEnabledAxes(object?.enabledAxes ?? []);
+
+  const handleDraftChange = (axis: VirtualAxisId, value: number) => {
     setDrafts((current) => ({ ...current, [axis]: value }));
   };
 
-  const handleCommit = (axis: (typeof VIRTUAL_AXIS_IDS)[number], value: number) => {
+  const handleCommit = (axis: VirtualAxisId, value: number) => {
     const range = object?.rangeByAxis?.[axis];
     const nextValue = mode === "rel" ? pose[axis] + value : value;
     const clamped = clampNumeric(nextValue, range?.min, range?.max);
@@ -180,25 +243,132 @@ const PoseAxesEditor = ({
           className="h-7 w-44 border-b-0 bg-transparent"
         />
       </div>
-      {VIRTUAL_AXIS_IDS.map((axis, index) => {
+      {enabledAxes.map((axis) => {
         const range = object?.rangeByAxis?.[axis];
-        const axisLabel = `虚轴${index + 1}`;
         return (
-          <div key={axis} className="flex items-center gap-2">
-            <span className="w-12 shrink-0 text-body-sm text-foreground">{axisLabel}</span>
-            <UnitAwareNumericInput
-              aria-label={axisLabel}
-              value={drafts[axis]}
-              unit={getVirtualAxisCanonicalUnit(axis, object?.controlType)}
-              step={poseAxisStep(axis)}
-              precision={1}
-              min={mode === "abs" ? range?.min : undefined}
-              max={mode === "abs" ? range?.max : undefined}
-              onChange={(value) => handleDraftChange(axis, value)}
-              onCommit={(value) => handleCommit(axis, value)}
-              className="w-full border-border border"
-            />
-          </div>
+          <PoseAxisRow
+            key={axis}
+            axis={axis}
+            value={drafts[axis]}
+            unit={getVirtualAxisCanonicalUnit(axis, object?.controlType)}
+            min={mode === "abs" ? range?.min : undefined}
+            max={mode === "abs" ? range?.max : undefined}
+            onChange={(value) => handleDraftChange(axis, value)}
+            onCommit={(value) => handleCommit(axis, value)}
+          />
+        );
+      })}
+    </div>
+  );
+};
+
+const MultiPoseAxesEditor = ({ poses }: { poses: PoseBlock[] }) => {
+  const { getTimelineObject, handleApplyPoseAxisWrite } = useActionBuilder();
+  const [mode, setMode] = useState<PoseAxisMode>("abs");
+  const [relDrafts, setRelDrafts] = useState<ModelPose>(ZERO_POSE);
+  const [absDrafts, setAbsDrafts] = useState<Partial<ModelPose>>({});
+
+  const participants = poses.map((block) => {
+    const object = getTimelineObject(block.objectId);
+    return {
+      block,
+      object,
+      enabledAxes: resolveEnabledAxes(object?.enabledAxes ?? []),
+    };
+  });
+  const unionAxes = VIRTUAL_AXIS_IDS.filter((axis) =>
+    participants.some((item) => item.enabledAxes.includes(axis)),
+  );
+  const blockIds = poses.map((block) => block.id);
+  const selectionKey = poseSelectionKey(poses);
+  const posesRef = useRef(poses);
+  posesRef.current = poses;
+
+  useEffect(() => {
+    const currentPoses = posesRef.current;
+    if (mode === "rel") {
+      setRelDrafts(ZERO_POSE);
+      return;
+    }
+    const next: Partial<ModelPose> = {};
+    for (const axis of VIRTUAL_AXIS_IDS) {
+      const values = currentPoses
+        .filter((block) => {
+          const object = getTimelineObject(block.objectId);
+          return resolveEnabledAxes(object?.enabledAxes ?? []).includes(axis);
+        })
+        .map((block) => block.pose[axis]);
+      const shared = values[0];
+      if (shared !== undefined && values.every((value) => value === shared)) {
+        next[axis] = shared;
+      }
+    }
+    setAbsDrafts(next);
+  }, [getTimelineObject, mode, selectionKey]);
+
+  const handleModeChange = (next: PoseAxisMode) => {
+    setMode(next);
+  };
+
+  const handleApply = (axis: VirtualAxisId, value: number) => {
+    const write: PoseAxisWrite = { mode, axis, value };
+    if (mode === "rel") {
+      setRelDrafts((current) => ({ ...current, [axis]: 0 }));
+    } else {
+      setAbsDrafts((current) => ({ ...current, [axis]: value }));
+    }
+    handleApplyPoseAxisWrite(blockIds, write);
+  };
+
+  return (
+    <div className="mb-3 space-y-2">
+      <div className="flex justify-center">
+        <TabBar
+          tabs={POSE_MODE_TABS}
+          active={mode}
+          onChange={handleModeChange}
+          className="h-7 w-44 border-b-0 bg-transparent"
+        />
+      </div>
+      {unionAxes.map((axis) => {
+        const writable = participants.filter((item) => item.enabledAxes.includes(axis));
+        const values = writable.map((item) => item.block.pose[axis]);
+        const shared = values[0];
+        const mixed =
+          mode === "abs" &&
+          (shared === undefined || values.some((value) => value !== shared)) &&
+          absDrafts[axis] === undefined;
+        const units = writable.map((item) =>
+          getVirtualAxisCanonicalUnit(axis, item.object?.controlType),
+        );
+        const unit =
+          units[0] !== undefined && units.every((item) => item === units[0]) ? units[0] : undefined;
+        const range = intersectAxisRange(
+          writable.flatMap((item) => {
+            const next = item.object?.rangeByAxis?.[axis];
+            return next === undefined ? [] : [next];
+          }),
+        );
+        const value =
+          mode === "rel" ? relDrafts[axis] : (absDrafts[axis] ?? shared ?? 0);
+        return (
+          <PoseAxisRow
+            key={axis}
+            axis={axis}
+            value={value}
+            mixed={mixed}
+            unit={unit}
+            min={mode === "abs" ? range.min : undefined}
+            max={mode === "abs" ? range.max : undefined}
+            onChange={(next) => {
+              if (mode === "rel") {
+                setRelDrafts((current) => ({ ...current, [axis]: next }));
+                return;
+              }
+              setAbsDrafts((current) => ({ ...current, [axis]: next }));
+            }}
+            onCommit={(next) => handleApply(axis, next)}
+          />
         );
       })}
     </div>
@@ -406,9 +576,19 @@ export const SequencePropertiesPanel = ({
   }
 
   if (lookup.kind === "multi-block") {
+    const poseBlocks = lookup.blocks.filter((block): block is PoseBlock => block.kind === "pose");
+    const allPoses = poseBlocks.length === lookup.blocks.length && poseBlocks.length > 0;
+    if (!allPoses) {
+      return (
+        <PropertiesShell title="多选">
+          <p className="text-body-sm text-muted-foreground">已选 {lookup.blocks.length} 项</p>
+        </PropertiesShell>
+      );
+    }
     return (
-      <PropertiesShell title="多选">
-        <p className="text-body-sm text-muted-foreground">已选 {lookup.blocks.length} 项</p>
+      <PropertiesShell title="多选位姿">
+        <p className="mb-3 text-body-sm text-muted-foreground">已选 {lookup.blocks.length} 项</p>
+        <MultiPoseAxesEditor poses={poseBlocks} />
       </PropertiesShell>
     );
   }

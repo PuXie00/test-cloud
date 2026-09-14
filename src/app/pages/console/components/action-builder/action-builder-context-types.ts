@@ -8,6 +8,7 @@ import type { SequenceIssue } from "@/app/project/action-sequence/validate-seque
 import type { VirtualAxisId } from "@/app/project/project-document-types";
 import type { ContextSelection } from "./context-bar/selection-context-bar";
 import type { ActionRightTab } from "./right-panel/action-right-panel";
+import type { PoseAxisWrite } from "./sequence-ops";
 import type { SequenceSelection } from "./sequence-selection";
 import type {
   ControlledObject as TimelineControlledObject,
@@ -63,6 +64,7 @@ export type ActionBuilderContextValue = {
   handleCursorChange: (ms: number) => void;
   handleInsertTimelineBlock: (block: TimelineBlock) => boolean;
   handleReplaceTimelineBlock: (block: TimelineBlock) => boolean;
+  handleApplyPoseAxisWrite: (blockIds: readonly string[], write: PoseAxisWrite) => boolean;
   handleMoveTimelineBlock: (blockId: string, atMs: number) => void;
   handleShiftTimelineBlocks: (blockIds: string[], deltaMs: number) => void;
   handleShiftTimelineBlocksEnd: () => void;

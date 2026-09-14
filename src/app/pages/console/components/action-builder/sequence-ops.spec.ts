@@ -6,6 +6,7 @@ import type {
   ModelPose,
 } from "@/app/project/action-sequence/types";
 import {
+  applyPoseAxisWrite,
   copyTimelineBlocks,
   deleteTimelineBlocks,
   insertTimelineBlock,
@@ -380,5 +381,147 @@ describe("sequence-ops", () => {
     expect(() => deleteTimelineBlocks(authored, ["bad-preset"])).not.toThrow();
     const deleted = deleteTimelineBlocks(authored, ["bad-preset"]);
     expect(deleted.blocks).toEqual([]);
+  });
+});
+
+const multiPoseSequence: ActionSequenceConfig = {
+  id: 10,
+  name: "Multi pose",
+  trajectoryMode: "non-forced",
+  blocks: [
+    { id: "pose-a", kind: "pose", objectId: 1, atMs: 100, pose: { v1: 10, v2: 1, v3: 0 } },
+    { id: "pose-b", kind: "pose", objectId: 2, atMs: 200, pose: { v1: 20, v2: 5, v3: 2 } },
+    {
+      id: "enable",
+      kind: "instruction",
+      presetId: "set-enabled",
+      objectId: 1,
+      atMs: 50,
+      instr: { enabled: true },
+    },
+  ],
+  segments: [],
+};
+
+const multiPoseObjectInfo = (objectId: number) => {
+  if (objectId === 1) {
+    return {
+      enabledAxes: ["v1", "v2"] as const,
+      rangeByAxis: { v1: { min: 0, max: 15 } },
+    };
+  }
+  if (objectId === 2) {
+    return {
+      enabledAxes: ["v1"] as const,
+      rangeByAxis: { v1: { min: 0, max: 100 } },
+    };
+  }
+  return undefined;
+};
+
+const poseOf = (sequence: ActionSequenceConfig, id: string) => {
+  const block = sequence.blocks.find((item) => item.id === id);
+  if (block === undefined || block.kind !== "pose") {
+    throw new Error(`missing pose ${id}`);
+  }
+  return block;
+};
+
+describe("applyPoseAxisWrite", () => {
+  it("sets the same absolute value on selected poses that have the axis", () => {
+    const result = applyPoseAxisWrite(
+      multiPoseSequence,
+      ["pose-a", "pose-b"],
+      { mode: "abs", axis: "v1", value: 12 },
+      { objectInfo: multiPoseObjectInfo },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(poseOf(result.sequence, "pose-a").pose).toEqual({ v1: 12, v2: 1, v3: 0 });
+    expect(poseOf(result.sequence, "pose-b").pose).toEqual({ v1: 12, v2: 5, v3: 2 });
+  });
+
+  it("adds a relative delta on selected poses that have the axis", () => {
+    const result = applyPoseAxisWrite(
+      multiPoseSequence,
+      ["pose-a", "pose-b"],
+      { mode: "rel", axis: "v1", value: 5 },
+      { objectInfo: multiPoseObjectInfo },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(poseOf(result.sequence, "pose-a").pose.v1).toBe(15);
+    expect(poseOf(result.sequence, "pose-b").pose.v1).toBe(25);
+  });
+
+  it("skips poses whose object does not have the axis", () => {
+    const result = applyPoseAxisWrite(
+      multiPoseSequence,
+      ["pose-a", "pose-b"],
+      { mode: "abs", axis: "v2", value: 8 },
+      { objectInfo: multiPoseObjectInfo },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(poseOf(result.sequence, "pose-a").pose.v2).toBe(8);
+    expect(poseOf(result.sequence, "pose-b").pose.v2).toBe(5);
+  });
+
+  it("clamps each pose to that object's range", () => {
+    const result = applyPoseAxisWrite(
+      multiPoseSequence,
+      ["pose-a", "pose-b"],
+      { mode: "abs", axis: "v1", value: 50 },
+      { objectInfo: multiPoseObjectInfo },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(poseOf(result.sequence, "pose-a").pose.v1).toBe(15);
+    expect(poseOf(result.sequence, "pose-b").pose.v1).toBe(50);
+  });
+
+  it("does not change atMs and ignores non-pose ids", () => {
+    const result = applyPoseAxisWrite(
+      multiPoseSequence,
+      ["pose-a", "enable"],
+      { mode: "abs", axis: "v1", value: 11 },
+      { objectInfo: multiPoseObjectInfo },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(poseOf(result.sequence, "pose-a")).toMatchObject({ atMs: 100, pose: { v1: 11, v2: 1, v3: 0 } });
+    expect(poseOf(result.sequence, "pose-b")).toMatchObject({ atMs: 200, pose: { v1: 20, v2: 5, v3: 2 } });
+    expect(result.sequence.blocks.find((block) => block.id === "enable")).toEqual(
+      multiPoseSequence.blocks.find((block) => block.id === "enable"),
+    );
+  });
+
+  it("returns the same sequence when the write changes nothing", () => {
+    const absSame = applyPoseAxisWrite(
+      multiPoseSequence,
+      ["pose-a"],
+      { mode: "abs", axis: "v1", value: 10 },
+      { objectInfo: multiPoseObjectInfo },
+    );
+    expect(absSame).toEqual({ ok: true, sequence: multiPoseSequence });
+    const relZero = applyPoseAxisWrite(
+      multiPoseSequence,
+      ["pose-a", "pose-b"],
+      { mode: "rel", axis: "v1", value: 0 },
+      { objectInfo: multiPoseObjectInfo },
+    );
+    expect(relZero).toEqual({ ok: true, sequence: multiPoseSequence });
+  });
+
+  it("treats missing enabledAxes as all three axes", () => {
+    const result = applyPoseAxisWrite(
+      multiPoseSequence,
+      ["pose-b"],
+      { mode: "abs", axis: "v3", value: 9 },
+      { objectInfo: () => undefined },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(poseOf(result.sequence, "pose-b").pose.v3).toBe(9);
   });
 });
