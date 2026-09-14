@@ -49,6 +49,7 @@ import {
 import {
   pruneSequenceSelection,
   selectionBlockIds,
+  selectionFromBlockIds,
   type SequenceSelection,
 } from "./sequence-selection";
 import { clampCursorMs } from "./timeline/timeline-view-extent";
@@ -486,7 +487,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         setSequenceMissingHint(true);
         return;
       }
-      let lastCreatedId: string | null = null;
+      const createdIds: string[] = [];
       const ok = updateSelectedSequence((current) => {
         let next = current;
         for (const objectId of objectIds) {
@@ -500,12 +501,12 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
           const result = insertTimelineBlock(next, block, sequenceEditOptions);
           if (!result.ok) continue;
           next = result.sequence;
-          lastCreatedId = block.id;
+          createdIds.push(block.id);
         }
         return next === current ? null : next;
       });
       if (!ok) return;
-      if (lastCreatedId) setSelection({ kind: "block", blockId: lastCreatedId });
+      setSelection(selectionFromBlockIds(createdIds));
       setSequenceMissingHint(false);
     },
     [selectedSequenceId, sequence, cursorMs, poseForObject, updateSelectedSequence, sequenceEditOptions],
@@ -517,7 +518,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         setSequenceMissingHint(true);
         return;
       }
-      let lastCreatedId: string | null = null;
+      const createdIds: string[] = [];
       const ok = updateSelectedSequence((current) => {
         let next = current;
         for (const objectId of objectIds) {
@@ -532,12 +533,12 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
           const result = insertTimelineBlock(next, block);
           if (!result.ok) continue;
           next = result.sequence;
-          lastCreatedId = block.id;
+          createdIds.push(block.id);
         }
         return next === current ? null : next;
       });
       if (!ok) return;
-      if (lastCreatedId) setSelection({ kind: "block", blockId: lastCreatedId });
+      setSelection(selectionFromBlockIds(createdIds));
       setSequenceMissingHint(false);
     },
     [selectedSequenceId, sequence, cursorMs, updateSelectedSequence],
