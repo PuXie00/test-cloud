@@ -217,4 +217,23 @@ describe("MotionProfileEditor", () => {
     expect(screen.queryByRole("status")).toBeNull();
     expect(screen.getByLabelText("峰值速度").textContent).toContain("0");
   });
+
+  it("shows peak velocity and accel/decel coefficients with one decimal", () => {
+    renderEditor({
+      value: {
+        v1: { kind: "trapezoid", params: { accelMs: 200, decelMs: 200 } },
+        v2: { kind: "idle" },
+        v3: { kind: "idle" },
+      },
+      axisContext: axisContext({
+        enabledAxes: ["v1"],
+        travel: { v1: 33, v2: 0, v3: 0 },
+        durationMs: 1000,
+      }),
+    });
+
+    expect(screen.getByLabelText("峰值速度").textContent).toBe("41.3 mm/s");
+    expect(screen.getByLabelText("加速度").textContent).toBe("206.3 mm/s²");
+    expect(screen.getByLabelText("减速度").textContent).toBe("206.3 mm/s²");
+  });
 });

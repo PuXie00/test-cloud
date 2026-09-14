@@ -3,6 +3,7 @@ import { cn } from "@/app/components/ui/utils";
 import type { MotionProfileKinematics } from "@/app/project/action-sequence/motion-profile";
 import type { AxisMotionProfiles, ModelPose, MotionProfile } from "@/app/project/action-sequence/types";
 import type { VirtualAxisId } from "@/app/project/project-document-types";
+import { roundProjectCoordinate } from "@/app/project/project-quantity";
 import { VIRTUAL_AXIS_IDS, formatTime } from "../timeline/timeline-data";
 import { getVirtualAxisCanonicalUnit } from "../virtual-axis-display";
 import { PROFILE_KIND_OPTIONS, profileKindMeta } from "./profile-kind";
@@ -31,8 +32,10 @@ export type MotionProfileEditorProps = {
   };
 };
 
-const formatNumber = (value: number): string =>
-  Number.isInteger(value) ? String(value) : value.toFixed(2);
+const formatNumber = (value: number): string => {
+  const rounded = roundProjectCoordinate(value);
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+};
 
 const axisName = (axis: VirtualAxisId): string => axis.toUpperCase();
 

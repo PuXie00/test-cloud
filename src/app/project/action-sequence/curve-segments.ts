@@ -1,4 +1,5 @@
 import type { PlcCurveSegment } from "@shared/csocket/action-data-save";
+import { roundProjectCoordinate } from "../project-quantity";
 import {
   calculateMotionProfileKinematics,
   cruiseMsOf,
@@ -8,11 +9,11 @@ import type { MotionProfile } from "./types";
 
 const ZERO_COEFF = { a: 0, b: 0, c: 0, d: 0, e: 0, f: 0 };
 
-const snap = (value: number): number => Number(value.toPrecision(15));
+const snapPlc = (value: number): number => roundProjectCoordinate(value);
 
 const holdSegment = (startTime: number, position: number): PlcCurveSegment => ({
   startTime,
-  position: snap(position),
+  position: snapPlc(position),
   ...ZERO_COEFF,
 });
 
@@ -41,11 +42,11 @@ export const trapezoidToCurveSegments = (
   const decelStartTime = cruiseStartTime + cruiseMs;
 
   return [
-    { ...holdSegment(startMs, startPos), a: snap(sign * kinematics.acceleration) },
+    { ...holdSegment(startMs, startPos), a: snapPlc(sign * kinematics.acceleration) },
     {
       ...holdSegment(cruiseStartTime, accelEndPos),
-      b: cruiseMs === 0 ? 0 : snap(sign * kinematics.peakVelocity),
+      b: cruiseMs === 0 ? 0 : snapPlc(sign * kinematics.peakVelocity),
     },
-    { ...holdSegment(decelStartTime, cruiseEndPos), c: snap(sign * kinematics.deceleration) },
+    { ...holdSegment(decelStartTime, cruiseEndPos), c: snapPlc(sign * kinematics.deceleration) },
   ];
 };

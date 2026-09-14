@@ -49,4 +49,11 @@ describe("trapezoidToCurveSegments", () => {
       { startTime: 0, position: 10, a: 0, b: 0, c: 0, ...zeroTail },
     ]);
   });
+
+  it("rounds a/b/c and position to one decimal for PLC", () => {
+    const rows = trapezoidToCurveSegments(trap(200, 200), 0, 0.16, 33.16, 1000);
+    expect(rows[0]).toEqual({ startTime: 0, position: 0.2, a: 206.3, b: 0, c: 0, ...zeroTail });
+    expect(rows[1]).toEqual({ startTime: 200, position: 4.3, a: 0, b: 41.3, c: 0, ...zeroTail });
+    expect(rows[2]).toEqual({ startTime: 800, position: 29, a: 0, b: 0, c: 206.3, ...zeroTail });
+  });
 });
