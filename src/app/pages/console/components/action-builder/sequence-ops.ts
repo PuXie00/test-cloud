@@ -52,6 +52,31 @@ const nextBlockId = (existing: ReadonlySet<string>): string => {
 const blockTimeMs = (block: TimelineBlock): number =>
   block.kind === "dynamic-preset" ? block.startMs : block.atMs;
 
+const blockObjectIds = (block: TimelineBlock): number[] => {
+  if (block.kind === "static-preset" || block.kind === "dynamic-preset") {
+    return uniqueIds(block.orderedObjectIds);
+  }
+  return [block.objectId];
+};
+
+const sharesObject = (left: TimelineBlock, right: TimelineBlock): boolean => {
+  const rightIds = new Set(blockObjectIds(right));
+  return blockObjectIds(left).some((id) => rightIds.has(id));
+};
+
+/** Playhead-aligned overwrite: same object and the same block anchor time. */
+const isAlignedSameObjectBlock = (existing: TimelineBlock, incoming: TimelineBlock): boolean =>
+  blockTimeMs(existing) === blockTimeMs(incoming) && sharesObject(existing, incoming);
+
+const stripAlignedBlocks = (
+  sequence: ActionSequenceConfig,
+  incoming: TimelineBlock,
+): ActionSequenceConfig => {
+  const next = cloneSequence(sequence);
+  next.blocks = next.blocks.filter((block) => !isAlignedSameObjectBlock(block, incoming));
+  return next;
+};
+
 const shiftBlock = (block: TimelineBlock, deltaMs: number): TimelineBlock => {
   if (block.kind === "dynamic-preset") {
     return { ...block, startMs: block.startMs + deltaMs, endMs: block.endMs + deltaMs };
@@ -203,7 +228,7 @@ export const insertTimelineBlock = (
 ): EditResult => {
   const error = blockError(block);
   if (error) return { ok: false, reason: error };
-  const next = cloneSequence(sequence);
+  const next = stripAlignedBlocks(sequence, block);
   next.blocks.push(cloneBlock(block));
   return commitBlocks(next, options);
 };
@@ -327,6 +352,7 @@ export const pasteTimelineBlocks = (
     const shifted = shiftBlock(cloneBlock(source), deltaMs);
     const error = blockError(shifted);
     if (error) return { ok: false, reason: error };
+    next.blocks = next.blocks.filter((block) => !isAlignedSameObjectBlock(block, shifted));
     const id = nextBlockId(existingIds);
     existingIds.add(id);
     createdIds.push(id);

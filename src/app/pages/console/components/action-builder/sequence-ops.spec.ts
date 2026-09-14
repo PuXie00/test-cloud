@@ -85,6 +85,118 @@ describe("sequence-ops", () => {
     expect(result).toEqual({ ok: false, reason: "motion-overlap" });
   });
 
+  it("overwrites a same-object point block at the playhead time", () => {
+    const authored: ActionSequenceConfig = {
+      id: 3,
+      name: "Overwrite",
+      trajectoryMode: "non-forced",
+      blocks: [
+        { id: "pose-old", kind: "pose", objectId: 7, atMs: 1000, pose: origin },
+        { id: "pose-other", kind: "pose", objectId: 8, atMs: 1000, pose: origin },
+        { id: "pose-later", kind: "pose", objectId: 7, atMs: 3000, pose: { v1: 1, v2: 0, v3: 0 } },
+      ],
+      segments: [],
+    };
+    const result = insertTimelineBlock(authored, {
+      id: "pose-new",
+      kind: "pose",
+      objectId: 7,
+      atMs: 1000,
+      pose: { v1: 9, v2: 8, v3: 7 },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.reason);
+    expect(result.sequence.blocks.map((block) => block.id).sort()).toEqual([
+      "pose-later",
+      "pose-new",
+      "pose-other",
+    ]);
+    expect(result.sequence.blocks.find((block) => block.id === "pose-new")).toMatchObject({
+      atMs: 1000,
+      pose: { v1: 9, v2: 8, v3: 7 },
+    });
+  });
+
+  it("overwrites a static preset when inserting a participant pose at the same time", () => {
+    const result = insertTimelineBlock(sequenceWithStaticPreset, {
+      id: "pose-new",
+      kind: "pose",
+      objectId: 7,
+      atMs: 1000,
+      pose: { v1: 1, v2: 0, v3: 0 },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.reason);
+    expect(result.sequence.blocks.map((block) => block.id)).toEqual(["pose-new"]);
+  });
+
+  it("overwrites a dynamic preset when inserting a participant pose at its start", () => {
+    const result = insertTimelineBlock(sequenceWithDynamicPreset, {
+      id: "pose-new",
+      kind: "pose",
+      objectId: 7,
+      atMs: 1000,
+      pose: { v1: 0, v2: 0, v3: 0 },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.reason);
+    expect(result.sequence.blocks.map((block) => block.id)).toEqual(["pose-new"]);
+  });
+
+  it("overwrites a same-object instruction at the playhead time", () => {
+    const authored: ActionSequenceConfig = {
+      id: 4,
+      name: "Instr",
+      trajectoryMode: "non-forced",
+      blocks: [
+        {
+          id: "enable-old",
+          kind: "instruction",
+          presetId: "set-enabled",
+          objectId: 7,
+          atMs: 500,
+          instr: { enabled: true },
+        },
+      ],
+      segments: [],
+    };
+    const result = insertTimelineBlock(authored, {
+      id: "enable-new",
+      kind: "instruction",
+      presetId: "set-enabled",
+      objectId: 7,
+      atMs: 500,
+      instr: { enabled: false },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.reason);
+    expect(result.sequence.blocks).toHaveLength(1);
+    expect(result.sequence.blocks[0]).toMatchObject({
+      id: "enable-new",
+      instr: { enabled: false },
+    });
+  });
+
+  it("paste at the playhead overwrites an aligned same-object block", () => {
+    const authored: ActionSequenceConfig = {
+      id: 5,
+      name: "Paste",
+      trajectoryMode: "non-forced",
+      blocks: [
+        { id: "pose-old", kind: "pose", objectId: 7, atMs: 2000, pose: origin },
+        { id: "pose-src", kind: "pose", objectId: 7, atMs: 0, pose: { v1: 4, v2: 0, v3: 0 } },
+      ],
+      segments: [],
+    };
+    const clipboard = copyTimelineBlocks(authored, ["pose-src"]);
+    const pasted = pasteTimelineBlocks(authored, clipboard, 2000);
+    expect(pasted.ok).toBe(true);
+    if (!pasted.ok) throw new Error(pasted.reason);
+    expect(pasted.sequence.blocks.some((block) => block.id === "pose-old")).toBe(false);
+    const copy = pasted.sequence.blocks.find((block) => block.id === pasted.createdIds[0]);
+    expect(copy).toMatchObject({ atMs: 2000, pose: { v1: 4, v2: 0, v3: 0 } });
+  });
+
   it("copy/paste gives one preset a new identity and preserves participant order", () => {
     const clipboard = copyTimelineBlocks(sequenceWithStaticPreset, ["preset-1"]);
     const pasted = pasteTimelineBlocks(sequenceWithStaticPreset, clipboard, 3000);
@@ -197,11 +309,13 @@ describe("sequence-ops", () => {
     const atStart = insertTimelineBlock(sequenceWithDynamicPreset, {
       id: "at-start",
       kind: "pose",
-      objectId: 7,
-      atMs: 1000,
+      objectId: 8,
+      atMs: 2000,
       pose: { v1: 0, v2: 0, v3: 0 },
     });
     expect(atStart.ok).toBe(true);
+    if (!atStart.ok) throw new Error(atStart.reason);
+    expect(atStart.sequence.blocks.some((block) => block.id === "dynamic-1")).toBe(true);
 
     const command = insertTimelineBlock(sequenceWithDynamicPreset, {
       id: "enable-1",
