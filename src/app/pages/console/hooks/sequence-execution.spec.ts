@@ -10,7 +10,10 @@ import {
   createLocalSequenceTransport,
   downloadSequence,
   LOCAL_SEQUENCE_SYNC_GROUP_ID,
+  goSequence,
   mapFaderPercentToSpeedScale,
+  readySequence,
+  sequenceReadyFingerprint,
   startLocalAuthoredSequence,
   stopSequence,
   type SequenceExecutionTransport,
@@ -189,6 +192,65 @@ describe("downloadSequence", () => {
     const downloaded = await downloadSequence(moving, context, transport);
     expect(downloaded.ok).toBe(true);
     expect(transport.saveAction).toHaveBeenCalled();
+  });
+});
+
+describe("readySequence", () => {
+  it("saves without syncing and returns a content fingerprint", async () => {
+    const transport = createTransport();
+    const readied = await readySequence({
+      document: documentWithSequence(validSequence),
+      sequenceId: validSequence.id,
+      transport,
+    });
+
+    expect(transport.calls).toEqual(["save"]);
+    expect(transport.syncCall).not.toHaveBeenCalled();
+    expect(readied).toEqual({
+      ok: true,
+      name: "Seq",
+      sequenceHandle: { actionId: validSequence.id, syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID },
+      fingerprint: sequenceReadyFingerprint(validSequence),
+    });
+  });
+
+  it("does not save when download validation fails", async () => {
+    const transport = createTransport();
+    const readied = await readySequence({
+      document: documentWithSequence(invalidSequence),
+      sequenceId: invalidSequence.id,
+      transport,
+    });
+    expect(readied.ok).toBe(false);
+    expect(transport.saveAction).not.toHaveBeenCalled();
+    expect(transport.syncCall).not.toHaveBeenCalled();
+  });
+});
+
+describe("goSequence", () => {
+  it("syncs without saving and uses the fader speedScale", async () => {
+    const transport = createTransport();
+    const started = await goSequence({
+      document: documentWithSequence(validSequence),
+      sequenceId: validSequence.id,
+      faderPercent: 150,
+      transport,
+    });
+
+    expect(transport.calls).toEqual(["sync"]);
+    expect(transport.saveAction).not.toHaveBeenCalled();
+    expect(transport.syncCall).toHaveBeenCalledWith({
+      syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID,
+      startTimestamp: expect.any(Number),
+      speedScale: 1.5,
+      trajectoryMode: "forced",
+    });
+    expect(started).toEqual({
+      ok: true,
+      name: "Seq",
+      speedPercent: 150,
+      sequenceHandle: { actionId: validSequence.id, syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID },
+    });
   });
 });
 

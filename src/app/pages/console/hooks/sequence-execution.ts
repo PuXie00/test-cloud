@@ -244,6 +244,21 @@ export const createCsocketSequenceTransport = (
   },
 });
 
+export type LocalSequenceFailure = {
+  ok: false;
+  toast: "warning" | "error";
+  message: string;
+};
+
+export type LocalSequenceReadyResult =
+  | {
+      ok: true;
+      name: string;
+      sequenceHandle: SequenceRuntimeHandle;
+      fingerprint: string;
+    }
+  | LocalSequenceFailure;
+
 export type LocalSequenceStartResult =
   | {
       ok: true;
@@ -251,7 +266,19 @@ export type LocalSequenceStartResult =
       speedPercent: number;
       sequenceHandle: SequenceRuntimeHandle;
     }
-  | { ok: false; toast: "warning" | "error"; message: string };
+  | LocalSequenceFailure;
+
+type SequenceLookup =
+  | { ok: true; sequence: ActionSequenceConfig }
+  | LocalSequenceFailure;
+
+export const sequenceReadyFingerprint = (sequence: ActionSequenceConfig): string =>
+  JSON.stringify({
+    id: sequence.id,
+    trajectoryMode: sequence.trajectoryMode,
+    blocks: sequence.blocks,
+    segments: sequence.segments,
+  });
 
 export const sequenceExecutionContextFromDocument = (
   document: ProjectDocument,
@@ -263,26 +290,29 @@ export const sequenceExecutionContextFromDocument = (
   };
 };
 
-export const startLocalAuthoredSequence = async (args: {
-  document: ProjectDocument;
-  sequenceId: number;
-  faderPercent?: number;
-  transport?: SequenceExecutionTransport;
-}): Promise<LocalSequenceStartResult> => {
-  const sequence = args.document.motion.actionSequences.find(
-    (entry) => entry.id === args.sequenceId,
-  );
+const lookupAuthoredSequence = (
+  document: ProjectDocument,
+  sequenceId: number,
+): SequenceLookup => {
+  const sequence = document.motion.actionSequences.find((entry) => entry.id === sequenceId);
   if (!sequence) {
     return { ok: false, toast: "warning", message: "动作序列不可用，待修复" };
   }
+  return { ok: true, sequence };
+};
 
-  const fromFader = args.faderPercent !== undefined;
-  const speedPercent = args.faderPercent ?? 100;
+export const readySequence = async (args: {
+  document: ProjectDocument;
+  sequenceId: number;
+  transport?: SequenceExecutionTransport;
+}): Promise<LocalSequenceReadyResult> => {
+  const found = lookupAuthoredSequence(args.document, args.sequenceId);
+  if (!found.ok) return found;
+
   const transport = args.transport ?? getLocalSequenceTransport();
-
   try {
     const downloaded = await downloadSequence(
-      sequence,
+      found.sequence,
       sequenceExecutionContextFromDocument(args.document),
       transport,
     );
@@ -290,23 +320,62 @@ export const startLocalAuthoredSequence = async (args: {
       return { ok: false, toast: "warning", message: "动作序列校验失败，无法下载" };
     }
 
+    return {
+      ok: true,
+      name: found.sequence.name,
+      sequenceHandle: {
+        actionId: downloaded.actionId,
+        syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID,
+      },
+      fingerprint: sequenceReadyFingerprint(found.sequence),
+    };
+  } catch {
+    return { ok: false, toast: "error", message: "动作序列启动失败" };
+  }
+};
+
+export const goSequence = async (args: {
+  document: ProjectDocument;
+  sequenceId: number;
+  faderPercent?: number;
+  transport?: SequenceExecutionTransport;
+}): Promise<LocalSequenceStartResult> => {
+  const found = lookupAuthoredSequence(args.document, args.sequenceId);
+  if (!found.ok) return found;
+
+  const fromFader = args.faderPercent !== undefined;
+  const speedPercent = args.faderPercent ?? 100;
+  const transport = args.transport ?? getLocalSequenceTransport();
+
+  try {
     await transport.syncCall({
       syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID,
       startTimestamp: Date.now(),
       speedScale: fromFader ? mapFaderPercentToSpeedScale(speedPercent) : 1,
-      trajectoryMode: sequence.trajectoryMode,
+      trajectoryMode: found.sequence.trajectoryMode,
     });
 
     return {
       ok: true,
-      name: sequence.name,
+      name: found.sequence.name,
       speedPercent,
       sequenceHandle: {
-        actionId: downloaded.actionId,
+        actionId: found.sequence.id,
         syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID,
       },
     };
   } catch {
     return { ok: false, toast: "error", message: "动作序列启动失败" };
   }
+};
+
+export const startLocalAuthoredSequence = async (args: {
+  document: ProjectDocument;
+  sequenceId: number;
+  faderPercent?: number;
+  transport?: SequenceExecutionTransport;
+}): Promise<LocalSequenceStartResult> => {
+  const readied = await readySequence(args);
+  if (!readied.ok) return readied;
+  return goSequence(args);
 };
