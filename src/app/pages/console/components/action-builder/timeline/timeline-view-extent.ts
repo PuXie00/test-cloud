@@ -1,4 +1,4 @@
-import { TIMELINE_PAD_LEFT, msToPx, pxToMs } from "./timeline-data";
+import { TIMELINE_PAD_LEFT, msToPx, pxToMs, snapTimeMs } from "./timeline-data";
 
 export const MARQUEE_THRESHOLD_PX = 6;
 export const POINT_BLOCK_HIT_MIN_PX = 12;
@@ -14,7 +14,7 @@ export const usedBandWidthPx = (occupiedEndMs: number, pxPerSecond: number): num
   return msToPx(occupiedEndMs, pxPerSecond);
 };
 
-export const clampCursorMs = (ms: number): number => Math.max(0, Math.round(ms));
+export const clampCursorMs = (ms: number): number => snapTimeMs(ms);
 
 export const TIMELINE_H_SCROLL_HEIGHT_PX = 8;
 export const TIMELINE_H_SCROLL_MIN_THUMB_PX = 24;
