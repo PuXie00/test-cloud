@@ -158,6 +158,15 @@ export const createLocalSequenceTransport = (): SequenceExecutionTransport => ({
 let localSequenceTransport: SequenceExecutionTransport | null = null;
 
 export const getLocalSequenceTransport = (): SequenceExecutionTransport => {
+  const api = typeof window !== "undefined" ? window.csocketApi : undefined;
+  if (
+    api &&
+    typeof api.actionDataSavePlc === "function" &&
+    typeof api.actionSyncCallPlc === "function" &&
+    typeof api.stopActionPlc === "function"
+  ) {
+    return createCsocketSequenceTransport(api);
+  }
   if (!localSequenceTransport) {
     localSequenceTransport = createLocalSequenceTransport();
   }

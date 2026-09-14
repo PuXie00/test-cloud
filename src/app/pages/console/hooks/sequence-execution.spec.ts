@@ -336,6 +336,24 @@ describe("createLocalSequenceTransport", () => {
   });
 });
 
+describe("getLocalSequenceTransport", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("Ready without an injected transport calls actionDataSavePlc and not sync", async () => {
+    const api = createMockCsocketApi({ success: true, data: [{ actionId: 1 }] });
+    vi.stubGlobal("window", { csocketApi: api });
+    const readied = await readySequence({
+      document: documentWithSequence(validSequence),
+      sequenceId: validSequence.id,
+    });
+    expect(readied.ok).toBe(true);
+    expect(api.actionDataSavePlc).toHaveBeenCalled();
+    expect(api.actionSyncCallPlc).not.toHaveBeenCalled();
+  });
+});
+
 describe("createCsocketSequenceTransport", () => {
   it("saveAction accepts success with missing errorCount and rejects errorCount > 0", async () => {
     const ok = createMockCsocketApi({ success: true, data: [{ actionId: 1 }] });
