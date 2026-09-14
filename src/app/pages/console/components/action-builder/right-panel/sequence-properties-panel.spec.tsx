@@ -555,7 +555,7 @@ describe("SequencePropertiesPanel edits", () => {
 
     expect(handlers.onReplaceBlock).toHaveBeenCalledWith(
 
-      expect.objectContaining({ id: "enable", atMs: 501 }),
+      expect.objectContaining({ id: "enable", atMs: 600 }),
 
     );
 

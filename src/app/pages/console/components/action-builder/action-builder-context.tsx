@@ -58,6 +58,7 @@ import {
   clampTimelinePxPerSecond,
   TIMELINE_PX_PER_SECOND_DEFAULT,
   TIMELINE_ZOOM_FACTOR,
+  snapTimeMs,
   type ControlledObject as TimelineControlledObject,
   type CueItem,
   type ProgramNode,
@@ -789,7 +790,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         setLastPersistError(error instanceof Error ? error.message : "动作序列 id 已满（1~65535）");
         return;
       }
-      const next = buildTransitionSequence(id, from, to, durationMs, getTimelineObject);
+      const next = buildTransitionSequence(id, from, to, snapTimeMs(durationMs), getTimelineObject);
       const nextSequences = [...motionRef.current.sequences, next];
       if (!commitMotionProjection({ ...motionRef.current, sequences: nextSequences })) return;
       setTransitionDraft(null);
@@ -804,7 +805,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       const current = motionRef.current.sequences.find((item) => item.id === selectedSequenceId);
       const cue = motionRef.current.cues.find((item) => item.id === cueId);
       if (!current || !cue) return;
-      const atMs = Math.max(0, startMs);
+      const atMs = snapTimeMs(startMs);
       let resolved;
       try {
         resolved = resolveActionSequence(current);

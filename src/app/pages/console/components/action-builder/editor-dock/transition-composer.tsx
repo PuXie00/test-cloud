@@ -8,7 +8,7 @@ import {
   toDisplayLengthValue,
 } from "@/app/project/display-length-units";
 import { useActionBuilder } from "../use-action-builder";
-import { VIRTUAL_AXIS_META, formatTime } from "../timeline/timeline-data";
+import { TIME_STEP_MS, VIRTUAL_AXIS_META, formatTime, snapTimeMs } from "../timeline/timeline-data";
 import {
   formatVirtualAxisSpeed,
   formatVirtualAxisValue,
@@ -67,7 +67,7 @@ export const TransitionComposer = () => {
   const speedUnit = getDisplayLengthFamilyUnit("mm/s", display);
 
   const applyDuration = (ms: number) => {
-    setDurationMs(Math.max(100, Math.round(ms)));
+    setDurationMs(snapTimeMs(Math.max(TIME_STEP_MS, ms)));
   };
 
   const handleSpeedChange = (displayValue: number) => {
@@ -130,7 +130,7 @@ export const TransitionComposer = () => {
             总时间
             <input
               type="number"
-              step="0.5"
+              step="0.1"
               min="0.1"
               value={durationSec}
               aria-label="过渡总时间（秒）"

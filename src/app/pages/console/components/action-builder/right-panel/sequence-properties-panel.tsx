@@ -27,7 +27,13 @@ import {
 import { EmptySelectionState } from "./empty-selection-state";
 import { lookupSequenceSelection, type SequenceSelection } from "../sequence-selection";
 import type { PoseAxisWrite } from "../sequence-ops";
-import { VIRTUAL_AXIS_IDS, type ControlledObject } from "../timeline/timeline-data";
+import {
+  VIRTUAL_AXIS_IDS,
+  formatTime,
+  msToSeconds,
+  secondsToMs,
+  type ControlledObject,
+} from "../timeline/timeline-data";
 import { useActionBuilder } from "../use-action-builder";
 import { getVirtualAxisCanonicalUnit } from "../virtual-axis-display";
 import type { VirtualAxisId } from "@/app/project/project-document-types";
@@ -488,7 +494,7 @@ const GeneratedPoseRows = ({ poses }: { poses: ResolvedPosePoint[] }) => (
         >
           <span className="mr-3">模型 {point.objectId}</span>
           <span className="mr-3 font-mono tabular-nums">
-            {point.atMs === null ? "—" : `${point.atMs} ms`}
+            {point.atMs === null ? "—" : formatTime(point.atMs)}
           </span>
           <span className="font-mono tabular-nums">
             V1 {formatNumber(point.pose.v1)} / V2 {formatNumber(point.pose.v2)} / V3{" "}
@@ -608,12 +614,12 @@ export const SequencePropertiesPanel = ({
         <Field label="时间">
           <UnitAwareNumericInput
             aria-label="到达时间"
-            value={poseBlock.atMs}
-            unit="ms"
-            step={1}
-            precision={0}
+            value={msToSeconds(poseBlock.atMs)}
+            unit="s"
+            step={0.1}
+            precision={1}
             min={0}
-            onChange={(atMs) => onReplaceBlock({ ...poseBlock, atMs })}
+            onChange={(seconds) => onReplaceBlock({ ...poseBlock, atMs: secondsToMs(seconds) })}
           />
         </Field>
       </PropertiesShell>
@@ -641,12 +647,12 @@ export const SequencePropertiesPanel = ({
         <Field label="时间">
           <UnitAwareNumericInput
             aria-label="时间"
-            value={command.atMs}
-            unit="ms"
-            step={1}
-            precision={0}
+            value={msToSeconds(command.atMs)}
+            unit="s"
+            step={0.1}
+            precision={1}
             min={0}
-            onChange={(atMs) => onReplaceBlock({ ...command, atMs })}
+            onChange={(seconds) => onReplaceBlock({ ...command, atMs: secondsToMs(seconds) })}
           />
         </Field>
       </PropertiesShell>
@@ -713,23 +719,23 @@ export const SequencePropertiesPanel = ({
       <Field label="开始">
         <UnitAwareNumericInput
           aria-label="开始时间"
-          value={preset.startMs}
-          unit="ms"
-          step={1}
-          precision={0}
+          value={msToSeconds(preset.startMs)}
+          unit="s"
+          step={0.1}
+          precision={1}
           min={0}
-          onChange={(startMs) => onReplaceBlock({ ...preset, startMs })}
+          onChange={(seconds) => onReplaceBlock({ ...preset, startMs: secondsToMs(seconds) })}
         />
       </Field>
       <Field label="结束">
         <UnitAwareNumericInput
           aria-label="结束时间"
-          value={preset.endMs}
-          unit="ms"
-          step={1}
-          precision={0}
+          value={msToSeconds(preset.endMs)}
+          unit="s"
+          step={0.1}
+          precision={1}
           min={0}
-          onChange={(endMs) => onReplaceBlock({ ...preset, endMs })}
+          onChange={(seconds) => onReplaceBlock({ ...preset, endMs: secondsToMs(seconds) })}
         />
       </Field>
       <GeneratedPoseRows poses={generatedPosesFor(resolved, preset.id)} />

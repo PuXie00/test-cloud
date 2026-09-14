@@ -5,7 +5,7 @@ import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-i
 import { instructionBlockTitle } from "@/app/project/action-sequence/instruction-registry";
 import type { ModelPose, TimelineBlock } from "@/app/project/action-sequence/types";
 import type { VirtualAxisId } from "@/app/project/project-document-types";
-import { VIRTUAL_AXIS_IDS } from "../timeline/timeline-data";
+import { VIRTUAL_AXIS_IDS, msToSeconds, secondsToMs } from "../timeline/timeline-data";
 import { useActionBuilder } from "../use-action-builder";
 import { getVirtualAxisCanonicalUnit } from "../virtual-axis-display";
 
@@ -165,12 +165,12 @@ export const BlockContextBar = ({
           </ContextCell>
           <ContextNumericCell
             label="时间"
-            value={block.atMs}
-            unit="ms"
-            step={1}
-            precision={0}
+            value={msToSeconds(block.atMs)}
+            unit="s"
+            step={0.1}
+            precision={1}
             min={0}
-            onChange={(atMs) => onReplaceBlock({ ...block, atMs })}
+            onChange={(seconds) => onReplaceBlock({ ...block, atMs: secondsToMs(seconds) })}
           />
         </>
       ) : null}
@@ -178,13 +178,13 @@ export const BlockContextBar = ({
       {block?.kind === "static-preset" && onReplaceBlock ? (
         <ContextNumericCell
           label="时间"
-          value={block.atMs}
-          unit="ms"
+          value={msToSeconds(block.atMs)}
+          unit="s"
           highlighted
-          step={1}
-          precision={0}
+          step={0.1}
+          precision={1}
           min={0}
-          onChange={(atMs) => onReplaceBlock({ ...block, atMs })}
+          onChange={(seconds) => onReplaceBlock({ ...block, atMs: secondsToMs(seconds) })}
         />
       ) : null}
 
@@ -192,22 +192,22 @@ export const BlockContextBar = ({
         <>
           <ContextNumericCell
             label="开始"
-            value={block.startMs}
-            unit="ms"
+            value={msToSeconds(block.startMs)}
+            unit="s"
             highlighted
-            step={1}
-            precision={0}
+            step={0.1}
+            precision={1}
             min={0}
-            onChange={(startMs) => onReplaceBlock({ ...block, startMs })}
+            onChange={(seconds) => onReplaceBlock({ ...block, startMs: secondsToMs(seconds) })}
           />
           <ContextNumericCell
             label="结束"
-            value={block.endMs}
-            unit="ms"
-            step={1}
-            precision={0}
+            value={msToSeconds(block.endMs)}
+            unit="s"
+            step={0.1}
+            precision={1}
             min={0}
-            onChange={(endMs) => onReplaceBlock({ ...block, endMs })}
+            onChange={(seconds) => onReplaceBlock({ ...block, endMs: secondsToMs(seconds) })}
           />
         </>
       ) : null}
@@ -215,11 +215,11 @@ export const BlockContextBar = ({
       {segmentDurationMs !== undefined ? (
         <ContextNumericCell
           label="时长"
-          value={segmentDurationMs}
-          unit="ms"
+          value={msToSeconds(segmentDurationMs)}
+          unit="s"
           highlighted
-          step={1}
-          precision={0}
+          step={0.1}
+          precision={1}
           readOnly
         />
       ) : null}

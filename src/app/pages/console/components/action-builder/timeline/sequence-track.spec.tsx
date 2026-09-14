@@ -276,6 +276,15 @@ describe("timeline interaction", () => {
     expect(onCursorChange).toHaveBeenCalledWith(6000);
   });
 
+  it("snaps ruler scrub to 100ms", () => {
+    const onCursorChange = vi.fn();
+    render(<TimelineEditor {...createTimelineProps(sequence)} onCursorChange={onCursorChange} />);
+    const ruler = screen.getByRole("slider", { name: "时间标尺（秒）" });
+    mockRect(ruler, { left: 0, top: 0, width: 2000, height: 32 });
+    fireEvent.pointerDown(ruler, { clientX: 84.7 });
+    expect(onCursorChange).toHaveBeenCalledWith(800);
+  });
+
   it("allows scrubbing an empty sequence", () => {
     const empty: ActionSequenceConfig = {
       id: 1,
@@ -483,6 +492,9 @@ describe("timeline interaction", () => {
     );
     const ruler = screen.getByRole("slider", { name: "时间标尺（秒）" });
     fireEvent.keyDown(ruler, { key: "ArrowRight" });
+    expect(onCursorChange).toHaveBeenCalledWith(4100);
+    onCursorChange.mockClear();
+    fireEvent.keyDown(ruler, { key: "ArrowRight", shiftKey: true });
     expect(onCursorChange).toHaveBeenCalledWith(5000);
   });
 });

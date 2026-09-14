@@ -1,4 +1,4 @@
-import { TIMELINE_PAD_LEFT, formatTime, pxToMs } from "./timeline-data";
+import { TIME_STEP_MS, TIMELINE_PAD_LEFT, formatTime, pxToMs } from "./timeline-data";
 import { computeNiceTimeTicks, type TimelineTick } from "./timeline-ticks";
 import { clampCursorMs, usedBandScreenRect, viewPxFromMs } from "./timeline-view-extent";
 
@@ -114,7 +114,7 @@ export const TimelineRuler = ({
         aria-valuenow={cursorMs}
         tabIndex={0}
         onKeyDown={(event) => {
-          const step = event.shiftKey ? 5000 : 1000;
+          const step = event.shiftKey ? TIME_STEP_MS * 10 : TIME_STEP_MS;
           if (event.key === "ArrowRight") {
             event.preventDefault();
             onCursorChange(clampCursorMs(cursorMs + step));

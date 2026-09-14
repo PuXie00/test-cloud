@@ -12,6 +12,7 @@ import type {
   TimelineBlock,
 } from "@/app/project/action-sequence/types";
 import type { VirtualAxisId } from "@/app/project/project-document-types";
+import { snapTimeMs } from "./timeline/timeline-data";
 
 export type SequenceEditError =
   | "motion-overlap"
@@ -87,6 +88,17 @@ const moveBlockTo = (block: TimelineBlock, atMs: number): TimelineBlock => {
     return { ...block, startMs: atMs, endMs: atMs + durationMs };
   }
   return { ...block, atMs };
+};
+
+const snapBlockTimes = (block: TimelineBlock): TimelineBlock => {
+  if (block.kind === "dynamic-preset") {
+    return {
+      ...block,
+      startMs: snapTimeMs(block.startMs),
+      endMs: snapTimeMs(block.endMs),
+    };
+  }
+  return { ...block, atMs: snapTimeMs(block.atMs) };
 };
 
 const motionSpans = (sequence: ActionSequenceConfig): MotionSpan[] => {
@@ -223,10 +235,11 @@ export const insertTimelineBlock = (
   block: TimelineBlock,
   options?: SequenceEditOptions,
 ): EditResult => {
-  const error = blockError(block);
+  const snapped = snapBlockTimes(block);
+  const error = blockError(snapped);
   if (error) return { ok: false, reason: error };
   const next = cloneSequence(sequence);
-  next.blocks.push(cloneBlock(block));
+  next.blocks.push(cloneBlock(snapped));
   return commitBlocks(next, options);
 };
 
@@ -263,10 +276,11 @@ export const replaceTimelineBlock = (
 ): EditResult => {
   const index = sequence.blocks.findIndex((block) => block.id === replacement.id);
   if (index < 0) return { ok: false, reason: "missing-block" };
-  const error = blockError(replacement);
+  const snapped = snapBlockTimes(replacement);
+  const error = blockError(snapped);
   if (error) return { ok: false, reason: error };
   const next = cloneSequence(sequence);
-  next.blocks[index] = cloneBlock(replacement);
+  next.blocks[index] = cloneBlock(snapped);
   return commitBlocks(next, options);
 };
 
@@ -280,7 +294,7 @@ export const moveTimelineBlock = (
   if (index < 0) return sequence;
   const current = sequence.blocks[index];
   if (current === undefined) return sequence;
-  const moved = moveBlockTo(cloneBlock(current), atMs);
+  const moved = snapBlockTimes(moveBlockTo(cloneBlock(current), atMs));
   if (timeRangeError(moved)) return sequence;
   const next = cloneSequence(sequence);
   next.blocks[index] = moved;
@@ -304,7 +318,7 @@ export const shiftTimelineBlocks = (
   if (clampedDelta === 0) return sequence;
   const next = cloneSequence(sequence);
   next.blocks = next.blocks.map((block) =>
-    ids.has(block.id) ? shiftBlock(block, clampedDelta) : block,
+    ids.has(block.id) ? snapBlockTimes(shiftBlock(block, clampedDelta)) : block,
   );
   const committed = commitBlocks(next, options);
   if (!committed.ok) return sequence;
@@ -323,7 +337,9 @@ export const resizeDynamicPreset = (
   if (current === undefined || current.kind !== "dynamic-preset") {
     return { ok: false, reason: "missing-block" };
   }
-  if (isInvalidTime(startMs) || isInvalidTime(endMs) || endMs <= startMs) {
+  const snappedStart = snapTimeMs(startMs);
+  const snappedEnd = snapTimeMs(endMs);
+  if (isInvalidTime(snappedStart) || isInvalidTime(snappedEnd) || snappedEnd <= snappedStart) {
     return { ok: false, reason: "invalid-time-range" };
   }
   const next = cloneSequence(sequence);
@@ -331,8 +347,8 @@ export const resizeDynamicPreset = (
   if (resized === undefined || resized.kind !== "dynamic-preset") {
     return { ok: false, reason: "missing-block" };
   }
-  resized.startMs = startMs;
-  resized.endMs = endMs;
+  resized.startMs = snappedStart;
+  resized.endMs = snappedEnd;
   return commitBlocks(next, options);
 };
 
@@ -372,7 +388,7 @@ export const pasteTimelineBlocks = (
   const createdIds: string[] = [];
   const next = cloneSequence(sequence);
   for (const source of clipboard) {
-    const shifted = shiftBlock(cloneBlock(source), deltaMs);
+    const shifted = snapBlockTimes(shiftBlock(cloneBlock(source), deltaMs));
     const error = blockError(shifted);
     if (error) return { ok: false, reason: error };
     const id = nextBlockId(existingIds);

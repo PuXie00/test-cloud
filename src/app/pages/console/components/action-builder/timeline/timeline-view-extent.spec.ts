@@ -31,6 +31,9 @@ describe("timeline view extent", () => {
   it("does not clamp the playhead to occupied time", () => {
     expect(clampCursorMs(-10)).toBe(0);
     expect(clampCursorMs(12_000)).toBe(12_000);
+    expect(clampCursorMs(847)).toBe(800);
+    expect(clampCursorMs(850)).toBe(900);
+    expect(clampCursorMs(851)).toBe(900);
   });
 });
 

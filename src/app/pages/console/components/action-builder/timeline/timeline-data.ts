@@ -80,12 +80,16 @@ export const TRACK_LABEL_WIDTH = ACTION_BUILDER_SIDE_WIDTH;
 export const TIMELINE_PAD_LEFT = 8;
 export const MIN_BLOCK_MS = 500;
 
-export const formatTime = (ms: number): string => {
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-};
+export const TIME_STEP_MS = 100;
+
+export const snapTimeMs = (ms: number): number =>
+  Math.max(0, Math.round(ms / TIME_STEP_MS) * TIME_STEP_MS);
+
+export const msToSeconds = (ms: number): number => ms / 1000;
+
+export const secondsToMs = (seconds: number): number => snapTimeMs(seconds * 1000);
+
+export const formatTime = (ms: number): string => msToSeconds(ms).toFixed(1);
 
 export const msToPx = (ms: number, pxPerSecond: number = PIXELS_PER_SECOND): number =>
   (ms / 1000) * pxPerSecond;
