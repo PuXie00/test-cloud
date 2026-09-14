@@ -232,6 +232,7 @@ export const TimelineEditor = ({
     if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
+    onSelectionChange(null);
     const handleMove = (moveEvent: PointerEvent) => {
       onCursorChange(clientToMs(moveEvent.clientX));
     };
@@ -344,6 +345,7 @@ export const TimelineEditor = ({
       setMarquee(null);
       if (!boxing) {
         onCursorChange(clientToMs(upEvent.clientX));
+        onSelectionChange(null);
         return;
       }
       const hits = collectMarqueeBlockIds(

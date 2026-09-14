@@ -14,6 +14,9 @@ export type SelectionContextValue = {
   replaceMotorSelection: (ids: MotorId[]) => void;
   clearSelection: () => void;
   replaceSelection: (ids: ControlledObjectId[]) => void;
+  /** 3D 再次点选同一物体时也会递增，用于取消时间轴块选择 */
+  objectSelectGeneration: number;
+  touchObjectSelection: () => void;
   treeFocus: ProjectSelection;
   setTreeFocus: (selection: ProjectSelection) => void;
 };

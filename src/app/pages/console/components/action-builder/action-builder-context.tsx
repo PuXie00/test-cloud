@@ -350,15 +350,12 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   }, []);
 
   const handleObjectsSelect = useCallback((objectIds: number[]) => {
-    let changed = false;
     setSelectedObjectIds((prev) => {
       if (prev.length === objectIds.length && prev.every((id, index) => id === objectIds[index])) {
         return prev;
       }
-      changed = true;
       return objectIds;
     });
-    if (!changed) return;
     setSelection(null);
     setActiveRightTab("selection");
     setSequenceMissingHint(false);

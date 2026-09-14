@@ -22,11 +22,17 @@ export const SelectionProvider = ({ children }: SelectionProviderProps) => {
   const [multiSelectedIds, setMultiSelectedIds] = useState<ControlledObjectId[]>([]);
   const [multiSelectedMotorIds, setMultiSelectedMotorIds] = useState<MotorId[]>([]);
   const [treeFocus, setTreeFocusState] = useState<ProjectSelection>(null);
+  const [objectSelectGeneration, setObjectSelectGeneration] = useState(0);
+
+  const touchObjectSelection = useCallback(() => {
+    setObjectSelectGeneration((current) => current + 1);
+  }, []);
 
   const select = useCallback((id: ControlledObjectId | null) => {
     setSelectedId(id);
     setMultiSelectedIds(id ? [id] : []);
     setMultiSelectedMotorIds([]);
+    setObjectSelectGeneration((current) => current + 1);
   }, []);
 
   const toggleMulti = useCallback((id: ControlledObjectId) => {
@@ -35,6 +41,7 @@ export const SelectionProvider = ({ children }: SelectionProviderProps) => {
       current.includes(id) ? current.filter((value) => value !== id) : [...current, id],
     );
     setSelectedId(id);
+    setObjectSelectGeneration((current) => current + 1);
   }, []);
 
   const replaceMotorSelection = useCallback((ids: MotorId[]) => {
@@ -66,6 +73,7 @@ export const SelectionProvider = ({ children }: SelectionProviderProps) => {
       return prev === nextSelected ? prev : nextSelected;
     });
     setMultiSelectedIds((prev) => (sameIdList(prev, unique) ? prev : unique));
+    setObjectSelectGeneration((current) => current + 1);
   }, []);
 
   const setTreeFocus = useCallback((selection: ProjectSelection) => {
@@ -83,6 +91,8 @@ export const SelectionProvider = ({ children }: SelectionProviderProps) => {
       replaceMotorSelection,
       clearSelection,
       replaceSelection,
+      objectSelectGeneration,
+      touchObjectSelection,
       treeFocus,
       setTreeFocus,
     }),
@@ -96,6 +106,8 @@ export const SelectionProvider = ({ children }: SelectionProviderProps) => {
       replaceMotorSelection,
       clearSelection,
       replaceSelection,
+      objectSelectGeneration,
+      touchObjectSelection,
       treeFocus,
       setTreeFocus,
     ],

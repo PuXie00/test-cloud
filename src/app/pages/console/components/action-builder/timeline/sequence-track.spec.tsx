@@ -313,7 +313,7 @@ describe("timeline interaction", () => {
     expect(unused!.style.left).toBe("0px");
   });
 
-  it("clicking empty track or the playhead moves the playhead without clearing selection; dragging boxes blocks", () => {
+  it("clicking empty track, leftover space, or the playhead moves the playhead and clears selection; dragging boxes blocks", () => {
     const onCursorChange = vi.fn();
     const onSelectionChange = vi.fn();
     render(
@@ -333,22 +333,24 @@ describe("timeline interaction", () => {
     fireEvent.pointerDown(tracks, { clientX: TIMELINE_PAD_LEFT + 80, clientY: 40, button: 0 });
     fireEvent.pointerUp(window, { clientX: TIMELINE_PAD_LEFT + 80, clientY: 40, button: 0 });
     expect(onCursorChange).toHaveBeenCalledWith(800);
-    expect(onSelectionChange).not.toHaveBeenCalled();
+    expect(onSelectionChange).toHaveBeenCalledWith(null);
 
     onCursorChange.mockClear();
+    onSelectionChange.mockClear();
     fireEvent.pointerDown(tracks, { clientX: TIMELINE_PAD_LEFT + 80, clientY: 180, button: 0 });
     fireEvent.pointerUp(window, { clientX: TIMELINE_PAD_LEFT + 80, clientY: 180, button: 0 });
     expect(onCursorChange).toHaveBeenCalledWith(800);
-    expect(onSelectionChange).not.toHaveBeenCalled();
+    expect(onSelectionChange).toHaveBeenCalledWith(null);
 
     onCursorChange.mockClear();
+    onSelectionChange.mockClear();
     const playhead = screen.getByRole("slider", { name: "播放游标" });
     fireEvent.pointerDown(playhead, { clientX: TIMELINE_PAD_LEFT + 200, clientY: 80, button: 0 });
-    fireEvent.pointerMove(window, { clientX: TIMELINE_PAD_LEFT + 280 });
     fireEvent.pointerUp(window);
-    expect(onSelectionChange).not.toHaveBeenCalled();
+    expect(onSelectionChange).toHaveBeenCalledWith(null);
 
     onCursorChange.mockClear();
+    onSelectionChange.mockClear();
     fireEvent.pointerDown(tracks, { clientX: TIMELINE_PAD_LEFT + 150, clientY: 40, button: 0 });
     fireEvent.pointerMove(window, { clientX: TIMELINE_PAD_LEFT + 450, clientY: 40 });
     fireEvent.pointerUp(window, { clientX: TIMELINE_PAD_LEFT + 450, clientY: 40 });
