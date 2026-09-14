@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ActionBuilderProvider } from "./components/action-builder/action-builder-context";
 import { ActionBuilderRightSidebar } from "./components/action-builder/action-builder-right-sidebar";
 import { ActionBuilderSelectionSync } from "./components/action-builder/action-builder-selection-sync";
@@ -12,7 +12,9 @@ import { ControlledObjectsProvider } from "./hooks/use-controlled-objects";
 import { LogStreamProvider } from "./hooks/use-log-stream";
 import { ExecCardsProvider, useExecCards } from "./hooks/use-exec-cards";
 import { ExecutorSlotsProvider } from "./hooks/use-executor-slots";
+import { sequenceReadyFingerprint } from "./hooks/sequence-execution";
 import { ProgramProvider, useProgram } from "./hooks/use-program";
+import { useProject } from "@/app/project/use-project";
 import { SelectionProvider } from "./hooks/selection-provider";
 import { AlignmentChecklistProvider } from "./components/drive-debug/alignment-checklist/alignment-checklist-provider";
 import { LeftSidebar, type LeftNavId } from "./components/LeftSidebar";
@@ -48,7 +50,19 @@ import { NEW_PROJECT_FLAG_KEY } from "./components/right-sidebar/config-wizard/c
 
 const ProgramScopedProviders = ({ children }: { children: ReactNode }) => {
   const { pageItems } = useProgram();
-  return <ExecutorSlotsProvider pageItems={pageItems}>{children}</ExecutorSlotsProvider>;
+  const { currentProject } = useProject();
+  const sequenceFingerprints = useMemo(() => {
+    const fingerprints: Record<number, string> = {};
+    for (const sequence of currentProject?.document.motion.actionSequences ?? []) {
+      fingerprints[sequence.id] = sequenceReadyFingerprint(sequence);
+    }
+    return fingerprints;
+  }, [currentProject?.document.motion.actionSequences]);
+  return (
+    <ExecutorSlotsProvider pageItems={pageItems} sequenceFingerprints={sequenceFingerprints}>
+      {children}
+    </ExecutorSlotsProvider>
+  );
 };
 
 type DevicesRightPanelProps = {

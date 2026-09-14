@@ -36,6 +36,7 @@ import { FaderSlot } from "./executors/fader-slot";
 
 const {
   toastWarning,
+  toastError,
   launchMock,
   stopSequenceMock,
   localSequenceTransport,
@@ -44,8 +45,16 @@ const {
   capturedTriggers,
   programState,
   actionBuilderState,
+  readySequenceMock,
+  goSequenceMock,
+  startLocalAuthoredSequenceMock,
+  markSlotReadyMock,
+  clearSlotReadyMock,
+  setSlotBusyMock,
+  setSlotRunningMock,
 } = vi.hoisted(() => ({
   toastWarning: vi.fn(),
+  toastError: vi.fn(),
   launchMock: vi.fn(() => "card-1"),
   stopSequenceMock: vi.fn(async () => undefined),
   localSequenceTransport: {
@@ -53,6 +62,28 @@ const {
     syncCall: vi.fn(),
     stopAction: vi.fn(),
   },
+  readySequenceMock: vi.fn(async (args: { sequenceId: number }) => ({
+    ok: true as const,
+    name: args.sequenceId === 15 ? "正常序列" : String(args.sequenceId),
+    sequenceHandle: { actionId: args.sequenceId, syncGroupId: 1 },
+    fingerprint: `fp-${args.sequenceId}`,
+  })),
+  goSequenceMock: vi.fn(async (args: { sequenceId: number; faderPercent?: number }) => ({
+    ok: true as const,
+    name: args.sequenceId === 15 ? "正常序列" : String(args.sequenceId),
+    speedPercent: args.faderPercent ?? 100,
+    sequenceHandle: { actionId: args.sequenceId, syncGroupId: 1 },
+  })),
+  startLocalAuthoredSequenceMock: vi.fn(async (args: { sequenceId: number }) => ({
+    ok: true as const,
+    name: args.sequenceId === 15 ? "正常序列" : args.sequenceId,
+    speedPercent: 100,
+    sequenceHandle: { actionNo: 1, syncGroupId: 1 },
+  })),
+  markSlotReadyMock: vi.fn(),
+  clearSlotReadyMock: vi.fn(),
+  setSlotBusyMock: vi.fn(),
+  setSlotRunningMock: vi.fn(),
   faderSlotsRef: {
     current: [] as FaderSlotState[],
   },
@@ -135,7 +166,7 @@ vi.mock("sonner", () => ({
   toast: {
     warning: (...args: unknown[]) => toastWarning(...args),
     success: vi.fn(),
-    error: vi.fn(),
+    error: (...args: unknown[]) => toastError(...args),
     message: vi.fn(),
   },
 }));
@@ -177,7 +208,10 @@ vi.mock("../../hooks/use-executor-slots", async () => {
     useExecutorSlots: () => ({
       faderSlots: faderSlotsRef.current,
       setFaderValue: vi.fn(),
-      setSlotRunning: vi.fn(),
+      setSlotRunning: (...args: unknown[]) => setSlotRunningMock(...args),
+      setSlotBusy: (...args: unknown[]) => setSlotBusyMock(...args),
+      markSlotReady: (...args: unknown[]) => markSlotReadyMock(...args),
+      clearSlotReady: (...args: unknown[]) => clearSlotReadyMock(...args),
     }),
   };
 });
@@ -241,12 +275,11 @@ vi.mock("./executors/executors", async () => {
 });
 
 vi.mock("../../hooks/sequence-execution", () => ({
-  startLocalAuthoredSequence: vi.fn(async (args: { sequenceId: number }) => ({
-    ok: true,
-    name: args.sequenceId === 15 ? "正常序列" : args.sequenceId,
-    speedPercent: 100,
-    sequenceHandle: { actionNo: 1, syncGroupId: 1 },
-  })),
+  readySequence: (...args: unknown[]) => readySequenceMock(...args as [{ sequenceId: number }]),
+  goSequence: (...args: unknown[]) =>
+    goSequenceMock(...args as [{ sequenceId: number; faderPercent?: number }]),
+  startLocalAuthoredSequence: (...args: unknown[]) =>
+    startLocalAuthoredSequenceMock(...args as [{ sequenceId: number }]),
   stopSequence: (...args: unknown[]) => stopSequenceMock(...args),
   getLocalSequenceTransport: () => localSequenceTransport,
 }));
@@ -260,7 +293,17 @@ import { ContentLibraryPanel } from "../action-builder/content-library/content-l
 import { ProgramPanel as ConsoleProgramPanel } from "../program-panel/program-panel";
 import { ProgramPanel as ActionBuilderProgramPanel } from "../action-builder/right-panel/program-panel";
 import { ExecCardView } from "./exec-cards/exec-card";
+import { ExecEmptyState } from "./exec-cards/exec-empty-state";
 import { advanceRunningCards, type ExecCard } from "../../hooks/use-exec-cards";
+
+const makeFaderSlot = (overrides: Partial<FaderSlotState> & { index: number }): FaderSlotState => ({
+  label: `F${overrides.index + 1}`,
+  sequence: null,
+  faderValue: 100,
+  phase: "idle",
+  isBusy: false,
+  ...overrides,
+});
 
 const withMode = (children: ReactNode) =>
   createElement(ConsoleModeProvider, null, children);
@@ -395,6 +438,14 @@ afterEach(() => {
   launchMock.mockClear();
   stopSequenceMock.mockClear();
   toastWarning.mockClear();
+  toastError.mockClear();
+  readySequenceMock.mockClear();
+  goSequenceMock.mockClear();
+  startLocalAuthoredSequenceMock.mockClear();
+  markSlotReadyMock.mockClear();
+  clearSlotReadyMock.mockClear();
+  setSlotBusyMock.mockClear();
+  setSlotRunningMock.mockClear();
   capturedTriggers.onTriggerSequence = null;
   documentRef.current = null;
   programState.current = {
@@ -468,19 +519,16 @@ describe("project-motion-readiness (pure)", () => {
   });
 });
 
-describe("FaderSlot GO gate", () => {
-  it("disables GO for a repair-required sequence and exposes the warning reason", () => {
-    const seqSlot: FaderSlotState = {
+describe("FaderSlot Ready/GO gate", () => {
+  it("disables Ready for a repair-required sequence and exposes the warning reason", () => {
+    const seqSlot = makeFaderSlot({
       index: 0,
-      label: "F1",
       sequence: {
         id: 14,
         name: "空序列",
         durationMs: 0,
       },
-      faderValue: 100,
-      isRunning: false,
-    };
+    });
     const onGoSeq = vi.fn();
 
     render(
@@ -495,7 +543,7 @@ describe("FaderSlot GO gate", () => {
       ),
     );
 
-    const seqGo = screen.getByRole("button", { name: /GO/i }) as HTMLButtonElement;
+    const seqGo = screen.getByRole("button", { name: /Ready/i }) as HTMLButtonElement;
     expect(seqGo.disabled).toBe(true);
     expect(seqGo.getAttribute("aria-describedby")).toBeTruthy();
     const seqReason = document.getElementById(seqGo.getAttribute("aria-describedby")!);
@@ -505,22 +553,45 @@ describe("FaderSlot GO gate", () => {
     expect(onGoSeq).not.toHaveBeenCalled();
   });
 
-  it("keeps GO enabled for healthy filled slots", () => {
+  it("keeps Ready enabled for healthy filled idle slots", () => {
     const onGo = vi.fn();
     render(
       withMode(
         <FaderSlot
-          slot={{
+          slot={makeFaderSlot({
             index: 0,
-            label: "F1",
             sequence: {
               id: 15,
               name: "正常序列",
               durationMs: 2000,
             },
-            faderValue: 100,
-            isRunning: false,
-          }}
+          })}
+          onGo={onGo}
+          onFaderChange={vi.fn()}
+          onAssignFromDrag={vi.fn()}
+        />,
+      ),
+    );
+    const ready = screen.getByRole("button", { name: /Ready/i }) as HTMLButtonElement;
+    expect(ready.disabled).toBe(false);
+    fireEvent.click(ready);
+    expect(onGo).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows GO when the slot is ready", () => {
+    const onGo = vi.fn();
+    render(
+      withMode(
+        <FaderSlot
+          slot={makeFaderSlot({
+            index: 0,
+            sequence: {
+              id: 15,
+              name: "正常序列",
+              durationMs: 2000,
+            },
+            phase: "ready",
+          })}
           onGo={onGo}
           onFaderChange={vi.fn()}
           onAssignFromDrag={vi.fn()}
@@ -538,54 +609,44 @@ describe("ExecArea launch guard", () => {
   beforeEach(() => {
     documentRef.current = makeDocument();
     faderSlotsRef.current = [
-      {
+      makeFaderSlot({
         index: 0,
-        label: "F1",
         sequence: {
           id: 14,
           name: "空序列",
           durationMs: 0,
         },
-        faderValue: 100,
-        isRunning: false,
-      },
-      {
+      }),
+      makeFaderSlot({
         index: 1,
-        label: "F2",
         sequence: {
           id: 15,
           name: "正常序列",
           durationMs: 2000,
         },
-        faderValue: 100,
-        isRunning: false,
-      },
-      ...Array.from({ length: 14 }, (_, idx) => ({
-        index: idx + 2,
-        label: `F${idx + 3}`,
-        sequence: null,
-        faderValue: 100,
-        isRunning: false,
-      })),
+      }),
+      ...Array.from({ length: 14 }, (_, idx) => makeFaderSlot({ index: idx + 2 })),
     ];
   });
 
   it("blocks launch for an empty sequence even when trigger is forced", async () => {
     render(withMode(<ExecArea />));
 
-    const goButtons = screen.getAllByRole("button", { name: /GO/i }) as HTMLButtonElement[];
-    expect(goButtons).toHaveLength(16);
-    expect(goButtons[0]!.disabled).toBe(true);
-    expect(goButtons[1]!.disabled).toBe(false);
-    expect(goButtons[2]!.disabled).toBe(true);
+    const readyButtons = screen.getAllByRole("button", { name: /Ready/i }) as HTMLButtonElement[];
+    expect(readyButtons).toHaveLength(16);
+    expect(readyButtons[0]!.disabled).toBe(true);
+    expect(readyButtons[1]!.disabled).toBe(false);
+    expect(readyButtons[2]!.disabled).toBe(true);
 
-    fireEvent.click(goButtons[1]!);
+    fireEvent.click(readyButtons[1]!);
     await waitFor(() => {
-      expect(launchMock).toHaveBeenCalledTimes(1);
+      expect(readySequenceMock).toHaveBeenCalledTimes(1);
     });
-    launchMock.mockClear();
+    expect(launchMock).not.toHaveBeenCalled();
+    expect(goSequenceMock).not.toHaveBeenCalled();
+    expect(markSlotReadyMock).toHaveBeenCalledWith(1, 15, "fp-15");
 
-    fireEvent.click(goButtons[0]!);
+    fireEvent.click(readyButtons[0]!);
     expect(launchMock).not.toHaveBeenCalled();
 
     expect(capturedTriggers.onTriggerSequence).toBeTruthy();
@@ -594,16 +655,67 @@ describe("ExecArea launch guard", () => {
     expect(launchMock).not.toHaveBeenCalled();
     expect(toastWarning).toHaveBeenCalled();
     expect(String(toastWarning.mock.calls[0]?.[0])).toMatch(/待修复|待编排|无目标|无轨道/);
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "force-seq-ok" }));
-    await waitFor(() => {
-      expect(launchMock).toHaveBeenCalledTimes(1);
+  it("Ready failure stays idle and does not launch", async () => {
+    readySequenceMock.mockResolvedValueOnce({
+      ok: false,
+      toast: "warning",
+      message: "动作序列校验失败，无法下载",
     });
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "F2 Ready" }));
+    await waitFor(() => {
+      expect(readySequenceMock).toHaveBeenCalled();
+    });
+    expect(launchMock).not.toHaveBeenCalled();
+    expect(goSequenceMock).not.toHaveBeenCalled();
+    expect(clearSlotReadyMock).toHaveBeenCalledWith(1);
+    expect(toastWarning).toHaveBeenCalledWith("动作序列校验失败，无法下载");
+  });
+
+  it("GO uses the current fader value and launches only after Ready", async () => {
+    faderSlotsRef.current = faderSlotsRef.current.map((slot) =>
+      slot.index === 1 ? { ...slot, phase: "ready", faderValue: 150 } : slot,
+    );
+    render(withMode(<ExecArea />));
+
+    fireEvent.click(screen.getByRole("button", { name: "F2 GO" }));
+    await waitFor(() => {
+      expect(goSequenceMock).toHaveBeenCalledTimes(1);
+    });
+    expect(goSequenceMock.mock.calls[0]?.[0]).toMatchObject({
+      sequenceId: 15,
+      faderPercent: 150,
+    });
+    expect(readySequenceMock).not.toHaveBeenCalled();
+    expect(launchMock).toHaveBeenCalledTimes(1);
     expect(launchMock.mock.calls[0]?.[0]).toMatchObject({
       kind: "sequence",
       name: "正常序列",
       durationMs: null,
+      speedPercent: 150,
+      source: { kind: "fader", slotIndex: 1 },
     });
+  });
+
+  it("GO failure stays ready and does not launch", async () => {
+    goSequenceMock.mockResolvedValueOnce({
+      ok: false,
+      toast: "error",
+      message: "动作序列启动失败",
+    });
+    faderSlotsRef.current = faderSlotsRef.current.map((slot) =>
+      slot.index === 1 ? { ...slot, phase: "ready" } : slot,
+    );
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "F2 GO" }));
+    await waitFor(() => {
+      expect(goSequenceMock).toHaveBeenCalled();
+    });
+    expect(launchMock).not.toHaveBeenCalled();
+    expect(clearSlotReadyMock).not.toHaveBeenCalled();
+    expect(toastError).toHaveBeenCalledWith("动作序列启动失败");
   });
 });
 
@@ -670,22 +782,21 @@ describe("program panel launch guards", () => {
     ];
   });
 
-  it("console ProgramPanel blocks double-click launch for unrepaired items", async () => {
+  it("console ProgramPanel does not launch on double-click", async () => {
     render(withMode(<ConsoleProgramPanel />));
     expect(
       screen.getByLabelText(/节目引用空动作序列「14」，待修复/),
     ).toBeTruthy();
 
     fireEvent.doubleClick(screen.getByRole("treeitem", { name: /空序列/i }));
-    expect(launchMock).not.toHaveBeenCalled();
-    expect(toastWarning).toHaveBeenCalled();
-    expect(String(toastWarning.mock.calls[0]?.[0])).toMatch(/待修复|待编排|无目标|无轨道/);
-
-    toastWarning.mockClear();
     fireEvent.doubleClick(screen.getByRole("treeitem", { name: /^正常序列$/i }));
     await waitFor(() => {
-      expect(launchMock).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("treeitem", { name: /^正常序列$/i })).toBeTruthy();
     });
+    expect(launchMock).not.toHaveBeenCalled();
+    expect(startLocalAuthoredSequenceMock).not.toHaveBeenCalled();
+    expect(readySequenceMock).not.toHaveBeenCalled();
+    expect(goSequenceMock).not.toHaveBeenCalled();
     expect(toastWarning).not.toHaveBeenCalled();
   });
 
@@ -742,6 +853,12 @@ const runningCard = (overrides: Partial<ExecCard>): ExecCard => ({
 });
 
 describe("execution cards", () => {
+  it("empty state no longer mentions program double-click", () => {
+    render(<ExecEmptyState />);
+    expect(screen.getByText("暂无活跃任务")).toBeTruthy();
+    expect(screen.queryByText(/双击节目/)).toBeNull();
+    expect(screen.getByText(/Executor 槽位/)).toBeTruthy();
+  });
   it("keeps a sequence card running after wall-clock exceeds 编排时长", () => {
     const authoredSequenceMs = 2000;
     const sequenceCard = runningCard({

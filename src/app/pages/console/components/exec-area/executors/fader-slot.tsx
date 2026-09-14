@@ -1,4 +1,4 @@
-import { Play, Plus } from "lucide-react";
+import { Loader2, Play, Plus } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
 import { useConsoleMode } from "../../../hooks/use-console-mode";
 import type { FaderSlotState } from "../../../hooks/use-executor-slots";
@@ -20,7 +20,10 @@ export const FaderSlot = ({
 }: FaderSlotProps) => {
   const { mode } = useConsoleMode();
   const isEmpty = !slot.sequence;
-  const isBlocked = isEmpty || Boolean(repairMessage);
+  const isRunning = slot.phase === "running";
+  const isReady = slot.phase === "ready";
+  const actionLabel = isReady || isRunning ? "GO" : "Ready";
+  const isBlocked = isEmpty || Boolean(repairMessage) || slot.isBusy || isRunning;
   const isRehearsal = mode === "rehearsal";
   const reasonId = `fader-slot-repair-${slot.index}`;
 
@@ -50,13 +53,15 @@ export const FaderSlot = ({
       onDrop={handleDrop}
       className={cn(
         "flex h-[140px] w-full flex-col gap-1 rounded-sm border bg-card p-2 transition-colors",
-        slot.isRunning
+        isRunning
           ? "border-show/60"
           : isEmpty
             ? cn("border-dashed border-muted-foreground/40", isRehearsal && "hover:border-primary/40")
             : repairMessage
               ? "border-warning/50"
-              : "border-border"
+              : isReady
+                ? "border-primary/50"
+                : "border-border",
       )}
     >
       <div className="flex items-center gap-1">
@@ -64,13 +69,15 @@ export const FaderSlot = ({
         <span
           className={cn(
             "ml-auto h-1.5 w-1.5 rounded-full",
-            slot.isRunning
+            isRunning
               ? "bg-show"
               : isEmpty
                 ? "bg-muted-foreground/40"
                 : repairMessage
                   ? "bg-warning"
-                  : "bg-show/70"
+                  : isReady
+                    ? "bg-primary"
+                    : "bg-show/70",
           )}
         />
       </div>
@@ -114,18 +121,25 @@ export const FaderSlot = ({
       <button
         type="button"
         disabled={isBlocked}
+        aria-busy={slot.isBusy || undefined}
+        aria-label={`${slot.label} ${actionLabel}`}
         aria-describedby={repairMessage ? reasonId : undefined}
         onClick={onGo}
         className={cn(
           "inline-flex h-9 items-center justify-center gap-1 rounded-sm font-semibold transition-colors disabled:pointer-events-none disabled:opacity-30",
-          slot.isRunning
+          isRunning
             ? "bg-show text-background"
             : isBlocked
               ? "border border-border text-muted-foreground"
-              : "bg-primary text-primary-foreground hover:bg-primary/90"
+              : "bg-primary text-primary-foreground hover:bg-primary/90",
         )}
       >
-        <Play className="h-3.5 w-3.5 fill-current" aria-hidden /> GO
+        {slot.isBusy ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+        ) : (
+          <Play className="h-3.5 w-3.5 fill-current" aria-hidden />
+        )}
+        {actionLabel}
       </button>
     </div>
   );

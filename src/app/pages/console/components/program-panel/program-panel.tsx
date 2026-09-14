@@ -1,13 +1,6 @@
-import { toast } from "sonner";
 import { cn } from "@/app/components/ui/utils";
-import {
-  getProgramRepairIssues,
-  resolveMotionLaunchBlock,
-} from "@/app/project/project-motion-readiness";
+import { getProgramRepairIssues } from "@/app/project/project-motion-readiness";
 import { useProject } from "@/app/project/use-project";
-import { useConsoleMode } from "../../hooks/use-console-mode";
-import { useExecCards } from "../../hooks/use-exec-cards";
-import { startLocalAuthoredSequence } from "../../hooks/sequence-execution";
 import { useProgram } from "../../hooks/use-program";
 import { useSelection } from "../../hooks/use-selection";
 import type { ChapterItem } from "./program-data";
@@ -30,8 +23,6 @@ export const ProgramPanel = ({ className }: ProgramPanelProps) => {
     isProgramEmpty,
   } = useProgram();
   const { clearSelection } = useSelection();
-  const { launch } = useExecCards();
-  const { mode } = useConsoleMode();
   const { currentProject } = useProject();
   const document = currentProject?.document;
   const programRepairIssues = document
@@ -41,35 +32,6 @@ export const ProgramPanel = ({ className }: ProgramPanelProps) => {
     programRepairIssues.length > 0
       ? programRepairIssues.map((issue) => issue.message).join("；")
       : null;
-
-  const handleDoubleClickItem = (item: ChapterItem) => {
-    if (mode === "show") return;
-    const issue = resolveMotionLaunchBlock(document, "sequence", item.sequence.id);
-    if (issue) {
-      toast.warning(issue.message);
-      return;
-    }
-    if (!document) return;
-    void (async () => {
-      const started = await startLocalAuthoredSequence({
-        document,
-        sequenceId: item.sequence.id,
-      });
-      if (!started.ok) {
-        if (started.toast === "warning") toast.warning(started.message);
-        else toast.error(started.message);
-        return;
-      }
-      launch({
-        kind: "sequence",
-        name: started.name,
-        durationMs: null,
-        source: { kind: "program" },
-        speedPercent: started.speedPercent,
-        sequenceHandle: started.sequenceHandle,
-      });
-    })();
-  };
 
   const handleItemDragStart =
     (chapterId: string, item: ChapterItem, index: number) =>
@@ -112,7 +74,6 @@ export const ProgramPanel = ({ className }: ProgramPanelProps) => {
             }}
             onAddSequence={() => addSequence(chapter.id)}
             onItemDragStart={handleItemDragStart}
-            onDoubleClickItem={handleDoubleClickItem}
           />
           ))
         )}
