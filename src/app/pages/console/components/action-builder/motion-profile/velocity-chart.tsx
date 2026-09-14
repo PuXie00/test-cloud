@@ -2,6 +2,7 @@ import { useRef, type KeyboardEvent, type PointerEvent } from "react";
 import { cn } from "@/app/components/ui/utils";
 import { sampleVelocityNorm } from "@/app/project/action-sequence/motion-profile";
 import type { MotionProfile } from "@/app/project/action-sequence/types";
+import { TIME_STEP_MS, formatTime, snapTimeMs } from "../timeline/timeline-data";
 import { profileKindMeta } from "./profile-kind";
 
 export type VelocityChartLimits = {
@@ -25,7 +26,7 @@ const VIEW_WIDTH = 100;
 const VIEW_HEIGHT = 50;
 const AXIS_INSET = 0.8;
 const TICK_LEN = 2.2;
-const KEYBOARD_STEP = 0.005;
+const KEYBOARD_STEP_MS = TIME_STEP_MS;
 
 type PhaseId = "accel" | "cruise" | "decel";
 type LimitAttr = "velocity";
@@ -50,10 +51,40 @@ const plotX = (tNorm: number): number => plotLeft + tNorm * plotWidth;
 const formatPoint = (tNorm: number, vNorm: number): string =>
   `${plotX(tNorm)},${svgY(vNorm)}`;
 
+const snapHandleProfile = (
+  profile: MotionProfile,
+  handleId: string,
+  durationMs: number,
+): MotionProfile => {
+  if (profile.kind !== "trapezoid") return profile;
+  const { accelMs, decelMs } = profile.params;
+  if (handleId === "accel-end") {
+    const maxMs = Math.max(0, durationMs - decelMs);
+    return {
+      kind: "trapezoid",
+      params: {
+        accelMs: Math.min(maxMs, Math.max(TIME_STEP_MS, snapTimeMs(accelMs))),
+        decelMs,
+      },
+    };
+  }
+  if (handleId === "decel-start") {
+    const maxMs = Math.max(0, durationMs - accelMs);
+    return {
+      kind: "trapezoid",
+      params: {
+        accelMs,
+        decelMs: Math.min(maxMs, Math.max(TIME_STEP_MS, snapTimeMs(decelMs))),
+      },
+    };
+  }
+  return profile;
+};
+
 const formatNumber = (value: number): string =>
   Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2)));
 
-const formatSec = (ms: number): string => (ms / 1000).toFixed(2);
+const formatSec = (ms: number): string => formatTime(ms);
 
 const plotLeftPct = `${(plotLeft / VIEW_WIDTH) * 100}%`;
 const plotRightPct = `${(plotRight / VIEW_WIDTH) * 100}%`;
@@ -189,12 +220,16 @@ export const VelocityChart = ({
     event.preventDefault();
     const apply = (clientX: number) => {
       onProfileChange(
-        meta.applyHandleDrag(
-          profile,
+        snapHandleProfile(
+          meta.applyHandleDrag(
+            profile,
+            handleId,
+            tNormFromClientX(clientX),
+            durationMs,
+            minAccelMs,
+          ),
           handleId,
-          tNormFromClientX(clientX),
           durationMs,
-          minAccelMs,
         ),
       );
     };
@@ -212,18 +247,23 @@ export const VelocityChart = ({
     if (!editable || !onProfileChange || !meta) return;
     const handleId = event.currentTarget.dataset.handle;
     if (!handleId) return;
+    const stepNorm = durationMs > 0 ? KEYBOARD_STEP_MS / durationMs : 0;
     const delta =
-      event.key === "ArrowRight" ? KEYBOARD_STEP : event.key === "ArrowLeft" ? -KEYBOARD_STEP : 0;
+      event.key === "ArrowRight" ? stepNorm : event.key === "ArrowLeft" ? -stepNorm : 0;
     if (delta === 0) return;
     event.preventDefault();
     const current = handles.find((handle) => handle.id === handleId)?.tNorm ?? 0;
     onProfileChange(
-      meta.applyHandleDrag(
-        profile,
+      snapHandleProfile(
+        meta.applyHandleDrag(
+          profile,
+          handleId,
+          clamp01(current + delta),
+          durationMs,
+          minAccelMs,
+        ),
         handleId,
-        clamp01(current + delta),
         durationMs,
-        minAccelMs,
       ),
     );
   };
