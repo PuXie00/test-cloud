@@ -1,3 +1,4 @@
+import { clampNumeric } from "@/app/components/ics/numeric-input-utils";
 import { cloneAxisProfiles } from "@/app/project/action-sequence/motion-profile";
 import { getPresetDefinition } from "@/app/project/action-sequence/preset-registry";
 import {
@@ -10,6 +11,7 @@ import type {
   MotionSegmentSettings,
   TimelineBlock,
 } from "@/app/project/action-sequence/types";
+import type { VirtualAxisId } from "@/app/project/project-document-types";
 
 export type SequenceEditError =
   | "motion-overlap"
@@ -26,6 +28,26 @@ export type PasteResult =
   | { ok: false; reason: SequenceEditError };
 
 export type SequenceEditOptions = ReconcileSegmentOptions;
+
+export type PoseAxisWrite = {
+  mode: "abs" | "rel";
+  axis: VirtualAxisId;
+  value: number;
+};
+
+export type PoseAxisObjectInfo = {
+  enabledAxes?: readonly VirtualAxisId[];
+  rangeByAxis?: Partial<Record<VirtualAxisId, { min: number; max: number }>>;
+};
+
+export type PoseAxisWriteOptions = SequenceEditOptions & {
+  objectInfo?: (objectId: number) => PoseAxisObjectInfo | undefined;
+};
+
+const ALL_VIRTUAL_AXES: VirtualAxisId[] = ["v1", "v2", "v3"];
+
+const resolveWriteAxes = (enabledAxes?: readonly VirtualAxisId[]): VirtualAxisId[] =>
+  enabledAxes !== undefined && enabledAxes.length > 0 ? [...enabledAxes] : [...ALL_VIRTUAL_AXES];
 
 type MotionSpan =
   | { kind: "point"; objectId: number; atMs: number }
@@ -206,6 +228,32 @@ export const insertTimelineBlock = (
   const next = cloneSequence(sequence);
   next.blocks.push(cloneBlock(block));
   return commitBlocks(next, options);
+};
+
+export const applyPoseAxisWrite = (
+  sequence: ActionSequenceConfig,
+  blockIds: readonly string[],
+  write: PoseAxisWrite,
+  options?: PoseAxisWriteOptions,
+): EditResult => {
+  const ids = new Set(blockIds);
+  if (ids.size === 0) return { ok: true, sequence };
+
+  let changed = false;
+  const next = cloneSequence(sequence);
+  for (const block of next.blocks) {
+    if (!ids.has(block.id) || block.kind !== "pose") continue;
+    const info = options?.objectInfo?.(block.objectId);
+    if (!resolveWriteAxes(info?.enabledAxes).includes(write.axis)) continue;
+    const range = info?.rangeByAxis?.[write.axis];
+    const nextValue = write.mode === "rel" ? block.pose[write.axis] + write.value : write.value;
+    const clamped = clampNumeric(nextValue, range?.min, range?.max);
+    if (clamped === block.pose[write.axis]) continue;
+    block.pose = { ...block.pose, [write.axis]: clamped };
+    changed = true;
+  }
+  if (!changed) return { ok: true, sequence };
+  return tryFinalize(next, options);
 };
 
 export const replaceTimelineBlock = (

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useConsoleNav } from "../../hooks/use-console-nav";
 import { useSelection } from "../../hooks/use-selection";
 import { useActionBuilder } from "./use-action-builder";
@@ -10,9 +10,11 @@ const sameIdList = (a: readonly number[], b: readonly number[]) =>
 /** Syncs global 3D / monitor selection into action builder object selection. */
 export const ActionBuilderSelectionSync = () => {
   const { activeNav } = useConsoleNav();
-  const { selectedId, multiSelectedIds } = useSelection();
-  const { selectedBlockId, selectedObjectIds, handleObjectsSelect } = useActionBuilder();
+  const { selectedId, multiSelectedIds, objectSelectGeneration } = useSelection();
+  const { selection, selectedObjectIds, handleObjectsSelect } = useActionBuilder();
   const { objects } = useProjectStore();
+  const prevSourceKeyRef = useRef<string | null>(null);
+  const prevGenerationRef = useRef<number | null>(null);
 
   const projectObjectIdsKey = useMemo(
     () => objects.map((object) => object.id).join("\0"),
@@ -31,8 +33,18 @@ export const ActionBuilderSelectionSync = () => {
   }, [selectedId, multiSelectedIds]);
 
   useEffect(() => {
-    if (activeNav !== "sequences") return;
-    if (selectedBlockId) return;
+    if (activeNav !== "sequences") {
+      prevSourceKeyRef.current = selectionSourceKey;
+      prevGenerationRef.current = objectSelectGeneration;
+      return;
+    }
+
+    const sourceChanged =
+      prevSourceKeyRef.current !== null && prevSourceKeyRef.current !== selectionSourceKey;
+    const generationChanged =
+      prevGenerationRef.current !== null && prevGenerationRef.current !== objectSelectGeneration;
+    prevSourceKeyRef.current = selectionSourceKey;
+    prevGenerationRef.current = objectSelectGeneration;
 
     const sourceIds =
       selectionSourceKey.length > 0
@@ -46,15 +58,21 @@ export const ActionBuilderSelectionSync = () => {
       return;
     }
 
-    if (sameIdList(nextIds, selectedObjectIds)) {
+    const hasTimelineSelection = selection !== null;
+    if (hasTimelineSelection) {
+      if (sourceChanged || generationChanged) {
+        handleObjectsSelect(nextIds);
+      }
       return;
     }
 
+    if (sameIdList(nextIds, selectedObjectIds)) return;
     handleObjectsSelect(nextIds);
   }, [
     activeNav,
-    selectedBlockId,
+    selection,
     selectionSourceKey,
+    objectSelectGeneration,
     projectObjectIdSet,
     selectedObjectIds,
     handleObjectsSelect,

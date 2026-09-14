@@ -231,6 +231,8 @@ export const TimelineEditor = ({
   const handlePlayheadDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
+    event.stopPropagation();
+    onSelectionChange(null);
     const handleMove = (moveEvent: PointerEvent) => {
       onCursorChange(clientToMs(moveEvent.clientX));
     };
@@ -410,7 +412,7 @@ export const TimelineEditor = ({
         style={{ width: TRACK_LABEL_WIDTH }}
       >
         <TimelineRulerReadout cursorMs={cursorMs} occupiedEndMs={occupiedEndMs} />
-        <div ref={labelNamesRef} className="min-h-0 flex-1 overflow-hidden">
+        <div ref={labelNamesRef} className="min-h-0 flex-1 overflow-hidden bg-card">
           {rows.map((row) => (
             <div
               key={row.objectId}
@@ -432,12 +434,12 @@ export const TimelineEditor = ({
         <div
           ref={scrollRef}
           data-testid="timeline-scroll"
-          className="custom-scrollbar min-h-0 min-w-0 flex-1 overflow-x-clip overflow-y-auto"
+          className="custom-scrollbar flex min-h-0 min-w-0 flex-1 flex-col overflow-x-clip overflow-y-auto"
           onScroll={handleScroll}
           onPointerDown={handleMiddlePanStart}
         >
           <div
-            className="relative overflow-x-clip"
+            className="relative flex flex-1 flex-col overflow-x-clip"
             data-testid="timeline-canvas"
             style={{ width: canvasWidth }}
           >
@@ -465,11 +467,11 @@ export const TimelineEditor = ({
             <div
               ref={tracksRef}
               data-testid="timeline-tracks"
-              className="relative"
+              className="relative min-h-0 flex-1"
               style={{ width: canvasWidth }}
               onPointerDown={handleTracksPointerDown}
             >
-              <div className="pointer-events-none absolute inset-y-0 z-0 w-full" aria-hidden>
+              <div className="pointer-events-none absolute inset-0 z-0 w-full" aria-hidden>
                 {used ? (
                   <div
                     className="absolute inset-y-0 bg-input-background"

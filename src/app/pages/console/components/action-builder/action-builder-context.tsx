@@ -32,9 +32,11 @@ import {
   nextId,
 } from "./action-builder-ops";
 import {
+  applyPoseAxisWrite,
   copyTimelineBlocks,
   deleteTimelineBlocks,
   insertTimelineBlock,
+  type PoseAxisWrite,
   type SequenceEditOptions,
   moveTimelineBlock,
   pasteTimelineBlocks,
@@ -47,6 +49,7 @@ import {
 import {
   pruneSequenceSelection,
   selectionBlockIds,
+  selectionFromBlockIds,
   type SequenceSelection,
 } from "./sequence-selection";
 import { clampCursorMs } from "./timeline/timeline-view-extent";
@@ -347,15 +350,12 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   }, []);
 
   const handleObjectsSelect = useCallback((objectIds: number[]) => {
-    let changed = false;
     setSelectedObjectIds((prev) => {
       if (prev.length === objectIds.length && prev.every((id, index) => id === objectIds[index])) {
         return prev;
       }
-      changed = true;
       return objectIds;
     });
-    if (!changed) return;
     setSelection(null);
     setActiveRightTab("selection");
     setSequenceMissingHint(false);
@@ -382,6 +382,24 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     (block: TimelineBlock): boolean =>
       applySequenceEdit((current) => replaceTimelineBlock(current, block, sequenceEditOptions)),
     [applySequenceEdit, sequenceEditOptions],
+  );
+
+  const handleApplyPoseAxisWrite = useCallback(
+    (blockIds: readonly string[], write: PoseAxisWrite): boolean =>
+      applySequenceEdit((current) =>
+        applyPoseAxisWrite(current, blockIds, write, {
+          ...sequenceEditOptions,
+          objectInfo: (objectId) => {
+            const object = getTimelineObject(objectId);
+            if (object === undefined) return undefined;
+            return {
+              enabledAxes: object.enabledAxes,
+              rangeByAxis: object.rangeByAxis,
+            };
+          },
+        }),
+      ),
+    [applySequenceEdit, getTimelineObject, sequenceEditOptions],
   );
 
   const handleMoveTimelineBlock = useCallback(
@@ -466,7 +484,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         setSequenceMissingHint(true);
         return;
       }
-      let lastCreatedId: string | null = null;
+      const createdIds: string[] = [];
       const ok = updateSelectedSequence((current) => {
         let next = current;
         for (const objectId of objectIds) {
@@ -480,12 +498,12 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
           const result = insertTimelineBlock(next, block, sequenceEditOptions);
           if (!result.ok) continue;
           next = result.sequence;
-          lastCreatedId = block.id;
+          createdIds.push(block.id);
         }
         return next === current ? null : next;
       });
       if (!ok) return;
-      if (lastCreatedId) setSelection({ kind: "block", blockId: lastCreatedId });
+      setSelection(selectionFromBlockIds(createdIds));
       setSequenceMissingHint(false);
     },
     [selectedSequenceId, sequence, cursorMs, poseForObject, updateSelectedSequence, sequenceEditOptions],
@@ -497,7 +515,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         setSequenceMissingHint(true);
         return;
       }
-      let lastCreatedId: string | null = null;
+      const createdIds: string[] = [];
       const ok = updateSelectedSequence((current) => {
         let next = current;
         for (const objectId of objectIds) {
@@ -512,12 +530,12 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
           const result = insertTimelineBlock(next, block);
           if (!result.ok) continue;
           next = result.sequence;
-          lastCreatedId = block.id;
+          createdIds.push(block.id);
         }
         return next === current ? null : next;
       });
       if (!ok) return;
-      if (lastCreatedId) setSelection({ kind: "block", blockId: lastCreatedId });
+      setSelection(selectionFromBlockIds(createdIds));
       setSequenceMissingHint(false);
     },
     [selectedSequenceId, sequence, cursorMs, updateSelectedSequence],
@@ -963,6 +981,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleCursorChange,
       handleInsertTimelineBlock,
       handleReplaceTimelineBlock,
+      handleApplyPoseAxisWrite,
       handleMoveTimelineBlock,
       handleShiftTimelineBlocks,
       handleShiftTimelineBlocksEnd,
@@ -1035,6 +1054,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleCursorChange,
       handleInsertTimelineBlock,
       handleReplaceTimelineBlock,
+      handleApplyPoseAxisWrite,
       handleMoveTimelineBlock,
       handleShiftTimelineBlocks,
       handleShiftTimelineBlocksEnd,

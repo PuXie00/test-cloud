@@ -10,7 +10,8 @@ import {
 
 export const Viz3DSelectionSync = () => {
   const engine = useViz3DContext();
-  const { selectedId, multiSelectedIds, replaceSelection, treeFocus } = useSelection();
+  const { selectedId, multiSelectedIds, replaceSelection, touchObjectSelection, treeFocus } =
+    useSelection();
   const applyingFromEngine = useRef(false);
   const applyingFromMonitor = useRef(false);
   const monitorIdsRef = useRef<number[]>([]);
@@ -34,6 +35,7 @@ export const Viz3DSelectionSync = () => {
       }
 
       if (sameIdList(projectIds, monitorIdsRef.current)) {
+        touchObjectSelection();
         return;
       }
 
@@ -45,7 +47,7 @@ export const Viz3DSelectionSync = () => {
     return () => {
       engine.events.off("selectionChange", handleEngineSelection);
     };
-  }, [engine, replaceSelection]);
+  }, [engine, replaceSelection, touchObjectSelection]);
 
   useEffect(() => {
     const pushMonitorSelectionToEngine = () => {
