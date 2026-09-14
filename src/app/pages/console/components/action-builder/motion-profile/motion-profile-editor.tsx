@@ -3,7 +3,7 @@ import { cn } from "@/app/components/ui/utils";
 import type { MotionProfileKinematics } from "@/app/project/action-sequence/motion-profile";
 import type { AxisMotionProfiles, ModelPose, MotionProfile } from "@/app/project/action-sequence/types";
 import type { VirtualAxisId } from "@/app/project/project-document-types";
-import { VIRTUAL_AXIS_IDS } from "../timeline/timeline-data";
+import { VIRTUAL_AXIS_IDS, formatTime } from "../timeline/timeline-data";
 import { getVirtualAxisCanonicalUnit } from "../virtual-axis-display";
 import { PROFILE_KIND_OPTIONS, profileKindMeta } from "./profile-kind";
 import {
@@ -36,8 +36,7 @@ const formatNumber = (value: number): string =>
 
 const axisName = (axis: VirtualAxisId): string => axis.toUpperCase();
 
-const formatDurationSec = (durationMs: number): string =>
-  `${(durationMs / 1000).toFixed(2)} s`;
+const formatDurationSec = (durationMs: number): string => `${formatTime(durationMs)} s`;
 
 const formatTravel = (value: number, unit: string): string => {
   const prefix = value > 0 ? "+" : "";
@@ -306,6 +305,7 @@ export const MotionProfileEditor = ({
         durationMs={durationMs}
         disabled={disabled}
         compact={compact}
+        timeUnit="s"
       />
     );
   }
@@ -360,7 +360,11 @@ export const MotionProfileEditor = ({
             />
             <div className="min-w-19 rounded-md bg-input-background px-2 py-2">
               <p className="text-body-sm text-muted-foreground">总时长</p>
-              <p className="mt-0.5 font-mono text-mono-sm tabular-nums text-foreground">
+              <p
+                aria-label="时长"
+                aria-readonly="true"
+                className="mt-0.5 font-mono text-mono-sm tabular-nums text-foreground"
+              >
                 {formatDurationSec(axisContext.durationMs)}
               </p>
             </div>
@@ -604,6 +608,7 @@ export const MotionProfileEditor = ({
           durationMs={axisContext.durationMs}
           disabled={disabled}
           showKindSelect={false}
+          timeUnit="s"
           readOnly={displayProfile.kind === "idle"}
         />
       ) : (

@@ -64,7 +64,7 @@ describe("MotionProfileEditor", () => {
     expect(screen.getAllByRole("combobox", { name: "曲线类型" })).toHaveLength(1);
   });
 
-  it("keeps compact ms fields without chart sliders", () => {
+  it("keeps compact second fields without chart sliders", () => {
     renderEditor({ compact: true });
 
     expect(screen.queryByRole("slider", { name: "加速结束" })).toBeNull();
@@ -93,7 +93,7 @@ describe("MotionProfileEditor", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "V2" }));
-    changeSpinbutton("加速时间", "1500");
+    changeSpinbutton("加速时间", "1.5");
 
     expect(onChange).toHaveBeenCalledTimes(1);
     const next = onChange.mock.calls[0]![0] as AxisMotionProfiles;
@@ -212,8 +212,8 @@ describe("MotionProfileEditor", () => {
     expect(screen.queryByRole("slider", { name: "加速结束" })).toBeNull();
     expect(screen.getByText("静止")).not.toBeNull();
     expect(screen.getByRole("spinbutton", { name: "加速时间" })).toHaveProperty("readOnly", true);
-    expect(screen.getByRole("spinbutton", { name: "加速时间" })).toHaveValue(0);
-    expect(screen.getByRole("spinbutton", { name: "减速时间" })).toHaveValue(0);
+    expect(screen.getByRole("spinbutton", { name: "加速时间" })).toHaveProperty("value", "0.0");
+    expect(screen.getByRole("spinbutton", { name: "减速时间" })).toHaveProperty("value", "0.0");
     expect(screen.queryByRole("status")).toBeNull();
     expect(screen.getByLabelText("峰值速度").textContent).toContain("0");
   });

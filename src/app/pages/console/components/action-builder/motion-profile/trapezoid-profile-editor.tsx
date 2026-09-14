@@ -5,6 +5,7 @@ import {
   withTrapezoidDecelMs,
 } from "@/app/project/action-sequence/motion-profile";
 import type { MotionProfile } from "@/app/project/action-sequence/types";
+import { formatTime, secondsToMs, snapTimeMs } from "../timeline/timeline-data";
 
 export type TrapezoidProfileEditorProps = {
   value: MotionProfile;
@@ -17,10 +18,13 @@ export type TrapezoidProfileEditorProps = {
   readOnly?: boolean;
 };
 
-const formatTime = (valueMs: number, timeUnit: "ms" | "s"): string => {
-  if (timeUnit === "s") return (valueMs / 1000).toFixed(2);
+const formatPhaseValue = (valueMs: number, timeUnit: "ms" | "s"): string => {
+  if (timeUnit === "s") return formatTime(valueMs);
   return Number.isInteger(valueMs) ? String(valueMs) : String(Math.round(valueMs));
 };
+
+const commitPhaseMs = (parsed: number, timeUnit: "ms" | "s"): number =>
+  timeUnit === "s" ? secondsToMs(parsed) : snapTimeMs(parsed);
 
 type PhaseFieldProps = {
   label: string;
@@ -45,7 +49,7 @@ const PhaseField = ({
     if (readOnly || !onValueCommit) return;
     const parsed = Number.parseFloat(rawValue);
     if (!Number.isFinite(parsed)) return;
-    onValueCommit(timeUnit === "s" ? parsed * 1000 : parsed);
+    onValueCommit(commitPhaseMs(parsed, timeUnit));
   };
 
   return (
@@ -63,9 +67,9 @@ const PhaseField = ({
           type="number"
           inputMode="decimal"
           min={0}
-          step={timeUnit === "s" ? 0.01 : 1}
-          defaultValue={formatTime(value, timeUnit)}
-          key={`${label}-${formatTime(value, timeUnit)}-${timeUnit}`}
+          step={timeUnit === "s" ? 0.1 : 1}
+          defaultValue={formatPhaseValue(value, timeUnit)}
+          key={`${label}-${formatPhaseValue(value, timeUnit)}-${timeUnit}`}
           disabled={disabled}
           readOnly={readOnly}
           aria-label={label}
