@@ -449,7 +449,7 @@ describe("SequencePropertiesPanel edits", () => {
 
     const accel = screen.getByRole("spinbutton", { name: "加速时间" });
 
-    fireEvent.change(accel, { target: { value: "500" } });
+    fireEvent.change(accel, { target: { value: "0.5" } });
 
     fireEvent.blur(accel);
 

@@ -63,6 +63,15 @@ describe("TrapezoidProfileEditor", () => {
     expect(onChange.mock.calls[0]![0].params).toEqual({ accelMs: 1500, decelMs: 1000 });
   });
 
+  it("edits seconds with a 0.1s step onto the 100ms grid", () => {
+    const { onChange } = renderEditor(profile10003000(), { timeUnit: "s" });
+    expect(screen.getByRole("spinbutton", { name: "加速时间" })).toHaveProperty("value", "1.0");
+    expect(screen.getByRole("spinbutton", { name: "匀速时间" })).toHaveProperty("value", "3.0");
+    changeSpinbutton("加速时间", "1.44");
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0]![0].params).toEqual({ accelMs: 1400, decelMs: 1000 });
+  });
+
   it("updates decelMs when deceleration time changes to 1500", () => {
     const { onChange } = renderEditor();
     changeSpinbutton("减速时间", "1500");

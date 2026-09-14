@@ -129,6 +129,25 @@ describe("compilePlcAction", () => {
     expect(byAxis[3]?.[0]?.position).toBe(2);
   });
 
+  it("rounds hold-row position to one decimal", () => {
+    const compiled = compilePlcAction(
+      sequenceOf([{
+        id: "only",
+        kind: "pose",
+        objectId: 7,
+        atMs: 4000,
+        pose: { v1: 42.16, v2: 1.24, v3: 2 },
+      }]),
+      threeAxisContext,
+    );
+    const byAxis = Object.fromEntries(
+      compiled.timelines.map((timeline) => [timeline.virtualAxisNo, timeline.segments[0]?.position]),
+    );
+    expect(byAxis[1]).toBe(42.2);
+    expect(byAxis[2]).toBe(1.2);
+    expect(byAxis[3]).toBe(2);
+  });
+
   it("compiles a command-only sequence with events and no timelines", () => {
     const compiled = compilePlcAction(
       sequenceOf([{

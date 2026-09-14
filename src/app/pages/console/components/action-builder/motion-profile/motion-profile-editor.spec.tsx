@@ -64,7 +64,7 @@ describe("MotionProfileEditor", () => {
     expect(screen.getAllByRole("combobox", { name: "曲线类型" })).toHaveLength(1);
   });
 
-  it("keeps compact ms fields without chart sliders", () => {
+  it("keeps compact second fields without chart sliders", () => {
     renderEditor({ compact: true });
 
     expect(screen.queryByRole("slider", { name: "加速结束" })).toBeNull();
@@ -93,7 +93,7 @@ describe("MotionProfileEditor", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "V2" }));
-    changeSpinbutton("加速时间", "1500");
+    changeSpinbutton("加速时间", "1.5");
 
     expect(onChange).toHaveBeenCalledTimes(1);
     const next = onChange.mock.calls[0]![0] as AxisMotionProfiles;
@@ -212,9 +212,28 @@ describe("MotionProfileEditor", () => {
     expect(screen.queryByRole("slider", { name: "加速结束" })).toBeNull();
     expect(screen.getByText("静止")).not.toBeNull();
     expect(screen.getByRole("spinbutton", { name: "加速时间" })).toHaveProperty("readOnly", true);
-    expect(screen.getByRole("spinbutton", { name: "加速时间" })).toHaveValue(0);
-    expect(screen.getByRole("spinbutton", { name: "减速时间" })).toHaveValue(0);
+    expect(screen.getByRole("spinbutton", { name: "加速时间" })).toHaveProperty("value", "0.0");
+    expect(screen.getByRole("spinbutton", { name: "减速时间" })).toHaveProperty("value", "0.0");
     expect(screen.queryByRole("status")).toBeNull();
     expect(screen.getByLabelText("峰值速度").textContent).toContain("0");
+  });
+
+  it("shows peak velocity and accel/decel coefficients with one decimal", () => {
+    renderEditor({
+      value: {
+        v1: { kind: "trapezoid", params: { accelMs: 200, decelMs: 200 } },
+        v2: { kind: "idle" },
+        v3: { kind: "idle" },
+      },
+      axisContext: axisContext({
+        enabledAxes: ["v1"],
+        travel: { v1: 33, v2: 0, v3: 0 },
+        durationMs: 1000,
+      }),
+    });
+
+    expect(screen.getByLabelText("峰值速度").textContent).toBe("41.3 mm/s");
+    expect(screen.getByLabelText("加速度").textContent).toBe("206.3 mm/s²");
+    expect(screen.getByLabelText("减速度").textContent).toBe("206.3 mm/s²");
   });
 });

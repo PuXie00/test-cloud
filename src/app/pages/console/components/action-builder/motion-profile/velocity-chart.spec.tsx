@@ -58,10 +58,8 @@ describe("VelocityChart", () => {
     expect(ticks.map((tick) => tick.getAttribute("data-tick"))).toEqual([
       "accel-end",
       "cruise-end",
-      "decel-end",
     ]);
-    expect(ticks.map((tick) => tick.textContent)).toEqual(["1.00", "4.00", "5.00"]);
-    expect((ticks.at(-1) as HTMLElement).style.left).toBe("99.2%");
+    expect(ticks.map((tick) => tick.textContent)).toEqual(["1.0", "4.0"]);
     expect(container.querySelector('[data-testid="axis-time-title"]')?.textContent).toBe("t/s");
   });
 
@@ -122,6 +120,7 @@ describe("VelocityChart", () => {
     const next = onProfileChange.mock.calls.at(-1)?.[0] as MotionProfile;
     if (next.kind !== "trapezoid") throw new Error("expected trapezoid");
     expect(next.params.accelMs).toBeGreaterThan(1000);
+    expect(next.params.accelMs % 100).toBe(0);
     expect(next.params.decelMs).toBe(1000);
   });
 
@@ -227,7 +226,7 @@ describe("VelocityChart", () => {
     expect(onProfileChange).toHaveBeenCalledTimes(1);
     const next = onProfileChange.mock.calls[0]![0] as MotionProfile;
     if (next.kind !== "trapezoid") throw new Error("expected trapezoid");
-    expect(next.params.accelMs).toBeCloseTo(1025, 0);
+    expect(next.params.accelMs).toBe(1100);
     expect(next.params.decelMs).toBe(1000);
   });
 
