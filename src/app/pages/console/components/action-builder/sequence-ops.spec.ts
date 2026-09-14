@@ -75,6 +75,18 @@ describe("sequence-ops", () => {
     expect(next.blocks.filter((block) => block.id === "preset-1")).toHaveLength(1);
   });
 
+  it("snaps moved atMs onto the 100ms grid", () => {
+    const sequence: ActionSequenceConfig = {
+      id: 1,
+      name: "Snap",
+      trajectoryMode: "non-forced",
+      blocks: [{ id: "pose-a", kind: "pose", objectId: 7, atMs: 1000, pose: origin }],
+      segments: [],
+    };
+    const next = moveTimelineBlock(sequence, "pose-a", 147);
+    expect(next.blocks.find((block) => block.id === "pose-a")).toMatchObject({ atMs: 100 });
+  });
+
   it("rejects a dynamic preset overlap for a participant", () => {
     const result = insertTimelineBlock(sequenceWithDynamicPreset, {
       id: "pose",
@@ -342,7 +354,7 @@ describe("sequence-ops", () => {
     expect(next).toBe(withPose);
   });
 
-  it("rejects insertTimelineBlock with atMs: -1 as invalid-time-range", () => {
+  it("snaps negative atMs to 0 on insert", () => {
     const empty: ActionSequenceConfig = {
       id: 1,
       name: "Seq",
@@ -350,15 +362,16 @@ describe("sequence-ops", () => {
       blocks: [],
       segments: [],
     };
-    expect(
-      insertTimelineBlock(empty, {
-        id: "pose",
-        kind: "pose",
-        objectId: 7,
-        atMs: -1,
-        pose: origin,
-      }),
-    ).toEqual({ ok: false, reason: "invalid-time-range" });
+    const result = insertTimelineBlock(empty, {
+      id: "pose",
+      kind: "pose",
+      objectId: 7,
+      atMs: -1,
+      pose: origin,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.sequence.blocks.find((block) => block.id === "pose")).toMatchObject({ atMs: 0 });
   });
 
   it("deleteTimelineBlocks returns a sequence when a preset id is unknown", () => {
