@@ -49,7 +49,7 @@ export const FaderSlot = ({
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       className={cn(
-        "flex h-[140px] w-full flex-col gap-1 rounded-sm border bg-card p-2 transition-colors",
+        "flex h-[132px] w-full flex-col gap-1 rounded-sm border bg-card p-2 transition-colors",
         slot.isRunning
           ? "border-show/60"
           : isEmpty
