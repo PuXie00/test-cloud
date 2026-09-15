@@ -1,3 +1,5 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MOTION_DEFAULTS } from "./configuration-rules";
 import type { ActionSequenceConfig } from "./action-sequence/types";
@@ -313,5 +315,28 @@ describe("virtual axis max velocity fields", () => {
   it("mock documents satisfy virtual-axis max fields", () => {
     expect(() => assertProjectDocumentStructure(GZ_2025_DOCUMENT)).not.toThrow();
     expect(() => assertProjectDocumentStructure(SH_BALLET_DOCUMENT)).not.toThrow();
+  });
+
+  it("in-repo Project json files omit positionCues and Cue program items", () => {
+    const projectRoot = join(process.cwd(), "Project");
+    const files = readdirSync(projectRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => join(projectRoot, entry.name, "project.json"))
+      .filter((file) => existsSync(file));
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) {
+      const document = JSON.parse(readFileSync(file, "utf8")) as {
+        motion?: {
+          positionCues?: unknown;
+          programs?: Array<{ chapters?: Array<{ items?: Array<{ kind?: string }> }> }>;
+        };
+      };
+      expect(document.motion, file).not.toHaveProperty("positionCues");
+      const items =
+        document.motion?.programs?.flatMap((program) =>
+          (program.chapters ?? []).flatMap((chapter) => chapter.items ?? []),
+        ) ?? [];
+      expect(items.every((item) => item.kind !== "cue"), file).toBe(true);
+    }
   });
 });

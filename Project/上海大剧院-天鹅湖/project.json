@@ -145,21 +145,6 @@
     "alignment": {}
   },
   "motion": {
-    "positionCues": [
-      {
-        "id": "cue-curtain",
-        "name": "幕启",
-        "durationMs": 8000,
-        "targets": {
-          "1": {
-            "v1": 0
-          },
-          "2": {
-            "v1": 2500
-          }
-        }
-      }
-    ],
     "actionSequences": [],
     "programs": [
       {
@@ -169,12 +154,7 @@
           {
             "id": "ch-1",
             "name": "第一幕",
-            "items": [
-              {
-                "kind": "cue",
-                "refId": "cue-curtain"
-              }
-            ]
+            "items": []
           }
         ]
       }
