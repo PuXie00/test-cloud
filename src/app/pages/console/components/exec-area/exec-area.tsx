@@ -71,6 +71,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
             durationMs: null,
             source: { kind: "fader", slotIndex },
             speedPercent: started.speedPercent,
+            sequenceId,
             sequenceHandle: started.sequenceHandle,
           });
         } finally {

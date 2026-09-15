@@ -225,6 +225,7 @@ export const ProgramPanel = () => {
         durationMs: null,
         source: { kind: "program" },
         speedPercent: started.speedPercent,
+        sequenceId: meta.refId,
         sequenceHandle: started.sequenceHandle,
       });
     })();

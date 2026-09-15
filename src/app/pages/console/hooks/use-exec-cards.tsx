@@ -21,7 +21,7 @@ export type ExecCardSource =
   | { kind: "manual" };
 
 export type ExecCardKind = "sequence";
-export type ExecCardStatus = "running" | "paused" | "completed" | "error";
+export type ExecCardStatus = "running" | "paused" | "stopped" | "completed" | "error";
 
 export type ExecCard = {
   id: string;
@@ -34,6 +34,7 @@ export type ExecCard = {
   status: ExecCardStatus;
   startedAt: number;
   emergencyStopped: boolean;
+  sequenceId?: number;
   sequenceHandle?: SequenceRuntimeHandle;
 };
 
@@ -45,11 +46,13 @@ type ExecCardsContextValue = {
     durationMs: number | null;
     source: ExecCardSource;
     speedPercent?: number;
+    sequenceId?: number;
     sequenceHandle?: SequenceRuntimeHandle;
   }) => string;
   pause: (id: string) => void;
   resume: (id: string) => void;
   stop: (id: string) => void;
+  restart: (id: string) => void;
   skipNext: (id: string) => void;
   setSpeed: (id: string, percent: number) => void;
   emergencyStopAll: () => void;
@@ -152,7 +155,7 @@ export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
   }, [cards]);
 
   const launch = useCallback<ExecCardsContextValue["launch"]>(
-    ({ kind, name, durationMs, source, speedPercent = 100, sequenceHandle }) => {
+    ({ kind, name, durationMs, source, speedPercent = 100, sequenceId, sequenceHandle }) => {
       const id = `card-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
       setCards((current) => [
         {
@@ -166,6 +169,7 @@ export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
           status: "running",
           startedAt: Date.now(),
           emergencyStopped: false,
+          ...(sequenceId !== undefined ? { sequenceId } : {}),
           ...(sequenceHandle ? { sequenceHandle } : {}),
         },
         ...current,
@@ -183,34 +187,27 @@ export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
 
   const resume = useCallback((id: string) => {
     setCards((current) =>
-      current.map((card) => (card.id === id && card.status === "paused" ? { ...card, status: "running" } : card)),
+      current.map((card) =>
+        card.id === id && (card.status === "paused" || card.status === "stopped")
+          ? { ...card, status: "running" as const }
+          : card,
+      ),
     );
   }, []);
 
   const stop = useCallback((id: string) => {
-    const card = cardsRef.current.find((entry) => entry.id === id);
-    setCards((current) => current.filter((entry) => entry.id !== id));
-    if (!card?.sequenceHandle) return;
-    void stopSequence(card.sequenceHandle, getSequenceTransport()).catch(() => undefined);
-  }, []);
-
-  const skipNext = useCallback((id: string) => {
-    const card = cardsRef.current.find((entry) => entry.id === id);
-    if (card?.sequenceHandle) {
-      void stopSequence(card.sequenceHandle, getSequenceTransport()).catch(() => undefined);
-    }
     setCards((current) =>
-      current.map((entry) =>
-        entry.id === id
-          ? {
-              ...entry,
-              elapsedMs: entry.durationMs ?? entry.elapsedMs,
-              status: "completed",
-            }
-          : entry,
-      ),
+      current.map((card) => (card.id === id ? { ...card, status: "stopped" as const } : card)),
     );
   }, []);
+
+  const restart = useCallback((id: string) => {
+    setCards((current) =>
+      current.map((card) => (card.id === id ? { ...card, status: "running" as const } : card)),
+    );
+  }, []);
+
+  const skipNext = useCallback(() => {}, []);
 
   const setSpeed = useCallback((id: string, percent: number) => {
     setCards((current) =>
@@ -236,8 +233,8 @@ export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
   }, []);
 
   const value = useMemo(
-    () => ({ cards, launch, pause, resume, stop, skipNext, setSpeed, emergencyStopAll, close }),
-    [cards, launch, pause, resume, stop, skipNext, setSpeed, emergencyStopAll, close],
+    () => ({ cards, launch, pause, resume, stop, restart, skipNext, setSpeed, emergencyStopAll, close }),
+    [cards, launch, pause, resume, stop, restart, skipNext, setSpeed, emergencyStopAll, close],
   );
 
   return <ExecCardsContext.Provider value={value}>{children}</ExecCardsContext.Provider>;

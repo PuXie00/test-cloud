@@ -875,13 +875,13 @@ describe("execution cards", () => {
     expect(sequence?.elapsedMs).toBe(authoredSequenceMs + 500);
   });
 
-  it("skipNext stops the sequence handle when present then marks the card completed", async () => {
+  it("stop keeps the card locally and skipNext does not call PLC", async () => {
     const { ExecCardsProvider, useExecCards: useRealExecCards } = await vi.importActual<
       typeof import("../../hooks/use-exec-cards")
     >("../../hooks/use-exec-cards");
 
     const Probe = () => {
-      const { launch, skipNext, cards } = useRealExecCards();
+      const { launch, stop, skipNext, restart, cards } = useRealExecCards();
       return (
         <div>
           <button
@@ -892,16 +892,26 @@ describe("execution cards", () => {
                 name: "正常序列",
                 durationMs: null,
                 source: { kind: "program" },
-                sequenceHandle: { actionNo: 9, syncGroupId: 3 },
+                sequenceId: 15,
+                sequenceHandle: { actionId: 9, syncGroupId: 3 },
               })
             }
           >
             launch-seq
           </button>
           {cards.map((card) => (
-            <button key={card.id} type="button" onClick={() => skipNext(card.id)}>
-              skip-{card.status}
-            </button>
+            <div key={card.id}>
+              <span>{card.status}</span>
+              <button type="button" onClick={() => stop(card.id)}>
+                stop
+              </button>
+              <button type="button" onClick={() => skipNext(card.id)}>
+                skip
+              </button>
+              <button type="button" onClick={() => restart(card.id)}>
+                restart
+              </button>
+            </div>
           ))}
         </div>
       );
@@ -913,12 +923,14 @@ describe("execution cards", () => {
       </ExecCardsProvider>,
     );
     fireEvent.click(screen.getByRole("button", { name: "launch-seq" }));
-    fireEvent.click(screen.getByRole("button", { name: "skip-running" }));
-    expect(stopSequenceMock).toHaveBeenCalledTimes(1);
-    expect(stopSequenceMock).toHaveBeenCalledWith(
-      { actionNo: 9, syncGroupId: 3 },
-      localSequenceTransport,
-    );
-    expect(screen.getByRole("button", { name: "skip-completed" })).not.toBeNull();
+    expect(screen.getByText("running")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "skip" }));
+    expect(stopSequenceMock).not.toHaveBeenCalled();
+    expect(screen.getByText("running")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "stop" }));
+    expect(stopSequenceMock).not.toHaveBeenCalled();
+    expect(screen.getByText("stopped")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "restart" }));
+    expect(screen.getByText("running")).toBeTruthy();
   });
 });

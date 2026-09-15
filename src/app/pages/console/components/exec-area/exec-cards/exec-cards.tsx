@@ -1,9 +1,16 @@
 import { useExecCards } from "../../../hooks/use-exec-cards";
+import { useProgram } from "../../../hooks/use-program";
+import { hasNextChapterSequence } from "../../../hooks/sequence-run-status";
 import { ExecCardView } from "./exec-card";
 import { ExecEmptyState } from "./exec-empty-state";
 
 export const ExecCards = () => {
-  const { cards, resume, stop, skipNext, setSpeed, close } = useExecCards();
+  const { cards, resume, stop, skipNext, setSpeed, close, restart } = useExecCards();
+  const { program, currentChapterId } = useProgram();
+  const chapterItems =
+    program.chapters.find((chapter) => chapter.id === currentChapterId)?.items ??
+    program.chapters[0]?.items ??
+    [];
 
   if (cards.length === 0) {
     return <ExecEmptyState />;
@@ -15,10 +22,13 @@ export const ExecCards = () => {
         <ExecCardView
           key={card.id}
           card={card}
-          hasNextSequence={false}
-          onResume={() => resume(card.id)}
+          hasNextSequence={
+            card.sequenceId !== undefined &&
+            hasNextChapterSequence(chapterItems, card.sequenceId)
+          }
           onStop={() => stop(card.id)}
-          onRestart={() => undefined}
+          onResume={() => resume(card.id)}
+          onRestart={() => restart(card.id)}
           onSkipNext={() => skipNext(card.id)}
           onSetSpeed={(percent) => setSpeed(card.id, percent)}
           onClose={() => close(card.id)}
