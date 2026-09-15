@@ -1,4 +1,5 @@
 import { createContext, useContext } from "react";
+import type { ModelPose } from "@/app/project/action-sequence/types";
 import type { ChapterItem, Program } from "../components/program-panel/program-data";
 
 export type PageItems = {
@@ -25,6 +26,10 @@ export type ProgramContextValue = {
     toIndex: number,
   ) => void;
   addSequence: (chapterId: string) => void;
+  addCapturedPoseSequence: (args: {
+    objectIds: readonly number[];
+    poseForObject: (objectId: number) => ModelPose | null;
+  }) => void;
   removeItem: (chapterId: string, index: number) => void;
   /** 工程尚无节目/章节，控制界面应显示编排指引 */
   isProgramEmpty: boolean;

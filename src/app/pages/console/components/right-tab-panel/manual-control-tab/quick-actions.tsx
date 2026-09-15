@@ -1,22 +1,26 @@
-import { Save, Sliders } from "lucide-react";
+import { Save } from "lucide-react";
 
-export const QuickActions = () => {return (
+type QuickActionsProps = {
+  canSave: boolean;
+  onSave: () => void;
+};
+
+export const QuickActions = ({ canSave, onSave }: QuickActionsProps) => (
   <div className="space-y-2 px-3 py-3">
-    <div className=" rounded-md overflow-hidden">
-        <div className="px-3 h-9 flex items-center bg-muted">
-          快捷操作
-        </div>
-        <div className="bg-background p-3 ">
-          <div className="flex gap-1">
-            <button
-              type="button"
-              className="inline-flex h-10 flex-1 items-center justify-center gap-1 rounded-sm text-background bg-foreground hover:bg-foreground/80"
-            >
-              <Save className="h-4 w-4" /> 保存为 Cue
-            </button>
-          </div>
+    <div className="overflow-hidden rounded-md">
+      <div className="flex h-9 items-center bg-muted px-3">快捷操作</div>
+      <div className="bg-background p-3">
+        <div className="flex gap-1">
+          <button
+            type="button"
+            disabled={!canSave}
+            onClick={onSave}
+            className="inline-flex h-10 flex-1 items-center justify-center gap-1 rounded-sm bg-foreground text-background hover:bg-foreground/80 disabled:pointer-events-none disabled:opacity-40"
+          >
+            <Save className="h-4 w-4" /> 保存当前位姿
+          </button>
         </div>
       </div>
     </div>
-  );
-};
+  </div>
+);

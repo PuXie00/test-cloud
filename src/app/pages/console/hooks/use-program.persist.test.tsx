@@ -72,4 +72,66 @@ describe("ProgramProvider document persist", () => {
     expect(result.current.program.pageItems.sequences).toHaveLength(1);
     expect(result.current.program).not.toHaveProperty("addCue");
   });
+
+  it("addCapturedPoseSequence appends a t=0 pose sequence to the current chapter", async () => {
+    const { result } = renderHook(
+      () => ({ program: useProgram(), project: useProject() }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.project.loading).toBe(false));
+    await act(async () => {
+      await result.current.project.openProject(GZ_2025_RECORD.folderName);
+    });
+    await waitFor(() => {
+      expect(result.current.project.currentProject?.document).toBeTruthy();
+    });
+    if (!result.current.program.program.chapters[0]?.id) {
+      act(() => result.current.program.addChapter());
+    }
+    const seqBefore =
+      result.current.project.currentProject!.document!.motion.actionSequences.length;
+    const itemsBefore = result.current.program.program.chapters[0]!.items.length;
+    act(() => {
+      result.current.program.addCapturedPoseSequence({
+        objectIds: [result.current.project.currentProject!.document!.setup.controlledObjects[0]!.id],
+        poseForObject: () => ({ v1: 42, v2: 0, v3: 0 }),
+      });
+    });
+    const sequences = result.current.project.currentProject!.document!.motion.actionSequences;
+    expect(sequences).toHaveLength(seqBefore + 1);
+    const created = sequences[sequences.length - 1]!;
+    expect(created.name).toBe("新建动作序列");
+    expect(created.blocks).toEqual([
+      expect.objectContaining({ kind: "pose", atMs: 0, pose: { v1: 42, v2: 0, v3: 0 } }),
+    ]);
+    expect(result.current.program.program.chapters[0]!.items).toHaveLength(itemsBefore + 1);
+  });
+
+  it("addCapturedPoseSequence writes nothing when every pose is missing", async () => {
+    const { result } = renderHook(
+      () => ({ program: useProgram(), project: useProject() }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.project.loading).toBe(false));
+    await act(async () => {
+      await result.current.project.openProject(GZ_2025_RECORD.folderName);
+    });
+    await waitFor(() => {
+      expect(result.current.project.currentProject?.document).toBeTruthy();
+    });
+    if (!result.current.program.program.chapters[0]?.id) {
+      act(() => result.current.program.addChapter());
+    }
+    const seqBefore =
+      result.current.project.currentProject!.document!.motion.actionSequences.length;
+    act(() => {
+      result.current.program.addCapturedPoseSequence({
+        objectIds: [1],
+        poseForObject: () => null,
+      });
+    });
+    expect(result.current.project.currentProject!.document!.motion.actionSequences).toHaveLength(
+      seqBefore,
+    );
+  });
 });

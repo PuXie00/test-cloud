@@ -2,6 +2,7 @@ import { sendEnableModel, sendHomeModel, sendResetModel } from "../../../hooks/m
 import { useSelection } from "../../../hooks/use-selection";
 import { useControlledObjects } from "../../../hooks/use-controlled-objects";
 import { useCoupleFlow } from "../../../hooks/use-couple-flow";
+import { useProgram } from "../../../hooks/use-program";
 import { StatusControlBar } from "./status-control-bar";
 import { CouplePreviewDialog } from "./couple-preview-dialog";
 import { JogControl } from "./jog-control";
@@ -30,6 +31,19 @@ export const ManualControlTab = () => {
     return snapshot ? [snapshot] : [];
   });
   const couple = useCoupleFlow(selectedIds);
+  const { addCapturedPoseSequence, currentChapterId, isProgramEmpty } = useProgram();
+  const canSave = !isProgramEmpty && Boolean(currentChapterId) && selectedIds.length > 0;
+
+  const handleSaveCurrentPose = () => {
+    addCapturedPoseSequence({
+      objectIds: selectedIds,
+      poseForObject: (objectId) => {
+        const snapshot = getById(objectId);
+        if (!snapshot) return null;
+        return { v1: snapshot.values.v1 ?? 0, v2: 0, v3: 0 };
+      },
+    });
+  };
 
   if (snapshots.length === 0) {
     return (
@@ -93,7 +107,7 @@ export const ManualControlTab = () => {
       />
       <JogControl dimensions={dimensions} />
       <DimensionControl dimensions={dimensions} />
-      <QuickActions />
+      <QuickActions canSave={canSave} onSave={handleSaveCurrentPose} />
       <AlertDialog open={couple.phase === "solving"}>
         <AlertDialogContent className="bg-card">
           <AlertDialogHeader>
