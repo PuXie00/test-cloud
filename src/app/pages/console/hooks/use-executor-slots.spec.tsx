@@ -93,4 +93,27 @@ describe("ExecutorSlotsProvider", () => {
     expect(result.current.faderSlots[0]?.phase).toBe("idle");
     expect(result.current.faderSlots[1]?.phase).toBe("ready");
   });
+
+  it("always exposes eight F1–F8 slots", () => {
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(
+        ExecutorSlotsProvider,
+        { pageItems: pageItemsFor([15]), sequenceFingerprints: { 15: "fp-15" } },
+        children,
+      );
+    const { result } = renderHook(() => useExecutorSlots(), { wrapper });
+    expect(result.current.faderSlots).toHaveLength(8);
+    expect(result.current.faderSlots.map((slot) => slot.label)).toEqual([
+      "F1",
+      "F2",
+      "F3",
+      "F4",
+      "F5",
+      "F6",
+      "F7",
+      "F8",
+    ]);
+    expect(result.current.faderSlots[0]?.sequence?.id).toBe(15);
+    expect(result.current.faderSlots[1]?.sequence).toBeNull();
+  });
 });

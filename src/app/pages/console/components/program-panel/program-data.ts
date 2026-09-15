@@ -1,4 +1,4 @@
-export const PROGRAM_SLOTS_PER_PAGE = 16;
+export const PROGRAM_SLOTS_PER_PAGE = 8;
 
 export type ActionSequence = {
   id: number;
