@@ -3,7 +3,7 @@ import { poseFromControlSnapshot } from "./pose-from-control-snapshot";
 
 describe("poseFromControlSnapshot", () => {
   it("maps live height from positions.h, ignoring monitor dim values", () => {
-    const snapshot = { values: { height: 1234 }, positions: { h: 42 } };
+    const snapshot = { values: { height: 1234 }, positions: { h: 42, p: 9, y: 8 } };
     expect(poseFromControlSnapshot(snapshot)).toEqual({ v1: 42, v2: 0, v3: 0 });
   });
 
