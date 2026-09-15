@@ -282,7 +282,6 @@ import { ExecArea } from "./exec-area";
 import { ContentLibraryPanel } from "../action-builder/content-library/content-library-panel";
 import { ProgramPanel as ConsoleProgramPanel } from "../program-panel/program-panel";
 import { ProgramPanel as ActionBuilderProgramPanel } from "../action-builder/right-panel/program-panel";
-import { ExecCardView } from "./exec-cards/exec-card";
 import { ExecEmptyState } from "./exec-cards/exec-empty-state";
 import { advanceRunningCards, type ExecCard } from "../../hooks/use-exec-cards";
 
@@ -839,15 +838,6 @@ describe("warning UI accessibility", () => {
   });
 });
 
-const noopCardHandlers = {
-  onPause: vi.fn(),
-  onResume: vi.fn(),
-  onStop: vi.fn(),
-  onSkipNext: vi.fn(),
-  onSetSpeed: vi.fn(),
-  onClose: vi.fn(),
-};
-
 const runningCard = (overrides: Partial<ExecCard>): ExecCard => ({
   id: "card",
   kind: "sequence",
@@ -883,42 +873,6 @@ describe("execution cards", () => {
     const sequence = next!.find((card) => card.kind === "sequence");
     expect(sequence?.status).toBe("running");
     expect(sequence?.elapsedMs).toBe(authoredSequenceMs + 500);
-  });
-
-  it("renders elapsed wall time and C++ 运行中 without percentage for sequence cards", () => {
-    render(
-      <ExecCardView
-        card={runningCard({
-          id: "seq-card",
-          kind: "sequence",
-          name: "正常序列",
-          durationMs: null,
-          elapsedMs: 1500,
-        })}
-        {...noopCardHandlers}
-      />,
-    );
-    expect(screen.getByText("C++ 运行中")).toBeTruthy();
-    expect(screen.getByText("00:01.5")).toBeTruthy();
-    expect(screen.queryByText(/剩 /)).toBeNull();
-  });
-
-  it("does not show C++ 运行中 for a skipped or completed null-duration card", () => {
-    render(
-      <ExecCardView
-        card={runningCard({
-          id: "seq-card",
-          kind: "sequence",
-          name: "正常序列",
-          durationMs: null,
-          elapsedMs: 1500,
-          status: "completed",
-        })}
-        {...noopCardHandlers}
-      />,
-    );
-    expect(screen.queryByText("C++ 运行中")).toBeNull();
-    expect(screen.getByText("00:01.5")).toBeTruthy();
   });
 
   it("skipNext stops the sequence handle when present then marks the card completed", async () => {

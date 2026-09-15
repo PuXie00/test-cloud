@@ -1,22 +1,17 @@
-import { MoreVertical, Pause, Play, SkipForward, Square, Minus, Plus, X } from "lucide-react";
+import { MoreVertical, Play, SkipForward, Square, Minus, Plus, X, RotateCcw } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
 import type { ExecCard, ExecCardSource } from "../../../hooks/use-exec-cards";
+import { EXAMPLE_SEQUENCE_RUNTIME, formatExecTime } from "../../../hooks/sequence-run-status";
 
 type ExecCardProps = {
   card: ExecCard;
-  onPause: () => void;
-  onResume: () => void;
+  hasNextSequence: boolean;
   onStop: () => void;
+  onResume: () => void;
+  onRestart: () => void;
   onSkipNext: () => void;
   onSetSpeed: (percent: number) => void;
   onClose: () => void;
-};
-
-const formatTime = (ms: number) => {
-  const totalSeconds = ms / 1000;
-  const m = Math.floor(totalSeconds / 60).toString().padStart(2, "0");
-  const s = (totalSeconds % 60).toFixed(1).padStart(4, "0");
-  return `${m}:${s}`;
 };
 
 const sourceLabel = (source: ExecCardSource) => {
@@ -37,21 +32,19 @@ const actionBtnClass =
 
 export const ExecCardView = ({
   card,
-  onPause,
-  onResume,
+  hasNextSequence,
   onStop,
+  onResume,
+  onRestart,
   onSkipNext,
   onSetSpeed,
   onClose,
 }: ExecCardProps) => {
-  const durationMs = card.durationMs;
-  const isExternallyTimed = durationMs === null;
-  const progressPercent = isExternallyTimed
-    ? null
-    : Math.min(100, (card.elapsedMs / durationMs) * 100);
-  const isPaused = card.status === "paused";
+  const fixture = EXAMPLE_SEQUENCE_RUNTIME[0]!;
+  const isStopped = card.status === "stopped" || card.status === "paused";
   const isCompleted = card.status === "completed";
   const isError = card.status === "error" || card.emergencyStopped;
+  const skipDisabled = !isStopped || !hasNextSequence || isError;
   const maxSpeed = 200;
 
   return (
@@ -85,32 +78,16 @@ export const ExecCardView = ({
         </button>
       </div>
 
-      <div className="space-y-0.5">
-        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-          {progressPercent !== null ? (
-            <div
-              className={cn(
-                "h-full rounded-full transition-[width]",
-                isError ? "bg-destructive" : "bg-show",
-              )}
-              style={{ width: `${progressPercent}%` }}
-            />
-          ) : null}
+      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+        <div>
+          <div className="text-label-caps text-muted-foreground">运行时间</div>
+          <div className="font-mono text-mono-sm tabular-nums text-foreground">
+            {formatExecTime(fixture.elapsedMs)} / {formatExecTime(fixture.totalMs)}
+          </div>
         </div>
-        <div className="flex items-center justify-between font-mono text-mono-sm tabular-nums text-muted-foreground">
-          {durationMs === null ? (
-            <>
-              <span>{formatTime(card.elapsedMs)}</span>
-              {card.status === "running" ? <span>C++ 运行中</span> : null}
-            </>
-          ) : (
-            <>
-              <span>
-                {formatTime(card.elapsedMs)} / {formatTime(durationMs)}
-              </span>
-              <span>剩 {formatTime(Math.max(0, durationMs - card.elapsedMs))}</span>
-            </>
-          )}
+        <div>
+          <div className="text-label-caps text-muted-foreground">循环次数</div>
+          <div className="font-mono text-mono-sm tabular-nums text-foreground">{fixture.loopCount}</div>
         </div>
       </div>
 
@@ -157,30 +134,6 @@ export const ExecCardView = ({
           >
             <X className="h-3.5 w-3.5" /> 确认清除
           </button>
-        ) : isPaused ? (
-          <>
-            <button
-              type="button"
-              onClick={onResume}
-              className={cn(actionBtnClass, "bg-primary text-primary-foreground hover:bg-primary/90")}
-            >
-              <Play className="h-3.5 w-3.5 fill-current" /> 继续
-            </button>
-            <button
-              type="button"
-              onClick={onStop}
-              className={cn(actionBtnClass, "bg-muted/50 text-foreground hover:bg-muted")}
-            >
-              <Square className="h-3.5 w-3.5" /> 停止
-            </button>
-            <button
-              type="button"
-              onClick={onSkipNext}
-              className={cn(actionBtnClass, "bg-muted/50 text-foreground hover:bg-muted")}
-            >
-              <SkipForward className="h-3.5 w-3.5" /> 跳过
-            </button>
-          </>
         ) : isCompleted ? (
           <button
             type="button"
@@ -193,24 +146,38 @@ export const ExecCardView = ({
           <>
             <button
               type="button"
-              onClick={onPause}
-              className={cn(actionBtnClass, "bg-muted/50 text-foreground hover:bg-muted")}
+              aria-label="重新"
+              disabled={!isStopped}
+              onClick={onRestart}
+              className={cn(actionBtnClass, "bg-muted/50 text-foreground hover:bg-muted disabled:opacity-40")}
             >
-              <Pause className="h-3.5 w-3.5" /> 暂停
+              <RotateCcw className="h-3.5 w-3.5" /> 重新
             </button>
+            {isStopped ? (
+              <button
+                type="button"
+                onClick={onResume}
+                className={cn(actionBtnClass, "bg-primary text-primary-foreground hover:bg-primary/90")}
+              >
+                <Play className="h-3.5 w-3.5 fill-current" /> 继续
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onStop}
+                className={cn(actionBtnClass, "bg-muted/50 text-foreground hover:bg-muted")}
+              >
+                <Square className="h-3.5 w-3.5" /> 停止
+              </button>
+            )}
             <button
               type="button"
-              onClick={onStop}
-              className={cn(actionBtnClass, "bg-muted/50 text-foreground hover:bg-muted")}
-            >
-              <Square className="h-3.5 w-3.5" /> 停止
-            </button>
-            <button
-              type="button"
+              aria-label="跳过"
+              disabled={skipDisabled}
               onClick={onSkipNext}
-              className={cn(actionBtnClass, "bg-muted/50 text-foreground hover:bg-muted")}
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-muted/50 text-foreground hover:bg-muted disabled:opacity-40"
             >
-              <SkipForward className="h-3.5 w-3.5" /> 跳过
+              <SkipForward className="h-3.5 w-3.5" aria-hidden />
             </button>
           </>
         )}

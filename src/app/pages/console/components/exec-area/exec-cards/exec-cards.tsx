@@ -3,7 +3,7 @@ import { ExecCardView } from "./exec-card";
 import { ExecEmptyState } from "./exec-empty-state";
 
 export const ExecCards = () => {
-  const { cards, pause, resume, stop, skipNext, setSpeed, close } = useExecCards();
+  const { cards, resume, stop, skipNext, setSpeed, close } = useExecCards();
 
   if (cards.length === 0) {
     return <ExecEmptyState />;
@@ -15,9 +15,10 @@ export const ExecCards = () => {
         <ExecCardView
           key={card.id}
           card={card}
-          onPause={() => pause(card.id)}
+          hasNextSequence={false}
           onResume={() => resume(card.id)}
           onStop={() => stop(card.id)}
+          onRestart={() => undefined}
           onSkipNext={() => skipNext(card.id)}
           onSetSpeed={(percent) => setSpeed(card.id, percent)}
           onClose={() => close(card.id)}
