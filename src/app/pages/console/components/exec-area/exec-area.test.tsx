@@ -102,10 +102,6 @@ const {
   },
   actionBuilderState: {
     current: {
-      cues: [
-        { id: "cue-empty", name: "空 Cue", targets: {} },
-        { id: "cue-ok", name: "正常 Cue", targets: { "co-1": { v1: 0 } } },
-      ],
       sequences: [
         {
           id: 14,
@@ -138,21 +134,14 @@ const {
           id: string;
           name: string;
           type: "chapter";
-          children: Array<{ id: string; name: string; type: "cue" | "sequence" }>;
+          children: Array<{ id: string; name: string; type: "sequence" }>;
         }>;
       }>,
-      dockMode: "cue" as const,
-      selectedCueId: null as string | null,
+      dockMode: "sequence" as const,
       selectedSequenceId: null as number | null,
-      combineFromCueId: null as string | null,
       selectedObjectIds: [] as string[],
       getTimelineObject: () => null,
-      handleCueSelect: vi.fn(),
       handleSequenceSelect: vi.fn(),
-      handleCuePreview: vi.fn(),
-      handleCombineStart: vi.fn(),
-      handleGenerateTransition: vi.fn(),
-      handleCreateCue: vi.fn(),
       handleCreateSequence: vi.fn(),
       handleProgramItemInsert: vi.fn(),
       handleChapterAdd: vi.fn(),
@@ -462,8 +451,8 @@ describe("project-motion-readiness (pure)", () => {
     expect(getMotionItemRepairIssue(document, "sequence", 15)).toBeNull();
     expect(getMotionItemRepairIssue(document, "sequence", 16)).toBeNull();
 
-    const cueAsSequence = getMotionItemRepairIssue(document, "sequence", "cue-empty");
-    expect(cueAsSequence).not.toBeNull();
+    const missingSequence = getMotionItemRepairIssue(document, "sequence", 999);
+    expect(missingSequence).not.toBeNull();
   });
 
   it("reports programs that reference empty or missing motion items (fail closed)", () => {
@@ -844,9 +833,9 @@ describe("warning UI accessibility", () => {
   it("marks ContentLibrary empty rows with accessible warning", () => {
     render(withMode(<ContentLibraryPanel />));
     expect(screen.getAllByText("待修复").length).toBeGreaterThan(0);
-    const emptyCueRow = screen.getByRole("button", { name: "空 Cue，待修复" });
-    expect(emptyCueRow.getAttribute("aria-label")).toMatch(/待修复/);
-    expect(within(emptyCueRow).getByText("待修复").className).toMatch(/text-warning/);
+    const emptySequenceRow = screen.getByRole("button", { name: "空序列，待修复" });
+    expect(emptySequenceRow.getAttribute("aria-label")).toMatch(/待修复/);
+    expect(within(emptySequenceRow).getByText("待修复").className).toMatch(/text-warning/);
   });
 });
 

@@ -16,7 +16,7 @@ import { resolveVirtualAxisLabelValues } from "./virtual-axis-label-values";
 export const Viz3DVirtualAxisLabelSync = () => {
   const engine = useViz3DContext();
   const { activeNav } = useConsoleNav();
-  const { dockMode, sequence, cues, selectedCueId, transitionDraft } = useActionBuilder();
+  const { dockMode, sequence } = useActionBuilder();
   const { snapshots } = useControlledObjects();
   const { objects } = useProjectStore();
   const display = useSessionDisplayLengthUnit();
@@ -29,13 +29,10 @@ export const Viz3DVirtualAxisLabelSync = () => {
         activeNav,
         dockMode,
         sequence,
-        cues,
-        selectedCueId,
-        transitionDraft,
         allObjectIds: objects.map((object) => object.id),
         pickedObjectIds: [],
       }),
-    [activeNav, dockMode, sequence, cues, selectedCueId, transitionDraft, objects],
+    [activeNav, dockMode, sequence, objects],
   );
 
   useEffect(() => {

@@ -16,8 +16,6 @@ import {
 import { pickNiceMajorStepSec } from "../timeline/timeline-ticks";
 import { TimelineEditor } from "../timeline/timeline-editor";
 import { TimelineToolbar } from "../timeline/timeline-toolbar";
-import { CuePoseEditor } from "./cue-pose-editor";
-import { TransitionComposer } from "./transition-composer";
 
 const isEditableTarget = (target: EventTarget | null): boolean => {
   if (!(target instanceof HTMLElement)) return false;
@@ -51,7 +49,6 @@ const SequenceEditor = () => {
     handleBlockDelete,
     handleBlockCopy,
     handleBlockPaste,
-    handleCueDropOnTrack,
     handleTimelinePxPerSecondChange,
     handleTimelineZoomIn,
     handleTimelineZoomOut,
@@ -156,7 +153,6 @@ const SequenceEditor = () => {
           onBlocksShiftEnd={handleShiftTimelineBlocksEnd}
           onDynamicPresetResize={handleResizeDynamicPreset}
           onTimelinePxPerSecondChange={handleTimelinePxPerSecondChange}
-          onCueDrop={handleCueDropOnTrack}
           invalidTargets={invalidTargets}
         />
       </div>
@@ -165,8 +161,7 @@ const SequenceEditor = () => {
 };
 
 /**
- * 编辑坞：随内容库选中项变形 —
- * Cue → 姿态编辑器；动作 → 时间轴；双 Cue 组合 → 过渡组合器。
+ * 编辑坞：随内容库选中项变形 — 动作 → 时间轴。
  */
 export const EditorDock = ({ className }: { className?: string }) => {
   const { dockMode } = useActionBuilder();
@@ -178,13 +173,11 @@ export const EditorDock = ({ className }: { className?: string }) => {
         className,
       )}
     >
-      {dockMode === "transition" && <TransitionComposer />}
-      {dockMode === "cue" && <CuePoseEditor />}
       {dockMode === "sequence" && <SequenceEditor />}
       {dockMode === "empty" && (
         <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-body-sm text-muted-foreground">
           <MousePointerClick className="h-4 w-4" aria-hidden />
-          在左侧内容库选择 Cue 或动作进行编辑
+          在左侧内容库选择动作进行编辑
         </div>
       )}
     </div>

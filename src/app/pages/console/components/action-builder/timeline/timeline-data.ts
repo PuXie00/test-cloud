@@ -1,7 +1,6 @@
 import type {
   ControlType,
   VirtualAxisId,
-  VirtualAxisValues,
 } from "@/app/project/project-document-types";
 
 export const VIRTUAL_AXIS_IDS: VirtualAxisId[] = ["v1", "v2", "v3"];
@@ -26,31 +25,10 @@ export type ControlledObject = {
   controlType?: ControlType;
 };
 
-/**
- * 姿态 Cue：只保存各物体的目标值，不保存执行时间 —
- * 到达时间取决于起始位置，由当前场景位置实时估算。
- */
-export type CueItem = {
-  id: string;
-  name: string;
-  /** 物体 → 各虚拟轴目标值（v1 升降/旋转 / v2 摆动X / v3 摆动Y或偏转） */
-  targets: Record<string, VirtualAxisValues>;
-  note?: string;
-};
-
-export const cueObjectIds = (cue: CueItem): string[] => Object.keys(cue.targets);
-
-/** 两个 Cue 所存物体集合是否一致（组合过渡的前提） */
-export const cueObjectSetsMatch = (a: CueItem, b: CueItem): boolean => {
-  const idsA = cueObjectIds(a);
-  const idsB = new Set(cueObjectIds(b));
-  return idsA.length === idsB.size && idsA.every((id) => idsB.has(id));
-};
-
 export type ProgramNode = {
   id: string;
   name: string;
-  type?: "program" | "chapter" | "cue" | "sequence";
+  type?: "program" | "chapter" | "sequence";
   children?: ProgramNode[];
 };
 

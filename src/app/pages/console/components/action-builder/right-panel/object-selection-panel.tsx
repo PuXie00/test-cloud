@@ -1,7 +1,7 @@
 import { Circle, Power, Spline, Waves, Wind } from "lucide-react";
 import { SectionHeader } from "@/app/components/ics/section-header";
 import type { StaticPresetParams } from "../action-builder-context-types";
-import { idsNotInCue, type ObjectSelectionMode } from "./object-selection-mode";
+import type { ObjectSelectionMode } from "./object-selection-mode";
 
 const STATIC_PRESETS = [
   { id: "static-flat", label: "平面", icon: Circle },
@@ -20,15 +20,12 @@ const DEFAULT_STATIC_PRESET_PARAMS: StaticPresetParams = { amplitude: 100, phase
 type ObjectSelectionPanelProps = {
   mode: ObjectSelectionMode;
   selectedObjectIds: number[];
-  cueObjectIds?: readonly number[];
   sequenceMissing?: boolean;
   onCreatePose: (objectIds: number[]) => void;
   onCreateSetEnabled: (objectIds: number[], enabled: boolean) => void;
-  onCreateCue: (objectIds: number[]) => void;
   onCreateSequence: (objectIds: number[]) => void;
   onApplyStaticPreset: (presetId: string, objectIds: number[], params: StaticPresetParams) => void;
   onApplyDynamicPreset: (presetId: string, objectIds: number[]) => void;
-  onAddToCurrentCue?: (objectIds: number[]) => void;
 };
 
 const actionButtonClass =
@@ -37,19 +34,14 @@ const actionButtonClass =
 export const ObjectSelectionPanel = ({
   mode,
   selectedObjectIds,
-  cueObjectIds = [],
   sequenceMissing = false,
   onCreatePose,
   onCreateSetEnabled,
-  onCreateCue,
   onCreateSequence,
   onApplyStaticPreset,
   onApplyDynamicPreset,
-  onAddToCurrentCue,
 }: ObjectSelectionPanelProps) => {
   const isMulti = selectedObjectIds.length > 1;
-  const addableObjectIds = idsNotInCue(selectedObjectIds, cueObjectIds);
-  const canAddToCue = addableObjectIds.length > 0;
 
   return (
     <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
@@ -57,22 +49,6 @@ export const ObjectSelectionPanel = ({
         <p className="mb-3 rounded-md bg-warning/10 px-3 py-2 text-body-sm text-warning">
           请先选择或新建动作序列
         </p>
-      )}
-
-      {mode === "cue" && (
-        <>
-          <SectionHeader title="当前 Cue" />
-          <div className="mb-4">
-            <button
-              type="button"
-              disabled={!canAddToCue}
-              onClick={() => onAddToCurrentCue?.(addableObjectIds)}
-              className="flex min-h-10 w-full items-center justify-center rounded-md bg-primary px-2 text-body-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
-            >
-              加入当前 Cue
-            </button>
-          </div>
-        </>
       )}
 
       {mode === "sequence" && (
@@ -147,14 +123,7 @@ export const ObjectSelectionPanel = ({
       )}
 
       <SectionHeader title="新建" />
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={() => onCreateCue(selectedObjectIds)}
-          className="rounded-md border border-border bg-transparent py-2 text-body-sm text-foreground hover:bg-accent"
-        >
-          新建 Cue
-        </button>
+      <div className="grid grid-cols-1 gap-2">
         <button
           type="button"
           onClick={() => onCreateSequence(selectedObjectIds)}

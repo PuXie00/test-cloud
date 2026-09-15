@@ -52,20 +52,12 @@ const noop = () => {};
 
 const mockBuilder = (overrides: Record<string, unknown> = {}) => {
   builderState.current = {
-    cues: [{ id: "cue-1", name: "开场", targets: { "7": { v1: 1, v2: 2 } } }],
     sequences: [sequence],
     dockMode: "sequence",
-    selectedCueId: null,
     selectedSequenceId: 1,
-    combineFromCueId: null,
     programs: [],
     selectedObjectIds: [7],
-    handleCueSelect: vi.fn(),
     handleSequenceSelect: vi.fn(),
-    handleCuePreview: vi.fn(),
-    handleCombineStart: noop,
-    handleGenerateTransition: noop,
-    handleCreateCue: noop,
     handleCreateSequence: noop,
     handleProgramItemInsert: noop,
     ...overrides,
@@ -155,24 +147,5 @@ describe("content library panel", () => {
     render(<ContentLibraryPanel />);
     fireEvent.click(screen.getByRole("button", { name: "第二序列，待修复" }));
     expect(builderState.current.handleSequenceSelect).toHaveBeenCalledWith(2);
-  });
-
-  it("deselects the current cue when its library row is clicked again", () => {
-    mockBuilder({
-      dockMode: "cue",
-      selectedCueId: "cue-1",
-      selectedSequenceId: null,
-    });
-    render(<ContentLibraryPanel />);
-    fireEvent.click(screen.getByRole("button", { name: "开场" }));
-    expect(builderState.current.handleCueSelect).toHaveBeenCalledWith(null);
-    expect(builderState.current.handleCuePreview).not.toHaveBeenCalled();
-  });
-
-  it("selects a cue from the library and previews it", () => {
-    render(<ContentLibraryPanel />);
-    fireEvent.click(screen.getByRole("button", { name: "开场" }));
-    expect(builderState.current.handleCueSelect).toHaveBeenCalledWith("cue-1");
-    expect(builderState.current.handleCuePreview).toHaveBeenCalledWith("cue-1");
   });
 });

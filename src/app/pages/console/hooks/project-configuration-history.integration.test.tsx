@@ -699,7 +699,7 @@ describe("project configuration history integration", () => {
     expect(result.current.project.canUndo).toBe(true);
 
     act(() => {
-      result.current.builder.handleCreateCue([]);
+      result.current.builder.handleCreateSequence([]);
     });
     expect(result.current.project.canUndo).toBe(false);
     expect(result.current.project.documentRevision.origin).toBe("motion");

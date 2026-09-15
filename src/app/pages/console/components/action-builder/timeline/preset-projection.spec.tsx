@@ -3,7 +3,6 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDefaultAxisProfiles } from "@/app/project/action-sequence/motion-profile";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
-import { LIBRARY_ITEM_MIME } from "../content-library/library-dnd";
 import { msToPx } from "./timeline-data";
 import { PresetProjection } from "./preset-projection";
 import { TimelineEditor } from "./timeline-editor";
@@ -71,15 +70,6 @@ const sequenceWithCommands: ActionSequenceConfig = {
   ],
   segments: [],
 };
-
-const cueDataTransfer = (cueId: string) => ({
-  types: [LIBRARY_ITEM_MIME],
-  getData: (type: string) =>
-    type === LIBRARY_ITEM_MIME ? JSON.stringify({ kind: "cue", id: cueId }) : "",
-  setData: vi.fn(),
-  dropEffect: "copy",
-  effectAllowed: "copy",
-});
 
 let restorePaneWidth: (() => void) | undefined;
 beforeEach(() => {
@@ -258,21 +248,5 @@ describe("command event markers", () => {
     expect(handleSelect).toHaveBeenCalledWith({ kind: "block", blockId: "disable-1" });
     expect(enableModel).not.toHaveBeenCalled();
     expect(window.csocketApi.enableModel).not.toHaveBeenCalled();
-  });
-});
-
-describe("cue drop on a model track", () => {
-  it("drops a library Cue onto a track at atMs", () => {
-    const onCueDrop = vi.fn();
-    render(
-      <TimelineEditor {...createTimelineProps(sequenceWithCommands)} onCueDrop={onCueDrop} />,
-    );
-    const track = document.querySelector("[data-track-object-id='7']");
-    expect(track).not.toBeNull();
-    fireEvent.drop(track!, { dataTransfer: cueDataTransfer("cue-1") });
-    expect(onCueDrop).toHaveBeenCalledTimes(1);
-    expect(onCueDrop.mock.calls[0]![0]).toBe(7);
-    expect(onCueDrop.mock.calls[0]![1]).toBe("cue-1");
-    expect(onCueDrop.mock.calls[0]![2]).toBeGreaterThanOrEqual(0);
   });
 });

@@ -41,8 +41,6 @@ const mockBuilder = (overrides: Record<string, unknown> = {}) => {
     dockMode: "sequence",
     selection: { kind: "block", blockId: "bad-preset" },
     selectedObjectIds: [],
-    cues: [],
-    selectedCueId: null,
     sequenceMissingHint: false,
     handleReplaceTimelineBlock: vi.fn(),
     handleUpdateSegmentSettings: vi.fn(),
@@ -50,11 +48,9 @@ const mockBuilder = (overrides: Record<string, unknown> = {}) => {
     handleTrajectoryModeChange: vi.fn(),
     handleCreatePose: vi.fn(),
     handleCreateSetEnabled: vi.fn(),
-    handleCreateCue: vi.fn(),
     handleCreateSequence: vi.fn(),
     handleApplyStaticPreset: vi.fn(),
     handleApplyDynamicPreset: vi.fn(),
-    handleCueAddObjects: vi.fn(),
     ...overrides,
   };
 };
