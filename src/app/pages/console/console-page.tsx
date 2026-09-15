@@ -139,7 +139,7 @@ const ConsoleContent = ({
           </div>
         </div>
 
-        {isControl && <ExecArea className="h-[330px]" />}
+        {isControl && <ExecArea className="h-[260px]" />}
         {isSequences && <EditorDock />}
       </section>
 

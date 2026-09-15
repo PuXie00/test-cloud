@@ -38,10 +38,10 @@ export const Executors = ({ onTriggerSequence }: ExecutorsProps) => {
   return (
     <section className="flex h-full flex-col bg-muted">
       <ExecutorPaginationBar />
-      <div className="flex-1 overflow-y-auto p-3">
-        <div className="flex gap-2">
+      <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden p-3">
+        <div className="flex h-full min-h-0 gap-2">
           <ExecutorSectionGuide className="self-stretch" />
-          <div className="grid min-w-0 flex-1 grid-cols-8 gap-2">
+          <div className="grid h-full min-w-0 flex-1 grid-cols-8 gap-2">
             {faderSlots.map((slot) => {
               const repairMessage =
                 document && slot.sequence
