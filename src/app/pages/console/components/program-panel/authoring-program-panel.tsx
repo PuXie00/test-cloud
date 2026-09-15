@@ -1,17 +1,17 @@
 import { useMemo, useState, type DragEvent } from "react";
-import { ChevronDown, ChevronRight, Play, Plus, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { PanelHeader } from "@/app/components/ics/panel-header";
 import { cn } from "@/app/components/ui/utils";
+import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
 import {
   getProgramRepairIssues,
   resolveMotionLaunchBlock,
 } from "@/app/project/project-motion-readiness";
 import { useProject } from "@/app/project/use-project";
-import { useExecCards } from "../../../hooks/use-exec-cards";
-import { startLocalAuthoredSequence } from "../../../hooks/sequence-execution";
-import { useActionBuilder } from "../use-action-builder";
-import type { ProgramItemInput } from "../action-builder-context-types";
+import { useExecCards } from "../../hooks/use-exec-cards";
+import { startLocalAuthoredSequence } from "../../hooks/sequence-execution";
+import type { ProgramItemInput } from "../action-builder/action-builder-context-types";
 import {
   isLibraryDrag,
   isProgramItemDrag,
@@ -19,13 +19,14 @@ import {
   readProgramItemDrag,
   sequenceProgramItemFromLibrary,
   writeProgramItemDrag,
-} from "../content-library/library-dnd";
-import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
-import { formatTime, type ProgramNode } from "../timeline/timeline-data";
+} from "../action-builder/content-library/library-dnd";
+import { formatTime, type ProgramNode } from "../action-builder/timeline/timeline-data";
+import { useActionBuilder } from "../action-builder/use-action-builder";
+import { ProgramSequenceRow } from "./program-sequence-row";
 
 type ItemMeta = { kind: "sequence"; refId: number; name: string; durationMs: number | null };
 
-type ChapterSectionProps = {
+type AuthoredChapterSectionProps = {
   chapter: ProgramNode;
   itemMetaById: Map<string, ItemMeta>;
   onInsert: (chapterId: string, item: ProgramItemInput, index?: number) => void;
@@ -34,14 +35,14 @@ type ChapterSectionProps = {
   onLaunch: (meta: ItemMeta) => void;
 };
 
-const ChapterSection = ({
+const AuthoredChapterSection = ({
   chapter,
   itemMetaById,
   onInsert,
   onRemove,
   onMove,
   onLaunch,
-}: ChapterSectionProps) => {
+}: AuthoredChapterSectionProps) => {
   const [expanded, setExpanded] = useState(true);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const items = chapter.children ?? [];
@@ -94,10 +95,18 @@ const ChapterSection = ({
         <div className="pb-1">
           {items.map((item, index) => {
             const meta = itemMetaById.get(`${item.type}:${item.id}`);
+            const name = meta?.name ?? item.name;
             return (
-              <div
+              <ProgramSequenceRow
                 key={`${chapter.id}:${index}:${item.id}`}
+                name={name}
+                indexLabel={String(index + 1)}
+                durationLabel={
+                  meta && meta.durationMs !== null ? formatTime(meta.durationMs) : null
+                }
                 draggable
+                dropActive={dragOverIndex === index}
+                striped={index % 2 !== 0}
                 onDragStart={(event) =>
                   writeProgramItemDrag(event.dataTransfer, { chapterId: chapter.id, index })
                 }
@@ -106,43 +115,12 @@ const ChapterSection = ({
                 }}
                 onDragLeave={() => setDragOverIndex((current) => (current === index ? null : current))}
                 onDrop={handleDropAt(index)}
-                className={cn(
-                  "group mx-1 flex min-h-[40px] cursor-grab items-center gap-2 rounded-sm border-t-2 px-2 transition-colors active:cursor-grabbing",
-                  dragOverIndex === index ? "border-t-primary" : "border-t-transparent",
-                  index % 2 === 0 ? "bg-input-background" : "bg-accent/40",
-                  "hover:bg-accent",
-                )}
-              >
-                <span className="w-5 shrink-0 text-right font-mono text-mono-sm tabular-nums text-muted-foreground">
-                  {index + 1}
-                </span>
-                <Play className="h-3 w-3 shrink-0 text-show" aria-hidden />
-                <span className="min-w-0 flex-1 truncate text-body-sm text-foreground">
-                  {meta?.name ?? item.name}
-                </span>
-                {meta && meta.durationMs !== null && (
-                  <span className="shrink-0 font-mono text-mono-sm tabular-nums text-muted-foreground">
-                    {formatTime(meta.durationMs)}
-                  </span>
-                )}
-                <button
-                  type="button"
-                  aria-label={`运行 ${meta?.name ?? item.name}`}
-                  disabled={!meta}
-                  onClick={() => meta && onLaunch(meta)}
-                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-primary/15 hover:text-primary disabled:opacity-40"
-                >
-                  <Play className="h-3.5 w-3.5" aria-hidden />
-                </button>
-                <button
-                  type="button"
-                  aria-label={`移除 ${meta?.name ?? item.name}`}
-                  onClick={() => onRemove(chapter.id, index)}
-                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground group-hover:opacity-100"
-                >
-                  <X className="h-3.5 w-3.5" aria-hidden />
-                </button>
-              </div>
+                onLaunch={() => {
+                  if (meta) onLaunch(meta);
+                }}
+                launchDisabled={!meta}
+                onRemove={() => onRemove(chapter.id, index)}
+              />
             );
           })}
 
@@ -169,8 +147,9 @@ const ChapterSection = ({
   );
 };
 
-/** 节目管理：章节接受内容库拖入、章节内重排、行内运行（引用式，可重复） */
-export const ProgramPanel = () => {
+type AuthoringProgramPanelProps = { className?: string };
+
+export const AuthoringProgramPanel = ({ className }: AuthoringProgramPanelProps) => {
   const {
     programs,
     sequences,
@@ -232,7 +211,7 @@ export const ProgramPanel = () => {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className={cn("flex min-h-0 flex-1 flex-col", className)}>
       <PanelHeader
         title="节目管理"
         extra={
@@ -251,7 +230,7 @@ export const ProgramPanel = () => {
         {programs.length === 0 && (
           <div className="flex flex-col items-center gap-3 px-4 py-8 text-center">
             <p className="text-body-sm text-muted-foreground">
-              暂无节目。新建章节后，把左侧内容库的动作序列拖入章节即可编排。
+              暂无节目。新建章节后，把动作序列库的动作序列拖入章节即可编排。
             </p>
             <button
               type="button"
@@ -265,9 +244,7 @@ export const ProgramPanel = () => {
         )}
 
         {programs.map((program) => {
-          const programIssues = document
-            ? getProgramRepairIssues(document, program.id)
-            : [];
+          const programIssues = document ? getProgramRepairIssues(document, program.id) : [];
           return (
             <div key={program.id} className="mb-2">
               <p className="flex items-center gap-2 px-1 pb-1 text-label-caps text-muted-foreground">
@@ -285,7 +262,7 @@ export const ProgramPanel = () => {
               {(program.children ?? [])
                 .filter((node) => node.type === "chapter")
                 .map((chapter) => (
-                  <ChapterSection
+                  <AuthoredChapterSection
                     key={chapter.id}
                     chapter={chapter}
                     itemMetaById={itemMetaById}

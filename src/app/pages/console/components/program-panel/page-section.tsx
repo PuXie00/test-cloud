@@ -18,7 +18,7 @@ type PageSectionProps = {
   onItemDragStart: (
     chapterId: string,
     item: ChapterItem,
-    index: number
+    index: number,
   ) => (event: React.DragEvent) => void;
   onDoubleClickItem?: (item: ChapterItem) => void;
   itemIndexOffset: number;
@@ -60,10 +60,10 @@ export const PageSection = ({
           setExpanded(true);
         }}
         className={cn(
-          "flex h-8 items-center gap-2 border-l-2 px-3 text-left transition-colors",
+          "mx-1 flex h-8 items-center gap-2 rounded-sm px-2 text-left transition-colors",
           isCurrent
-            ? "border-l-primary bg-primary/10 text-primary"
-            : "border-l-transparent text-muted-foreground hover:bg-muted/30"
+            ? "bg-primary/10 text-primary"
+            : "text-muted-foreground hover:bg-muted/30",
         )}
       >
         <span onClick={handleToggle} className="flex h-4 w-4 items-center justify-center">
@@ -87,6 +87,7 @@ export const PageSection = ({
                 hasWarning={Boolean(issue)}
                 warningMessage={issue?.message}
                 draggable={mode === "rehearsal"}
+                striped={idx % 2 !== 0}
                 onDragStart={onItemDragStart(chapterId, item, itemIndexOffset + idx)}
                 onDoubleClick={() => onDoubleClickItem?.(item)}
               />

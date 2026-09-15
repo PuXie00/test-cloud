@@ -1,4 +1,4 @@
-/** 内容库条目拖拽（拖入节目章节） */
+/** 动作序列库条目拖拽（拖入节目章节） */
 export const LIBRARY_ITEM_MIME = "application/x-library-item";
 
 /** 章节内条目重排拖拽 */

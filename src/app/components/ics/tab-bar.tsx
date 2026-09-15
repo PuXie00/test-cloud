@@ -41,7 +41,7 @@ export const TabBar = <T extends string>({
             "relative transition-colors",
             variant === "filled"
               ? cn(
-                  "h-full px-3 text-label-caps bg-muted",
+                  "h-full min-w-0 flex-1 truncate px-1.5 text-center text-label-caps bg-muted",
                   isActive
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"

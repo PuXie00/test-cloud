@@ -161,7 +161,7 @@ const SequenceEditor = () => {
 };
 
 /**
- * 编辑坞：随内容库选中项变形 — 动作 → 时间轴。
+ * 编辑坞：随动作序列库选中项变形 — 动作 → 时间轴。
  */
 export const EditorDock = ({ className }: { className?: string }) => {
   const { dockMode } = useActionBuilder();
@@ -177,7 +177,7 @@ export const EditorDock = ({ className }: { className?: string }) => {
       {dockMode === "empty" && (
         <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-body-sm text-muted-foreground">
           <MousePointerClick className="h-4 w-4" aria-hidden />
-          在左侧内容库选择动作进行编辑
+          在右侧动作序列库选择动作进行编辑
         </div>
       )}
     </div>

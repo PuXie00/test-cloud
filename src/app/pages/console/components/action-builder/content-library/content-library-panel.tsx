@@ -192,7 +192,7 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
   return (
     <aside className={cn("flex flex-col overflow-hidden rounded-lg bg-card", className)}>
       <PanelHeader
-        title="内容库"
+        title="动作序列库"
         extra={
           <button
             type="button"
@@ -213,7 +213,7 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
             placeholder="搜索…"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            aria-label="搜索内容库"
+            aria-label="搜索动作序列库"
             className="w-full bg-transparent text-body-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
         </div>
@@ -222,7 +222,7 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
       <div
         className="custom-scrollbar min-h-0 flex-1 overflow-y-auto py-1"
         role="listbox"
-        aria-label="内容库列表"
+        aria-label="动作序列库列表"
       >
         {entries.length === 0 ? (
           <p className="px-3 py-6 text-center text-body-sm text-muted-foreground">

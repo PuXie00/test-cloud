@@ -37,7 +37,6 @@ import { Viz3DTransformSync } from "./3d/Viz3DTransformSync";
 import { ViewportSlot, ViewportSlotProvider } from "./3d/viewport-slot-context";
 import { ExecArea } from "./components/exec-area/exec-area";
 import { MonitorGrid } from "./components/monitor-grid/monitor-grid";
-import { ProgramPanel } from "./components/program-panel/program-panel";
 import { RightTabPanel } from "./components/right-tab-panel/right-tab-panel";
 import { ConsoleFooter } from "./components/footer/console-footer";
 import { LockScreen } from "./components/lock-screen/lock-screen";
@@ -111,7 +110,7 @@ const ConsoleContent = ({
   devicesRightTab,
   onDevicesTabChange,
 }: ConsoleContentProps) => {
-  const { monitorPanelVisible, programPanelVisible, rightPanelVisible } = useControlLayout();
+  const { monitorPanelVisible, rightPanelVisible } = useControlLayout();
 
   const isControl = activeNav === "control";
   const isDevices = activeNav === "devices" && !isShow;
@@ -119,16 +118,12 @@ const ConsoleContent = ({
 
   return (
     <>
-      {isSequences && <ContentLibraryPanel className="h-full w-[240px] shrink-0" />}
-
       <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-1">
         <div className={`flex min-h-0 overflow-hidden gap-1 ${isControl ? "flex-[3]" : "flex-1"}`}>
-          {isControl && programPanelVisible && (
-            <ProgramPanel className="w-[280px] shrink-0 max-[1280px]:w-[240px]" />
-          )}
-
           <div className="flex min-h-0 min-w-0 flex-1 gap-1">
             <ViewportSlot />
+
+            {isSequences && <ContentLibraryPanel className="h-full w-[240px] shrink-0" />}
 
             {isControl && monitorPanelVisible && (
               <MonitorGrid className="w-[42%] shrink-0" />

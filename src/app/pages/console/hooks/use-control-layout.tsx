@@ -7,10 +7,14 @@ import {
   type ReactNode,
 } from "react";
 
+export type ControlRightTabId = "manual" | "program" | "log" | "detail";
+
 type ControlLayoutContextValue = {
   monitorPanelVisible: boolean;
   programPanelVisible: boolean;
   rightPanelVisible: boolean;
+  activeRightTab: ControlRightTabId;
+  setActiveRightTab: (tab: ControlRightTabId) => void;
   toggleMonitorPanel: () => void;
   toggleProgramPanel: () => void;
   toggleRightPanel: () => void;
@@ -20,24 +24,31 @@ const ControlLayoutContext = createContext<ControlLayoutContextValue | null>(nul
 
 export const ControlLayoutProvider = ({ children }: { children: ReactNode }) => {
   const [monitorPanelVisible, setMonitorPanelVisible] = useState(true);
-  const [programPanelVisible, setProgramPanelVisible] = useState(false);
   const [rightPanelVisible, setRightPanelVisible] = useState(false);
+  const [activeRightTab, setActiveRightTab] = useState<ControlRightTabId>("log");
 
   const toggleMonitorPanel = useCallback(
     () => setMonitorPanelVisible((current) => !current),
     [],
   );
-  const toggleProgramPanel = useCallback(
-    () => setProgramPanelVisible((current) => !current),
-    [],
-  );
   const toggleRightPanel = useCallback(() => setRightPanelVisible((current) => !current), []);
+  const toggleProgramPanel = useCallback(() => {
+    setRightPanelVisible((visible) => {
+      if (visible && activeRightTab === "program") return false;
+      return true;
+    });
+    setActiveRightTab("program");
+  }, [activeRightTab]);
+
+  const programPanelVisible = rightPanelVisible && activeRightTab === "program";
 
   const value = useMemo(
     (): ControlLayoutContextValue => ({
       monitorPanelVisible,
       programPanelVisible,
       rightPanelVisible,
+      activeRightTab,
+      setActiveRightTab,
       toggleMonitorPanel,
       toggleProgramPanel,
       toggleRightPanel,
@@ -46,6 +57,7 @@ export const ControlLayoutProvider = ({ children }: { children: ReactNode }) => 
       monitorPanelVisible,
       programPanelVisible,
       rightPanelVisible,
+      activeRightTab,
       toggleMonitorPanel,
       toggleProgramPanel,
       toggleRightPanel,
