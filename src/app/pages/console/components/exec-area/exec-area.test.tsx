@@ -282,6 +282,7 @@ vi.mock("../../hooks/sequence-execution", () => ({
     startLocalAuthoredSequenceMock(...args as [{ sequenceId: number }]),
   stopSequence: (...args: unknown[]) => stopSequenceMock(...args),
   getLocalSequenceTransport: () => localSequenceTransport,
+  getSequenceTransport: () => localSequenceTransport,
 }));
 
 vi.mock("../action-builder/use-action-builder", () => ({

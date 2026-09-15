@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import {
-  getLocalSequenceTransport,
+  getSequenceTransport,
   stopSequence,
   type SequenceRuntimeHandle,
 } from "./sequence-execution";
@@ -191,13 +191,13 @@ export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
     const card = cardsRef.current.find((entry) => entry.id === id);
     setCards((current) => current.filter((entry) => entry.id !== id));
     if (!card?.sequenceHandle) return;
-    void stopSequence(card.sequenceHandle, getLocalSequenceTransport()).catch(() => undefined);
+    void stopSequence(card.sequenceHandle, getSequenceTransport()).catch(() => undefined);
   }, []);
 
   const skipNext = useCallback((id: string) => {
     const card = cardsRef.current.find((entry) => entry.id === id);
     if (card?.sequenceHandle) {
-      void stopSequence(card.sequenceHandle, getLocalSequenceTransport()).catch(() => undefined);
+      void stopSequence(card.sequenceHandle, getSequenceTransport()).catch(() => undefined);
     }
     setCards((current) =>
       current.map((entry) =>
@@ -225,7 +225,7 @@ export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
     setCards((current) =>
       current.map((card) => ({ ...card, emergencyStopped: true, status: "error" })),
     );
-    const transport = getLocalSequenceTransport();
+    const transport = getSequenceTransport();
     for (const handle of handles) {
       void stopSequence(handle, transport).catch(() => undefined);
     }
