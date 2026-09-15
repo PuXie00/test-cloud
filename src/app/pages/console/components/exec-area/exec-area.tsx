@@ -28,7 +28,9 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
         .filter(
           (card) =>
             card.source.kind === "fader" &&
-            (card.status === "running" || card.status === "paused") &&
+            (card.status === "running" ||
+              card.status === "paused" ||
+              card.status === "stopped") &&
             !card.emergencyStopped,
         )
         .map((card) => card.source.slotIndex),
@@ -71,6 +73,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
             durationMs: null,
             source: { kind: "fader", slotIndex },
             speedPercent: started.speedPercent,
+            sequenceId,
             sequenceHandle: started.sequenceHandle,
           });
         } finally {

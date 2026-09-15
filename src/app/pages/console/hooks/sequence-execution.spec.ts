@@ -242,6 +242,46 @@ describe("readySequence", () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it("simulates Ready success when saveAction throws", async () => {
+    const transport = createTransport();
+    transport.saveAction.mockRejectedValueOnce(new Error("PLC disconnected"));
+    const readied = await readySequence({
+      document: documentWithSequence(validSequence),
+      sequenceId: validSequence.id,
+      transport,
+    });
+    expect(readied).toEqual({
+      ok: true,
+      name: "Seq",
+      sequenceHandle: { actionId: validSequence.id, syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID },
+      fingerprint: sequenceReadyFingerprint(validSequence),
+    });
+  });
+
+  it("simulates Ready success when csocket save fails", async () => {
+    const api = createMockCsocketApi({
+      ok: false,
+      code: "PLC_DOWN",
+      message: "csocket actionDataSave failed",
+    });
+    vi.stubGlobal("window", { csocketApi: api });
+    try {
+      const readied = await readySequence({
+        document: documentWithSequence(validSequence),
+        sequenceId: validSequence.id,
+      });
+      expect(readied).toEqual({
+        ok: true,
+        name: "Seq",
+        sequenceHandle: { actionId: validSequence.id, syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID },
+        fingerprint: sequenceReadyFingerprint(validSequence),
+      });
+      expect(api.actionDataSavePlc).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe("goSequence", () => {
@@ -268,6 +308,44 @@ describe("goSequence", () => {
       speedPercent: 150,
       sequenceHandle: { actionId: validSequence.id, syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID },
     });
+  });
+
+  it("simulates GO success when syncCall throws", async () => {
+    const transport = createTransport();
+    transport.syncCall.mockRejectedValueOnce(new Error("PLC disconnected"));
+    const started = await goSequence({
+      document: documentWithSequence(validSequence),
+      sequenceId: validSequence.id,
+      faderPercent: 80,
+      transport,
+    });
+    expect(started).toEqual({
+      ok: true,
+      name: "Seq",
+      speedPercent: 80,
+      sequenceHandle: { actionId: validSequence.id, syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID },
+    });
+  });
+
+  it("simulates GO success when csocket sync fails", async () => {
+    const api = createMockCsocketApi({ success: false, message: "actionSyncCall success=false" });
+    vi.stubGlobal("window", { csocketApi: api });
+    try {
+      const started = await goSequence({
+        document: documentWithSequence(validSequence),
+        sequenceId: validSequence.id,
+        faderPercent: 100,
+      });
+      expect(started).toEqual({
+        ok: true,
+        name: "Seq",
+        speedPercent: 100,
+        sequenceHandle: { actionId: validSequence.id, syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID },
+      });
+      expect(api.actionSyncCallPlc).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

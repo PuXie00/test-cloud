@@ -29,6 +29,7 @@ import {
   resolveMotionLaunchBlock,
 } from "@/app/project/project-motion-readiness";
 import { ConsoleModeProvider } from "../../hooks/use-console-mode";
+import type { ExecCard } from "../../hooks/use-exec-cards";
 import type { FaderSlotState } from "../../hooks/use-executor-slots";
 import type { ChapterItem, Program } from "../program-panel/program-data";
 import { PageSection } from "../program-panel/page-section";
@@ -52,6 +53,7 @@ const {
   clearSlotReadyMock,
   setSlotBusyMock,
   setSlotRunningMock,
+  execCardsRef,
 } = vi.hoisted(() => ({
   toastWarning: vi.fn(),
   toastError: vi.fn(),
@@ -84,6 +86,9 @@ const {
   clearSlotReadyMock: vi.fn(),
   setSlotBusyMock: vi.fn(),
   setSlotRunningMock: vi.fn(),
+  execCardsRef: {
+    current: [] as ExecCard[],
+  },
   faderSlotsRef: {
     current: [] as FaderSlotState[],
   },
@@ -175,7 +180,7 @@ vi.mock("../../hooks/use-exec-cards", async () => {
   return {
     ...actual,
     useExecCards: () => ({
-      cards: [],
+      cards: execCardsRef.current,
       launch: launchMock,
       pause: vi.fn(),
       resume: vi.fn(),
@@ -282,9 +287,8 @@ import { ExecArea } from "./exec-area";
 import { ContentLibraryPanel } from "../action-builder/content-library/content-library-panel";
 import { ProgramPanel as ConsoleProgramPanel } from "../program-panel/program-panel";
 import { ProgramPanel as ActionBuilderProgramPanel } from "../action-builder/right-panel/program-panel";
-import { ExecCardView } from "./exec-cards/exec-card";
 import { ExecEmptyState } from "./exec-cards/exec-empty-state";
-import { advanceRunningCards, type ExecCard } from "../../hooks/use-exec-cards";
+import { advanceRunningCards } from "../../hooks/use-exec-cards";
 
 const makeFaderSlot = (overrides: Partial<FaderSlotState> & { index: number }): FaderSlotState => ({
   label: `F${overrides.index + 1}`,
@@ -427,6 +431,7 @@ afterEach(() => {
   clearSlotReadyMock.mockClear();
   setSlotBusyMock.mockClear();
   setSlotRunningMock.mockClear();
+  execCardsRef.current = [];
   capturedTriggers.onTriggerSequence = null;
   documentRef.current = null;
   programState.current = {
@@ -727,6 +732,18 @@ describe("ExecArea launch guard", () => {
     expect(clearSlotReadyMock).not.toHaveBeenCalled();
     expect(toastError).toHaveBeenCalledWith("动作序列启动失败");
   });
+
+  it("marks the fader slot running while its card is locally stopped", () => {
+    execCardsRef.current = [
+      runningCard({
+        id: "fader-stopped",
+        source: { kind: "fader", slotIndex: 1 },
+        status: "stopped",
+      }),
+    ];
+    render(withMode(<ExecArea />));
+    expect(setSlotRunningMock).toHaveBeenCalledWith(1, true);
+  });
 });
 
 describe("PageSection readiness wiring", () => {
@@ -839,15 +856,6 @@ describe("warning UI accessibility", () => {
   });
 });
 
-const noopCardHandlers = {
-  onPause: vi.fn(),
-  onResume: vi.fn(),
-  onStop: vi.fn(),
-  onSkipNext: vi.fn(),
-  onSetSpeed: vi.fn(),
-  onClose: vi.fn(),
-};
-
 const runningCard = (overrides: Partial<ExecCard>): ExecCard => ({
   id: "card",
   kind: "sequence",
@@ -885,49 +893,13 @@ describe("execution cards", () => {
     expect(sequence?.elapsedMs).toBe(authoredSequenceMs + 500);
   });
 
-  it("renders elapsed wall time and C++ 运行中 without percentage for sequence cards", () => {
-    render(
-      <ExecCardView
-        card={runningCard({
-          id: "seq-card",
-          kind: "sequence",
-          name: "正常序列",
-          durationMs: null,
-          elapsedMs: 1500,
-        })}
-        {...noopCardHandlers}
-      />,
-    );
-    expect(screen.getByText("C++ 运行中")).toBeTruthy();
-    expect(screen.getByText("00:01.5")).toBeTruthy();
-    expect(screen.queryByText(/剩 /)).toBeNull();
-  });
-
-  it("does not show C++ 运行中 for a skipped or completed null-duration card", () => {
-    render(
-      <ExecCardView
-        card={runningCard({
-          id: "seq-card",
-          kind: "sequence",
-          name: "正常序列",
-          durationMs: null,
-          elapsedMs: 1500,
-          status: "completed",
-        })}
-        {...noopCardHandlers}
-      />,
-    );
-    expect(screen.queryByText("C++ 运行中")).toBeNull();
-    expect(screen.getByText("00:01.5")).toBeTruthy();
-  });
-
-  it("skipNext stops the sequence handle when present then marks the card completed", async () => {
+  it("stop keeps the card locally and skipNext does not call PLC", async () => {
     const { ExecCardsProvider, useExecCards: useRealExecCards } = await vi.importActual<
       typeof import("../../hooks/use-exec-cards")
     >("../../hooks/use-exec-cards");
 
     const Probe = () => {
-      const { launch, skipNext, cards } = useRealExecCards();
+      const { launch, stop, skipNext, restart, cards } = useRealExecCards();
       return (
         <div>
           <button
@@ -938,16 +910,26 @@ describe("execution cards", () => {
                 name: "正常序列",
                 durationMs: null,
                 source: { kind: "program" },
-                sequenceHandle: { actionNo: 9, syncGroupId: 3 },
+                sequenceId: 15,
+                sequenceHandle: { actionId: 9, syncGroupId: 3 },
               })
             }
           >
             launch-seq
           </button>
           {cards.map((card) => (
-            <button key={card.id} type="button" onClick={() => skipNext(card.id)}>
-              skip-{card.status}
-            </button>
+            <div key={card.id}>
+              <span>{card.status}</span>
+              <button type="button" onClick={() => stop(card.id)}>
+                stop
+              </button>
+              <button type="button" onClick={() => skipNext(card.id)}>
+                skip
+              </button>
+              <button type="button" onClick={() => restart(card.id)}>
+                restart
+              </button>
+            </div>
           ))}
         </div>
       );
@@ -959,12 +941,14 @@ describe("execution cards", () => {
       </ExecCardsProvider>,
     );
     fireEvent.click(screen.getByRole("button", { name: "launch-seq" }));
-    fireEvent.click(screen.getByRole("button", { name: "skip-running" }));
-    expect(stopSequenceMock).toHaveBeenCalledTimes(1);
-    expect(stopSequenceMock).toHaveBeenCalledWith(
-      { actionNo: 9, syncGroupId: 3 },
-      localSequenceTransport,
-    );
-    expect(screen.getByRole("button", { name: "skip-completed" })).not.toBeNull();
+    expect(screen.getByText("running")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "skip" }));
+    expect(stopSequenceMock).not.toHaveBeenCalled();
+    expect(screen.getByText("running")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "stop" }));
+    expect(stopSequenceMock).not.toHaveBeenCalled();
+    expect(screen.getByText("stopped")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "restart" }));
+    expect(screen.getByText("running")).toBeTruthy();
   });
 });
