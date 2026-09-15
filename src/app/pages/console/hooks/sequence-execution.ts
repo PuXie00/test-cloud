@@ -346,7 +346,16 @@ export const readySequence = async (args: {
       fingerprint: sequenceReadyFingerprint(found.sequence),
     };
   } catch {
-    return { ok: false, toast: "error", message: "动作序列启动失败" };
+    // PLC / csocket is optional this phase: simulate a successful Ready locally.
+    return {
+      ok: true,
+      name: found.sequence.name,
+      sequenceHandle: {
+        actionId: found.sequence.id,
+        syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID,
+      },
+      fingerprint: sequenceReadyFingerprint(found.sequence),
+    };
   }
 };
 
@@ -381,7 +390,16 @@ export const goSequence = async (args: {
       },
     };
   } catch {
-    return { ok: false, toast: "error", message: "动作序列启动失败" };
+    // PLC / csocket is optional this phase: simulate a successful GO locally.
+    return {
+      ok: true,
+      name: found.sequence.name,
+      speedPercent,
+      sequenceHandle: {
+        actionId: found.sequence.id,
+        syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID,
+      },
+    };
   }
 };
 
