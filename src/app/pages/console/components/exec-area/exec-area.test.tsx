@@ -757,7 +757,6 @@ describe("PageSection readiness wiring", () => {
           isCurrent
           sequences={[emptySequenceItem, okSequenceItem]}
           onClickHeader={vi.fn()}
-          onAddSequence={vi.fn()}
           onItemDragStart={() => vi.fn()}
           itemIndexOffset={0}
         />,

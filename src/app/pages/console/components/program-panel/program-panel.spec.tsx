@@ -119,9 +119,10 @@ describe("ProgramPanel variants", () => {
     expect(screen.getByText("页 1/2 · 当前页")).toBeTruthy();
     expect(screen.getByText("2页·9项")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /运行 / })).toBeNull();
+    expect(screen.queryByRole("button", { name: "序列" })).toBeNull();
   });
 
-  it("authoring variant has no page concept", () => {
+  it("authoring variant shows pages like control and keeps launch actions", () => {
     actionBuilderState.current.sequences = [okSequence];
     actionBuilderState.current.programs = [
       {
@@ -147,10 +148,9 @@ describe("ProgramPanel variants", () => {
         <ProgramPanel variant="authoring" />
       </ConsoleModeProvider>,
     );
-    expect(screen.queryByText(/页 \d+/)).toBeNull();
-    expect(screen.queryByText("当前")).toBeNull();
-    expect(screen.queryByText("当前页")).toBeNull();
-    expect(screen.getByText("9 项")).toBeTruthy();
+    expect(screen.getByText("当前")).toBeTruthy();
+    expect(screen.getByText("页 1/2 · 当前页")).toBeTruthy();
+    expect(screen.getByText("2页·9项")).toBeTruthy();
     expect(screen.getByRole("button", { name: "运行 S1" })).toBeTruthy();
   });
 });

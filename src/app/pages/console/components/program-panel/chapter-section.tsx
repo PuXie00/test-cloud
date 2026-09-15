@@ -11,7 +11,6 @@ type ChapterSectionProps = {
   currentPageIndex: number;
   onSelectChapter: () => void;
   onSelectPage: (pageIndex: number) => void;
-  onAddSequence: () => void;
   onItemDragStart: (
     chapterId: string,
     item: ChapterItem,
@@ -26,7 +25,6 @@ export const ChapterSection = ({
   currentPageIndex,
   onSelectChapter,
   onSelectPage,
-  onAddSequence,
   onItemDragStart,
   onDoubleClickItem,
 }: ChapterSectionProps) => {
@@ -90,7 +88,6 @@ export const ChapterSection = ({
               isCurrent={isCurrent && currentPageIndex === pageIndex}
               sequences={sequences}
               onClickHeader={() => onSelectPage(pageIndex)}
-              onAddSequence={onAddSequence}
               onItemDragStart={onItemDragStart}
               onDoubleClickItem={onDoubleClickItem}
               itemIndexOffset={pageIndex * PROGRAM_SLOTS_PER_PAGE}

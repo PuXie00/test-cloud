@@ -1,11 +1,10 @@
-import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 import { useState } from "react";
-import { cn } from "@/app/components/ui/utils";
 import { getMotionItemRepairIssue } from "@/app/project/project-motion-readiness";
 import { useProject } from "@/app/project/use-project";
 import { useConsoleMode } from "../../hooks/use-console-mode";
 import type { ChapterItem } from "./program-data";
 import { ChapterItemRow } from "./chapter-item-row";
+import { ProgramPageHeader } from "./program-page-header";
 
 type PageSectionProps = {
   chapterId: string;
@@ -14,7 +13,6 @@ type PageSectionProps = {
   isCurrent: boolean;
   sequences: ChapterItem[];
   onClickHeader: () => void;
-  onAddSequence: () => void;
   onItemDragStart: (
     chapterId: string,
     item: ChapterItem,
@@ -31,7 +29,6 @@ export const PageSection = ({
   isCurrent,
   sequences,
   onClickHeader,
-  onAddSequence,
   onItemDragStart,
   onDoubleClickItem,
   itemIndexOffset,
@@ -53,27 +50,17 @@ export const PageSection = ({
 
   return (
     <div className="flex flex-col">
-      <button
-        type="button"
-        onClick={() => {
+      <ProgramPageHeader
+        pageIndex={pageIndex}
+        pageTotal={pageTotal}
+        isCurrent={isCurrent}
+        expanded={expanded}
+        onToggle={handleToggle}
+        onSelect={() => {
           onClickHeader();
           setExpanded(true);
         }}
-        className={cn(
-          "mx-1 flex h-8 items-center gap-2 rounded-sm px-2 text-left transition-colors",
-          isCurrent
-            ? "bg-primary/10 text-primary"
-            : "text-muted-foreground hover:bg-muted/30",
-        )}
-      >
-        <span onClick={handleToggle} className="flex h-4 w-4 items-center justify-center">
-          {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-        </span>
-        <span className="text-label-caps">
-          页 {pageIndex + 1}/{pageTotal}
-          {isCurrent && " · 当前页"}
-        </span>
-      </button>
+      />
 
       {expanded && (
         <div className="flex flex-col">
@@ -93,17 +80,6 @@ export const PageSection = ({
               />
             );
           })}
-          {mode === "rehearsal" && (
-            <div className="flex gap-1 px-2 py-2">
-              <button
-                type="button"
-                onClick={onAddSequence}
-                className="inline-flex h-8 flex-1 items-center justify-center gap-1 rounded-sm border border-dashed border-border text-body-sm text-muted-foreground hover:bg-muted/30"
-              >
-                <Plus className="h-3 w-3" /> 序列
-              </button>
-            </div>
-          )}
         </div>
       )}
     </div>

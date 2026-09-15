@@ -1,4 +1,4 @@
-import { useMemo, useState, type DragEvent } from "react";
+import { useMemo, useState, type Dispatch, type DragEvent, type SetStateAction } from "react";
 import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { PanelHeader } from "@/app/components/ics/panel-header";
@@ -10,6 +10,7 @@ import {
 } from "@/app/project/project-motion-readiness";
 import { useProject } from "@/app/project/use-project";
 import { useExecCards } from "../../hooks/use-exec-cards";
+import { useProgram } from "../../hooks/use-program";
 import { startLocalAuthoredSequence } from "../../hooks/sequence-execution";
 import type { ProgramItemInput } from "../action-builder/action-builder-context-types";
 import {
@@ -22,22 +23,120 @@ import {
 } from "../action-builder/content-library/library-dnd";
 import { formatTime, type ProgramNode } from "../action-builder/timeline/timeline-data";
 import { useActionBuilder } from "../action-builder/use-action-builder";
+import { PROGRAM_SLOTS_PER_PAGE } from "./program-data";
+import { ProgramPageHeader } from "./program-page-header";
 import { ProgramSequenceRow } from "./program-sequence-row";
+import { programPageCount } from "./program-utils";
 
 type ItemMeta = { kind: "sequence"; refId: number; name: string; durationMs: number | null };
 
 type AuthoredChapterSectionProps = {
   chapter: ProgramNode;
   itemMetaById: Map<string, ItemMeta>;
+  isCurrent: boolean;
+  currentPageIndex: number;
+  onSelectChapter: () => void;
+  onSelectPage: (pageIndex: number) => void;
   onInsert: (chapterId: string, item: ProgramItemInput, index?: number) => void;
   onRemove: (chapterId: string, index: number) => void;
   onMove: (chapterId: string, fromIndex: number, toIndex: number) => void;
   onLaunch: (meta: ItemMeta) => void;
 };
 
+const AuthoredPageSection = ({
+  chapterId,
+  pageIndex,
+  pageTotal,
+  isCurrent,
+  items,
+  itemIndexOffset,
+  itemMetaById,
+  dragOverIndex,
+  acceptDrag,
+  setDragOverIndex,
+  handleDropAt,
+  onSelectPage,
+  onLaunch,
+  onRemove,
+}: {
+  chapterId: string;
+  pageIndex: number;
+  pageTotal: number;
+  isCurrent: boolean;
+  items: ProgramNode[];
+  itemIndexOffset: number;
+  itemMetaById: Map<string, ItemMeta>;
+  dragOverIndex: number | null;
+  acceptDrag: (event: DragEvent) => boolean;
+  setDragOverIndex: Dispatch<SetStateAction<number | null>>;
+  handleDropAt: (index: number) => (event: DragEvent) => void;
+  onSelectPage: (pageIndex: number) => void;
+  onLaunch: (meta: ItemMeta) => void;
+  onRemove: (chapterId: string, index: number) => void;
+}) => {
+  const [expanded, setExpanded] = useState(true);
+
+  return (
+    <div className="flex flex-col">
+      <ProgramPageHeader
+        pageIndex={pageIndex}
+        pageTotal={pageTotal}
+        isCurrent={isCurrent}
+        expanded={expanded}
+        onToggle={(event) => {
+          event.stopPropagation();
+          setExpanded((current) => !current);
+        }}
+        onSelect={() => {
+          onSelectPage(pageIndex);
+          setExpanded(true);
+        }}
+      />
+      {expanded &&
+        items.map((item, pageItemIndex) => {
+          const index = itemIndexOffset + pageItemIndex;
+          const meta = itemMetaById.get(`${item.type}:${item.id}`);
+          const name = meta?.name ?? item.name;
+          return (
+            <ProgramSequenceRow
+              key={`${chapterId}:${index}:${item.id}`}
+              name={name}
+              indexLabel={String(index + 1)}
+              durationLabel={
+                meta && meta.durationMs !== null ? formatTime(meta.durationMs) : null
+              }
+              draggable
+              dropActive={dragOverIndex === index}
+              striped={pageItemIndex % 2 !== 0}
+              onDragStart={(event) =>
+                writeProgramItemDrag(event.dataTransfer, { chapterId, index })
+              }
+              onDragOver={(event) => {
+                if (acceptDrag(event)) setDragOverIndex(index);
+              }}
+              onDragLeave={() =>
+                setDragOverIndex((current) => (current === index ? null : current))
+              }
+              onDrop={handleDropAt(index)}
+              onLaunch={() => {
+                if (meta) onLaunch(meta);
+              }}
+              launchDisabled={!meta}
+              onRemove={() => onRemove(chapterId, index)}
+            />
+          );
+        })}
+    </div>
+  );
+};
+
 const AuthoredChapterSection = ({
   chapter,
   itemMetaById,
+  isCurrent,
+  currentPageIndex,
+  onSelectChapter,
+  onSelectPage,
   onInsert,
   onRemove,
   onMove,
@@ -46,6 +145,10 @@ const AuthoredChapterSection = ({
   const [expanded, setExpanded] = useState(true);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const items = chapter.children ?? [];
+  const totalPages = programPageCount(items);
+  const pages = Array.from({ length: totalPages }, (_, pageIndex) =>
+    items.slice(pageIndex * PROGRAM_SLOTS_PER_PAGE, (pageIndex + 1) * PROGRAM_SLOTS_PER_PAGE),
+  );
 
   const acceptDrag = (event: DragEvent) => {
     if (!isLibraryDrag(event.dataTransfer) && !isProgramItemDrag(event.dataTransfer)) return false;
@@ -75,54 +178,62 @@ const AuthoredChapterSection = ({
       <button
         type="button"
         aria-expanded={expanded}
-        onClick={() => setExpanded((current) => !current)}
-        className="flex h-9 w-full items-center gap-1.5 px-2 text-left hover:bg-muted"
-      >
-        {expanded ? (
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-        ) : (
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+        onClick={() => {
+          onSelectChapter();
+          setExpanded(true);
+        }}
+        className={cn(
+          "flex h-9 w-full items-center gap-1.5 px-2 text-left transition-colors hover:bg-muted",
+          isCurrent ? "bg-muted text-foreground" : "text-foreground/80",
         )}
+      >
+        <span
+          onClick={(event) => {
+            event.stopPropagation();
+            setExpanded((current) => !current);
+          }}
+          className="flex h-4 w-4 items-center justify-center"
+        >
+          {expanded ? (
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+          )}
+        </span>
         <span className="min-w-0 flex-1 truncate text-body-md font-medium text-foreground">
           {chapter.name}
         </span>
+        {isCurrent && (
+          <span className="shrink-0 rounded-sm bg-primary/20 px-1.5 py-0.5 text-label-caps text-primary">
+            当前
+          </span>
+        )}
         <span className="shrink-0 font-mono text-mono-sm tabular-nums text-muted-foreground">
-          {items.length} 项
+          {pages.length}页·{items.length}项
         </span>
       </button>
 
       {expanded && (
-        <div className="pb-1">
-          {items.map((item, index) => {
-            const meta = itemMetaById.get(`${item.type}:${item.id}`);
-            const name = meta?.name ?? item.name;
-            return (
-              <ProgramSequenceRow
-                key={`${chapter.id}:${index}:${item.id}`}
-                name={name}
-                indexLabel={String(index + 1)}
-                durationLabel={
-                  meta && meta.durationMs !== null ? formatTime(meta.durationMs) : null
-                }
-                draggable
-                dropActive={dragOverIndex === index}
-                striped={index % 2 !== 0}
-                onDragStart={(event) =>
-                  writeProgramItemDrag(event.dataTransfer, { chapterId: chapter.id, index })
-                }
-                onDragOver={(event) => {
-                  if (acceptDrag(event)) setDragOverIndex(index);
-                }}
-                onDragLeave={() => setDragOverIndex((current) => (current === index ? null : current))}
-                onDrop={handleDropAt(index)}
-                onLaunch={() => {
-                  if (meta) onLaunch(meta);
-                }}
-                launchDisabled={!meta}
-                onRemove={() => onRemove(chapter.id, index)}
-              />
-            );
-          })}
+        <div className="flex flex-col pb-1">
+          {pages.map((pageItems, pageIndex) => (
+            <AuthoredPageSection
+              key={pageIndex}
+              chapterId={chapter.id}
+              pageIndex={pageIndex}
+              pageTotal={pages.length}
+              isCurrent={isCurrent && currentPageIndex === pageIndex}
+              items={pageItems}
+              itemIndexOffset={pageIndex * PROGRAM_SLOTS_PER_PAGE}
+              itemMetaById={itemMetaById}
+              dragOverIndex={dragOverIndex}
+              acceptDrag={acceptDrag}
+              setDragOverIndex={setDragOverIndex}
+              handleDropAt={handleDropAt}
+              onSelectPage={onSelectPage}
+              onLaunch={onLaunch}
+              onRemove={onRemove}
+            />
+          ))}
 
           <div
             onDragOver={(event) => {
@@ -158,6 +269,13 @@ export const AuthoringProgramPanel = ({ className }: AuthoringProgramPanelProps)
     handleProgramItemRemove,
     handleProgramItemMove,
   } = useActionBuilder();
+  const {
+    currentChapterId,
+    currentPageIndex,
+    setCurrentChapter,
+    nextPage,
+    prevPage,
+  } = useProgram();
   const { launch } = useExecCards();
   const { currentProject } = useProject();
   const document = currentProject?.document;
@@ -208,6 +326,15 @@ export const AuthoringProgramPanel = ({ className }: AuthoringProgramPanelProps)
         sequenceHandle: started.sequenceHandle,
       });
     })();
+  };
+
+  const handleSelectPage = (chapterId: string, pageIndex: number) => {
+    if (chapterId !== currentChapterId) setCurrentChapter(chapterId);
+    if (pageIndex > currentPageIndex) {
+      for (let i = currentPageIndex; i < pageIndex; i += 1) nextPage();
+    } else if (pageIndex < currentPageIndex) {
+      for (let i = currentPageIndex; i > pageIndex; i -= 1) prevPage();
+    }
   };
 
   return (
@@ -266,6 +393,10 @@ export const AuthoringProgramPanel = ({ className }: AuthoringProgramPanelProps)
                     key={chapter.id}
                     chapter={chapter}
                     itemMetaById={itemMetaById}
+                    isCurrent={chapter.id === currentChapterId}
+                    currentPageIndex={currentPageIndex}
+                    onSelectChapter={() => setCurrentChapter(chapter.id)}
+                    onSelectPage={(pageIndex) => handleSelectPage(chapter.id, pageIndex)}
                     onInsert={handleProgramItemInsert}
                     onRemove={handleProgramItemRemove}
                     onMove={handleProgramItemMove}

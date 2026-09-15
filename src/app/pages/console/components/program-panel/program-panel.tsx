@@ -25,7 +25,6 @@ const ControlProgramPanel = ({ className }: { className?: string }) => {
     nextPage,
     prevPage,
     addChapter,
-    addSequence,
     isProgramEmpty,
   } = useProgram();
   const { clearSelection } = useSelection();
@@ -78,7 +77,6 @@ const ControlProgramPanel = ({ className }: { className?: string }) => {
               currentPageIndex={currentPageIndex}
               onSelectChapter={() => setCurrentChapter(chapter.id)}
               onSelectPage={(pageIndex) => handleSelectPage(chapter.id, pageIndex)}
-              onAddSequence={() => addSequence(chapter.id)}
               onItemDragStart={handleItemDragStart}
             />
           ))
