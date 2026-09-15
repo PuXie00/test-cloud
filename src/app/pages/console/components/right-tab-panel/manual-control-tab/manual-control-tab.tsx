@@ -8,6 +8,7 @@ import { CouplePreviewDialog } from "./couple-preview-dialog";
 import { JogControl } from "./jog-control";
 import { DimensionControl } from "./dimension-control";
 import { QuickActions } from "./quick-actions";
+import { poseFromControlSnapshot } from "./pose-from-control-snapshot";
 import { sharedDimensions } from "./shared-dimensions";
 import { resolveObjectStatusLabel } from "../../monitor-grid/object-status-badge";
 import {
@@ -31,8 +32,11 @@ export const ManualControlTab = () => {
     return snapshot ? [snapshot] : [];
   });
   const couple = useCoupleFlow(selectedIds);
-  const { addCapturedPoseSequence, currentChapterId, isProgramEmpty } = useProgram();
-  const canSave = !isProgramEmpty && Boolean(currentChapterId) && selectedIds.length > 0;
+  const { addCapturedPoseSequence, currentChapterId, isProgramEmpty, program } = useProgram();
+  const captureChapterId =
+    program.chapters.find((chapter) => chapter.id === currentChapterId)?.id ??
+    program.chapters[0]?.id;
+  const canSave = !isProgramEmpty && Boolean(captureChapterId) && selectedIds.length > 0;
 
   const handleSaveCurrentPose = () => {
     addCapturedPoseSequence({
@@ -40,7 +44,7 @@ export const ManualControlTab = () => {
       poseForObject: (objectId) => {
         const snapshot = getById(objectId);
         if (!snapshot) return null;
-        return { v1: snapshot.values.v1 ?? 0, v2: 0, v3: 0 };
+        return poseFromControlSnapshot(snapshot);
       },
     });
   };

@@ -107,6 +107,41 @@ describe("ProgramProvider document persist", () => {
     expect(result.current.program.program.chapters[0]!.items).toHaveLength(itemsBefore + 1);
   });
 
+  it("addCapturedPoseSequence appends to chapters[0] when currentChapterId is empty", async () => {
+    const { result } = renderHook(
+      () => ({ program: useProgram(), project: useProject() }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.project.loading).toBe(false));
+    await act(async () => {
+      await result.current.project.openProject(GZ_2025_RECORD.folderName);
+    });
+    await waitFor(() => {
+      expect(result.current.project.currentProject?.document).toBeTruthy();
+    });
+    if (!result.current.program.program.chapters[0]?.id) {
+      act(() => result.current.program.addChapter());
+    }
+    act(() => {
+      result.current.program.setCurrentChapter("");
+    });
+    expect(result.current.program.currentChapterId).toBe("");
+    expect(result.current.program.program.chapters[0]).toBeTruthy();
+    const seqBefore =
+      result.current.project.currentProject!.document!.motion.actionSequences.length;
+    const itemsBefore = result.current.program.program.chapters[0]!.items.length;
+    act(() => {
+      result.current.program.addCapturedPoseSequence({
+        objectIds: [result.current.project.currentProject!.document!.setup.controlledObjects[0]!.id],
+        poseForObject: () => ({ v1: 7, v2: 0, v3: 0 }),
+      });
+    });
+    expect(result.current.project.currentProject!.document!.motion.actionSequences).toHaveLength(
+      seqBefore + 1,
+    );
+    expect(result.current.program.program.chapters[0]!.items).toHaveLength(itemsBefore + 1);
+  });
+
   it("addCapturedPoseSequence writes nothing when every pose is missing", async () => {
     const { result } = renderHook(
       () => ({ program: useProgram(), project: useProject() }),

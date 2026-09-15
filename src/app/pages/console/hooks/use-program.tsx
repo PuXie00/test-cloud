@@ -315,10 +315,12 @@ export const ProgramProvider = ({ children }: ProgramProviderProps) => {
     }) => {
       if (hydratingRef.current) return;
       if (!currentProject?.document) return;
-      const chapterId = currentChapterIdRef.current;
-      if (!chapterId) return;
       const current = programRef.current;
-      if (!current.chapters.some((chapter) => chapter.id === chapterId)) return;
+      const requestedId = currentChapterIdRef.current;
+      const chapterId = current.chapters.some((chapter) => chapter.id === requestedId)
+        ? requestedId
+        : current.chapters[0]?.id;
+      if (!chapterId) return;
       let id: number;
       try {
         [id] = allocateSequenceIdsInProject(currentProject.document.motion.actionSequences, 1);
