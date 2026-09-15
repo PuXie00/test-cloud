@@ -29,6 +29,7 @@ import {
   resolveMotionLaunchBlock,
 } from "@/app/project/project-motion-readiness";
 import { ConsoleModeProvider } from "../../hooks/use-console-mode";
+import type { ExecCard } from "../../hooks/use-exec-cards";
 import type { FaderSlotState } from "../../hooks/use-executor-slots";
 import type { ChapterItem, Program } from "../program-panel/program-data";
 import { PageSection } from "../program-panel/page-section";
@@ -52,6 +53,7 @@ const {
   clearSlotReadyMock,
   setSlotBusyMock,
   setSlotRunningMock,
+  execCardsRef,
 } = vi.hoisted(() => ({
   toastWarning: vi.fn(),
   toastError: vi.fn(),
@@ -84,6 +86,9 @@ const {
   clearSlotReadyMock: vi.fn(),
   setSlotBusyMock: vi.fn(),
   setSlotRunningMock: vi.fn(),
+  execCardsRef: {
+    current: [] as ExecCard[],
+  },
   faderSlotsRef: {
     current: [] as FaderSlotState[],
   },
@@ -175,7 +180,7 @@ vi.mock("../../hooks/use-exec-cards", async () => {
   return {
     ...actual,
     useExecCards: () => ({
-      cards: [],
+      cards: execCardsRef.current,
       launch: launchMock,
       pause: vi.fn(),
       resume: vi.fn(),
@@ -283,7 +288,7 @@ import { ContentLibraryPanel } from "../action-builder/content-library/content-l
 import { ProgramPanel as ConsoleProgramPanel } from "../program-panel/program-panel";
 import { ProgramPanel as ActionBuilderProgramPanel } from "../action-builder/right-panel/program-panel";
 import { ExecEmptyState } from "./exec-cards/exec-empty-state";
-import { advanceRunningCards, type ExecCard } from "../../hooks/use-exec-cards";
+import { advanceRunningCards } from "../../hooks/use-exec-cards";
 
 const makeFaderSlot = (overrides: Partial<FaderSlotState> & { index: number }): FaderSlotState => ({
   label: `F${overrides.index + 1}`,
@@ -426,6 +431,7 @@ afterEach(() => {
   clearSlotReadyMock.mockClear();
   setSlotBusyMock.mockClear();
   setSlotRunningMock.mockClear();
+  execCardsRef.current = [];
   capturedTriggers.onTriggerSequence = null;
   documentRef.current = null;
   programState.current = {
@@ -725,6 +731,18 @@ describe("ExecArea launch guard", () => {
     expect(launchMock).not.toHaveBeenCalled();
     expect(clearSlotReadyMock).not.toHaveBeenCalled();
     expect(toastError).toHaveBeenCalledWith("动作序列启动失败");
+  });
+
+  it("marks the fader slot running while its card is locally stopped", () => {
+    execCardsRef.current = [
+      runningCard({
+        id: "fader-stopped",
+        source: { kind: "fader", slotIndex: 1 },
+        status: "stopped",
+      }),
+    ];
+    render(withMode(<ExecArea />));
+    expect(setSlotRunningMock).toHaveBeenCalledWith(1, true);
   });
 });
 
