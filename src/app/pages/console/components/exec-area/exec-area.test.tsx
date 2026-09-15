@@ -285,8 +285,7 @@ vi.mock("../action-builder/use-action-builder", () => ({
 
 import { ExecArea } from "./exec-area";
 import { ContentLibraryPanel } from "../action-builder/content-library/content-library-panel";
-import { ProgramPanel as ConsoleProgramPanel } from "../program-panel/program-panel";
-import { ProgramPanel as ActionBuilderProgramPanel } from "../action-builder/right-panel/program-panel";
+import { ProgramPanel } from "../program-panel/program-panel";
 import { ExecEmptyState } from "./exec-cards/exec-empty-state";
 import { advanceRunningCards } from "../../hooks/use-exec-cards";
 
@@ -758,7 +757,6 @@ describe("PageSection readiness wiring", () => {
           isCurrent
           sequences={[emptySequenceItem, okSequenceItem]}
           onClickHeader={vi.fn()}
-          onAddSequence={vi.fn()}
           onItemDragStart={() => vi.fn()}
           itemIndexOffset={0}
         />,
@@ -810,7 +808,7 @@ describe("program panel launch guards", () => {
   });
 
   it("console ProgramPanel does not launch on double-click", async () => {
-    render(withMode(<ConsoleProgramPanel />));
+    render(withMode(<ProgramPanel variant="control" />));
     expect(
       screen.getByLabelText(/节目引用空动作序列「14」，待修复/),
     ).toBeTruthy();
@@ -828,7 +826,7 @@ describe("program panel launch guards", () => {
   });
 
   it("action-builder ProgramPanel blocks handleLaunch for unrepaired items", async () => {
-    render(withMode(<ActionBuilderProgramPanel />));
+    render(withMode(<ProgramPanel variant="authoring" />));
     expect(
       screen.getByLabelText(/节目引用空动作序列「14」，待修复/),
     ).toBeTruthy();

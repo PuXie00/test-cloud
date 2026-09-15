@@ -7,7 +7,7 @@ import type {
 } from "@/app/project/action-sequence/types";
 import type { EditorDockMode, StaticPresetParams } from "../action-builder-context-types";
 import type { SequenceSelection } from "../sequence-selection";
-import { ProgramPanel } from "./program-panel";
+import { ProgramPanel } from "../../program-panel/program-panel";
 import { SelectionTabContent } from "./selection-tab-content";
 
 export type ActionRightTab = "selection" | "program";
@@ -79,7 +79,7 @@ export const ActionRightPanel = ({
           onApplyDynamicPreset={onApplyDynamicPreset}
         />
       )}
-      {activeTab === "program" && <ProgramPanel />}
+      {activeTab === "program" && <ProgramPanel variant="authoring" />}
     </div>
   </aside>
 );

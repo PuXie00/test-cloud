@@ -76,6 +76,9 @@ describe("content library panel", () => {
 
   it("counts authored sequence blocks once and does not read tracks", () => {
     render(<ContentLibraryPanel />);
+    expect(screen.getByText("动作序列库")).toBeTruthy();
+    expect(screen.getByRole("searchbox", { name: "搜索动作序列库" })).toBeTruthy();
+    expect(screen.getByRole("listbox", { name: "动作序列库列表" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "共享斜面" }).textContent).toMatch(/2 块/);
     expect(screen.getByRole("button", { name: "共享斜面" }).textContent).not.toMatch(/tracks/i);
   });

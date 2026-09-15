@@ -11,11 +11,10 @@ type ChapterSectionProps = {
   currentPageIndex: number;
   onSelectChapter: () => void;
   onSelectPage: (pageIndex: number) => void;
-  onAddSequence: () => void;
   onItemDragStart: (
     chapterId: string,
     item: ChapterItem,
-    index: number
+    index: number,
   ) => (event: React.DragEvent) => void;
   onDoubleClickItem?: (item: ChapterItem) => void;
 };
@@ -26,7 +25,6 @@ export const ChapterSection = ({
   currentPageIndex,
   onSelectChapter,
   onSelectPage,
-  onAddSequence,
   onItemDragStart,
   onDoubleClickItem,
 }: ChapterSectionProps) => {
@@ -37,7 +35,7 @@ export const ChapterSection = ({
   );
 
   return (
-    <div className="flex flex-col">
+    <div className="mb-1 rounded-md bg-muted/60">
       <button
         type="button"
         onClick={() => {
@@ -45,10 +43,8 @@ export const ChapterSection = ({
           setExpanded(true);
         }}
         className={cn(
-          "flex h-10 items-center gap-2 border-l-2 px-3 text-left transition-colors",
-          isCurrent
-            ? "border-l-primary bg-muted text-foreground"
-            : "border-l-transparent text-foreground/80 hover:bg-muted/30"
+          "flex h-9 w-full items-center gap-1.5 px-2 text-left transition-colors hover:bg-muted",
+          isCurrent ? "bg-muted text-foreground" : "text-foreground/80",
         )}
       >
         <span
@@ -58,9 +54,13 @@ export const ChapterSection = ({
           }}
           className="flex h-4 w-4 items-center justify-center"
         >
-          {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          {expanded ? (
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+          )}
         </span>
-        <span className="flex-1 truncate text-body-md font-medium">{chapter.name}</span>
+        <span className="min-w-0 flex-1 truncate text-body-md font-medium">{chapter.name}</span>
         {isCurrent && (
           <span className="shrink-0 rounded-sm bg-primary/20 px-1.5 py-0.5 text-label-caps text-primary">
             当前
@@ -72,13 +72,13 @@ export const ChapterSection = ({
       </button>
 
       {expanded && chapter.note && (
-        <p className="mx-3 my-2 rounded-sm bg-muted/30 px-2 py-1 text-body-sm text-muted-foreground">
+        <p className="mx-2 my-2 rounded-sm bg-muted/30 px-2 py-1 text-body-sm text-muted-foreground">
           {chapter.note}
         </p>
       )}
 
       {expanded && (
-        <div className="flex flex-col">
+        <div className="flex flex-col pb-1">
           {pages.map((sequences, pageIndex) => (
             <PageSection
               key={pageIndex}
@@ -88,7 +88,6 @@ export const ChapterSection = ({
               isCurrent={isCurrent && currentPageIndex === pageIndex}
               sequences={sequences}
               onClickHeader={() => onSelectPage(pageIndex)}
-              onAddSequence={onAddSequence}
               onItemDragStart={onItemDragStart}
               onDoubleClickItem={onDoubleClickItem}
               itemIndexOffset={pageIndex * PROGRAM_SLOTS_PER_PAGE}

@@ -19,7 +19,7 @@ export type StaticPresetParams = {
   phase: number;
 };
 
-/** 编辑坞形态：随内容库选中项变化 */
+/** 编辑坞形态：随动作序列库选中项变化 */
 export type EditorDockMode = "sequence" | "empty";
 
 export type ProgramItemInput = { kind: "sequence"; refId: number };

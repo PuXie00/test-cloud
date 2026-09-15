@@ -16,5 +16,5 @@ export const sliceProgramPage = (items: ChapterItem[], pageIndex: number): Chapt
   return items.slice(start, start + PROGRAM_SLOTS_PER_PAGE);
 };
 
-export const programPageCount = (items: ChapterItem[]): number =>
+export const programPageCount = (items: { length: number }): number =>
   Math.max(1, Math.ceil(items.length / PROGRAM_SLOTS_PER_PAGE));
