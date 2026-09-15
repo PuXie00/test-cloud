@@ -604,6 +604,46 @@ describe("FaderSlot Ready/GO gate", () => {
     fireEvent.click(go);
     expect(onGo).toHaveBeenCalledTimes(1);
   });
+
+  it("hides percent on empty slots and shows a disabled slider", () => {
+    render(
+      withMode(
+        <FaderSlot
+          slot={makeFaderSlot({ index: 0 })}
+          onGo={vi.fn()}
+          onFaderChange={vi.fn()}
+          onAssignFromDrag={vi.fn()}
+        />,
+      ),
+    );
+    expect(screen.getByRole("slider", { name: "F1 速度" }).getAttribute("aria-disabled")).toBe("true");
+    expect(screen.queryByText("100%")).toBeNull();
+    expect(document.querySelector("input[type='range']")).toBeNull();
+  });
+
+  it("shows the sequence name, percent, and an enabled slider when filled", () => {
+    const onFaderChange = vi.fn();
+    render(
+      withMode(
+        <FaderSlot
+          slot={makeFaderSlot({
+            index: 2,
+            faderValue: 120,
+            sequence: { id: 15, name: "开幕A", durationMs: 2000 },
+          })}
+          onGo={vi.fn()}
+          onFaderChange={onFaderChange}
+          onAssignFromDrag={vi.fn()}
+        />,
+      ),
+    );
+    expect(screen.getByText("开幕A")).toBeTruthy();
+    expect(screen.getByText("120%")).toBeTruthy();
+    const slider = screen.getByRole("slider", { name: "F3 速度" });
+    expect(slider.getAttribute("aria-disabled")).toBeNull();
+    fireEvent.keyDown(slider, { key: "ArrowUp" });
+    expect(onFaderChange).toHaveBeenCalledWith(121);
+  });
 });
 
 describe("ExecArea launch guard", () => {

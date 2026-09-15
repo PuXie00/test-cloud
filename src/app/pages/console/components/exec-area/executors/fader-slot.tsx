@@ -2,6 +2,7 @@ import { Loader2, Play, Plus } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
 import { useConsoleMode } from "../../../hooks/use-console-mode";
 import type { FaderSlotState } from "../../../hooks/use-executor-slots";
+import { VerticalFader } from "./vertical-fader";
 
 type FaderSlotProps = {
   slot: FaderSlotState;
@@ -52,7 +53,7 @@ export const FaderSlot = ({
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       className={cn(
-        "flex h-[140px] w-full flex-col gap-1 rounded-sm border bg-card p-2 transition-colors",
+        "flex h-full min-h-0 min-w-[72px] w-full flex-col gap-1 rounded-sm border bg-card p-2 transition-colors",
         isRunning
           ? "border-show/60"
           : isEmpty
@@ -81,42 +82,33 @@ export const FaderSlot = ({
           )}
         />
       </div>
-      <div className="flex min-h-0 flex-1 items-stretch gap-2">
-        <div className="flex flex-col items-center justify-between">
-          <input
-            type="range"
-            min={0}
-            max={200}
-            value={slot.faderValue}
-            disabled={isEmpty}
-            onChange={(event) => onFaderChange(Number(event.target.value))}
-            className="h-full w-2 -rotate-180 accent-primary disabled:opacity-30"
-            style={{ writingMode: "vertical-lr" }}
-            aria-label={`${slot.label} 速度`}
-          />
-          <span className="mt-1 font-mono text-mono-sm tabular-nums text-foreground">
+      {!isEmpty ? (
+        <>
+          <span className="line-clamp-1 text-body-sm text-foreground">{slot.sequence?.name}</span>
+          {repairMessage ? (
+            <span id={reasonId} className="line-clamp-2 text-body-sm text-warning">
+              {repairMessage}
+            </span>
+          ) : null}
+        </>
+      ) : null}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <VerticalFader
+          value={slot.faderValue}
+          onChange={onFaderChange}
+          disabled={isEmpty}
+          aria-label={`${slot.label} 速度`}
+        />
+        {isEmpty ? (
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-muted-foreground/60">
+            <Plus className="h-3.5 w-3.5" />
+            <span className="mt-0.5 text-body-sm">{isRehearsal ? "拖入序列" : "—"}</span>
+          </div>
+        ) : (
+          <span className="mt-1 text-center font-mono text-mono-sm tabular-nums text-foreground">
             {slot.faderValue}%
           </span>
-        </div>
-        <div className="flex min-w-0 flex-1 flex-col">
-          {isEmpty ? (
-            <div className="flex flex-1 flex-col items-center justify-center text-muted-foreground/60">
-              <Plus className="h-3.5 w-3.5" />
-              <span className="mt-0.5 text-body-sm">
-                {isRehearsal ? "拖入序列" : "—"}
-              </span>
-            </div>
-          ) : (
-            <>
-              <span className="line-clamp-2 text-body-sm text-foreground">{slot.sequence?.name}</span>
-              {repairMessage ? (
-                <span id={reasonId} className="mt-0.5 line-clamp-2 text-body-sm text-warning">
-                  {repairMessage}
-                </span>
-              ) : null}
-            </>
-          )}
-        </div>
+        )}
       </div>
       <button
         type="button"
@@ -126,7 +118,7 @@ export const FaderSlot = ({
         aria-describedby={repairMessage ? reasonId : undefined}
         onClick={onGo}
         className={cn(
-          "inline-flex h-9 items-center justify-center gap-1 rounded-sm font-semibold transition-colors disabled:pointer-events-none disabled:opacity-30",
+          "inline-flex h-9 shrink-0 items-center justify-center gap-1 rounded-sm font-semibold transition-colors disabled:pointer-events-none disabled:opacity-30",
           isRunning
             ? "bg-show text-background"
             : isBlocked
