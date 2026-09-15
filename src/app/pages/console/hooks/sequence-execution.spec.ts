@@ -10,6 +10,7 @@ import {
   createLocalSequenceTransport,
   downloadSequence,
   LOCAL_SEQUENCE_SYNC_GROUP_ID,
+  getSequenceTransport,
   goSequence,
   mapFaderPercentToSpeedScale,
   readySequence,
@@ -225,6 +226,22 @@ describe("readySequence", () => {
     expect(transport.saveAction).not.toHaveBeenCalled();
     expect(transport.syncCall).not.toHaveBeenCalled();
   });
+
+  it("saves through window.csocketApi when no transport is passed", async () => {
+    const api = createMockCsocketApi({ success: true, data: [{ actionId: validSequence.id }] });
+    vi.stubGlobal("window", { csocketApi: api });
+    try {
+      const readied = await readySequence({
+        document: documentWithSequence(validSequence),
+        sequenceId: validSequence.id,
+      });
+      expect(readied.ok).toBe(true);
+      expect(api.actionDataSavePlc).toHaveBeenCalledTimes(1);
+      expect(api.actionSyncCallPlc).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe("goSequence", () => {
@@ -333,6 +350,24 @@ describe("createLocalSequenceTransport", () => {
     ).resolves.toBeUndefined();
     await expect(transport.stopAction({ actionId: 1, syncGroupId: 1 })).resolves.toBeUndefined();
     expect(actionDataSavePlc).not.toHaveBeenCalled();
+  });
+});
+
+describe("getSequenceTransport", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("uses actionDataSavePlc when window.csocketApi is present", async () => {
+    const api = createMockCsocketApi({ success: true, data: [{ actionId: 1 }] });
+    vi.stubGlobal("window", { csocketApi: api });
+    await getSequenceTransport().saveAction([]);
+    expect(api.actionDataSavePlc).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to the local transport when csocketApi is missing", async () => {
+    vi.stubGlobal("window", {});
+    await expect(getSequenceTransport().saveAction([])).resolves.toBeUndefined();
   });
 });
 

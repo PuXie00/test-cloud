@@ -244,6 +244,22 @@ export const createCsocketSequenceTransport = (
   },
 });
 
+const hasSequenceCsocketApi = (value: unknown): value is SequenceCsocketClient => {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.actionDataSavePlc === "function" &&
+    typeof value.actionSyncCallPlc === "function" &&
+    typeof value.stopActionPlc === "function"
+  );
+};
+
+/** Prefer the live csocket API; fall back to the no-op local transport. */
+export const getSequenceTransport = (): SequenceExecutionTransport => {
+  const api = typeof window !== "undefined" ? window.csocketApi : undefined;
+  if (hasSequenceCsocketApi(api)) return createCsocketSequenceTransport(api);
+  return getLocalSequenceTransport();
+};
+
 export type LocalSequenceFailure = {
   ok: false;
   toast: "warning" | "error";
@@ -309,7 +325,7 @@ export const readySequence = async (args: {
   const found = lookupAuthoredSequence(args.document, args.sequenceId);
   if (!found.ok) return found;
 
-  const transport = args.transport ?? getLocalSequenceTransport();
+  const transport = args.transport ?? getSequenceTransport();
   try {
     const downloaded = await downloadSequence(
       found.sequence,
@@ -345,7 +361,7 @@ export const goSequence = async (args: {
 
   const fromFader = args.faderPercent !== undefined;
   const speedPercent = args.faderPercent ?? 100;
-  const transport = args.transport ?? getLocalSequenceTransport();
+  const transport = args.transport ?? getSequenceTransport();
 
   try {
     await transport.syncCall({
