@@ -21,7 +21,6 @@ type SelectionTabContentProps = {
   resolved: ResolvedActionSequence | null;
   selection: SequenceSelection;
   selectedObjectIds: number[];
-  cueObjectIds: readonly number[];
   sequenceMissingHint: boolean;
   onReplaceBlock: (block: TimelineBlock) => void;
   onUpdateSegment: (
@@ -32,11 +31,9 @@ type SelectionTabContentProps = {
   onDeleteBlock: (blockIds?: string | string[]) => void;
   onCreatePose: (objectIds: number[]) => void;
   onCreateSetEnabled: (objectIds: number[], enabled: boolean) => void;
-  onCreateCue: (objectIds: number[]) => void;
   onCreateSequence: (objectIds: number[]) => void;
   onApplyStaticPreset: (presetId: string, objectIds: number[], params: StaticPresetParams) => void;
   onApplyDynamicPreset: (presetId: string, objectIds: number[]) => void;
-  onAddToCurrentCue: (objectIds: number[]) => void;
 };
 
 const unresolvedSequenceStub = (sequence: ActionSequenceConfig): ResolvedActionSequence => ({
@@ -55,18 +52,15 @@ export const SelectionTabContent = ({
   resolved,
   selection,
   selectedObjectIds,
-  cueObjectIds,
   sequenceMissingHint,
   onReplaceBlock,
   onUpdateSegment,
   onDeleteBlock,
   onCreatePose,
   onCreateSetEnabled,
-  onCreateCue,
   onCreateSequence,
   onApplyStaticPreset,
   onApplyDynamicPreset,
-  onAddToCurrentCue,
 }: SelectionTabContentProps) => {
   if (preferSequenceProperties(dockMode, selection) && sequence) {
     return (
@@ -95,15 +89,12 @@ export const SelectionTabContent = ({
         <ObjectSelectionPanel
           mode={objectSelectionModeFromDock(dockMode)}
           selectedObjectIds={selectedObjectIds}
-          cueObjectIds={cueObjectIds}
           sequenceMissing={sequenceMissingHint}
           onCreatePose={onCreatePose}
           onCreateSetEnabled={onCreateSetEnabled}
-          onCreateCue={onCreateCue}
           onCreateSequence={onCreateSequence}
           onApplyStaticPreset={onApplyStaticPreset}
           onApplyDynamicPreset={onApplyDynamicPreset}
-          onAddToCurrentCue={onAddToCurrentCue}
         />
       </div>
     );

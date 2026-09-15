@@ -1,14 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
-import type { CueItem } from "../components/action-builder/timeline/timeline-data";
 import {
   resolveDimmedObjectIds,
   resolveMemberObjectIds,
   type MembershipDimInput,
 } from "./membership-dim";
-
-const cueA: CueItem = { id: "cue-a", name: "A", targets: { "1": { v1: 0 }, "2": { v1: 0 } } };
-const cueB: CueItem = { id: "cue-b", name: "B", targets: { "2": { v1: 0 }, "3": { v1: 0 } } };
 
 const sequence: ActionSequenceConfig = {
   id: 1,
@@ -25,9 +21,6 @@ const base: MembershipDimInput = {
   activeNav: "sequences",
   dockMode: "empty",
   sequence: null,
-  cues: [cueA, cueB],
-  selectedCueId: null,
-  transitionDraft: null,
   allObjectIds: [1, 2, 3, 4, 5],
   pickedObjectIds: [],
 };
@@ -35,21 +28,12 @@ const base: MembershipDimInput = {
 describe("resolveMemberObjectIds", () => {
   it("returns null outside sequences nav", () => {
     expect(
-      resolveMemberObjectIds({ ...base, activeNav: "control", dockMode: "cue", selectedCueId: "cue-a" }),
+      resolveMemberObjectIds({ ...base, activeNav: "control", dockMode: "sequence", sequence }),
     ).toBeNull();
   });
 
   it("returns null for empty dock", () => {
     expect(resolveMemberObjectIds(base)).toBeNull();
-  });
-
-  it("uses cue targets in cue mode", () => {
-    const ids = resolveMemberObjectIds({ ...base, dockMode: "cue", selectedCueId: "cue-a" });
-    expect([...ids!].sort()).toEqual([1, 2]);
-  });
-
-  it("returns null when cue id is stale", () => {
-    expect(resolveMemberObjectIds({ ...base, dockMode: "cue", selectedCueId: "missing" })).toBeNull();
   });
 
   it("uses sequence blocks in sequence mode", () => {
@@ -62,25 +46,6 @@ describe("resolveMemberObjectIds", () => {
       resolveMemberObjectIds({ ...base, dockMode: "sequence", sequence: { ...sequence, blocks: [] } }),
     ).toBeNull();
   });
-
-  it("unions both cues in transition mode", () => {
-    const ids = resolveMemberObjectIds({
-      ...base,
-      dockMode: "transition",
-      transitionDraft: { fromCueId: "cue-a", toCueId: "cue-b" },
-    });
-    expect([...ids!].sort()).toEqual([1, 2, 3]);
-  });
-
-  it("returns null in transition mode when both cues are missing", () => {
-    expect(
-      resolveMemberObjectIds({
-        ...base,
-        dockMode: "transition",
-        transitionDraft: { fromCueId: "x", toCueId: "y" },
-      }),
-    ).toBeNull();
-  });
 });
 
 describe("resolveDimmedObjectIds", () => {
@@ -89,17 +54,17 @@ describe("resolveDimmedObjectIds", () => {
   });
 
   it("dims non-members", () => {
-    const dimmed = resolveDimmedObjectIds({ ...base, dockMode: "cue", selectedCueId: "cue-a" });
-    expect(dimmed.sort()).toEqual([3, 4, 5]);
+    const dimmed = resolveDimmedObjectIds({ ...base, dockMode: "sequence", sequence });
+    expect(dimmed.sort()).toEqual([2, 3, 5]);
   });
 
   it("keeps picked non-members opaque", () => {
     const dimmed = resolveDimmedObjectIds({
       ...base,
-      dockMode: "cue",
-      selectedCueId: "cue-a",
-      pickedObjectIds: [3, 5],
+      dockMode: "sequence",
+      sequence,
+      pickedObjectIds: [2, 5],
     });
-    expect(dimmed).toEqual([4]);
+    expect(dimmed).toEqual([3]);
   });
 });

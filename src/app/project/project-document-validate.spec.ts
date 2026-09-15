@@ -1,3 +1,5 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MOTION_DEFAULTS } from "./configuration-rules";
 import type { ActionSequenceConfig } from "./action-sequence/types";
@@ -78,10 +80,14 @@ const documentOf = (
 };
 
 describe("validateProjectDocument sequence refs", () => {
+  it("does not type motion with positionCues", () => {
+    const document = createEmptyDocument({ id: "t", name: "t", author: "a" });
+    expect(document.motion).not.toHaveProperty("positionCues");
+  });
+
   it("accepts empty authored sequences as structurally ok", () => {
     const document = documentOf({
       motion: {
-        positionCues: [],
         actionSequences: [emptySequence()],
         programs: [],
       },
@@ -92,7 +98,6 @@ describe("validateProjectDocument sequence refs", () => {
   it("does not throw when a sequence preset cannot be resolved", () => {
     const document = documentOf({
       motion: {
-        positionCues: [],
         actionSequences: [
           {
             id: 3,
@@ -121,7 +126,6 @@ describe("validateProjectDocument sequence refs", () => {
   it("reports unknown objects in pose blocks, commands, and presets", () => {
     const document = documentOf({
       motion: {
-        positionCues: [],
         actionSequences: [
           {
             id: 4,
@@ -156,7 +160,6 @@ describe("validateProjectDocument sequence refs", () => {
   it("rejects non-sequence program items and dangling sequence refs", () => {
     const document = documentOf({
       motion: {
-        positionCues: [],
         actionSequences: [emptySequence(1)],
         programs: [
           {
@@ -183,46 +186,12 @@ describe("validateProjectDocument sequence refs", () => {
     expect(result.errors.some((error) => error.includes("missing-cue-ref"))).toBe(false);
   });
 
-  it("still reports cue unknown objects and disabled axes", () => {
-    const document = documentOf({
-      motion: {
-        positionCues: [
-          { id: "cue-ghost", name: "Ghost", targets: { "77": { v1: 1 } } },
-          { id: "cue-axis", name: "Axis", targets: { [String(OBJECT_A)]: { v3: 1 } } },
-        ],
-        actionSequences: [],
-        programs: [],
-      },
-    });
-    const result = validateProjectDocument(document);
-    expect(result.ok).toBe(false);
-    expect(result.errors.some((error) => error.includes("77"))).toBe(true);
-    expect(result.errors.some((error) => error.includes("v3"))).toBe(true);
-  });
 });
 
 describe("project-motion-readiness sequence gate", () => {
-  it("preserves Cue empty and missing behavior", () => {
-    const document = documentOf({
-      motion: {
-        positionCues: [
-          { id: "cue-empty", name: "Empty", targets: {} },
-          { id: "cue-ok", name: "Ok", targets: { [String(OBJECT_A)]: { v1: 1 } } },
-        ],
-        actionSequences: [],
-        programs: [],
-      },
-    });
-    expect(getMotionItemRepairIssue(document, "cue", "cue-empty")?.code).toBe("empty-cue");
-    expect(getMotionItemRepairIssue(document, "cue", "cue-ok")).toBeNull();
-    expect(getMotionItemRepairIssue(document, "cue", "missing")?.code).toBe("empty-cue");
-    expect(resolveMotionLaunchBlock(null, "cue", "cue-ok")?.code).toBe("empty-cue");
-  });
-
   it("blocks a missing sequence or a sequence with error issues", () => {
     const document = documentOf({
       motion: {
-        positionCues: [],
         actionSequences: [
           {
             id: 98,
@@ -269,7 +238,6 @@ describe("project-motion-readiness sequence gate", () => {
   it("allows a sequence that exists and has no error-severity issues", () => {
     const document = documentOf({
       motion: {
-        positionCues: [],
         actionSequences: [validSequence()],
         programs: [],
       },
@@ -347,5 +315,28 @@ describe("virtual axis max velocity fields", () => {
   it("mock documents satisfy virtual-axis max fields", () => {
     expect(() => assertProjectDocumentStructure(GZ_2025_DOCUMENT)).not.toThrow();
     expect(() => assertProjectDocumentStructure(SH_BALLET_DOCUMENT)).not.toThrow();
+  });
+
+  it("in-repo Project json files omit positionCues and Cue program items", () => {
+    const projectRoot = join(process.cwd(), "Project");
+    const files = readdirSync(projectRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => join(projectRoot, entry.name, "project.json"))
+      .filter((file) => existsSync(file));
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) {
+      const document = JSON.parse(readFileSync(file, "utf8")) as {
+        motion?: {
+          positionCues?: unknown;
+          programs?: Array<{ chapters?: Array<{ items?: Array<{ kind?: string }> }> }>;
+        };
+      };
+      expect(document.motion, file).not.toHaveProperty("positionCues");
+      const items =
+        document.motion?.programs?.flatMap((program) =>
+          (program.chapters ?? []).flatMap((chapter) => chapter.items ?? []),
+        ) ?? [];
+      expect(items.every((item) => item.kind !== "cue"), file).toBe(true);
+    }
   });
 });

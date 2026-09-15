@@ -56,7 +56,6 @@ export type TimelineEditorProps = {
   onBlocksShiftEnd?: () => void;
   onDynamicPresetResize: (blockId: string, startMs: number, endMs: number) => void;
   onTimelinePxPerSecondChange: (pxPerSecond: number) => void;
-  onCueDrop?: (objectId: number, cueId: string, atMs: number) => void;
   invalidTargets?: InvalidTimelineTargets;
 };
 
@@ -121,7 +120,6 @@ export const TimelineEditor = ({
   onBlocksShiftEnd,
   onDynamicPresetResize,
   onTimelinePxPerSecondChange,
-  onCueDrop,
   invalidTargets,
 }: TimelineEditorProps) => {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -515,7 +513,6 @@ export const TimelineEditor = ({
                     onPresetMove={(blockId, atMs) => handleTimedBlockMove(blockId, atMs, onPresetMove)}
                     onDynamicPresetResize={onDynamicPresetResize}
                     onBlockMoveEnd={handleBlockMoveEnd}
-                    onCueDrop={onCueDrop}
                     invalidTargets={invalidTargets}
                   />
                 ))}

@@ -94,21 +94,6 @@ const baseMeta = {
 const cascadeDocument = (): ProjectDocument => {
   const objectA = makeObject(OBJECT_A, "Object A");
   const objectB = makeObject(OBJECT_B, "Object B");
-  const cueUntouched = {
-    id: "cue-untouched",
-    name: "Untouched",
-    targets: { [String(OBJECT_B)]: { v1: 10 } },
-  };
-  const cueEmptyAfter = {
-    id: "cue-empty-after-delete",
-    name: "Empty After",
-    targets: { [String(OBJECT_A)]: { v1: 1 } },
-  };
-  const cueKeep = {
-    id: "cue-keep",
-    name: "Keep",
-    targets: { [String(OBJECT_A)]: { v1: 2 }, [String(OBJECT_B)]: { v1: 3 } },
-  };
   const seqUntouched = {
     id: 11,
     name: "Seq Untouched",
@@ -223,7 +208,6 @@ const cascadeDocument = (): ProjectDocument => {
       },
     },
     motion: {
-      positionCues: [cueUntouched, cueEmptyAfter, cueKeep],
       actionSequences: [seqUntouched, seqEmptyAfter, seqKeep],
       programs,
     },
@@ -246,12 +230,9 @@ describe("analyzeObjectDeletion / applyObjectDeletion", () => {
       alignmentCount: 1,
       sceneGroupCount: 2,
       sceneGroupMemberCount: 2,
-      cueCount: 2,
-      cueTargetCount: 2,
       sequenceCount: 2,
       trackCount: 2,
       blockCount: 3,
-      emptyCueIds: ["cue-empty-after-delete"],
       emptySequenceIds: [12],
       affectedRuleIds: [],
     });
@@ -277,9 +258,6 @@ describe("analyzeObjectDeletion / applyObjectDeletion", () => {
       objectIds: [],
     });
     expect(
-      next.motion.positionCues.find((cue) => cue.id === "cue-empty-after-delete"),
-    ).toMatchObject({ targets: {} });
-    expect(
       next.motion.actionSequences.find(
         (sequence) => sequence.id === 12,
       ),
@@ -288,9 +266,6 @@ describe("analyzeObjectDeletion / applyObjectDeletion", () => {
       12,
     );
     expect(next.rules).toBe(document.rules);
-    expect(next.motion.positionCues.find((c) => c.id === "cue-untouched")).toBe(
-      document.motion.positionCues.find((c) => c.id === "cue-untouched"),
-    );
     expect(next.motion.actionSequences.find((s) => s.id === 11)).toBe(
       document.motion.actionSequences.find((s) => s.id === 11),
     );
@@ -329,7 +304,7 @@ describe("analyzeObjectDeletion / applyObjectDeletion", () => {
         controlledObjects: [lone],
         alignment: {},
       },
-      motion: { positionCues: [], actionSequences: [], programs: [] },
+      motion: { actionSequences: [], programs: [] },
       rules: { rules: [] },
     };
 
@@ -341,12 +316,9 @@ describe("analyzeObjectDeletion / applyObjectDeletion", () => {
       alignmentCount: 0,
       sceneGroupCount: 0,
       sceneGroupMemberCount: 0,
-      cueCount: 0,
-      cueTargetCount: 0,
       sequenceCount: 0,
       trackCount: 0,
       blockCount: 0,
-      emptyCueIds: [],
       emptySequenceIds: [],
       affectedRuleIds: [],
     });
@@ -450,7 +422,7 @@ describe("analyzeObjectDeletion / applyObjectDeletion", () => {
     expect(sequence?.blocks.some((block) => block.id === "preset-drop")).toBe(false);
   });
 
-  it("drops empty sequences while keeping empty cues and remaining sequences", () => {
+  it("drops empty sequences while keeping remaining sequences", () => {
     const next = applyObjectDeletion(cascadeDocument(), [OBJECT_A]);
     expect(
       next.motion.actionSequences.some(
@@ -477,24 +449,17 @@ describe("analyzeObjectDeletion / applyObjectDeletion", () => {
       ),
     ).toBe(false);
     expect(
-      next.motion.positionCues.find((cue) => cue.id === "cue-empty-after-delete"),
-    ).toMatchObject({ targets: {} });
-    expect(
       analyzeObjectDeletion(cascadeDocument(), [OBJECT_A], "confirm").emptySequenceIds,
     ).toContain(12);
   });
 });
 
 describe("validateProjectDocument reference consistency (deletion-related)", () => {
-  it("accepts empty cues as structurally ok and does not leave empty sequences", () => {
+  it("does not leave empty sequences", () => {
     const document = applyObjectDeletion(cascadeDocument(), [OBJECT_A]);
-    const emptyCue = document.motion.positionCues.find(
-      (c) => c.id === "cue-empty-after-delete",
-    );
     const emptySeq = document.motion.actionSequences.find(
       (s) => s.id === 12,
     );
-    expect(emptyCue?.targets).toEqual({});
     expect(emptySeq).toBeUndefined();
     expect(validateProjectDocument(document).ok).toBe(true);
   });

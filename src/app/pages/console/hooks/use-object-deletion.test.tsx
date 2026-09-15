@@ -221,9 +221,7 @@ describe("useObjectDeletion", () => {
       motorBindingCount: 0,
       alignmentCount: 0,
       sceneGroupMemberCount: 0,
-      cueCount: 0,
       sequenceCount: 0,
-      emptyCueIds: [],
       emptySequenceIds: [],
     } satisfies Partial<ObjectDeletionImpact>);
   });
@@ -269,10 +267,11 @@ describe("useObjectDeletion", () => {
     const { result } = renderDeletionController();
     await openFixtureProject(result);
 
-    const cueBefore = result.current.project.currentProject!.document!.motion.positionCues.find(
-      (cue) => cue.id === "cue-open",
-    );
-    expect(cueBefore?.targets).toHaveProperty(String(OBJECT_LIFT));
+    expect(
+      result.current.project.currentProject!.document!.setup.controlledObjects.some(
+        (object) => object.id === OBJECT_LIFT,
+      ),
+    ).toBe(true);
 
     act(() => {
       result.current.store.removeObject(OBJECT_LIFT);
@@ -281,19 +280,21 @@ describe("useObjectDeletion", () => {
     expect(result.current.store.findObject(OBJECT_LIFT)).toBeUndefined();
     expect(result.current.project.undoLabel).toBe("删除受控物体");
     expect(result.current.project.documentRevision.origin).toBe("project-command");
-    const cueAfter = result.current.project.currentProject!.document!.motion.positionCues.find(
-      (cue) => cue.id === "cue-open",
-    );
-    expect(cueAfter?.targets).not.toHaveProperty(String(OBJECT_LIFT));
+    expect(
+      result.current.project.currentProject!.document!.setup.controlledObjects.some(
+        (object) => object.id === OBJECT_LIFT,
+      ),
+    ).toBe(false);
 
     act(() => {
       result.current.project.undoProjectConfiguration();
     });
     expect(result.current.store.findObject(OBJECT_LIFT)).toBeDefined();
-    const cueRestored = result.current.project.currentProject!.document!.motion.positionCues.find(
-      (cue) => cue.id === "cue-open",
-    );
-    expect(cueRestored?.targets).toHaveProperty(String(OBJECT_LIFT));
+    expect(
+      result.current.project.currentProject!.document!.setup.controlledObjects.some(
+        (object) => object.id === OBJECT_LIFT,
+      ),
+    ).toBe(true);
   });
 });
 
@@ -377,12 +378,9 @@ describe("formatObjectDeletionImpact", () => {
       alignmentCount: 1,
       sceneGroupCount: 1,
       sceneGroupMemberCount: 3,
-      cueCount: 2,
-      cueTargetCount: 4,
       sequenceCount: 1,
       trackCount: 2,
       blockCount: 5,
-      emptyCueIds: ["cue-empty"],
       emptySequenceIds: [1],
       affectedRuleIds: [],
     });
@@ -395,49 +393,23 @@ describe("formatObjectDeletionImpact", () => {
     expect(view.detailLines.join("\n")).toMatch(/电机/);
     expect(view.detailLines.join("\n")).toMatch(/alignment|对齐/i);
     expect(view.detailLines.join("\n")).toMatch(/场景组/);
-    expect(view.detailLines.join("\n")).toMatch(/Cue/);
     expect(view.detailLines.join("\n")).toMatch(/动作/);
     expect(view.warningLines.join("\n")).toMatch(/待修复/);
     expect(view.warningLines.join("\n")).not.toMatch(/0 个/);
   });
 
   it("omits zero empty-item counts from warning copy", () => {
-    const cuesOnly = formatObjectDeletionImpact({
-      stateId: "s1",
-      objectIds: ["a"],
-      objectNames: ["甲"],
-      motorBindingCount: 0,
-      alignmentCount: 0,
-      sceneGroupCount: 0,
-      sceneGroupMemberCount: 0,
-      cueCount: 1,
-      cueTargetCount: 1,
-      sequenceCount: 0,
-      trackCount: 0,
-      blockCount: 0,
-      emptyCueIds: ["cue-empty"],
-      emptySequenceIds: [],
-      affectedRuleIds: [],
-    });
-    expect(cuesOnly.warningLines).toHaveLength(1);
-    expect(cuesOnly.warningLines[0]).toMatch(/Cue/);
-    expect(cuesOnly.warningLines[0]).not.toMatch(/0 个/);
-    expect(cuesOnly.warningLines[0]).not.toMatch(/动作序列/);
-
     const sequencesOnly = formatObjectDeletionImpact({
       stateId: "s1",
-      objectIds: ["a"],
+      objectIds: [1],
       objectNames: ["甲"],
       motorBindingCount: 0,
       alignmentCount: 0,
       sceneGroupCount: 0,
       sceneGroupMemberCount: 0,
-      cueCount: 0,
-      cueTargetCount: 0,
       sequenceCount: 1,
       trackCount: 1,
       blockCount: 1,
-      emptyCueIds: [],
       emptySequenceIds: [1],
       affectedRuleIds: [],
     });
@@ -456,12 +428,9 @@ describe("formatObjectDeletionImpact", () => {
       alignmentCount: 0,
       sceneGroupCount: 0,
       sceneGroupMemberCount: 0,
-      cueCount: 0,
-      cueTargetCount: 0,
       sequenceCount: 0,
       trackCount: 0,
       blockCount: 0,
-      emptyCueIds: [],
       emptySequenceIds: [],
       affectedRuleIds: [],
     });

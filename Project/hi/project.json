@@ -233,7 +233,6 @@
     }
   },
   "motion": {
-    "positionCues": [],
     "actionSequences": [],
     "programs": []
   },

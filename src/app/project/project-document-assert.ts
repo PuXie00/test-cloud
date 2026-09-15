@@ -550,23 +550,6 @@ const validateSetup = (value: unknown, path: string, a: StructuralAssertions): v
   validateScene(setup.scene, `${path}.scene`, a);
 };
 
-const validateCue = (value: unknown, path: string, a: StructuralAssertions): void => {
-  const cue = a.record(value, path);
-  a.string(cue.id, `${path}.id`);
-  a.string(cue.name, `${path}.name`);
-  a.optionalString(cue.note, `${path}.note`);
-  a.optionalFinite(cue.durationMs, `${path}.durationMs`);
-  const targets = a.record(cue.targets, `${path}.targets`);
-  for (const [objectId, valueByAxis] of Object.entries(targets)) {
-    const targetPath = keyedPath(`${path}.targets`, objectId);
-    const target = a.record(valueByAxis, targetPath);
-    for (const [axis, targetValue] of Object.entries(target)) {
-      const virtualAxis = a.enum(axis, VIRTUAL_AXES, keyedPath(targetPath, axis));
-      a.finite(targetValue, `${targetPath}.${virtualAxis}`);
-    }
-  }
-};
-
 const TIMELINE_BLOCK_KINDS = ["pose", "instruction", "static-preset", "dynamic-preset"] as const;
 const MOTION_PROFILE_KINDS = ["trapezoid", "idle"] as const;
 
@@ -706,21 +689,14 @@ const validateProgram = (value: unknown, path: string, a: StructuralAssertions):
     a.array(chapter.items, `${chapterPath}.items`).forEach((chapterItem, itemIndex) => {
       const itemPath = indexedPath(`${chapterPath}.items`, itemIndex);
       const reference = a.record(chapterItem, itemPath);
-      a.enum(reference.kind, ["cue", "sequence"], `${itemPath}.kind`);
-      if (reference.kind === "sequence") {
-        validateSetupEntityId(reference.refId, `${itemPath}.refId`, a);
-      } else {
-        a.string(reference.refId, `${itemPath}.refId`);
-      }
+      a.enum(reference.kind, ["sequence"], `${itemPath}.kind`);
+      validateSetupEntityId(reference.refId, `${itemPath}.refId`, a);
     });
   });
 };
 
 const validateMotion = (value: unknown, path: string, a: StructuralAssertions): void => {
   const motion = a.record(value, path);
-  a.array(motion.positionCues, `${path}.positionCues`).forEach((cue, index) =>
-    validateCue(cue, indexedPath(`${path}.positionCues`, index), a),
-  );
   const sequences = a.array(motion.actionSequences, `${path}.actionSequences`);
   sequences.forEach((sequence, index) =>
     validateSequence(sequence, indexedPath(`${path}.actionSequences`, index), a),

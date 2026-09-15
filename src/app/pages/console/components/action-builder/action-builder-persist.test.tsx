@@ -14,7 +14,6 @@ import { ProgramProvider, useProgram } from "@/app/pages/console/hooks/use-progr
 import { ProjectStoreProvider, useProjectStore } from "@/app/pages/console/hooks/use-project-store";
 import { useProject } from "@/app/project/use-project";
 
-const referencedObjectId = "7";
 const referencedObjectNumericId = 7;
 
 const stubCsocketOpenProject = () => {
@@ -77,50 +76,51 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
     delete window.csocketApi;
   });
 
-  it("handleCreateCue appends to document.motion.positionCues", async () => {
+  it("handleCreateSequence does not persist positionCues on the document", async () => {
     const { result } = renderBuilderProjectAndStore();
     await openFixtureProject(result);
 
-    const firstObjectId =
-      result.current.project.currentProject?.document?.setup.controlledObjects[0]?.id;
-    expect(firstObjectId).toBeTruthy();
-
-    const before =
-      result.current.project.currentProject?.document?.motion.positionCues.length ?? 0;
+    const before = result.current.builder.sequences.length;
 
     act(() => {
-      result.current.builder.handleCreateCue([firstObjectId!]);
+      result.current.builder.handleCreateSequence([]);
     });
 
-    const after =
-      result.current.project.currentProject?.document?.motion.positionCues.length ?? 0;
-    expect(after).toBe(before + 1);
+    expect(result.current.builder.sequences.length).toBe(before + 1);
+    expect(result.current.project.currentProject?.document?.motion).not.toHaveProperty(
+      "positionCues",
+    );
   });
 
-  it("supports adding and removing objects from an empty Cue", async () => {
+  it("supports adding a pose to the selected sequence", async () => {
     const { result } = renderBuilderProjectAndStore();
     await openFixtureProject(result);
     const objectId =
       result.current.project.currentProject?.document?.setup.controlledObjects[0]?.id;
     expect(objectId).toBeTruthy();
 
-    act(() => result.current.builder.handleCreateCue([]));
-    const cueId = result.current.builder.selectedCueId;
-    expect(cueId).toBeTruthy();
+    act(() => result.current.builder.handleCreateSequence([]));
+    const sequenceId = result.current.builder.selectedSequenceId;
+    expect(sequenceId).toBeTruthy();
+    const poseCountBefore =
+      result.current.builder.sequences.find((item) => item.id === sequenceId)?.blocks.filter(
+        (block) => block.kind === "pose",
+      ).length ?? 0;
 
-    act(() => result.current.builder.handleCueAddObjects(cueId!, [objectId!]));
-    expect(result.current.builder.cues.find((cue) => cue.id === cueId)?.targets[objectId!]).toBeDefined();
-
-    act(() => result.current.builder.handleCueRemoveObject(cueId!, objectId!));
-    expect(result.current.builder.cues.find((cue) => cue.id === cueId)?.targets[objectId!]).toBeUndefined();
+    act(() => result.current.builder.handleCreatePose([objectId!]));
+    expect(
+      result.current.builder.sequences
+        .find((item) => item.id === sequenceId)
+        ?.blocks.filter((block) => block.kind === "pose").length,
+    ).toBe(poseCountBefore + 1);
   });
 
-  it("clears setup history after an independent cue edit", async () => {
+  it("clears setup history after an independent sequence edit", async () => {
     const { result } = renderBuilderProjectAndStore();
     await openFixtureProject(result);
     act(() => result.current.store.addObjectFromShape("cube"));
     expect(result.current.project.canUndo).toBe(true);
-    act(() => result.current.builder.handleCreateCue([]));
+    act(() => result.current.builder.handleCreateSequence([]));
     expect(result.current.project.canUndo).toBe(false);
   });
 
@@ -138,17 +138,21 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
   it("does not reset ActionBuilder local interaction on own-origin motion persist", async () => {
     const { result } = renderBuilderProjectAndStore();
     await openFixtureProject(result);
+    act(() => result.current.builder.handleCreateSequence([]));
+    const firstSequenceId = result.current.builder.selectedSequenceId!;
+    act(() => result.current.builder.handleCreateSequence([]));
+    const secondSequenceId = result.current.builder.selectedSequenceId!;
     act(() => {
-      result.current.builder.handleCueSelect("cue-lift");
-      result.current.builder.handleCombineStart("cue-lift");
+      result.current.builder.handleSequenceSelect(firstSequenceId);
     });
+    const objectId =
+      result.current.project.currentProject?.document?.setup.controlledObjects[0]?.id;
     act(() => {
-      result.current.builder.handleCueUpdate("cue-open", { name: "开场位置-改" });
+      result.current.builder.handleCreatePose([objectId!]);
     });
-    expect(result.current.builder.selectedCueId).toBe("cue-lift");
-    expect(result.current.builder.combineFromCueId).toBe("cue-lift");
-    expect(result.current.builder.cues.find((cue) => cue.id === "cue-open")?.name).toBe(
-      "开场位置-改",
+    expect(result.current.builder.selectedSequenceId).toBe(firstSequenceId);
+    expect(result.current.builder.sequences.find((item) => item.id === secondSequenceId)?.blocks).toEqual(
+      [],
     );
   });
 
@@ -185,12 +189,20 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
     const { result } = renderBuilderProjectAndStore();
     await openFixtureProject(result);
     act(() => {
-      result.current.builder.handleCueUpdate("cue-open", { name: "动作侧改名" });
+      result.current.builder.handleCreateSequence([]);
+    });
+    const localSequenceId = result.current.builder.selectedSequenceId!;
+    const objectId =
+      result.current.project.currentProject?.document?.setup.controlledObjects[0]?.id;
+    act(() => {
+      result.current.builder.handleCreatePose([objectId!]);
     });
     expect(result.current.project.documentRevision.origin).toBe("motion");
-    expect(result.current.builder.cues.find((cue) => cue.id === "cue-open")?.name).toBe(
-      "动作侧改名",
-    );
+    expect(
+      result.current.builder.sequences
+        .find((item) => item.id === localSequenceId)
+        ?.blocks.some((block) => block.kind === "pose"),
+    ).toBe(true);
     const motionAfter = result.current.project.currentProject!.document!.motion;
     const revisionAfter = result.current.project.documentRevision.value;
     await act(async () => {
@@ -206,9 +218,12 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
     await openFixtureProject(result);
 
     act(() => {
-      result.current.builder.handleCueSelect("cue-lift");
-      result.current.builder.handleCombineStart("cue-lift");
+      result.current.builder.handleCreateSequence([]);
       result.current.builder.handleObjectSelect(referencedObjectNumericId);
+    });
+    const localSequenceId = result.current.builder.selectedSequenceId!;
+    act(() => {
+      result.current.builder.handleSequenceSelect(localSequenceId);
     });
 
     const motionBeforeAdd = result.current.project.currentProject!.document!.motion;
@@ -221,8 +236,7 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
     expect(result.current.builder.timelineObjects.some((object) => object.id === addedId)).toBe(
       true,
     );
-    expect(result.current.builder.selectedCueId).toBe("cue-lift");
-    expect(result.current.builder.combineFromCueId).toBe("cue-lift");
+    expect(result.current.builder.selectedSequenceId).toBe(localSequenceId);
 
     const motionBeforeRename = result.current.project.currentProject!.document!.motion;
     const revisionBeforeRename = result.current.project.documentRevision.value;
@@ -234,8 +248,7 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
       result.current.builder.timelineObjects.find((object) => object.id === referencedObjectNumericId)
         ?.name,
     ).toBe("升降灯架-改名");
-    expect(result.current.builder.selectedCueId).toBe("cue-lift");
-    expect(result.current.builder.combineFromCueId).toBe("cue-lift");
+    expect(result.current.builder.selectedSequenceId).toBe(localSequenceId);
 
     act(() => result.current.builder.handleObjectsSelect([referencedObjectNumericId, addedId]));
     const revisionBeforeDelete = result.current.project.documentRevision.value;
@@ -246,8 +259,7 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
       false,
     );
     expect(result.current.builder.selectedObjectIds).toEqual([referencedObjectNumericId]);
-    expect(result.current.builder.selectedCueId).toBe("cue-lift");
-    expect(result.current.builder.combineFromCueId).toBe("cue-lift");
+    expect(result.current.builder.selectedSequenceId).toBe(localSequenceId);
 
     await act(async () => {
       await Promise.resolve();
@@ -256,10 +268,39 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
     expect(result.current.project.documentRevision.origin).toBe("project-command");
   });
 
-  it("rehydrates cues after project-command, undo, and redo without persisting back", async () => {
+  it("rehydrates sequences after project-command, undo, and redo without persisting back", async () => {
     const { result } = renderBuilderProjectAndStore();
     await openFixtureProject(result);
-    const cueId = result.current.builder.cues[0]!.id;
+    const sequenceId = 41;
+    act(() => {
+      result.current.project.updateCurrentDocument(
+        (document) => ({
+          ...document,
+          motion: {
+            ...document.motion,
+            actionSequences: [
+              ...document.motion.actionSequences,
+              {
+                id: sequenceId,
+                name: "跨域序列",
+                trajectoryMode: "non-forced" as const,
+                blocks: [
+                  {
+                    id: "cascade-pose",
+                    kind: "pose" as const,
+                    objectId: referencedObjectNumericId,
+                    atMs: 1000,
+                    pose: { v1: 100, v2: 0, v3: 0 },
+                  },
+                ],
+                segments: [],
+              },
+            ],
+          },
+        }),
+        "motion",
+      );
+    });
     act(() => {
       result.current.project.runTrackedDocumentUpdate(
         "模拟跨域命令",
@@ -267,14 +308,17 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
           ...document,
           motion: {
             ...document.motion,
-            positionCues: document.motion.positionCues.map((cue) => ({
-              ...cue,
-              targets: Object.fromEntries(
-                Object.entries(cue.targets).filter(
-                  ([objectId]) => objectId !== referencedObjectId,
-                ),
-              ),
-            })),
+            actionSequences: document.motion.actionSequences.map((sequence) =>
+              sequence.id === sequenceId
+                ? {
+                    ...sequence,
+                    blocks: sequence.blocks.filter(
+                      (block) =>
+                        !(block.kind === "pose" && block.objectId === referencedObjectNumericId),
+                    ),
+                  }
+                : sequence,
+            ),
           },
         }),
         "project-command",
@@ -282,9 +326,13 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
     });
     const afterCommandMotion =
       result.current.project.currentProject!.document!.motion;
-    expect(result.current.builder.cues.find((cue) => cue.id === cueId)!.targets).not.toHaveProperty(
-      referencedObjectId,
-    );
+    expect(
+      result.current.builder.sequences
+        .find((sequence) => sequence.id === sequenceId)
+        ?.blocks.some(
+          (block) => block.kind === "pose" && block.objectId === referencedObjectNumericId,
+        ),
+    ).toBe(false);
 
     await act(async () => {
       await Promise.resolve();
@@ -292,14 +340,22 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
     expect(result.current.project.currentProject!.document!.motion).toBe(afterCommandMotion);
 
     act(() => result.current.project.undoProjectConfiguration());
-    expect(result.current.builder.cues.find((cue) => cue.id === cueId)!.targets).toHaveProperty(
-      referencedObjectId,
-    );
+    expect(
+      result.current.builder.sequences
+        .find((sequence) => sequence.id === sequenceId)
+        ?.blocks.some(
+          (block) => block.kind === "pose" && block.objectId === referencedObjectNumericId,
+        ),
+    ).toBe(true);
 
     act(() => result.current.project.redoProjectConfiguration());
-    expect(result.current.builder.cues.find((cue) => cue.id === cueId)!.targets).not.toHaveProperty(
-      referencedObjectId,
-    );
+    expect(
+      result.current.builder.sequences
+        .find((sequence) => sequence.id === sequenceId)
+        ?.blocks.some(
+          (block) => block.kind === "pose" && block.objectId === referencedObjectNumericId,
+        ),
+    ).toBe(false);
   });
 
   it("rehydrates Program chapter refs after same-length project-command motion change", async () => {
@@ -312,9 +368,6 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
           ...document,
           motion: {
             ...document.motion,
-            positionCues: document.motion.positionCues.map((cue) =>
-              cue.id === "cue-open" ? { ...cue, name: "开场-同长" } : cue,
-            ),
             programs: document.motion.programs.map((program) => ({
               ...program,
               chapters: program.chapters.map((chapter) =>
@@ -326,9 +379,6 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
         "project-command",
       );
     });
-    expect(result.current.builder.cues.find((cue) => cue.id === "cue-open")?.name).toBe(
-      "开场-同长",
-    );
     expect(result.current.program.program.chapters.find((ch) => ch.id === "ch-01")?.name).toBe(
       "第一章-同长",
     );
@@ -337,7 +387,7 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
   it("keeps local projection unchanged when non-tracked persist is rejected", async () => {
     const { result } = renderBuilderProjectAndStore();
     await openFixtureProject(result);
-    const cueCount = result.current.builder.cues.length;
+    const cueCount = result.current.builder.sequences.length;
     const chapterName = result.current.program.program.chapters[0]!.name;
 
     act(() => {
@@ -345,9 +395,9 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
     });
 
     act(() => {
-      result.current.builder.handleCreateCue([]);
+      result.current.builder.handleCreateSequence([]);
     });
-    expect(result.current.builder.cues.length).toBe(cueCount);
+    expect(result.current.builder.sequences.length).toBe(cueCount);
     expect(result.current.builder.lastPersistError).toMatch(/活动事务/);
 
     act(() => {

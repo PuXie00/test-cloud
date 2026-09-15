@@ -22,7 +22,6 @@
     "alignment": {}
   },
   "motion": {
-    "positionCues": [],
     "actionSequences": [],
     "programs": []
   },

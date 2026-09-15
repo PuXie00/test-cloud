@@ -1,12 +1,10 @@
-/** 内容库条目拖拽（拖入节目章节 / 时间轴轨道 / Cue 组合） */
+/** 内容库条目拖拽（拖入节目章节） */
 export const LIBRARY_ITEM_MIME = "application/x-library-item";
 
 /** 章节内条目重排拖拽 */
 export const PROGRAM_ITEM_MIME = "application/x-program-item";
 
-export type LibraryDragPayload =
-  | { kind: "cue"; id: string }
-  | { kind: "sequence"; id: number };
+export type LibraryDragPayload = { kind: "sequence"; id: number };
 
 export type ProgramItemDragPayload = {
   chapterId: string;
@@ -25,10 +23,7 @@ export const readLibraryDrag = (dataTransfer: DataTransfer): LibraryDragPayload 
   const raw = dataTransfer.getData(LIBRARY_ITEM_MIME);
   if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw) as Partial<LibraryDragPayload>;
-    if (parsed.kind === "cue" && typeof parsed.id === "string") {
-      return { kind: "cue", id: parsed.id };
-    }
+    const parsed = JSON.parse(raw) as Partial<LibraryDragPayload> & { kind?: string };
     if (parsed.kind === "sequence" && typeof parsed.id === "number" && Number.isInteger(parsed.id)) {
       return { kind: "sequence", id: parsed.id };
     }
@@ -36,12 +31,6 @@ export const readLibraryDrag = (dataTransfer: DataTransfer): LibraryDragPayload 
     return null;
   }
   return null;
-};
-
-export const cueIdFromLibraryDrag = (dataTransfer: DataTransfer): string | null => {
-  const payload = readLibraryDrag(dataTransfer);
-  if (!payload || payload.kind !== "cue") return null;
-  return payload.id;
 };
 
 export const sequenceProgramItemFromLibrary = (

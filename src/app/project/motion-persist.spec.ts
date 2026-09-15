@@ -14,41 +14,11 @@ import type {
 } from "./project-document-types";
 
 const emptyMotion = (): ProjectMotion => ({
-  positionCues: [],
   actionSequences: [],
   programs: [],
 });
 
 describe("motion-persist authored sequences", () => {
-  it("does not persist or hydrate cue arrivalMode", () => {
-    const persisted = actionBuilderStateToMotion(
-      {
-        sequences: [],
-        cues: [{ id: "c", name: "C", targets: { "1": { v1: 0 } } }],
-        programs: [],
-      },
-      emptyMotion(),
-    );
-    expect(persisted.positionCues[0]).not.toHaveProperty("arrivalMode");
-
-    const hydrated = hydrateMotionForActionBuilder(
-      {
-        positionCues: [
-          {
-            id: "c",
-            name: "C",
-            arrivalMode: "direct",
-            targets: { "1": { v1: 0 } },
-          } as ProjectMotion["positionCues"][number],
-        ],
-        actionSequences: [],
-        programs: [],
-      },
-      { 1: "Obj" },
-    );
-    expect(hydrated.cues[0]).not.toHaveProperty("arrivalMode");
-  });
-
   it("round-trips authored sequences without generating axis tracks", () => {
     const sequence: ActionSequenceConfig = {
       id: 1,
@@ -66,8 +36,8 @@ describe("motion-persist authored sequences", () => {
       segments: [],
     };
     const motion = actionBuilderStateToMotion(
-      { sequences: [sequence], cues: [], programs: [] },
-      { positionCues: [], actionSequences: [], programs: [] },
+      { sequences: [sequence], programs: [] },
+      { actionSequences: [], programs: [] },
     );
     expect(motion.actionSequences).toEqual([sequence]);
     expect(motion.actionSequences[0]).not.toHaveProperty("tracks");
@@ -106,8 +76,8 @@ describe("motion-persist authored sequences", () => {
       segments: [],
     };
     const persisted = actionBuilderStateToMotion(
-      { sequences: [dynamicPreset], cues: [], programs: [] },
-      { positionCues: [], actionSequences: [], programs: [] },
+      { sequences: [dynamicPreset], programs: [] },
+      { actionSequences: [], programs: [] },
     );
     expect(JSON.stringify(persisted)).not.toContain("preset:wave-1:7:0");
   });
@@ -129,7 +99,7 @@ describe("motion-persist authored sequences", () => {
       segments: [],
     };
     const persisted = actionBuilderStateToMotion(
-      { sequences: [sequence], cues: [], programs: [] },
+      { sequences: [sequence], programs: [] },
       emptyMotion(),
     );
     expect(persisted.actionSequences[0]?.segments).toEqual([]);
@@ -152,7 +122,6 @@ describe("motion-persist authored sequences", () => {
       segments: [],
     };
     const motion: ProjectMotion = {
-      positionCues: [],
       actionSequences: [sequence],
       programs: [],
     };
@@ -179,7 +148,6 @@ describe("motion-persist authored sequences", () => {
       segments: [],
     };
     const existing: ProjectMotion = {
-      positionCues: [],
       actionSequences: [sequence],
       programs: [],
     };
@@ -229,7 +197,6 @@ describe("motion-persist authored sequences", () => {
       segments: [],
     };
     const program = motionProgramToLegacyProgram({
-      positionCues: [],
       actionSequences: [sequence],
       programs: [
         {
@@ -269,7 +236,6 @@ describe("motion-persist authored sequences", () => {
       segments: [],
     };
     const motion: ProjectMotion = {
-      positionCues: [],
       actionSequences: [sequence],
       programs: [
         {
@@ -356,7 +322,7 @@ describe("hydrateMotionForActionBuilder maxSpeedByAxis", () => {
     expect(timeline.maxSpeedByAxis?.v2).toBe(4);
 
     const hydrated = hydrateMotionForActionBuilder(
-      { positionCues: [], actionSequences: [], programs: [] },
+      { actionSequences: [], programs: [] },
       { 8: "swing" },
       [object],
       motors,
@@ -373,7 +339,7 @@ describe("hydrateMotionForActionBuilder maxSpeedByAxis", () => {
     expect(timeline.minAccelTimeByAxis?.v2).toBe(1);
 
     const hydrated = hydrateMotionForActionBuilder(
-      { positionCues: [], actionSequences: [], programs: [] },
+      { actionSequences: [], programs: [] },
       { 8: "swing" },
       [object],
       motors,

@@ -9,15 +9,10 @@ import { mergeHoldPoses, resolveLivePoses } from "./resolve-live-poses";
 import { resolvePreviewPoses } from "./resolve-preview-poses";
 
 export const useActionPreviewPoses = (): Map<number, ModelPose> => {
-  const { dockMode, sequence, cursorMs, cues, selectedCueId } = useActionBuilder();
+  const { dockMode, sequence, cursorMs } = useActionBuilder();
   const { snapshots } = useControlledObjects();
   const { objects } = useProjectStore();
   const holdingLivePose = useLivePoseHold();
-
-  const cue = useMemo(
-    () => cues.find((item) => item.id === selectedCueId) ?? null,
-    [cues, selectedCueId],
-  );
 
   const virtualAxisObjectIds = useMemo(
     () =>
@@ -30,8 +25,8 @@ export const useActionPreviewPoses = (): Map<number, ModelPose> => {
   );
 
   const previewPoses = useMemo(
-    () => resolvePreviewPoses({ dockMode, cue, sequence, cursorMs, virtualAxisObjectIds }),
-    [dockMode, cue, sequence, cursorMs, virtualAxisObjectIds],
+    () => resolvePreviewPoses({ dockMode, sequence, cursorMs, virtualAxisObjectIds }),
+    [dockMode, sequence, cursorMs, virtualAxisObjectIds],
   );
 
   const livePoses = useMemo(

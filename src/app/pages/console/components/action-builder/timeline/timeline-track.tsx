@@ -1,4 +1,3 @@
-import type { DragEvent } from "react";
 import type {
   DynamicPresetBlock,
   InstructionBlock,
@@ -8,13 +7,10 @@ import type {
 import type { ResolvedMotionSegment, ResolvedPosePoint } from "@/app/project/action-sequence/resolve-sequence";
 import type { InvalidTimelineTargets } from "@/app/project/action-sequence/validate-sequence";
 import { isBlockSelected, type SequenceSelection } from "../sequence-selection";
-import { cueIdFromLibraryDrag, isLibraryDrag } from "../content-library/library-dnd";
 import { CommandEventMarker } from "./command-event-marker";
 import { PoseMarker } from "./pose-marker";
 import { PresetProjection } from "./preset-projection";
 import { SegmentBand } from "./segment-band";
-import { pxToMs } from "./timeline-data";
-import { clampCursorMs } from "./timeline-view-extent";
 
 export type TimelineTrackPose = {
   id: string;
@@ -43,7 +39,6 @@ export type TimelineTrackProps = {
   onPresetMove: (blockId: string, atMs: number) => void;
   onDynamicPresetResize: (blockId: string, startMs: number, endMs: number) => void;
   onBlockMoveEnd?: () => void;
-  onCueDrop?: (objectId: number, cueId: string, atMs: number) => void;
   invalidTargets?: InvalidTimelineTargets;
 };
 
@@ -83,34 +78,13 @@ export const TimelineTrack = ({
   onPresetMove,
   onDynamicPresetResize,
   onBlockMoveEnd,
-  onCueDrop,
   invalidTargets,
-}: TimelineTrackProps) => {
-  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
-    if (!isLibraryDrag(event.dataTransfer)) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
-  };
-
-  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
-    const cueId = cueIdFromLibraryDrag(event.dataTransfer);
-    if (!cueId || !onCueDrop) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const rect = event.currentTarget.getBoundingClientRect();
-    const pointerX = Number.isFinite(event.clientX) ? event.clientX : 0;
-    const atMs = clampCursorMs(viewStartMs + pxToMs(pointerX - rect.left, pxPerSecond));
-    onCueDrop(objectId, cueId, atMs);
-  };
-
-  return (
+}: TimelineTrackProps) => (
     <div
       data-track-object-id={String(objectId)}
       className="relative h-9 shrink-0"
       style={{ width: contentWidth }}
       title={objectName}
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
     >
       {segments.map((segment) => (
         <SegmentBand
@@ -206,5 +180,4 @@ export const TimelineTrack = ({
         />
       ))}
     </div>
-  );
-};
+);

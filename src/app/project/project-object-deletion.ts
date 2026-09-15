@@ -7,7 +7,6 @@ import {
 import type {
   ActionSequenceConfig,
   MotorConfig,
-  PositionCueConfig,
   ProgramConfig,
   ProjectDocument,
   ProjectSetup,
@@ -23,12 +22,9 @@ export type ObjectDeletionImpact = {
   alignmentCount: number;
   sceneGroupCount: number;
   sceneGroupMemberCount: number;
-  cueCount: number;
-  cueTargetCount: number;
   sequenceCount: number;
   trackCount: number;
   blockCount: number;
-  emptyCueIds: string[];
   emptySequenceIds: number[];
   affectedRuleIds: string[];
 };
@@ -87,23 +83,6 @@ export const analyzeObjectDeletion = (
     if (groupHit) sceneGroupCount += 1;
   }
 
-  let cueCount = 0;
-  let cueTargetCount = 0;
-  const emptyCueIds: string[] = [];
-  for (const cue of document.motion.positionCues) {
-    const entries = Object.keys(cue.targets);
-    let removed = 0;
-    let remaining = 0;
-    for (const objectId of entries) {
-      if (objectKeyMatchesDeletedId(objectId, deletedIds)) removed += 1;
-      else remaining += 1;
-    }
-    if (removed === 0) continue;
-    cueCount += 1;
-    cueTargetCount += removed;
-    if (remaining === 0) emptyCueIds.push(cue.id);
-  }
-
   let sequenceCount = 0;
   let trackCount = 0;
   let blockCount = 0;
@@ -131,12 +110,9 @@ export const analyzeObjectDeletion = (
     alignmentCount,
     sceneGroupCount,
     sceneGroupMemberCount,
-    cueCount,
-    cueTargetCount,
     sequenceCount,
     trackCount,
     blockCount,
-    emptyCueIds,
     emptySequenceIds,
     affectedRuleIds: [],
   };
@@ -157,22 +133,6 @@ const filterGroupMembers = (
   return {
     ...group,
     objectIds: group.objectIds.filter((id) => !deletedIds.has(id)),
-  };
-};
-
-const stripCueTargets = (
-  cue: PositionCueConfig,
-  deletedIds: Set<number>,
-): PositionCueConfig => {
-  const entries = Object.entries(cue.targets);
-  if (!entries.some(([objectId]) => objectKeyMatchesDeletedId(objectId, deletedIds))) {
-    return cue;
-  }
-  return {
-    ...cue,
-    targets: Object.fromEntries(
-      entries.filter(([objectId]) => !objectKeyMatchesDeletedId(objectId, deletedIds)),
-    ),
   };
 };
 
@@ -317,13 +277,6 @@ export const applyObjectDeletion = (
 
   const setup = applySetupDeletion(document.setup, deletedIds);
 
-  let cuesChanged = false;
-  const positionCues = document.motion.positionCues.map((cue) => {
-    const next = stripCueTargets(cue, deletedIds);
-    if (next !== cue) cuesChanged = true;
-    return next;
-  });
-
   let sequencesChanged = false;
   const droppedSequenceIds = new Set<number>();
   const actionSequences: ActionSequenceConfig[] = [];
@@ -344,11 +297,10 @@ export const applyObjectDeletion = (
   );
   const programsChanged = programs !== document.motion.programs;
 
-  const motionChanged = cuesChanged || sequencesChanged || programsChanged;
+  const motionChanged = sequencesChanged || programsChanged;
   const motion = motionChanged
     ? {
         ...document.motion,
-        positionCues: cuesChanged ? positionCues : document.motion.positionCues,
         actionSequences: sequencesChanged
           ? actionSequences
           : document.motion.actionSequences,

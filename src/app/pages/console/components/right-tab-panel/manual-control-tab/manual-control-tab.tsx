@@ -2,11 +2,13 @@ import { sendEnableModel, sendHomeModel, sendResetModel } from "../../../hooks/m
 import { useSelection } from "../../../hooks/use-selection";
 import { useControlledObjects } from "../../../hooks/use-controlled-objects";
 import { useCoupleFlow } from "../../../hooks/use-couple-flow";
+import { useProgram } from "../../../hooks/use-program";
 import { StatusControlBar } from "./status-control-bar";
 import { CouplePreviewDialog } from "./couple-preview-dialog";
 import { JogControl } from "./jog-control";
 import { DimensionControl } from "./dimension-control";
 import { QuickActions } from "./quick-actions";
+import { poseFromControlSnapshot } from "./pose-from-control-snapshot";
 import { sharedDimensions } from "./shared-dimensions";
 import { resolveObjectStatusLabel } from "../../monitor-grid/object-status-badge";
 import {
@@ -30,6 +32,22 @@ export const ManualControlTab = () => {
     return snapshot ? [snapshot] : [];
   });
   const couple = useCoupleFlow(selectedIds);
+  const { addCapturedPoseSequence, currentChapterId, isProgramEmpty, program } = useProgram();
+  const captureChapterId =
+    program.chapters.find((chapter) => chapter.id === currentChapterId)?.id ??
+    program.chapters[0]?.id;
+  const canSave = !isProgramEmpty && Boolean(captureChapterId) && selectedIds.length > 0;
+
+  const handleSaveCurrentPose = () => {
+    addCapturedPoseSequence({
+      objectIds: selectedIds,
+      poseForObject: (objectId) => {
+        const snapshot = getById(objectId);
+        if (!snapshot) return null;
+        return poseFromControlSnapshot(snapshot);
+      },
+    });
+  };
 
   if (snapshots.length === 0) {
     return (
@@ -93,7 +111,7 @@ export const ManualControlTab = () => {
       />
       <JogControl dimensions={dimensions} />
       <DimensionControl dimensions={dimensions} />
-      <QuickActions />
+      <QuickActions canSave={canSave} onSave={handleSaveCurrentPose} />
       <AlertDialog open={couple.phase === "solving"}>
         <AlertDialogContent className="bg-card">
           <AlertDialogHeader>

@@ -7,13 +7,13 @@ import { resolveDimmedObjectIds } from "./membership-dim";
 import { resolveMonitorObjectIds } from "./viz3d-selection-sync";
 import { useViz3DContext } from "./Viz3DProvider";
 
-/** 动作页：把「非当前序列 / Cue 成员」推给引擎变淡；离开动作页或卸载时全部恢复 */
+/** 动作页：把「非当前序列成员」推给引擎变淡；离开动作页或卸载时全部恢复 */
 export const Viz3DMembershipDimSync = () => {
   const engine = useViz3DContext();
   const { activeNav } = useConsoleNav();
   const { objects } = useProjectStore();
   const { selectedId, multiSelectedIds } = useSelection();
-  const { dockMode, sequence, cues, selectedCueId, transitionDraft } = useActionBuilder();
+  const { dockMode, sequence } = useActionBuilder();
 
   const allObjectIds = useMemo(() => objects.map((object) => object.id), [objects]);
   const pickedObjectIds = useMemo(
@@ -27,13 +27,10 @@ export const Viz3DMembershipDimSync = () => {
         activeNav,
         dockMode,
         sequence,
-        cues,
-        selectedCueId,
-        transitionDraft,
         allObjectIds,
         pickedObjectIds,
       }).map(String),
-    [activeNav, dockMode, sequence, cues, selectedCueId, transitionDraft, allObjectIds, pickedObjectIds],
+    [activeNav, dockMode, sequence, allObjectIds, pickedObjectIds],
   );
 
   useEffect(() => {

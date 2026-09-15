@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { allocateSequenceIdsInProject } from "@/app/project/action-sequence/sequence-id";
-import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
+import type { ActionSequenceConfig, ModelPose } from "@/app/project/action-sequence/types";
+import { buildCapturedPoseSequence } from "@/app/project/capture-pose-sequence";
 import type { ProjectDocument, ProjectMotion } from "@/app/project/project-document-types";
 import { legacyProgramToMotion } from "@/app/project/motion-persist";
 import { useProject } from "@/app/project/use-project";
@@ -307,6 +308,79 @@ export const ProgramProvider = ({ children }: ProgramProviderProps) => {
     [currentProject?.document, updateCurrentDocument],
   );
 
+  const addCapturedPoseSequence = useCallback(
+    (args: {
+      objectIds: readonly number[];
+      poseForObject: (objectId: number) => ModelPose | null;
+    }) => {
+      if (hydratingRef.current) return;
+      if (!currentProject?.document) return;
+      const current = programRef.current;
+      const requestedId = currentChapterIdRef.current;
+      const chapterId = current.chapters.some((chapter) => chapter.id === requestedId)
+        ? requestedId
+        : current.chapters[0]?.id;
+      if (!chapterId) return;
+      let id: number;
+      try {
+        [id] = allocateSequenceIdsInProject(currentProject.document.motion.actionSequences, 1);
+      } catch (error) {
+        setLastPersistError(error instanceof Error ? error.message : "动作序列 id 已满（1~65535）");
+        return;
+      }
+      const createdSequence = buildCapturedPoseSequence({
+        id,
+        objectIds: args.objectIds,
+        poseForObject: args.poseForObject,
+      });
+      if (!createdSequence) return;
+      let found = false;
+      const nextProgram: Program = {
+        ...current,
+        chapters: current.chapters.map((chapter) => {
+          if (chapter.id !== chapterId) return chapter;
+          found = true;
+          return {
+            ...chapter,
+            items: [
+              ...chapter.items,
+              {
+                kind: "sequence",
+                sequence: {
+                  id: createdSequence.id,
+                  name: createdSequence.name,
+                  durationMs: 0,
+                },
+              },
+            ],
+          };
+        }),
+      };
+      if (!found) return;
+      const result = updateCurrentDocument(
+        (doc) => {
+          const motion = legacyProgramToMotion(nextProgram, doc.motion);
+          return {
+            ...doc,
+            motion: {
+              ...motion,
+              actionSequences: [...motion.actionSequences, createdSequence],
+            },
+          };
+        },
+        "program",
+      );
+      if (!result.ok) {
+        setLastPersistError(result.reason);
+        return;
+      }
+      setLastPersistError(null);
+      programRef.current = nextProgram;
+      setProgram(nextProgram);
+    },
+    [currentProject?.document, updateCurrentDocument],
+  );
+
   const removeItem = useCallback(
     (chapterId: string, index: number) => {
       mutateProgram((current) => ({
@@ -338,6 +412,7 @@ export const ProgramProvider = ({ children }: ProgramProviderProps) => {
       reorderItemInChapter,
       moveItemAcrossChapter,
       addSequence,
+      addCapturedPoseSequence,
       removeItem,
       isProgramEmpty,
       lastPersistError,
@@ -358,6 +433,7 @@ export const ProgramProvider = ({ children }: ProgramProviderProps) => {
       reorderItemInChapter,
       moveItemAcrossChapter,
       addSequence,
+      addCapturedPoseSequence,
       removeItem,
       lastPersistError,
     ]

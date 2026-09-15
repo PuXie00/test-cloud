@@ -1,4 +1,4 @@
-import { isSequenceProgramItemRef, type ProjectDocument, type VirtualAxisId } from "./project-document-types";
+import { isSequenceProgramItemRef, type ProjectDocument } from "./project-document-types";
 
 export type ValidationResult = { ok: boolean; errors: string[] };
 
@@ -35,23 +35,6 @@ export const validateProjectDocument = (doc: ProjectDocument): ValidationResult 
     for (const objectId of group.objectIds) {
       if (!objectById.has(objectId)) {
         errors.push(`scene group ${group.id}: unknown object ${objectId}`);
-      }
-    }
-  }
-
-  for (const cue of doc.motion.positionCues) {
-    for (const [objectIdKey, values] of Object.entries(cue.targets)) {
-      const objectId = Number(objectIdKey);
-      const obj = Number.isInteger(objectId) ? objectById.get(objectId) : undefined;
-      if (!obj) {
-        errors.push(`cue ${cue.id}: unknown object ${objectIdKey}`);
-        continue;
-      }
-      const enabled = new Set(obj.enabledVirtualAxes);
-      for (const key of Object.keys(values ?? {})) {
-        if (!enabled.has(key as VirtualAxisId)) {
-          errors.push(`cue ${cue.id}: axis ${key} not enabled on ${objectIdKey}`);
-        }
       }
     }
   }

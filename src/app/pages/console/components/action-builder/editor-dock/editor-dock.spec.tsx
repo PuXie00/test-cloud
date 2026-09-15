@@ -45,7 +45,6 @@ vi.mock("@/app/project/display-length-unit-provider", () => ({
 const handleSelectionChange = vi.fn();
 const handleMoveTimelineBlock = vi.fn();
 const handleResizeDynamicPreset = vi.fn();
-const handleCueDropOnTrack = vi.fn();
 
 const timelineObjects = [
   {
@@ -85,7 +84,6 @@ const mockBuilder = (overrides: Record<string, unknown> = {}) => {
     handleBlockDelete: vi.fn(),
     handleBlockCopy: vi.fn(),
     handleBlockPaste: vi.fn(),
-    handleCueDropOnTrack,
     handleTimelinePxPerSecondChange: vi.fn(),
     handleTimelineZoomIn: vi.fn(),
     handleTimelineZoomOut: vi.fn(),
@@ -176,53 +174,5 @@ describe("editor dock sequence editor", () => {
     expect(toggle.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(toggle);
     expect(handleTrajectoryModeChange).toHaveBeenCalledWith("non-forced");
-  });
-});
-
-describe("editor dock cue editor", () => {
-  it("mounts Cue dock with ActionSequenceConfig (no tracks) without throwing", () => {
-    const authoredSequence: ActionSequenceConfig = {
-      id: 1,
-      name: "Seq",
-      trajectoryMode: "non-forced",
-      blocks: [
-        {
-          id: "pose-1",
-          kind: "pose",
-          objectId: 7,
-          atMs: 1000,
-          pose: { v1: 10, v2: 0, v3: 0 },
-        },
-      ],
-      segments: [],
-    };
-    mockBuilder({
-      dockMode: "cue",
-      sequences: [authoredSequence],
-      sequence: authoredSequence,
-      selectedCueId: "cue-1",
-      cues: [
-        {
-          id: "cue-1",
-          name: "Cue 1",
-          targets: { "7": { v1: 10, v2: 0, v3: 0 } },
-        },
-      ],
-      programs: [],
-      getTimelineObject: (objectId: number) =>
-        timelineObjects.find((object) => object.id === objectId),
-      handleCueUpdate: vi.fn(),
-      handleCueTargetChange: vi.fn(),
-      handleCueAddObjects: vi.fn(),
-      handleCueRemoveObject: vi.fn(),
-      handleCueDelete: vi.fn(),
-      handleCueCaptureFromScene: vi.fn(),
-      handleCuePreview: vi.fn(),
-    });
-    expect(() => render(<EditorDock />)).not.toThrow();
-    expect(screen.getByLabelText("Cue 名称")).not.toBeNull();
-    expect(screen.getByDisplayValue("Cue 1")).not.toBeNull();
-    expect(screen.queryByRole("button", { name: "加入当前选择" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "添加物体" })).toBeNull();
   });
 });

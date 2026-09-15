@@ -201,15 +201,6 @@ export type ProjectSetup = {
   manualJog?: ManualJogSettings;
 };
 
-export type PositionCueConfig = {
-  id: string;
-  name: string;
-  note?: string;
-  /** @deprecated Cue 只存目标值，不存执行时间；到达时间由当前位置实时估算。保留字段仅为兼容旧数据。 */
-  durationMs?: number;
-  targets: Record<string, VirtualAxisValues>;
-};
-
 import type {
   ActionSequenceConfig,
   DynamicPresetBlock,
@@ -270,7 +261,6 @@ export type ProgramConfig = {
 };
 
 export type ProjectMotion = {
-  positionCues: PositionCueConfig[];
   actionSequences: ActionSequenceConfig[];
   programs: ProgramConfig[];
 };

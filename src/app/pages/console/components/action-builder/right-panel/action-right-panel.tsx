@@ -25,7 +25,6 @@ type ActionRightPanelProps = {
   resolved: ResolvedActionSequence | null;
   selection: SequenceSelection;
   selectedObjectIds: number[];
-  cueObjectIds: readonly number[];
   sequenceMissingHint: boolean;
   onReplaceBlock: (block: TimelineBlock) => void;
   onUpdateSegment: (
@@ -36,11 +35,9 @@ type ActionRightPanelProps = {
   onDeleteBlock: (blockIds?: string | string[]) => void;
   onCreatePose: (objectIds: number[]) => void;
   onCreateSetEnabled: (objectIds: number[], enabled: boolean) => void;
-  onCreateCue: (objectIds: number[]) => void;
   onCreateSequence: (objectIds: number[]) => void;
   onApplyStaticPreset: (presetId: string, objectIds: number[], params: StaticPresetParams) => void;
   onApplyDynamicPreset: (presetId: string, objectIds: number[]) => void;
-  onAddToCurrentCue: (objectIds: number[]) => void;
 };
 
 export const ActionRightPanel = ({
@@ -51,18 +48,15 @@ export const ActionRightPanel = ({
   resolved,
   selection,
   selectedObjectIds,
-  cueObjectIds,
   sequenceMissingHint,
   onReplaceBlock,
   onUpdateSegment,
   onDeleteBlock,
   onCreatePose,
   onCreateSetEnabled,
-  onCreateCue,
   onCreateSequence,
   onApplyStaticPreset,
   onApplyDynamicPreset,
-  onAddToCurrentCue,
 }: ActionRightPanelProps) => (
   <aside className="flex h-full w-[320px] shrink-0 flex-col overflow-hidden rounded-lg bg-card">
     <TabBar tabs={RIGHT_TABS} active={activeTab} onChange={onTabChange} variant="underline" />
@@ -74,18 +68,15 @@ export const ActionRightPanel = ({
           resolved={resolved}
           selection={selection}
           selectedObjectIds={selectedObjectIds}
-          cueObjectIds={cueObjectIds}
           sequenceMissingHint={sequenceMissingHint}
           onReplaceBlock={onReplaceBlock}
           onUpdateSegment={onUpdateSegment}
           onDeleteBlock={onDeleteBlock}
           onCreatePose={onCreatePose}
           onCreateSetEnabled={onCreateSetEnabled}
-          onCreateCue={onCreateCue}
           onCreateSequence={onCreateSequence}
           onApplyStaticPreset={onApplyStaticPreset}
           onApplyDynamicPreset={onApplyDynamicPreset}
-          onAddToCurrentCue={onAddToCurrentCue}
         />
       )}
       {activeTab === "program" && <ProgramPanel />}

@@ -1,6 +1,5 @@
 import type {
   ControlledObject as TimelineControlledObject,
-  CueItem,
   ProgramNode,
 } from "@/app/pages/console/components/action-builder/timeline/timeline-data";
 import {
@@ -8,7 +7,6 @@ import {
   type ActionSequenceConfig,
   type ControlledObjectConfig,
   type MotorConfig,
-  type PositionCueConfig,
   type ProjectMotion,
   type VirtualAxisId,
 } from "./project-document-types";
@@ -18,13 +16,6 @@ import { decodeControlType } from "./control-type-code";
 import { motionKindForVirtualAxis } from "./virtual-axis-mapping";
 import { migrateActionSequenceProfiles } from "./action-sequence/migrate-motion-profiles";
 import { resolveVirtualAxisMaxVelocity } from "./virtual-axis-max-velocity";
-
-export const positionCueConfigToCueItem = (cue: PositionCueConfig): CueItem => ({
-  id: cue.id,
-  name: cue.name,
-  note: cue.note,
-  targets: structuredClone(cue.targets),
-});
 
 export const motionToProgramNodes = (motion: ProjectMotion): ProgramNode[] => {
   const seqById = new Map(motion.actionSequences.map((s) => [s.id, s]));
@@ -105,7 +96,6 @@ export const hydrateMotionForActionBuilder = (
   motors: readonly MotorConfig[] = [],
 ): {
   sequences: ActionSequenceConfig[];
-  cues: CueItem[];
   programs: ProgramNode[];
   timelineObjects: TimelineControlledObject[];
 } => {
@@ -114,7 +104,6 @@ export const hydrateMotionForActionBuilder = (
     : setupNamesToTimelineObjects(setupObjectNames);
   return {
     sequences: motion.actionSequences.map(migrateActionSequenceProfiles),
-    cues: motion.positionCues.map(positionCueConfigToCueItem),
     programs: motionToProgramNodes(motion),
     timelineObjects,
   };
