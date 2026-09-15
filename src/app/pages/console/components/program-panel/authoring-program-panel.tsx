@@ -10,7 +10,6 @@ import {
 } from "@/app/project/project-motion-readiness";
 import { useProject } from "@/app/project/use-project";
 import { useExecCards } from "../../hooks/use-exec-cards";
-import { useProgram } from "../../hooks/use-program";
 import { startLocalAuthoredSequence } from "../../hooks/sequence-execution";
 import type { ProgramItemInput } from "../action-builder/action-builder-context-types";
 import {
@@ -33,10 +32,6 @@ type ItemMeta = { kind: "sequence"; refId: number; name: string; durationMs: num
 type AuthoredChapterSectionProps = {
   chapter: ProgramNode;
   itemMetaById: Map<string, ItemMeta>;
-  isCurrent: boolean;
-  currentPageIndex: number;
-  onSelectChapter: () => void;
-  onSelectPage: (pageIndex: number) => void;
   onInsert: (chapterId: string, item: ProgramItemInput, index?: number) => void;
   onRemove: (chapterId: string, index: number) => void;
   onMove: (chapterId: string, fromIndex: number, toIndex: number) => void;
@@ -47,7 +42,6 @@ const AuthoredPageSection = ({
   chapterId,
   pageIndex,
   pageTotal,
-  isCurrent,
   items,
   itemIndexOffset,
   itemMetaById,
@@ -55,14 +49,12 @@ const AuthoredPageSection = ({
   acceptDrag,
   setDragOverIndex,
   handleDropAt,
-  onSelectPage,
   onLaunch,
   onRemove,
 }: {
   chapterId: string;
   pageIndex: number;
   pageTotal: number;
-  isCurrent: boolean;
   items: ProgramNode[];
   itemIndexOffset: number;
   itemMetaById: Map<string, ItemMeta>;
@@ -70,7 +62,6 @@ const AuthoredPageSection = ({
   acceptDrag: (event: DragEvent) => boolean;
   setDragOverIndex: Dispatch<SetStateAction<number | null>>;
   handleDropAt: (index: number) => (event: DragEvent) => void;
-  onSelectPage: (pageIndex: number) => void;
   onLaunch: (meta: ItemMeta) => void;
   onRemove: (chapterId: string, index: number) => void;
 }) => {
@@ -81,16 +72,13 @@ const AuthoredPageSection = ({
       <ProgramPageHeader
         pageIndex={pageIndex}
         pageTotal={pageTotal}
-        isCurrent={isCurrent}
+        isCurrent={false}
         expanded={expanded}
         onToggle={(event) => {
           event.stopPropagation();
           setExpanded((current) => !current);
         }}
-        onSelect={() => {
-          onSelectPage(pageIndex);
-          setExpanded(true);
-        }}
+        onSelect={() => setExpanded(true)}
       />
       {expanded &&
         items.map((item, pageItemIndex) => {
@@ -133,10 +121,6 @@ const AuthoredPageSection = ({
 const AuthoredChapterSection = ({
   chapter,
   itemMetaById,
-  isCurrent,
-  currentPageIndex,
-  onSelectChapter,
-  onSelectPage,
   onInsert,
   onRemove,
   onMove,
@@ -178,14 +162,8 @@ const AuthoredChapterSection = ({
       <button
         type="button"
         aria-expanded={expanded}
-        onClick={() => {
-          onSelectChapter();
-          setExpanded(true);
-        }}
-        className={cn(
-          "flex h-9 w-full items-center gap-1.5 px-2 text-left transition-colors hover:bg-muted",
-          isCurrent ? "bg-muted text-foreground" : "text-foreground/80",
-        )}
+        onClick={() => setExpanded(true)}
+        className="flex h-9 w-full items-center gap-1.5 px-2 text-left text-foreground transition-colors hover:bg-muted"
       >
         <span
           onClick={(event) => {
@@ -203,11 +181,6 @@ const AuthoredChapterSection = ({
         <span className="min-w-0 flex-1 truncate text-body-md font-medium text-foreground">
           {chapter.name}
         </span>
-        {isCurrent && (
-          <span className="shrink-0 rounded-sm bg-primary/20 px-1.5 py-0.5 text-label-caps text-primary">
-            当前
-          </span>
-        )}
         <span className="shrink-0 font-mono text-mono-sm tabular-nums text-muted-foreground">
           {pages.length}页·{items.length}项
         </span>
@@ -221,7 +194,6 @@ const AuthoredChapterSection = ({
               chapterId={chapter.id}
               pageIndex={pageIndex}
               pageTotal={pages.length}
-              isCurrent={isCurrent && currentPageIndex === pageIndex}
               items={pageItems}
               itemIndexOffset={pageIndex * PROGRAM_SLOTS_PER_PAGE}
               itemMetaById={itemMetaById}
@@ -229,7 +201,6 @@ const AuthoredChapterSection = ({
               acceptDrag={acceptDrag}
               setDragOverIndex={setDragOverIndex}
               handleDropAt={handleDropAt}
-              onSelectPage={onSelectPage}
               onLaunch={onLaunch}
               onRemove={onRemove}
             />
@@ -269,13 +240,6 @@ export const AuthoringProgramPanel = ({ className }: AuthoringProgramPanelProps)
     handleProgramItemRemove,
     handleProgramItemMove,
   } = useActionBuilder();
-  const {
-    currentChapterId,
-    currentPageIndex,
-    setCurrentChapter,
-    nextPage,
-    prevPage,
-  } = useProgram();
   const { launch } = useExecCards();
   const { currentProject } = useProject();
   const document = currentProject?.document;
@@ -326,15 +290,6 @@ export const AuthoringProgramPanel = ({ className }: AuthoringProgramPanelProps)
         sequenceHandle: started.sequenceHandle,
       });
     })();
-  };
-
-  const handleSelectPage = (chapterId: string, pageIndex: number) => {
-    if (chapterId !== currentChapterId) setCurrentChapter(chapterId);
-    if (pageIndex > currentPageIndex) {
-      for (let i = currentPageIndex; i < pageIndex; i += 1) nextPage();
-    } else if (pageIndex < currentPageIndex) {
-      for (let i = currentPageIndex; i > pageIndex; i -= 1) prevPage();
-    }
   };
 
   return (
@@ -393,10 +348,6 @@ export const AuthoringProgramPanel = ({ className }: AuthoringProgramPanelProps)
                     key={chapter.id}
                     chapter={chapter}
                     itemMetaById={itemMetaById}
-                    isCurrent={chapter.id === currentChapterId}
-                    currentPageIndex={currentPageIndex}
-                    onSelectChapter={() => setCurrentChapter(chapter.id)}
-                    onSelectPage={(pageIndex) => handleSelectPage(chapter.id, pageIndex)}
                     onInsert={handleProgramItemInsert}
                     onRemove={handleProgramItemRemove}
                     onMove={handleProgramItemMove}
