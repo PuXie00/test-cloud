@@ -61,12 +61,14 @@ const changeMotion = (document: ProjectDocument): ProjectDocument => ({
   ...document,
   motion: {
     ...document.motion,
-    positionCues: [
-      ...document.motion.positionCues,
+    actionSequences: [
+      ...document.motion.actionSequences,
       {
-        id: "cue-boundary-test",
-        name: "边界 Cue",
-        targets: {},
+        id: 9001,
+        name: "边界序列",
+        trajectoryMode: "non-forced",
+        blocks: [],
+        segments: [],
       },
     ],
   },
@@ -654,12 +656,22 @@ describe("ProjectProvider configuration history", () => {
         ...document,
         motion: {
           ...document.motion,
-          positionCues: [
-            ...document.motion.positionCues,
+          actionSequences: [
+            ...document.motion.actionSequences,
             {
-              id: "cue-invalid",
-              name: "无效 Cue",
-              targets: { "missing-object": { x: 1 } },
+              id: 9002,
+              name: "无效序列",
+              trajectoryMode: "non-forced",
+              blocks: [
+                {
+                  id: "ghost",
+                  kind: "pose",
+                  objectId: 99999,
+                  atMs: 1000,
+                  pose: { v1: 0, v2: 0, v3: 0 },
+                },
+              ],
+              segments: [],
             },
           ],
         },

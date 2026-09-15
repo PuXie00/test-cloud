@@ -34,11 +34,6 @@ export const formatObjectDeletionImpact = (
       `将从 ${impact.sceneGroupCount} 个场景组移除 ${impact.sceneGroupMemberCount} 个成员。`,
     );
   }
-  if (impact.cueCount > 0) {
-    detailLines.push(
-      `将影响 ${impact.cueCount} 个 Cue（删除 ${impact.cueTargetCount} 个目标）。`,
-    );
-  }
   if (impact.sequenceCount > 0) {
     detailLines.push(
       `将影响 ${impact.sequenceCount} 个动作序列（${impact.trackCount} 条轨道、${impact.blockCount} 个动作块）。`,
@@ -46,9 +41,6 @@ export const formatObjectDeletionImpact = (
   }
 
   const warningParts: string[] = [];
-  if (impact.emptyCueIds.length > 0) {
-    warningParts.push(`${impact.emptyCueIds.length} 个 Cue`);
-  }
   if (impact.emptySequenceIds.length > 0) {
     warningParts.push(`${impact.emptySequenceIds.length} 个动作序列`);
   }

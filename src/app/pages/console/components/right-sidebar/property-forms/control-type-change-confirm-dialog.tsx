@@ -32,7 +32,7 @@ export const ControlTypeChangeConfirmDialog = ({
   impact,
   onConfirm,
 }: ControlTypeChangeConfirmDialogProps) => {
-  const hasMotion = impact.affectedCues > 0 || impact.affectedSequenceTracks > 0;
+  const hasMotion = impact.affectedSequenceTracks > 0;
   const hasAny = impact.changed;
 
   return (
@@ -55,7 +55,7 @@ export const ControlTypeChangeConfirmDialog = ({
           {hasMotion && (
             <SummaryRow
               label="清理运动数据"
-              value={`${impact.affectedCues} 个位置 / ${impact.affectedSequenceTracks} 条轨道 / ${impact.affectedBlocks} 个片段`}
+              value={`${impact.affectedSequenceTracks} 条轨道 / ${impact.affectedBlocks} 个片段`}
             />
           )}
           {!hasAny && (

@@ -1,20 +1,12 @@
 import type { Program } from "@/app/pages/console/components/program-panel/program-data";
-import type { CueItem, ProgramNode } from "@/app/pages/console/components/action-builder/timeline/timeline-data";
+import type { ProgramNode } from "@/app/pages/console/components/action-builder/timeline/timeline-data";
 import type {
   ActionSequenceConfig,
-  PositionCueConfig,
   ProgramChapterConfig,
   ProgramConfig,
   ProgramItemRef,
   ProjectMotion,
 } from "./project-document-types";
-
-export const cueItemToPositionCueConfig = (cue: CueItem): PositionCueConfig => ({
-  id: cue.id,
-  name: cue.name,
-  note: cue.note,
-  targets: structuredClone(cue.targets),
-});
 
 const programNodeToChapter = (node: ProgramNode): ProgramChapterConfig => ({
   id: node.id,
@@ -60,17 +52,15 @@ export const legacyProgramToMotion = (program: Program, existing: ProjectMotion)
       : [programToConfig(program)];
 
   return {
-    positionCues: existing.positionCues,
     actionSequences: structuredClone(existing.actionSequences),
     programs,
   };
 };
 
 export const actionBuilderStateToMotion = (
-  state: { sequences: ActionSequenceConfig[]; cues: CueItem[]; programs: ProgramNode[] },
+  state: { sequences: ActionSequenceConfig[]; programs: ProgramNode[] },
   existing: ProjectMotion,
 ): ProjectMotion => ({
-  positionCues: state.cues.map((cue) => cueItemToPositionCueConfig(cue)),
   actionSequences: structuredClone(state.sequences),
   programs:
     state.programs.length > 0

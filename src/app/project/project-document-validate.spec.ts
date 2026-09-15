@@ -78,10 +78,14 @@ const documentOf = (
 };
 
 describe("validateProjectDocument sequence refs", () => {
+  it("does not type motion with positionCues", () => {
+    const document = createEmptyDocument({ id: "t", name: "t", author: "a" });
+    expect(document.motion).not.toHaveProperty("positionCues");
+  });
+
   it("accepts empty authored sequences as structurally ok", () => {
     const document = documentOf({
       motion: {
-        positionCues: [],
         actionSequences: [emptySequence()],
         programs: [],
       },
@@ -92,7 +96,6 @@ describe("validateProjectDocument sequence refs", () => {
   it("does not throw when a sequence preset cannot be resolved", () => {
     const document = documentOf({
       motion: {
-        positionCues: [],
         actionSequences: [
           {
             id: 3,
@@ -121,7 +124,6 @@ describe("validateProjectDocument sequence refs", () => {
   it("reports unknown objects in pose blocks, commands, and presets", () => {
     const document = documentOf({
       motion: {
-        positionCues: [],
         actionSequences: [
           {
             id: 4,
@@ -156,7 +158,6 @@ describe("validateProjectDocument sequence refs", () => {
   it("rejects non-sequence program items and dangling sequence refs", () => {
     const document = documentOf({
       motion: {
-        positionCues: [],
         actionSequences: [emptySequence(1)],
         programs: [
           {
@@ -183,46 +184,12 @@ describe("validateProjectDocument sequence refs", () => {
     expect(result.errors.some((error) => error.includes("missing-cue-ref"))).toBe(false);
   });
 
-  it("still reports cue unknown objects and disabled axes", () => {
-    const document = documentOf({
-      motion: {
-        positionCues: [
-          { id: "cue-ghost", name: "Ghost", targets: { "77": { v1: 1 } } },
-          { id: "cue-axis", name: "Axis", targets: { [String(OBJECT_A)]: { v3: 1 } } },
-        ],
-        actionSequences: [],
-        programs: [],
-      },
-    });
-    const result = validateProjectDocument(document);
-    expect(result.ok).toBe(false);
-    expect(result.errors.some((error) => error.includes("77"))).toBe(true);
-    expect(result.errors.some((error) => error.includes("v3"))).toBe(true);
-  });
 });
 
 describe("project-motion-readiness sequence gate", () => {
-  it("preserves Cue empty and missing behavior", () => {
-    const document = documentOf({
-      motion: {
-        positionCues: [
-          { id: "cue-empty", name: "Empty", targets: {} },
-          { id: "cue-ok", name: "Ok", targets: { [String(OBJECT_A)]: { v1: 1 } } },
-        ],
-        actionSequences: [],
-        programs: [],
-      },
-    });
-    expect(getMotionItemRepairIssue(document, "cue", "cue-empty")?.code).toBe("empty-cue");
-    expect(getMotionItemRepairIssue(document, "cue", "cue-ok")).toBeNull();
-    expect(getMotionItemRepairIssue(document, "cue", "missing")?.code).toBe("empty-cue");
-    expect(resolveMotionLaunchBlock(null, "cue", "cue-ok")?.code).toBe("empty-cue");
-  });
-
   it("blocks a missing sequence or a sequence with error issues", () => {
     const document = documentOf({
       motion: {
-        positionCues: [],
         actionSequences: [
           {
             id: 98,
@@ -269,7 +236,6 @@ describe("project-motion-readiness sequence gate", () => {
   it("allows a sequence that exists and has no error-severity issues", () => {
     const document = documentOf({
       motion: {
-        positionCues: [],
         actionSequences: [validSequence()],
         programs: [],
       },

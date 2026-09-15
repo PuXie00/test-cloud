@@ -10,15 +10,13 @@ import { motionKindForVirtualAxis } from "./virtual-axis-mapping";
 import { resolveVirtualAxisMaxVelocity } from "./virtual-axis-max-velocity";
 
 export type MotionRepairIssue = {
-  code: "empty-cue" | "empty-sequence" | "program-ref-empty";
+  code: "empty-sequence" | "program-ref-empty";
   itemId: string | number;
   message: string;
 };
 
-const EMPTY_CUE_MESSAGE = "Cue 无目标，待修复";
 const EMPTY_SEQUENCE_MESSAGE = "动作序列存在校验错误，待修复";
 const EMPTY_SEQUENCE_PENDING_MESSAGE = "动作序列为空，待编排";
-const MISSING_CUE_MESSAGE = "Cue 不可用，待修复";
 const MISSING_SEQUENCE_MESSAGE = "动作序列不可用，待修复";
 
 const limitsFromObject = (
@@ -72,33 +70,14 @@ const sequenceHasBlockingIssues = (
 };
 
 /**
- * Pure readiness for a cue/sequence by kind+id.
+ * Pure readiness for a sequence by kind+id.
  * Missing items fail closed (not executable); structural validators still own schema errors.
  */
 export const getMotionItemRepairIssue = (
   document: ProjectDocument,
-  kind: "cue" | "sequence",
+  kind: "sequence",
   itemId: string | number,
 ): MotionRepairIssue | null => {
-  if (kind === "cue") {
-    const cue = document.motion.positionCues.find((entry) => entry.id === itemId);
-    if (!cue) {
-      return {
-        code: "empty-cue",
-        itemId,
-        message: MISSING_CUE_MESSAGE,
-      };
-    }
-    if (Object.keys(cue.targets).length === 0) {
-      return {
-        code: "empty-cue",
-        itemId,
-        message: EMPTY_CUE_MESSAGE,
-      };
-    }
-    return null;
-  }
-
   const sequence = document.motion.actionSequences.find((entry) => entry.id === itemId);
   if (!sequence) {
     return {
@@ -130,14 +109,14 @@ export const getMotionItemRepairIssue = (
  */
 export const resolveMotionLaunchBlock = (
   document: ProjectDocument | null | undefined,
-  kind: "cue" | "sequence",
+  kind: "sequence",
   itemId: string | number,
 ): MotionRepairIssue | null => {
   if (!document) {
     return {
-      code: kind === "cue" ? "empty-cue" : "empty-sequence",
+      code: "empty-sequence",
       itemId,
-      message: kind === "cue" ? MISSING_CUE_MESSAGE : MISSING_SEQUENCE_MESSAGE,
+      message: MISSING_SEQUENCE_MESSAGE,
     };
   }
   return getMotionItemRepairIssue(document, kind, itemId);

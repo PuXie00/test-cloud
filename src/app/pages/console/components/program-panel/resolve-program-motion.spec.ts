@@ -6,7 +6,6 @@ import {
 } from "./resolve-program-motion";
 
 const motion: ProjectMotion = {
-  positionCues: [{ id: "cue-open", name: "开场", targets: { "1": { v1: 1 } } }],
   actionSequences: [
     {
       id: 1,
@@ -25,7 +24,6 @@ const motion: ProjectMotion = {
           id: "ch",
           name: "Ch",
           items: [
-            { kind: "cue", refId: "cue-open" },
             { kind: "sequence", refId: 1 },
             { kind: "sequence", refId: 99 },
           ] as unknown as ProgramItemRef[],

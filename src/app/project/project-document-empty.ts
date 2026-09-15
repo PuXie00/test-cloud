@@ -28,7 +28,7 @@ export const createEmptyDocument = (meta: {
       },
     },
     setup: { plcs: [], motors: [], controlledObjects: [], alignment: {} },
-    motion: { positionCues: [], actionSequences: [], programs: [] },
+    motion: { actionSequences: [], programs: [] },
     rules: { rules: [] },
     view: createDefaultSavedView(),
     snapshots: [],

@@ -360,20 +360,6 @@ const seedCascadeTarget = (
     result.current.builder.timelineObjects.some((object) => object.id === objectId),
   ).toBe(true);
 
-  act(() => {
-    result.current.builder.handleCreateCue([objectId]);
-  });
-  const cueId =
-    result.current.builder.selectedCueId ??
-    result.current.builder.cues.at(-1)?.id ??
-    "";
-  expect(cueId).toBeTruthy();
-  expect(
-    result.current.project.currentProject!.document!.motion.positionCues.some(
-      (cue) => cue.id === cueId && cue.targets[objectId] !== undefined,
-    ),
-  ).toBe(true);
-
   const sequenceId = 1;
   act(() => {
     result.current.project.updateCurrentDocument(
@@ -462,7 +448,7 @@ const seedCascadeTarget = (
   expect(result.current.project.canUndo).toBe(false);
   expect(result.current.project.canRedo).toBe(false);
 
-  return { objectId, cueId, sequenceId, motorId };
+  return { objectId, sequenceId, motorId };
 };
 
 beforeAll(() => {
@@ -538,13 +524,12 @@ describe("project configuration history integration", () => {
   it("atomically deletes cascade refs, restores on one undo, and re-deletes on redo", async () => {
     const { result } = renderIntegration();
     await openFixture(result);
-    const { objectId, cueId, sequenceId, motorId } = seedCascadeTarget(result);
+    const { objectId, sequenceId, motorId } = seedCascadeTarget(result);
 
     act(() => {
       result.current.deletion.requestDelete([objectId]);
     });
     expect(result.current.deletion.open).toBe(true);
-    expect(result.current.deletion.impact?.emptyCueIds).toContain(cueId);
     expect(result.current.deletion.impact?.emptySequenceIds).toContain(sequenceId);
 
     act(() => {
@@ -570,12 +555,9 @@ describe("project configuration history integration", () => {
     ).not.toContain(objectId);
 
     const docAfterDelete = result.current.project.currentProject!.document!;
-    const cueAfter = docAfterDelete.motion.positionCues.find((cue) => cue.id === cueId);
     const seqAfter = docAfterDelete.motion.actionSequences.find(
       (sequence) => sequence.id === sequenceId,
     );
-    expect(cueAfter).toBeTruthy();
-    expect(cueAfter!.targets).toEqual({});
     expect(seqAfter).toBeUndefined();
     expect(
       docAfterDelete.motion.programs
@@ -584,9 +566,6 @@ describe("project configuration history integration", () => {
         .some((item) => item.kind === "sequence" && item.refId === sequenceId),
     ).toBe(false);
 
-    expect(result.current.builder.cues.find((cue) => cue.id === cueId)?.targets).toEqual(
-      {},
-    );
     expect(
       result.current.builder.sequences.find((sequence) => sequence.id === sequenceId),
     ).toBeUndefined();
@@ -596,17 +575,10 @@ describe("project configuration history integration", () => {
         .some((item) => item.kind === "sequence" && item.sequence.id === sequenceId),
     ).toBe(false);
 
-    expect(getMotionItemRepairIssue(docAfterDelete, "cue", cueId)?.code).toBe("empty-cue");
     expect(getMotionItemRepairIssue(docAfterDelete, "sequence", sequenceId)?.code).toBe(
       "empty-sequence",
     );
-    expect(resolveMotionLaunchBlock(docAfterDelete, "cue", cueId)).toBeTruthy();
     expect(resolveMotionLaunchBlock(docAfterDelete, "sequence", sequenceId)).toBeTruthy();
-    expect(
-      getProgramRepairIssues(docAfterDelete, "prog-gz-main").some(
-        (issue) => issue.itemId === cueId,
-      ),
-    ).toBe(false);
     expect(
       getProgramRepairIssues(docAfterDelete, "prog-gz-main").some(
         (issue) => issue.itemId === sequenceId,
@@ -638,23 +610,16 @@ describe("project configuration history integration", () => {
     ).toContain(objectId);
 
     const docRestored = result.current.project.currentProject!.document!;
-    expect(docRestored.motion.positionCues.find((cue) => cue.id === cueId)?.targets).toHaveProperty(
-      objectId,
-    );
     expect(
       docRestored.motion.actionSequences
         .find((sequence) => sequence.id === sequenceId)
         ?.blocks.some((block) => block.kind === "pose" && block.objectId === Number(objectId)),
     ).toBe(true);
-    expect(result.current.builder.cues.find((cue) => cue.id === cueId)?.targets).toHaveProperty(
-      objectId,
-    );
     expect(
       result.current.builder.sequences
         .find((sequence) => sequence.id === sequenceId)
         ?.blocks.some((block) => block.kind === "pose" && block.objectId === Number(objectId)),
     ).toBe(true);
-    expect(getMotionItemRepairIssue(docRestored, "cue", cueId)).toBeNull();
     expect(getMotionItemRepairIssue(docRestored, "sequence", sequenceId)).toBeNull();
     expect(result.current.project.canUndo).toBe(false);
     expect(result.current.project.canRedo).toBe(true);
@@ -667,13 +632,9 @@ describe("project configuration history integration", () => {
       expect(result.current.store.findObject(objectId)).toBeUndefined();
     });
     const docRedeleted = result.current.project.currentProject!.document!;
-    expect(docRedeleted.motion.positionCues.find((cue) => cue.id === cueId)?.targets).toEqual(
-      {},
-    );
     expect(
       docRedeleted.motion.actionSequences.find((sequence) => sequence.id === sequenceId),
     ).toBeUndefined();
-    expect(resolveMotionLaunchBlock(docRedeleted, "cue", cueId)).toBeTruthy();
     expectNoHardwareSideEffects();
   });
 

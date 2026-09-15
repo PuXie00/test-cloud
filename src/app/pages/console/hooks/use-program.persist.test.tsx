@@ -61,16 +61,11 @@ describe("ProgramProvider document persist", () => {
       });
     }
     const chapterId = result.current.program.program.chapters[0]!.id;
-    const cuesBefore =
-      result.current.project.currentProject?.document?.motion.positionCues.length ?? 0;
     const seqBefore =
       result.current.project.currentProject?.document?.motion.actionSequences.length ?? 0;
     act(() => {
       result.current.program.addSequence(chapterId);
     });
-    expect(result.current.project.currentProject?.document?.motion.positionCues.length).toBe(
-      cuesBefore,
-    );
     expect(result.current.project.currentProject?.document?.motion.actionSequences.length).toBe(
       seqBefore + 1,
     );

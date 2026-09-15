@@ -192,38 +192,6 @@ const GZ_SETUP = {
 };
 
 const GZ_MOTION: ProjectMotion = {
-  positionCues: [
-    {
-      id: "cue-open",
-      name: "开场位置",
-      note: "演出起始",
-      durationMs: 5000,
-      targets: {
-        "7": { v1: 0 },
-        "8": { v1: 0, v2: 0 },
-        "9": { v1: 0, v2: 0, v3: 0 },
-      },
-    },
-    {
-      id: "cue-lift",
-      name: "升降开场",
-      durationMs: 6500,
-      targets: {
-        "7": { v1: 8500 },
-        "8": { v1: 6000, v2: 15 },
-        "9": { v1: 4000, v2: 0, v3: 0 },
-      },
-    },
-    {
-      id: "cue-focus",
-      name: "追光就位",
-      durationMs: 3000,
-      targets: {
-        "7": { v1: 5000 },
-        "8": { v1: 4000, v2: 30 },
-      },
-    },
-  ],
   actionSequences: [],
   programs: [
     {

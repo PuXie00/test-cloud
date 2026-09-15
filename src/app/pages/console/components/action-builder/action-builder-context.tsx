@@ -199,11 +199,11 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     hydratingRef.current = true;
     motionRef.current = {
       sequences: bundle.sequences,
-      cues: bundle.cues,
+      cues: projectChanged ? [] : motionRef.current.cues,
       programs: bundle.programs,
     };
     setSequences(bundle.sequences);
-    setCues(bundle.cues);
+    if (projectChanged) setCues([]);
     setPrograms(bundle.programs);
     setTimelineObjects(bundle.timelineObjects);
     setSelectedSequenceId((prev) =>
@@ -211,19 +211,11 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         ? prev
         : (bundle.sequences[0]?.id ?? null),
     );
-    setSelectedCueId((prev) =>
-      prev && bundle.cues.some((item) => item.id === prev) ? prev : null,
-    );
-    setTransitionDraft((prev) =>
-      prev &&
-      bundle.cues.some((item) => item.id === prev.fromCueId) &&
-      bundle.cues.some((item) => item.id === prev.toCueId)
-        ? prev
-        : null,
-    );
-    setCombineFromCueId((prev) =>
-      prev && bundle.cues.some((item) => item.id === prev) ? prev : null,
-    );
+    if (projectChanged) {
+      setSelectedCueId(null);
+      setTransitionDraft(null);
+      setCombineFromCueId(null);
+    }
     setSelectedObjectIds((prev) => {
       if (prev.length === 0) return prev;
       const objectIds = new Set(bundle.timelineObjects.map((object) => object.id));

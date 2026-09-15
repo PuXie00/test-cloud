@@ -66,17 +66,6 @@ export const SH_BALLET_DOCUMENT: ProjectDocument = {
     alignment: {},
   },
   motion: {
-    positionCues: [
-      {
-        id: "cue-curtain",
-        name: "幕启",
-        durationMs: 8000,
-        targets: {
-          "2": { v1: 2500 },
-          "1": { v1: 0 },
-        },
-      },
-    ],
     actionSequences: [],
     programs: [
       {

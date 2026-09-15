@@ -354,15 +354,6 @@ const makeDocument = (): ProjectDocument => ({
     alignment: {},
   },
   motion: {
-    positionCues: [
-      { id: "cue-empty", name: "空 Cue", targets: {} },
-      {
-        id: "cue-ok",
-        name: "正常 Cue",
-        durationMs: 1000,
-        targets: { "co-1": { v1: 10 } },
-      },
-    ],
     actionSequences: [
       {
         id: 14,
@@ -460,28 +451,19 @@ afterEach(() => {
 describe("project-motion-readiness (pure)", () => {
   it("derives empty items without persisting repair flags", () => {
     const document = makeDocument();
-    const emptyCue = getMotionItemRepairIssue(document, "cue", "cue-empty");
     const emptySequence = getMotionItemRepairIssue(
       document,
       "sequence",
       14,
     );
-    expect(emptyCue?.code).toBe("empty-cue");
     expect(emptySequence?.code).toBe("empty-sequence");
     expect(emptySequence?.message).toBe("动作序列为空，待编排");
-    expect(document.motion.positionCues[0]).not.toHaveProperty("needsRepair");
     expect(document.motion.actionSequences[0]).not.toHaveProperty("needsRepair");
-    expect(getMotionItemRepairIssue(document, "cue", "cue-ok")).toBeNull();
     expect(getMotionItemRepairIssue(document, "sequence", 15)).toBeNull();
     expect(getMotionItemRepairIssue(document, "sequence", 16)).toBeNull();
 
-    // kind+id namespaces are distinct; missing must not look executable (null)
     const cueAsSequence = getMotionItemRepairIssue(document, "sequence", "cue-empty");
-    const sequenceAsCue = getMotionItemRepairIssue(document, "cue", 14);
     expect(cueAsSequence).not.toBeNull();
-    expect(sequenceAsCue).not.toBeNull();
-    expect(cueAsSequence?.code).not.toBe("empty-cue");
-    expect(sequenceAsCue?.code).not.toBe("empty-sequence");
   });
 
   it("reports programs that reference empty or missing motion items (fail closed)", () => {
@@ -508,10 +490,8 @@ describe("project-motion-readiness (pure)", () => {
 
   it("resolveMotionLaunchBlock fails closed for missing document/items", () => {
     const document = makeDocument();
-    expect(resolveMotionLaunchBlock(null, "cue", "cue-ok")).not.toBeNull();
-    expect(resolveMotionLaunchBlock(document, "cue", "cue-empty")?.code).toBe("empty-cue");
+    expect(resolveMotionLaunchBlock(null, "sequence", 15)).not.toBeNull();
     expect(resolveMotionLaunchBlock(document, "sequence", "nope")).not.toBeNull();
-    expect(resolveMotionLaunchBlock(document, "cue", "cue-ok")).toBeNull();
     expect(resolveMotionLaunchBlock(document, "sequence", 14)?.code).toBe(
       "empty-sequence",
     );

@@ -7,11 +7,9 @@ import {
 import type {
   ActionSequenceConfig,
   ModelPose,
-  PositionCueConfig,
   ProjectDocument,
   TimelineBlock,
   VirtualAxisId,
-  VirtualAxisValues,
 } from "@/app/project/project-document-types";
 import { hydrateSetupFromDocument } from "@/app/project/setup-hydrate";
 import { persistSetupFromWizard } from "@/app/project/setup-persist";
@@ -24,7 +22,6 @@ export type ControlTypeChangeImpact = {
   removedDriveAxes: number;
   unboundMotors: number;
   axisTypeChangeMotors: number;
-  affectedCues: number;
   affectedSequenceTracks: number;
   affectedBlocks: number;
 };
@@ -34,7 +31,6 @@ export const EMPTY_CONTROL_TYPE_CHANGE_IMPACT: ControlTypeChangeImpact = Object.
   removedDriveAxes: 0,
   unboundMotors: 0,
   axisTypeChangeMotors: 0,
-  affectedCues: 0,
   affectedSequenceTracks: 0,
   affectedBlocks: 0,
 });
@@ -132,20 +128,6 @@ export const analyzeControlTypeChangeImpact = (
 
   const removedByObject = removedAxesByObject(hydrated, targetIds, controlType);
 
-  let affectedCues = 0;
-  for (const cue of document.motion.positionCues) {
-    let hit = false;
-    for (const [key, values] of Object.entries(cue.targets)) {
-      const removed = removedByObject.get(Number(key));
-      if (!removed || removed.size === 0) continue;
-      if (Object.keys(values ?? {}).some((axis) => removed.has(axis as VirtualAxisId))) {
-        hit = true;
-        break;
-      }
-    }
-    if (hit) affectedCues += 1;
-  }
-
   let affectedSequenceTracks = 0;
   let affectedBlocks = 0;
   for (const sequence of document.motion.actionSequences) {
@@ -159,7 +141,6 @@ export const analyzeControlTypeChangeImpact = (
     removedDriveAxes > 0 ||
     unboundMotors > 0 ||
     axisTypeChangeMotors > 0 ||
-    affectedCues > 0 ||
     affectedSequenceTracks > 0 ||
     affectedBlocks > 0;
 
@@ -168,42 +149,9 @@ export const analyzeControlTypeChangeImpact = (
     removedDriveAxes,
     unboundMotors,
     axisTypeChangeMotors,
-    affectedCues,
     affectedSequenceTracks,
     affectedBlocks,
   };
-};
-
-const stripCueTargets = (
-  cue: PositionCueConfig,
-  removedByObject: Map<number, Set<VirtualAxisId>>,
-): PositionCueConfig => {
-  const entries = Object.entries(cue.targets);
-  let changed = false;
-  const nextTargets: Record<string, VirtualAxisValues> = {};
-  for (const [key, values] of entries) {
-    const removed = removedByObject.get(Number(key));
-    const valueEntries = Object.entries(values ?? {});
-    if (valueEntries.length === 0) {
-      nextTargets[key] = values;
-      continue;
-    }
-    if (!removed || removed.size === 0) {
-      nextTargets[key] = values;
-      continue;
-    }
-    const kept = Object.fromEntries(
-      valueEntries.filter(([axis]) => !removed.has(axis as VirtualAxisId)),
-    ) as VirtualAxisValues;
-    if (Object.keys(kept).length === 0) {
-      changed = true;
-      continue;
-    }
-    if (Object.keys(kept).length !== valueEntries.length) changed = true;
-    nextTargets[key] = kept;
-  }
-  if (!changed) return cue;
-  return { ...cue, targets: nextTargets };
 };
 
 const PRESET_AXIS_PARAM_KEYS: readonly VirtualAxisId[] = ["v2", "v3"];
@@ -298,13 +246,6 @@ export const applyControlTypeChange = (
   const { hydrated, next } = transitionSetup(document, targetIds, controlType);
   const removedByObject = removedAxesByObject(hydrated, targetIds, controlType);
 
-  let cuesChanged = false;
-  const positionCues = document.motion.positionCues.map((cue) => {
-    const nextCue = stripCueTargets(cue, removedByObject);
-    if (nextCue !== cue) cuesChanged = true;
-    return nextCue;
-  });
-
   let sequencesChanged = false;
   const actionSequences = document.motion.actionSequences.map((sequence) => {
     const rewritten = rewriteSequenceRemovedAxes(sequence, removedByObject);
@@ -313,16 +254,12 @@ export const applyControlTypeChange = (
   });
 
   const setup = persistSetupFromWizard(next, document.setup);
-  const motion =
-    cuesChanged || sequencesChanged
-      ? {
-          ...document.motion,
-          positionCues: cuesChanged ? positionCues : document.motion.positionCues,
-          actionSequences: sequencesChanged
-            ? actionSequences
-            : document.motion.actionSequences,
-        }
-      : document.motion;
+  const motion = sequencesChanged
+    ? {
+        ...document.motion,
+        actionSequences,
+      }
+    : document.motion;
 
   return { ...document, setup, motion };
 };
