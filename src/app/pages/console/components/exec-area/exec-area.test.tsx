@@ -774,6 +774,27 @@ describe("FaderSlot sequence preview", () => {
     }
   });
 
+  it("a new pointerdown after leave-to-end-hold still toggles on click", () => {
+    vi.useFakeTimers();
+    const onPreviewToggle = vi.fn();
+    const onPreviewHoldStart = vi.fn();
+    const onPreviewHoldEnd = vi.fn();
+    try {
+      renderPreviewSlot({ onPreviewToggle, onPreviewHoldStart, onPreviewHoldEnd });
+      const preview = screen.getByRole("button", { name: "预览 开幕A" });
+      fireEvent.pointerDown(preview, { clientX: 10, clientY: 10 });
+      vi.advanceTimersByTime(400);
+      fireEvent.pointerLeave(preview);
+      expect(onPreviewHoldEnd).toHaveBeenCalledTimes(1);
+      fireEvent.pointerDown(preview, { clientX: 10, clientY: 10 });
+      fireEvent.pointerUp(preview);
+      fireEvent.click(preview);
+      expect(onPreviewToggle).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("pointer move of 20px before 400ms cancels hold and still toggles on click", () => {
     vi.useFakeTimers();
     const onPreviewToggle = vi.fn();

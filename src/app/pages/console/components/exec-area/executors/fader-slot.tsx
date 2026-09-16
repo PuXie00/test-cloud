@@ -64,6 +64,8 @@ export const FaderSlot = ({
   };
 
   const handleNamePointerDown = (event: React.PointerEvent) => {
+    if (event.button !== 0 || repairMessage) return;
+    suppressClickRef.current = false;
     startPointRef.current = { x: event.clientX, y: event.clientY };
     holdActiveRef.current = false;
     clearTimer();
@@ -170,9 +172,8 @@ export const FaderSlot = ({
             onPointerCancel={cancelHold}
             onContextMenu={(e) => e.preventDefault()}
             className={cn(
-              "line-clamp-1 text-left text-body-sm",
+              "line-clamp-1 text-left text-body-sm disabled:pointer-events-none disabled:opacity-60",
               isPreviewing ? "text-primary" : "text-foreground",
-              "disabled:opacity-60",
             )}
           >
             {slot.sequence?.name}
