@@ -1,0 +1,135 @@
+﻿---
+description: Industrial Control System design tokens, typography, and UI patterns
+alwaysApply: true
+---
+
+# Industrial Control System — Design Spec
+
+Authoritative reference: `src/imports/pasted_text/industrial-control-style-guide.md`. Tokens live in `src/styles/theme.css`.
+
+## Brand
+
+Technical-Precision dark UI for low-light, high-stakes control environments. Prioritize legibility, rapid data recognition, and error prevention. No decorative flourishes — use grid alignment and clear hierarchy. **Embrace a borderless layout design**, using color blocking and spacing to define structure rather than explicit lines.
+
+## Colors (semantic)
+
+Use Tailwind/theme tokens — never hardcode hex in components.
+
+| Role | Token | Hex (ref) | Usage |
+|------|-------|-----------|-------|
+| Primary action | `primary` | `#4cd6fb` | Tabs underline, links, focus rings, checked controls, selection |
+| Show / live | `show` | `#4ade80` | Running machinery, primary host, sync OK, active control |
+| Rehearsal | `secondary` | `#bac3ff` | Non-live / standby-ready secondary states |
+| Warning | `warning` | `#ffb77d` | Manual override bands, caution copy, outline warning buttons |
+| Danger | `destructive` | `#ffb4ab` | E-stop, force switch, irreversible actions |
+| Text primary | `foreground` | `#dee3e6` | Titles, hostnames, primary values |
+| Text secondary | `muted-foreground` | `#869398` | Labels, IPs, timestamps, inactive tab text |
+| Border | `border` | `#3d494d` | Input edges, recessed/elevated outlines only — not layout dividers |
+
+## Tonal layering (surfaces)
+
+Depth comes from **at least 4–6 distinct gray planes**. Do not flatten multiple layers onto the same token (e.g. all `bg-muted`). Darkest → lightest:
+
+| Layer | Token | Typical use |
+|-------|-------|-------------|
+| L0 void | `canvas` | 3D viewport, deepest backdrop |
+| L1 base | `background` | Page body, dialog **content scroll area** |
+| L2 recessed | `input-background` | Inputs, steppers, list rows, inset nodes, inline forms |
+| L3 shell | `card` | Dialog shell, floating panels, **tab strip** |
+| L4 section | `muted` | Section panels, header/footer chrome |
+| L5 elevated | `accent` | Standby/secondary nodes, manual-control bands, hover rows |
+
+**Lightness order (reference):** `canvas` < `background` < `input-background` < `card` < `muted` < `accent`.
+
+### Modal / dialog stack
+
+Apply layers top-to-bottom inside a centered modal:
+
+```text
+┌─ shell (card) ─────────────────────────────────────┐
+│ chrome (muted)     title bar                       │
+│ tabBar (card + border-b)   underline tabs          │
+│ content (background)                               │
+│   ├─ section (muted)     topology / lists / forms  │
+│   │    ├─ recessed (input-background)  list rows   │
+│   │    └─ elevated (accent)          standby node  │
+│   └─ elevated (accent)   manual-control band       │
+│ chrome (muted)     footer actions                  │
+└────────────────────────────────────────────────────┘
+```
+
+Reference implementation: `src/app/pages/console/components/collaboration/collab-surfaces.ts`.
+
+```tsx
+// ✅ Layered modal section
+<div className="bg-background p-4">           {/* L1 content */}
+  <div className="rounded-md bg-muted p-4">   {/* L4 section */}
+    <div className="rounded-md bg-input-background border border-border/60 px-3 py-2"> {/* L2 row */}
+```
+
+```tsx
+// ❌ Flat — section and rows share one gray
+<div className="bg-muted p-4">
+  <div className="bg-muted px-3 py-2">…</div>
+</div>
+```
+
+Reserve shadow `0 4px 24px rgba(0,0,0,0.4)` for floating dialogs/panels only. Structural separation = tonal contrast + spacing, not box shadows.
+
+## Typography
+
+- **Inter** — all UI text (`body`, headings, `label-caps`)
+- **JetBrains Mono** — coordinates, telemetry, DMX, timecode, IPs (`font-mono`, `mono-md`/`mono-sm`)
+
+| Style | Size / Weight / Line |
+|-------|---------------------|
+| heading-xl | 24px / 700 / 32px |
+| heading-lg | 18px / 600 / 24px |
+| heading-md | 14px / 600 / 20px |
+| body-md | 13px / 400 / 18px |
+| body-sm | 12px / 400 / 16px |
+| label-caps | 11px / 500 / 16px, letter-spacing 0.8px, uppercase |
+| mono-md | 13px / 400 / 18px |
+| mono-sm | 11px / 400 / 14px |
+
+Numerical values that update frequently must use monospace (`tabular-nums`) to prevent layout jitter.
+
+## Spacing & Layout
+
+4px base scale: `xxs=4`, `xs=8`, `sm=12`, `md=16`, `lg=20`, `xl=24`, `xxl=32`, `huge=48`. Gutters: 12px or 16px. Fixed-modular grid; maximize information density. Tablet buttons: min 40px height.
+
+## Border Radius
+
+`sm=2px`, default `4px`, `md=6px`, `lg=8px`, `xl=12px`, `full` for pills. Soft-technical — no sharp corners, no large radii on controls.
+
+## Components
+
+```tsx
+// ✅ Primary button
+<button className="bg-primary text-primary-foreground font-semibold rounded-md">
+
+// ✅ Secondary / outline (subtle border OK on interactive elements)
+<button className="border border-border bg-transparent text-foreground rounded-md">
+
+// ✅ Warning outline (manual override)
+<button className="border-warning text-warning hover:bg-warning-surface rounded-md">
+
+// ✅ Danger — irreversible actions only
+<button className="bg-destructive text-destructive-foreground rounded-md">
+
+// ✅ Live status / primary host
+<span className="text-show">运行中</span>
+
+// ✅ Telemetry / IP
+<span className="font-mono text-mono-sm tabular-nums text-muted-foreground">
+```
+
+- **Layouts & Panels:** Borderless between major regions. Alternate `background` ↔ `muted` ↔ `accent` for sections; never skip a layer when nesting containers.
+- **Inputs & steppers:** `bg-input-background`; optional `border border-border/60`; focus → `ring-ring` (cyan).
+- **Status badges:** pill, solid background (no stroke), leading status dot; live = `show`, idle = `muted`.
+- **Tree nodes:** 36px height, 12px indent/level, active = `bg-accent` + left `border-primary` (2px).
+- **Tables:** zebra on recessed planes — odd `bg-input-background`, even `bg-accent` (or `background` / `muted` inside a section wrapper); numbers in `font-mono`.
+- **Tabs (modal):** strip on `bg-card`; active tab = `text-primary` + 2px bottom underline; inactive = `text-muted-foreground`; **no per-tab background blocks**.
+- **Tabs (mode):** Show = green underline; Rehearsal = blue (`secondary`).
+- **Panel headers:** `bg-muted` (no bottom border), title in `label-caps`.
+- **Form fields in dialogs:** label above control (`text-body-sm text-muted-foreground`); control on `bg-input-background`.

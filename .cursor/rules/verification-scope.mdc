@@ -1,0 +1,22 @@
+---
+description: Verification boundaries - targeted tests only, no full build or full lint
+alwaysApply: true
+---
+
+# 自动化验证与测试执行约束
+
+## 1. 严禁全量构建 (No Full Build)
+- 禁止主动执行 npm run build、pnpm build、vite build、electron-builder 等整包构建命令。
+- 仅在用户明确提出打包需求时执行。
+
+## 2. 严禁全量检查与全量类型检查 (No Full Lint / Typecheck)
+- 禁止执行全局 tsc --noEmit 或全局代码质量扫描。
+- 若需诊断类型/代码错误，使用 ReadLints 时必须显式传入发生变更的具体文件路径，禁止全工程扫描。
+
+## 3. 仅运行受影响的单元测试 (Targeted Tests Only)
+- 禁止执行裸命令 vitest run、pnpm test 或 npm test（避免触发全量数十个测试套件）。
+- 仅针对本次修改影响到的文件执行靶向测试，例如：npx vitest run <path/to/affected.test.ts>。
+- 若修改未涉及逻辑或无对应现有测试，严禁扩散运行无关测试。
+
+## 4. 严禁漫延修复 (No Scope Creep)
+- 仅聚焦用户当下指令解决问题，严禁顺带排查或修改仓库中其他历史残留的警告或错误。

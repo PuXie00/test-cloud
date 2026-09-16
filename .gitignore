@@ -19,7 +19,7 @@ docs
 /YXZ_call.json
 /YXZ.json
 /YXZ.exe
-.cursor
+# .cursor
 *.test.ts
 *.test.tsx
 # Undo/Redo Tasks 1-10 + final consistency / 3D transform (precise whitelist)
