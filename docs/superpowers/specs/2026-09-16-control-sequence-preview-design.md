@@ -36,7 +36,7 @@ Operators on the control page need to see what an action sequence will do before
 | Trajectory rendering | One `LinesMesh` per member object through sampled world positions. Color `primary`, `isPickable = false`. |
 | Sampling | Every **100ms** from 0 to `totalMs`, plus every segment `startMs` / `endMs`. Positions from `resolveVirtualAxisTransform(config, pose).position`. |
 | Which ghosts | Start pose ghost (t = 0) and **cursor** ghost. When cursor is at 0 they coincide, so show start + end ghosts at rest; while scrubbing/playing show start ghost + cursor ghost. |
-| Non-members | Dim via `setDimmedObjects` (same as the action page). |
+| Non-members | Stay opaque during control preview. Do not dim. |
 | Transport bar | Bottom of the viewport, inside `ViewportOverlay`, only when `activeNav === "control"` and a preview is active. Height 32px, `bg-card/90`. Content: ▶/⏸, range slider (step 100ms), `mm:ss.s / mm:ss.s`, speed chips `1× 2× 4×`, `×` close. |
 | Time display | Authored time (`cursorMs / totalMs`) using `formatExecTime` (`00:05.2 / 00:12.3`). |
 | Playback speed | `advance = dt × (faderPercent / 100) × multiplier`. `faderPercent` = slot fader value when preview started from an F slot, else 100. `multiplier` from chips (1/2/4), default 1. |
@@ -68,10 +68,9 @@ Viz3DSequencePreviewSync                 SequencePreviewBar (ViewportOverlay)
  sampleSequencePaths(...)
  evaluateResolvedSequence(resolved, cursorMs)
  engine.setSequencePreview({ paths, ghosts })
- engine.setDimmedObjects(nonMembers)
 ```
 
-`Viz3DGoShadowSync` and `Viz3DActionPreviewSync` are untouched. `Viz3DMembershipDimSync` learns one more source of member ids (control preview) so dimming does not fight between the two syncs.
+`Viz3DGoShadowSync`, `Viz3DActionPreviewSync`, and `Viz3DMembershipDimSync` are untouched. Control preview does not dim non-members.
 
 ## Components
 
@@ -124,10 +123,10 @@ Auto-exit: effect on `activeNav !== "control"`, on `currentProject?.id` change, 
 ## Data flow
 
 1. Click F2 name → `togglePreview(15, { faderPercent: 150 })` → state `{ sequenceId: 15, cursorMs: 0, isPlaying: false }`.
-2. Sync resolves sequence 15, samples paths, sets start + end ghosts, dims non-members. Bar appears: `00:00.0 / 00:12.3`.
+2. Sync resolves sequence 15, samples paths, sets start + end ghosts. Other objects stay opaque. Bar appears: `00:00.0 / 00:12.3`.
 3. Drag slider to 5200 → `setCursorMs(5200)` → cursor ghost moves along the path.
 4. Press ▶ → rAF advances `cursorMs` by `dt × 1.5 × 1`; at `totalMs` → `isPlaying: false`, end ghost remains.
-5. Press GO on F2 → `launch(...)`, then `stopPreview()` → paths, ghosts, dimming, bar all cleared.
+5. Press GO on F2 → `launch(...)`, then `stopPreview()` → paths, ghosts, bar all cleared.
 6. Long-press F3 name → `startPreview(16, { autoplay: true, holdMode: true, faderPercent: 100 })`; ghosts loop; release → `stopPreview()`. No bar in hold mode.
 
 ## Error handling

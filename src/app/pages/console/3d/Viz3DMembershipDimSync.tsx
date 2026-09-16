@@ -1,8 +1,6 @@
 import { useEffect, useMemo } from "react";
-import { useProject } from "@/app/project/use-project";
 import { useActionBuilder } from "../components/action-builder/use-action-builder";
 import { useConsoleNav } from "../hooks/use-console-nav";
-import { useSequencePreview } from "../hooks/sequence-preview-provider";
 import { useProjectStore } from "../hooks/use-project-store";
 import { useSelection } from "../hooks/use-selection";
 import { resolveDimmedObjectIds } from "./membership-dim";
@@ -16,15 +14,6 @@ export const Viz3DMembershipDimSync = () => {
   const { objects } = useProjectStore();
   const { selectedId, multiSelectedIds } = useSelection();
   const { dockMode, sequence } = useActionBuilder();
-  const { sequenceId } = useSequencePreview();
-  const { currentProject } = useProject();
-
-  const controlPreviewSequence = useMemo(() => {
-    if (sequenceId === null) return null;
-    return (
-      currentProject?.document.motion.actionSequences.find((item) => item.id === sequenceId) ?? null
-    );
-  }, [sequenceId, currentProject]);
 
   const allObjectIds = useMemo(() => objects.map((object) => object.id), [objects]);
   const pickedObjectIds = useMemo(
@@ -38,11 +27,10 @@ export const Viz3DMembershipDimSync = () => {
         activeNav,
         dockMode,
         sequence,
-        controlPreviewSequence,
         allObjectIds,
         pickedObjectIds,
       }).map(String),
-    [activeNav, dockMode, sequence, controlPreviewSequence, allObjectIds, pickedObjectIds],
+    [activeNav, dockMode, sequence, allObjectIds, pickedObjectIds],
   );
 
   useEffect(() => {

@@ -496,6 +496,6 @@ Tests (`exec-area.test.tsx`, add a `vi.mock("../../hooks/sequence-preview-provid
 | Click F-slot name / program row toggles preview | 6 |
 | Long-press ≥ 400ms autoplay while held, release clears | 2, 6 |
 | Cyan ghosts vs secondary GO shadows | 3 |
-| Non-members dimmed on control during preview | 4 |
+| Non-members stay opaque on control during preview | — |
 | GO / nav / project change exits preview | 2, 6 |
 | Invalid sequence → toast, no preview | 2 |

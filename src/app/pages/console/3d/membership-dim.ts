@@ -7,7 +7,6 @@ export type MembershipDimInput = {
   activeNav: LeftNavId;
   dockMode: EditorDockMode;
   sequence: ActionSequenceConfig | null;
-  controlPreviewSequence: ActionSequenceConfig | null;
   allObjectIds: number[];
   pickedObjectIds: number[];
 };
@@ -19,9 +18,6 @@ const nonEmptyOrNull = (ids: Iterable<number>): Set<number> | null => {
 
 /** 当前序列的成员集合；null 表示不做变淡 */
 export const resolveMemberObjectIds = (input: MembershipDimInput): Set<number> | null => {
-  if (input.activeNav === "control" && input.controlPreviewSequence) {
-    return nonEmptyOrNull(sequenceObjectIds(input.controlPreviewSequence));
-  }
   if (input.activeNav !== "sequences") return null;
   if (input.dockMode !== "sequence" || !input.sequence) return null;
   return nonEmptyOrNull(sequenceObjectIds(input.sequence));
