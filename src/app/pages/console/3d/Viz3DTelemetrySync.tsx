@@ -4,6 +4,8 @@ import { isTransformToolMode } from "@/app/viz3d";
 import { ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE } from "@/app/project/configuration-rules";
 import type { ControlledObjectStatus, ControlledObjectType } from "../components/monitor-grid/monitor-data";
 import { useConsoleNav } from "../hooks/use-console-nav";
+import { useSequencePreview } from "../hooks/sequence-preview-provider";
+import { memberObjectIds } from "../hooks/sequence-preview";
 import { useControlledObjects } from "../hooks/use-controlled-objects";
 import { useProjectStore } from "../hooks/use-project-store";
 import { useViz3DContext } from "./Viz3DProvider";
@@ -30,6 +32,7 @@ export const Viz3DTelemetrySync = () => {
   const { objects } = useProjectStore();
   const { snapshots } = useControlledObjects();
   const { activeNav } = useConsoleNav();
+  const { sequenceId, resolved } = useSequencePreview();
   const [mode, setMode] = useState<ToolMode>(() => engine.getMode());
   const [engineSelection, setEngineSelection] = useState<string[]>(() => engine.getSelection());
 
@@ -42,6 +45,11 @@ export const Viz3DTelemetrySync = () => {
       ),
     [objects],
   );
+
+  const previewSkipIds = useMemo(() => {
+    if (activeNav !== "control" || sequenceId === null || !resolved) return new Set<string>();
+    return new Set(memberObjectIds(resolved).map(String));
+  }, [activeNav, sequenceId, resolved]);
 
   useEffect(() => {
     const handleMode = (next: ToolMode) => setMode(next);
@@ -60,6 +68,7 @@ export const Viz3DTelemetrySync = () => {
     const liveSnapshots = selectSnapshotsForTelemetryApply(snapshots, {
       transformMode: isTransformToolMode(mode),
       skipEngineObjectIds: isTransformToolMode(mode) ? new Set(engineSelection) : new Set(),
+      skipObjectIds: previewSkipIds,
       resolveObjectId: (id) => engine.resolveObjectId(id) ?? undefined,
     });
 
@@ -98,7 +107,7 @@ export const Viz3DTelemetrySync = () => {
     }
 
     if (inputs.length > 0) engine.applyTelemetry(inputs);
-  }, [engine, snapshots, mode, engineSelection, activeNav, virtualAxisObjectIds]);
+  }, [engine, snapshots, mode, engineSelection, activeNav, virtualAxisObjectIds, previewSkipIds]);
 
   return null;
 };

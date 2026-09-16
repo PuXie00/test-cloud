@@ -28,8 +28,10 @@ import { Viz3DMotorSelectionSync } from "./3d/Viz3DMotorSelectionSync";
 import { Viz3DTelemetrySync } from "./3d/Viz3DTelemetrySync";
 import { Viz3DVirtualAxisLabelSync } from "./3d/Viz3DVirtualAxisLabelSync";
 import { Viz3DGoShadowSync } from "./3d/Viz3DGoShadowSync";
+import { Viz3DSequencePreviewSync } from "./3d/Viz3DSequencePreviewSync";
 import { Viz3DMembershipDimSync } from "./3d/Viz3DMembershipDimSync";
 import { GoReadyProvider } from "./hooks/go-ready-provider";
+import { SequencePreviewProvider } from "./hooks/sequence-preview-provider";
 import { Viz3DSelectionSync } from "./3d/Viz3DSelectionSync";
 import { StructureSelectionBridge } from "./3d/StructureSelectionBridge";
 import { Viz3DConsoleNavSync } from "./3d/Viz3DConsoleNavSync";
@@ -174,8 +176,9 @@ const ConsoleInner = () => {
             if (options?.devicesTab) setDevicesRightTab(options.devicesTab);
           }}
         >
-          <GoReadyProvider>
-            <ViewportSlotProvider>
+          <SequencePreviewProvider>
+            <GoReadyProvider>
+              <ViewportSlotProvider>
             <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-body-md text-foreground">
               <TopBar onStop={handleEmergencyStop} />
 
@@ -206,6 +209,7 @@ const ConsoleInner = () => {
               <Viz3DActionPreviewSync />
               <Viz3DVirtualAxisLabelSync />
               <Viz3DGoShadowSync />
+              <Viz3DSequencePreviewSync />
               <Viz3DMembershipDimSync />
               <Viz3DTransformSync />
               <Viz3DSelectionSync />
@@ -213,8 +217,9 @@ const ConsoleInner = () => {
               <StructureSelectionBridge />
               <BuildDebugLifecycle />
             </div>
-          </ViewportSlotProvider>
-          </GoReadyProvider>
+              </ViewportSlotProvider>
+            </GoReadyProvider>
+          </SequencePreviewProvider>
         </ConsoleNavProvider>
       </Viz3DProvider>
     </ControlLayoutProvider>

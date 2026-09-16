@@ -17,6 +17,8 @@ type ChapterSectionProps = {
     index: number,
   ) => (event: React.DragEvent) => void;
   onDoubleClickItem?: (item: ChapterItem) => void;
+  onClickItem?: (item: ChapterItem) => void;
+  activeSequenceId?: number | null;
 };
 
 export const ChapterSection = ({
@@ -27,6 +29,8 @@ export const ChapterSection = ({
   onSelectPage,
   onItemDragStart,
   onDoubleClickItem,
+  onClickItem,
+  activeSequenceId,
 }: ChapterSectionProps) => {
   const [expanded, setExpanded] = useState(isCurrent);
   const totalPages = programPageCount(chapter.items);
@@ -90,6 +94,8 @@ export const ChapterSection = ({
               onClickHeader={() => onSelectPage(pageIndex)}
               onItemDragStart={onItemDragStart}
               onDoubleClickItem={onDoubleClickItem}
+              onClickItem={onClickItem}
+              activeSequenceId={activeSequenceId}
               itemIndexOffset={pageIndex * PROGRAM_SLOTS_PER_PAGE}
             />
           ))}

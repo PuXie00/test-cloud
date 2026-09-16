@@ -6,6 +6,7 @@ import { useProject } from "@/app/project/use-project";
 import { useExecutorSlots } from "../../hooks/use-executor-slots";
 import { useExecCards } from "../../hooks/use-exec-cards";
 import { goSequence, readySequence } from "../../hooks/sequence-execution";
+import { useSequencePreview } from "../../hooks/sequence-preview-provider";
 import { ExecCards } from "./exec-cards/exec-cards";
 import { Executors } from "./executors/executors";
 
@@ -21,6 +22,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     useExecutorSlots();
   const { cards, launch } = useExecCards();
   const { currentProject } = useProject();
+  const { stopPreview } = useSequencePreview();
 
   useEffect(() => {
     const runningSlots = new Set(
@@ -76,6 +78,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
             sequenceId,
             sequenceHandle: started.sequenceHandle,
           });
+          stopPreview();
         } finally {
           setSlotBusy(slotIndex, false);
         }

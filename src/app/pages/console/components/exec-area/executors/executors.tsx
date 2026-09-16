@@ -3,6 +3,7 @@ import { PROGRAM_SLOTS_PER_PAGE } from "@/app/pages/console/components/program-p
 import { useProject } from "@/app/project/use-project";
 import { useProgram } from "../../../hooks/use-program";
 import { useExecutorSlots } from "../../../hooks/use-executor-slots";
+import { useSequencePreview } from "../../../hooks/sequence-preview-provider";
 import { ExecutorPaginationBar } from "./executor-pagination-bar";
 import { ExecutorSectionGuide } from "./executor-section-guide";
 import { FaderSlot } from "./fader-slot";
@@ -16,6 +17,8 @@ export const Executors = ({ onTriggerSequence }: ExecutorsProps) => {
   const { program, reorderItemInChapter, moveItemAcrossChapter, currentChapterId, currentPageIndex } =
     useProgram();
   const { currentProject } = useProject();
+  const { sequenceId: previewSequenceId, togglePreview, startPreview, stopPreview } =
+    useSequencePreview();
   const document = currentProject?.document;
 
   const handleAssignFromDrag =
@@ -54,6 +57,19 @@ export const Executors = ({ onTriggerSequence }: ExecutorsProps) => {
                   key={slot.index}
                   slot={slot}
                   repairMessage={repairMessage}
+                  isPreviewing={previewSequenceId === slot.sequence?.id}
+                  onPreviewToggle={() =>
+                    slot.sequence && togglePreview(slot.sequence.id, { faderPercent: slot.faderValue })
+                  }
+                  onPreviewHoldStart={() =>
+                    slot.sequence &&
+                    startPreview(slot.sequence.id, {
+                      faderPercent: slot.faderValue,
+                      autoplay: true,
+                      holdMode: true,
+                    })
+                  }
+                  onPreviewHoldEnd={stopPreview}
                   onGo={() => slot.sequence && onTriggerSequence(slot.index, slot.sequence.id)}
                   onFaderChange={(value) => setFaderValue(slot.index, value)}
                   onAssignFromDrag={handleAssignFromDrag(slot.index)}

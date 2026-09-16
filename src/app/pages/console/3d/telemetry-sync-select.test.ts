@@ -34,4 +34,14 @@ describe("selectSnapshotsForTelemetryApply", () => {
     });
     expect(selected.map((row) => row.descriptor.id)).toEqual([2]);
   });
+
+  it("skips preview member ids even outside transform mode", () => {
+    const selected = selectSnapshotsForTelemetryApply([snap(1, true), snap(2, true)], {
+      transformMode: false,
+      skipEngineObjectIds: new Set(),
+      skipObjectIds: new Set(["1"]),
+      resolveObjectId: (id) => id,
+    });
+    expect(selected.map((row) => row.descriptor.id)).toEqual([2]);
+  });
 });

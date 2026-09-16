@@ -19,6 +19,8 @@ type PageSectionProps = {
     index: number,
   ) => (event: React.DragEvent) => void;
   onDoubleClickItem?: (item: ChapterItem) => void;
+  onClickItem?: (item: ChapterItem) => void;
+  activeSequenceId?: number | null;
   itemIndexOffset: number;
 };
 
@@ -31,6 +33,8 @@ export const PageSection = ({
   onClickHeader,
   onItemDragStart,
   onDoubleClickItem,
+  onClickItem,
+  activeSequenceId,
   itemIndexOffset,
 }: PageSectionProps) => {
   const { mode } = useConsoleMode();
@@ -71,11 +75,13 @@ export const PageSection = ({
                 key={item.sequence.id}
                 item={item}
                 slotLabel={`F${idx + 1}`}
+                isActive={item.sequence.id === activeSequenceId}
                 hasWarning={Boolean(issue)}
                 warningMessage={issue?.message}
                 draggable={mode === "rehearsal"}
                 striped={idx % 2 !== 0}
                 onDragStart={onItemDragStart(chapterId, item, itemIndexOffset + idx)}
+                onClick={() => onClickItem?.(item)}
                 onDoubleClick={() => onDoubleClickItem?.(item)}
               />
             );

@@ -1,12 +1,20 @@
+import { useEffect, useRef } from "react";
 import { Loader2, Play, Plus } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
 import { useConsoleMode } from "../../../hooks/use-console-mode";
 import type { FaderSlotState } from "../../../hooks/use-executor-slots";
 import { VerticalFader } from "./vertical-fader";
 
+const LONG_PRESS_MS = 400;
+const LONG_PRESS_MOVE_PX = 8;
+
 type FaderSlotProps = {
   slot: FaderSlotState;
   repairMessage?: string | null;
+  isPreviewing: boolean;
+  onPreviewToggle: () => void;
+  onPreviewHoldStart: () => void;
+  onPreviewHoldEnd: () => void;
   onGo: () => void;
   onFaderChange: (value: number) => void;
   onAssignFromDrag: (payload: { chapterId: string; index: number; kind: "sequence" }) => void;
@@ -15,6 +23,10 @@ type FaderSlotProps = {
 export const FaderSlot = ({
   slot,
   repairMessage,
+  isPreviewing,
+  onPreviewToggle,
+  onPreviewHoldStart,
+  onPreviewHoldEnd,
   onGo,
   onFaderChange,
   onAssignFromDrag,
@@ -27,6 +39,70 @@ export const FaderSlot = ({
   const isBlocked = isEmpty || Boolean(repairMessage) || slot.isBusy || isRunning;
   const isRehearsal = mode === "rehearsal";
   const reasonId = `fader-slot-repair-${slot.index}`;
+
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startPointRef = useRef<{ x: number; y: number } | null>(null);
+  const holdActiveRef = useRef(false);
+  const suppressClickRef = useRef(false);
+
+  const clearTimer = () => {
+    if (timerRef.current != null) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  useEffect(() => () => clearTimer(), []);
+
+  const cancelHold = () => {
+    clearTimer();
+    if (holdActiveRef.current) {
+      holdActiveRef.current = false;
+      onPreviewHoldEnd();
+      suppressClickRef.current = true;
+    }
+  };
+
+  const handlePreviewClick = () => {
+    if (isEmpty || repairMessage) return;
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
+    onPreviewToggle();
+  };
+
+  const handlePreviewPointerDown = (event: React.PointerEvent) => {
+    if (isEmpty || event.button !== 0 || repairMessage) return;
+    suppressClickRef.current = false;
+    startPointRef.current = { x: event.clientX, y: event.clientY };
+    holdActiveRef.current = false;
+    clearTimer();
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      holdActiveRef.current = true;
+      onPreviewHoldStart();
+    }, LONG_PRESS_MS);
+  };
+
+  const handlePreviewPointerMove = (event: React.PointerEvent) => {
+    const start = startPointRef.current;
+    if (!start || timerRef.current == null) return;
+    const dx = event.clientX - start.x;
+    const dy = event.clientY - start.y;
+    if (Math.hypot(dx, dy) > LONG_PRESS_MOVE_PX) {
+      clearTimer();
+    }
+  };
+
+  const handlePreviewPointerUp = () => {
+    clearTimer();
+    if (holdActiveRef.current) {
+      holdActiveRef.current = false;
+      onPreviewHoldEnd();
+      suppressClickRef.current = true;
+    }
+  };
 
   const handleDragOver = (event: React.DragEvent) => {
     if (!isRehearsal) return;
@@ -53,7 +129,7 @@ export const FaderSlot = ({
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       className={cn(
-        "flex h-full min-h-0 min-w-[72px] w-full flex-col gap-1 rounded-sm border bg-card p-2 transition-colors",
+        "relative flex h-full min-h-0 min-w-[72px] w-full flex-col gap-1 rounded-sm border bg-card p-2 transition-colors",
         isRunning
           ? "border-show/60"
           : isEmpty
@@ -65,7 +141,25 @@ export const FaderSlot = ({
                 : "border-border",
       )}
     >
-      <div className="flex items-center gap-1">
+      {!isEmpty ? (
+        <button
+          type="button"
+          aria-label={`预览 ${slot.sequence?.name}`}
+          aria-pressed={isPreviewing}
+          disabled={Boolean(repairMessage)}
+          onClick={handlePreviewClick}
+          onPointerDown={handlePreviewPointerDown}
+          onPointerMove={handlePreviewPointerMove}
+          onPointerUp={handlePreviewPointerUp}
+          onPointerLeave={cancelHold}
+          onPointerCancel={cancelHold}
+          onContextMenu={(event) => event.preventDefault()}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+          className="absolute inset-0 z-0 rounded-sm disabled:pointer-events-none"
+        />
+      ) : null}
+      <div className="pointer-events-none relative z-[1] flex items-center gap-1">
         <span className="font-mono text-label-caps text-muted-foreground">{slot.label}</span>
         <span
           className={cn(
@@ -84,15 +178,23 @@ export const FaderSlot = ({
       </div>
       {!isEmpty ? (
         <>
-          <span className="line-clamp-1 text-body-sm text-foreground">{slot.sequence?.name}</span>
+          <span
+            className={cn(
+              "pointer-events-none relative z-[1] line-clamp-1 text-left text-body-sm",
+              isPreviewing ? "text-primary" : "text-foreground",
+              repairMessage && "opacity-60",
+            )}
+          >
+            {slot.sequence?.name}
+          </span>
           {repairMessage ? (
-            <span id={reasonId} className="line-clamp-2 text-body-sm text-warning">
+            <span id={reasonId} className="pointer-events-none relative z-[1] line-clamp-2 text-body-sm text-warning">
               {repairMessage}
             </span>
           ) : null}
         </>
       ) : null}
-      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col">
         <VerticalFader
           value={slot.faderValue}
           onChange={onFaderChange}
@@ -118,7 +220,7 @@ export const FaderSlot = ({
         aria-describedby={repairMessage ? reasonId : undefined}
         onClick={onGo}
         className={cn(
-          "inline-flex h-9 shrink-0 items-center justify-center gap-1 rounded-sm font-semibold transition-colors disabled:pointer-events-none disabled:opacity-30",
+          "relative z-10 inline-flex h-9 shrink-0 items-center justify-center gap-1 rounded-sm font-semibold transition-colors disabled:pointer-events-none disabled:opacity-30",
           isRunning
             ? "bg-show text-background"
             : isBlocked

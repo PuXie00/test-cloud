@@ -26,12 +26,6 @@ const base: MembershipDimInput = {
 };
 
 describe("resolveMemberObjectIds", () => {
-  it("returns null outside sequences nav", () => {
-    expect(
-      resolveMemberObjectIds({ ...base, activeNav: "control", dockMode: "sequence", sequence }),
-    ).toBeNull();
-  });
-
   it("returns null for empty dock", () => {
     expect(resolveMemberObjectIds(base)).toBeNull();
   });
@@ -45,6 +39,15 @@ describe("resolveMemberObjectIds", () => {
     expect(
       resolveMemberObjectIds({ ...base, dockMode: "sequence", sequence: { ...sequence, blocks: [] } }),
     ).toBeNull();
+  });
+
+  it("does not dim on control even when a sequence is present", () => {
+    expect(
+      resolveMemberObjectIds({ ...base, activeNav: "control", dockMode: "sequence", sequence }),
+    ).toBeNull();
+    expect(
+      resolveDimmedObjectIds({ ...base, activeNav: "control", dockMode: "sequence", sequence }),
+    ).toEqual([]);
   });
 });
 

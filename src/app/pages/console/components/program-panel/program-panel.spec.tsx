@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEmptyDocument } from "@/app/project/project-document-empty";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
@@ -86,6 +86,38 @@ vi.mock("@/app/project/use-project", () => ({
   useProject: () => ({ currentProject: documentRef.current ? { document: documentRef.current } : null }),
 }));
 
+const {
+  togglePreviewMock,
+  startPreviewMock,
+  stopPreviewMock,
+  previewSequenceIdRef,
+} = vi.hoisted(() => ({
+  togglePreviewMock: vi.fn(),
+  startPreviewMock: vi.fn(),
+  stopPreviewMock: vi.fn(),
+  previewSequenceIdRef: { current: null as number | null },
+}));
+
+vi.mock("../../hooks/sequence-preview-provider", () => ({
+  useSequencePreview: () => ({
+    sequenceId: previewSequenceIdRef.current,
+    togglePreview: togglePreviewMock,
+    startPreview: startPreviewMock,
+    stopPreview: stopPreviewMock,
+    cursorMs: 0,
+    isPlaying: false,
+    holdMode: false,
+    faderPercent: 100,
+    multiplier: 1,
+    totalMs: 0,
+    resolved: null,
+    setCursorMs: vi.fn(),
+    play: vi.fn(),
+    pause: vi.fn(),
+    setMultiplier: vi.fn(),
+  }),
+}));
+
 const makeChapterItems = (count: number) =>
   Array.from({ length: count }, (_, index) => ({
     kind: "sequence" as const,
@@ -94,6 +126,10 @@ const makeChapterItems = (count: number) =>
 
 afterEach(() => {
   cleanup();
+  togglePreviewMock.mockClear();
+  startPreviewMock.mockClear();
+  stopPreviewMock.mockClear();
+  previewSequenceIdRef.current = null;
   programState.current = { id: "program-a", name: "节目 A", chapters: [] };
   actionBuilderState.current.programs = [];
   actionBuilderState.current.sequences = [];
@@ -120,6 +156,21 @@ describe("ProgramPanel variants", () => {
     expect(screen.getByText("2页·9项")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /运行 / })).toBeNull();
     expect(screen.queryByRole("button", { name: "序列" })).toBeNull();
+  });
+
+  it("control variant row click toggles sequence preview", () => {
+    programState.current = {
+      id: "program-a",
+      name: "节目 A",
+      chapters: [{ id: "ch-1", name: "章节 1", items: makeChapterItems(2) }],
+    };
+    render(
+      <ConsoleModeProvider>
+        <ProgramPanel variant="control" />
+      </ConsoleModeProvider>,
+    );
+    fireEvent.click(screen.getByRole("treeitem", { name: "S1" }));
+    expect(togglePreviewMock).toHaveBeenCalledWith(1);
   });
 
   it("authoring variant shows pages without current chapter or page", () => {

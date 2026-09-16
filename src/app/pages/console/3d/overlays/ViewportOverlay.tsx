@@ -14,10 +14,12 @@ import { cn } from "@/app/components/ui/utils";
 import type { ToolMode } from "@/app/viz3d";
 import { pendingGoEntries } from "../../hooks/go-ready";
 import { useGoReady } from "../../hooks/go-ready-provider";
+import { useSequencePreview } from "../../hooks/sequence-preview-provider";
 import { useConsoleNav } from "../../hooks/use-console-nav";
 import { useControlLayout } from "../../hooks/use-control-layout";
 import { setLivePoseHold, useLivePoseHold } from "../live-pose-hold";
 import { useViz3DContext } from "../Viz3DProvider";
+import { SequencePreviewBar } from "./sequence-preview-bar";
 import { ShapePresetPalette } from "./ShapePresetPalette";
 import { ViewMenu } from "./ViewMenu";
 
@@ -169,6 +171,7 @@ const LivePoseHoldButton = () => {
 export const ViewportOverlay = () => {
   const engine = useViz3DContext();
   const { activeNav } = useConsoleNav();
+  const preview = useSequencePreview();
   const showToolMode = activeNav === "devices";
   const isControl = activeNav === "control";
   const isSequences = activeNav === "sequences";
@@ -243,6 +246,7 @@ export const ViewportOverlay = () => {
           </div>
         ) : null}
       </div>
+      {isControl && preview.sequenceId !== null && !preview.holdMode ? <SequencePreviewBar /> : null}
     </div>
   );
 };
