@@ -28,6 +28,7 @@ import { Viz3DMotorSelectionSync } from "./3d/Viz3DMotorSelectionSync";
 import { Viz3DTelemetrySync } from "./3d/Viz3DTelemetrySync";
 import { Viz3DVirtualAxisLabelSync } from "./3d/Viz3DVirtualAxisLabelSync";
 import { Viz3DGoShadowSync } from "./3d/Viz3DGoShadowSync";
+import { Viz3DSequencePreviewSync } from "./3d/Viz3DSequencePreviewSync";
 import { Viz3DMembershipDimSync } from "./3d/Viz3DMembershipDimSync";
 import { GoReadyProvider } from "./hooks/go-ready-provider";
 import { SequencePreviewProvider } from "./hooks/sequence-preview-provider";
@@ -208,6 +209,7 @@ const ConsoleInner = () => {
               <Viz3DActionPreviewSync />
               <Viz3DVirtualAxisLabelSync />
               <Viz3DGoShadowSync />
+              <Viz3DSequencePreviewSync />
               <Viz3DMembershipDimSync />
               <Viz3DTransformSync />
               <Viz3DSelectionSync />

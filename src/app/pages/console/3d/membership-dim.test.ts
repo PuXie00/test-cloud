@@ -21,6 +21,7 @@ const base: MembershipDimInput = {
   activeNav: "sequences",
   dockMode: "empty",
   sequence: null,
+  controlPreviewSequence: null,
   allObjectIds: [1, 2, 3, 4, 5],
   pickedObjectIds: [],
 };
@@ -44,6 +45,21 @@ describe("resolveMemberObjectIds", () => {
   it("returns null for sequence with no blocks", () => {
     expect(
       resolveMemberObjectIds({ ...base, dockMode: "sequence", sequence: { ...sequence, blocks: [] } }),
+    ).toBeNull();
+  });
+
+  it("returns members for control nav preview sequence", () => {
+    const ids = resolveMemberObjectIds({
+      ...base,
+      activeNav: "control",
+      controlPreviewSequence: sequence,
+    });
+    expect([...ids!].sort()).toEqual([1, 4]);
+  });
+
+  it("returns null for control nav without preview", () => {
+    expect(
+      resolveMemberObjectIds({ ...base, activeNav: "control", controlPreviewSequence: null }),
     ).toBeNull();
   });
 });
