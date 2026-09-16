@@ -857,8 +857,8 @@ describe("FaderSlot sequence preview", () => {
       ),
     );
     const slider = screen.getByRole("slider", { name: "F1 速度" });
-    fireEvent.pointerDown(slider, { clientX: 10, clientY: 10, button: 0 });
     fireEvent.click(slider);
+    fireEvent.keyDown(slider, { key: "ArrowUp" });
     expect(onPreviewToggle).not.toHaveBeenCalled();
   });
 });
