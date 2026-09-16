@@ -34,7 +34,7 @@ Operators on the control page need to see what an action sequence will do before
 | Program row long-press | Not required this phase (rows already use click). |
 | Ghost rendering | None. Preview does not use `GoShadow`. GO shadows stay `secondary`. |
 | Viewport motion | Member meshes take `evaluateResolvedSequence(resolved, cursorMs)` via `applyVirtualAxisPose`. Telemetry skips those ids while previewing. Exit restores live `snapshots.positions` (or v1/v2/v3 = 0 if none). |
-| Trajectory rendering | One `LinesMesh` per member object through sampled world positions. Color `primary`, `isPickable = false`. |
+| Trajectory rendering | Opaque cyan GreasedLine, screen-space **7px** (`sizeAttenuation`), `isPickable = false`, drawn in rendering group 1 so it sits above meshes. Not `CreateLines` (1px, looks washed-out). |
 | Sampling | Every **100ms** from 0 to `totalMs`, plus every segment `startMs` / `endMs`. Positions from `resolveVirtualAxisTransform(config, pose).position`. |
 | Labels | Member axis labels follow `cursorMs` during preview; others stay on telemetry. |
 | Non-members | Stay opaque during control preview. Do not dim. Stay at live telemetry pose. |
