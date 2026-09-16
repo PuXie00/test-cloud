@@ -5,7 +5,7 @@ import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
 import {
   advancePreviewCursor,
   memberObjectIds,
-  previewGhostsAt,
+  previewPosesAt,
   sampleSequencePaths,
 } from "./sequence-preview";
 
@@ -36,15 +36,23 @@ describe("sampleSequencePaths", () => {
   });
 });
 
-describe("previewGhostsAt", () => {
-  it("shows start and end ghosts at cursor 0", () => {
-    const ghosts = previewGhostsAt(resolveActionSequence(moving), 0);
-    expect(ghosts.filter((g) => g.objectId === 7).map((g) => g.role).sort()).toEqual(["end", "start"]);
+describe("previewPosesAt", () => {
+  it("returns the authored start pose at cursor 0", () => {
+    const poses = previewPosesAt(resolveActionSequence(moving), 0);
+    expect(poses.get(7)).toEqual({ v1: 0, v2: 0, v3: 0 });
+    expect(poses.get(9)).toEqual({ v1: 5, v2: 0, v3: 0 });
   });
-  it("shows start and cursor ghosts mid-run", () => {
-    const ghosts = previewGhostsAt(resolveActionSequence(moving), 500);
-    const roles = ghosts.filter((g) => g.objectId === 7).map((g) => g.role).sort();
-    expect(roles).toEqual(["cursor", "start"]);
+  it("returns one pose per member at the cursor, not start/end ghosts", () => {
+    const poses = previewPosesAt(resolveActionSequence(moving), 500);
+    expect([...poses.keys()].sort()).toEqual([7, 9]);
+    expect(poses.get(7)!.v1).toBeGreaterThan(0);
+    expect(poses.get(7)!.v1).toBeLessThan(100);
+    expect(poses.get(9)).toEqual({ v1: 5, v2: 0, v3: 0 });
+  });
+  it("returns the end pose at totalMs", () => {
+    const resolved = resolveActionSequence(moving);
+    const poses = previewPosesAt(resolved, resolved.totalMs);
+    expect(poses.get(7)).toEqual({ v1: 100, v2: 0, v3: 0 });
   });
 });
 

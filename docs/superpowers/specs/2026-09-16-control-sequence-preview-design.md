@@ -2,22 +2,22 @@
 
 Date: 2026-09-16
 
-Operators on the control page need to see what an action sequence will do before pressing Ready / GO: the rough trajectory and total time, and the run itself played through. The preview is used constantly during rehearsal, so it must be one gesture, leave no stale state, and never move the real objects or talk to the PLC.
+Operators on the control page need to see what an action sequence will do before pressing Ready / GO: the rough trajectory and total time, and the run itself played through. The preview is used constantly during rehearsal, so it must be one gesture, leave no stale state, never talk to the PLC, and never leave the viewport at a preview pose after exit.
 
 ## Goal
 
-- **Preview trajectory and time**: for the chosen sequence, draw each member object's path in the 3D viewport, show a ghost at the start and end pose, and show the authored total duration.
-- **Preview the run**: scrub the ghosts to any time, or auto-play them from 0 to the end at the fader speed.
+- **Preview trajectory and time**: for the chosen sequence, draw each member object's path in the 3D viewport and show the authored total duration.
+- **Preview the run**: the scene objects themselves take the pose at `cursorMs`. Scrub or auto-play; closing preview restores live telemetry poses. No ghost clones.
 - Two gestures on the same entry points, sharing one preview state:
   - **B — click**: click the sequence name on an F slot or a program row → preview mode with a mini transport bar in the viewport. Click again or `Esc` to exit.
-  - **C — long-press**: press and hold the F slot name ≥ 400ms → ghosts auto-play while held; release → preview cleared.
+  - **C — long-press**: press and hold the F slot name ≥ 400ms → objects auto-play while held; release → preview cleared.
 - Local evaluation only (`resolveActionSequence` + `evaluateResolvedSequence`). No PLC download, no Ready, no GO.
 
 ## Non-goals
 
 - Previewing on the action (sequences) page (it already scrubs real meshes via the timeline).
 - Previewing more than one sequence at a time.
-- Moving the real objects, or writing telemetry.
+- Moving hardware, writing telemetry, or talking to the PLC. Viewport meshes may take the preview pose and must restore on exit.
 - Motor-level trajectory (drive axes); preview is virtual-axis (v1/v2/v3) only.
 - Collision or limit checking during preview.
 - A dedicated 预览 tab in the right sidebar.
@@ -32,15 +32,16 @@ Operators on the control page need to see what an action sequence will do before
 | Click (B) | Toggles preview for that sequence. Clicking a different entry switches the previewed sequence. |
 | Long-press (C) | ≥ 400ms on the F slot name. Starts preview with `isPlaying: true`, `holdMode: true`. `pointerup` / `pointercancel` / `pointerleave` → `stopPreview()`. Pointer movement > 8px before the timer fires cancels the long-press (so drag-to-assign keeps working). |
 | Program row long-press | Not required this phase (rows already use click). |
-| Ghost rendering | Reuse `GoShadow` (clone + alpha 0.35). Preview ghosts use `primary` (cyan). GO shadows keep `secondary`. |
+| Ghost rendering | None. Preview does not use `GoShadow`. GO shadows stay `secondary`. |
+| Viewport motion | Member meshes take `evaluateResolvedSequence(resolved, cursorMs)` via `applyVirtualAxisPose`. Telemetry skips those ids while previewing. Exit restores live `snapshots.positions` (or v1/v2/v3 = 0 if none). |
 | Trajectory rendering | One `LinesMesh` per member object through sampled world positions. Color `primary`, `isPickable = false`. |
 | Sampling | Every **100ms** from 0 to `totalMs`, plus every segment `startMs` / `endMs`. Positions from `resolveVirtualAxisTransform(config, pose).position`. |
-| Which ghosts | Start pose ghost (t = 0) and **cursor** ghost. When cursor is at 0 they coincide, so show start + end ghosts at rest; while scrubbing/playing show start ghost + cursor ghost. |
-| Non-members | Stay opaque during control preview. Do not dim. |
+| Labels | Member axis labels follow `cursorMs` during preview; others stay on telemetry. |
+| Non-members | Stay opaque during control preview. Do not dim. Stay at live telemetry pose. |
 | Transport bar | Bottom of the viewport, inside `ViewportOverlay`, only when `activeNav === "control"` and a preview is active. Height 32px, `bg-card/90`. Content: ▶/⏸, range slider (step 100ms), `mm:ss.s / mm:ss.s`, speed chips `1× 2× 4×`, `×` close. |
 | Time display | Authored time (`cursorMs / totalMs`) using `formatExecTime` (`00:05.2 / 00:12.3`). |
 | Playback speed | `advance = dt × (faderPercent / 100) × multiplier`. `faderPercent` = slot fader value when preview started from an F slot, else 100. `multiplier` from chips (1/2/4), default 1. |
-| End of playback | Click-mode: stop at `totalMs` and leave the end ghost. Hold-mode: loop back to 0 while held. |
+| End of playback | Click-mode: stop at `totalMs` and leave members at the end pose until exit. Hold-mode: loop back to 0 while held. |
 | Keyboard (click-mode) | `Space` play/pause, `Esc` exit, `←`/`→` ±100ms, `Home`/`End`. Only when focus is not in an input. |
 | Auto-exit | On GO launch (any slot), on leaving the control nav, on project change, on the previewed sequence being removed or becoming invalid. |
 | Ready / GO while previewing | Allowed; GO auto-exits preview. Ready does not. |
@@ -67,17 +68,18 @@ Viz3DSequencePreviewSync                 SequencePreviewBar (ViewportOverlay)
  resolveActionSequence(seq)               ▶ ┃━━●━━┃ 00:05.2 / 00:12.3  1× 2× 4×  ×
  sampleSequencePaths(...)
  evaluateResolvedSequence(resolved, cursorMs)
- engine.setSequencePreview({ paths, ghosts })
+ engine.setSequencePreview({ paths })
+ engine.applyVirtualAxisPose(id, pose)   // members only
 ```
 
-`Viz3DGoShadowSync`, `Viz3DActionPreviewSync`, and `Viz3DMembershipDimSync` are untouched. Control preview does not dim non-members.
+`Viz3DGoShadowSync` and `Viz3DActionPreviewSync` are untouched. Control preview does not dim non-members. `Viz3DTelemetrySync` skips preview members; `Viz3DVirtualAxisLabelSync` shows cursor poses for those members.
 
 ## Components
 
 ### `sequence-preview.ts` (pure, `src/app/pages/console/hooks/`)
 
 - `sampleSequencePaths(resolved, stepMs = 100): Map<number, { atMs: number; pose: ModelPose }[]>` — sorted unique sample times per object (`0…totalMs` at `stepMs`, plus segment boundaries), poses via `evaluateResolvedSequence`.
-- `previewGhostsAt(resolved, cursorMs): { objectId: number; pose: ModelPose }[]` — start ghosts for every member plus cursor ghosts; when `cursorMs === 0` return start + end instead.
+- `previewPosesAt(resolved, cursorMs): Map<number, ModelPose>` — one pose per member at the cursor (`evaluateResolvedSequence`).
 - `memberObjectIds(resolved): number[]` — keys of `posesByObject`.
 - `advancePreviewCursor(cursorMs, dtMs, faderPercent, multiplier, totalMs, loop): { cursorMs; ended }`.
 
@@ -93,19 +95,18 @@ Auto-exit: effect on `activeNav !== "control"`, on `currentProject?.id` change, 
 
 ### Engine: `SequencePreviewController` (`src/app/viz3d/state/`)
 
-- `set({ paths: { objectId: string; points: Vec3[] }[]; ghosts: { objectId: string; pose: VirtualAxisValues }[] })`
+- `set({ paths: { objectId: string; poses: VirtualAxisValues[] }[] })`
 - `clear()`; `dispose()`.
-- Ghosts reuse `GoShadow` with an injected color (add an optional `color` ctor arg defaulting to `colors.secondary`; preview passes `colors.primary`). Ghost keys are `${objectId}:${role}` so start and cursor ghosts coexist for one object.
-- Paths: `MeshBuilder.CreateLines` (updatable, `instance` reuse when point count is unchanged).
+- Paths: `MeshBuilder.CreateLines` (updatable, `instance` reuse when point count is unchanged). No ghosts.
 - Engine methods: `setSequencePreview(entries)`, `clearSequencePreview()`; disposed with the scene like `goShadowController`.
 - Pure helper `previewPathPoints(config, poses): Vec3[]` in `src/app/viz3d/state/preview-path-points.ts` for unit tests (no Babylon).
 
 ### `Viz3DSequencePreviewSync` (`src/app/pages/console/3d/`)
 
 - Reads preview state + `useProjectStore().objects` (scene object configs).
-- If `activeNav !== "control"` or no `sequenceId` → `engine.clearSequencePreview()`.
-- Otherwise compute paths once per `sequenceId` (memo), ghosts per `cursorMs`, call `engine.setSequencePreview`.
-- Unmount → clear.
+- If `activeNav !== "control"` or no `sequenceId` → `engine.clearSequencePreview()` and restore live poses for previously previewed members.
+- Otherwise compute paths once per `resolved` (memo), apply `previewPosesAt` per `cursorMs` via `applyVirtualAxisPose`, call `engine.setSequencePreview({ paths })`.
+- Unmount → clear paths and restore live poses.
 
 ### `SequencePreviewBar` (`src/app/pages/console/3d/overlays/sequence-preview-bar.tsx`)
 
@@ -123,11 +124,11 @@ Auto-exit: effect on `activeNav !== "control"`, on `currentProject?.id` change, 
 ## Data flow
 
 1. Click F2 name → `togglePreview(15, { faderPercent: 150 })` → state `{ sequenceId: 15, cursorMs: 0, isPlaying: false }`.
-2. Sync resolves sequence 15, samples paths, sets start + end ghosts. Other objects stay opaque. Bar appears: `00:00.0 / 00:12.3`.
-3. Drag slider to 5200 → `setCursorMs(5200)` → cursor ghost moves along the path.
-4. Press ▶ → rAF advances `cursorMs` by `dt × 1.5 × 1`; at `totalMs` → `isPlaying: false`, end ghost remains.
-5. Press GO on F2 → `launch(...)`, then `stopPreview()` → paths, ghosts, bar all cleared.
-6. Long-press F3 name → `startPreview(16, { autoplay: true, holdMode: true, faderPercent: 100 })`; ghosts loop; release → `stopPreview()`. No bar in hold mode.
+2. Sync samples paths and applies start poses to member meshes. Other objects stay at telemetry. Bar appears: `00:00.0 / 00:12.3`.
+3. Drag slider to 5200 → `setCursorMs(5200)` → member meshes take that pose; labels follow.
+4. Press ▶ → rAF advances `cursorMs` by `dt × 1.5 × 1`; at `totalMs` → `isPlaying: false`, members stay at the end pose.
+5. Press GO on F2 → `launch(...)`, then `stopPreview()` → paths cleared, members restore to telemetry.
+6. Long-press F3 name → `startPreview(16, { autoplay: true, holdMode: true, faderPercent: 100 })`; members loop; release → restore. No bar in hold mode.
 
 ## Error handling
 
@@ -135,7 +136,7 @@ Auto-exit: effect on `activeNav !== "control"`, on `currentProject?.id` change, 
 |---|---|
 | Empty slot / repair issue | Name button disabled; long-press ignored |
 | Sequence resolve throws | `toast.warning("动作序列无法预览")`, no preview state |
-| Member object missing from scene | Skip that object's path/ghost; others still render |
+| Member object missing from scene | Skip that object's path/pose; others still render |
 | Long-press then drag > 8px | Cancel timer; normal drag-assign |
 | Nav leaves control | `stopPreview()` and engine clear |
 | GO on any slot | `stopPreview()` |
@@ -145,7 +146,7 @@ Auto-exit: effect on `activeNav !== "control"`, on `currentProject?.id` change, 
 
 Targeted vitest only. No GUI / screen tests, no full suite, no `tsc --noEmit`, no production build.
 
-- `sequence-preview.spec.ts`: sample count/uniqueness, segment boundary inclusion, ghost selection at 0 vs mid, `advancePreviewCursor` speed and end/loop.
+- `sequence-preview.spec.ts`: sample count/uniqueness, segment boundary inclusion, `previewPosesAt` one pose per member, `advancePreviewCursor` speed and end/loop.
 - `sequence-preview-provider.spec.tsx`: toggle on/off, switch id, hold-mode autoplay + release clears, multiplier, auto-exit on nav change (mock `useConsoleNav`).
 - `preview-path-points.spec.ts`: v1 lift maps to y, direction 2 inverts.
 - `fader-slot` in `exec-area.test.tsx`: name button `aria-pressed`, click calls `onPreviewToggle`, long-press timers call hold start/end, disabled when repair.

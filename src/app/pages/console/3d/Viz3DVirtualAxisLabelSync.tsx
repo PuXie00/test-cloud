@@ -5,6 +5,8 @@ import { ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE } from "@/app/project/configuratio
 import { formatVirtualAxesCompact } from "../components/action-builder/virtual-axis-display";
 import { useActionBuilder } from "../components/action-builder/use-action-builder";
 import { useConsoleNav } from "../hooks/use-console-nav";
+import { useSequencePreview } from "../hooks/sequence-preview-provider";
+import { previewPosesAt } from "../hooks/sequence-preview";
 import { useControlledObjects } from "../hooks/use-controlled-objects";
 import { useProjectStore } from "../hooks/use-project-store";
 import { collectActionPageDriveUnitLabels } from "./action-page-drive-unit-labels";
@@ -21,7 +23,16 @@ export const Viz3DVirtualAxisLabelSync = () => {
   const { objects } = useProjectStore();
   const display = useSessionDisplayLengthUnit();
   const poses = useActionPreviewPoses();
+  const { sequenceId, cursorMs, resolved } = useSequencePreview();
   const labelledIdsRef = useRef(new Set<string>());
+
+  const controlPreviewPoses = useMemo(
+    () =>
+      activeNav === "control" && sequenceId !== null && resolved
+        ? previewPosesAt(resolved, cursorMs)
+        : null,
+    [activeNav, sequenceId, resolved, cursorMs],
+  );
 
   const memberIds = useMemo(
     () =>
@@ -67,15 +78,18 @@ export const Viz3DVirtualAxisLabelSync = () => {
       const axes = ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE[object.controlType];
       if (axes.length === 0) continue;
       const id = String(object.id);
-      const values: VirtualAxisValues = resolveVirtualAxisLabelValues({
-        mode: "current",
-        positions: positionsById.get(object.id) ?? null,
-      });
+      const previewPose = controlPreviewPoses?.get(object.id);
+      const values: VirtualAxisValues = previewPose
+        ? { v1: previewPose.v1, v2: previewPose.v2, v3: previewPose.v3 }
+        : resolveVirtualAxisLabelValues({
+            mode: "current",
+            positions: positionsById.get(object.id) ?? null,
+          });
       const text = formatVirtualAxesCompact(axes, values, display, undefined, object.controlType);
       next.set(id, text || null);
     }
     applyLabels(next);
-  }, [engine, activeNav, snapshots, objects, display, poses, memberIds]);
+  }, [engine, activeNav, snapshots, objects, display, poses, memberIds, controlPreviewPoses]);
 
   useEffect(() => {
     return () => {

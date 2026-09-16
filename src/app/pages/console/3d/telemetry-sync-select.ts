@@ -3,6 +3,7 @@ import type { ControlledObjectSnapshot } from "../components/monitor-grid/monito
 type SelectOptions = {
   transformMode: boolean;
   skipEngineObjectIds: Set<string>;
+  skipObjectIds?: ReadonlySet<string>;
   resolveObjectId: (snapshotId: string) => string | undefined;
 };
 
@@ -12,6 +13,7 @@ export const selectSnapshotsForTelemetryApply = (
 ): ControlledObjectSnapshot[] =>
   snapshots.filter((snapshot) => {
     if (!snapshot.live) return false;
+    if (options.skipObjectIds?.has(String(snapshot.descriptor.id))) return false;
     if (!options.transformMode) return true;
     const objectId = options.resolveObjectId(String(snapshot.descriptor.id));
     if (!objectId) return true;

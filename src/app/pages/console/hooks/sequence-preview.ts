@@ -5,7 +5,6 @@ import type { ModelPose } from "@/app/project/action-sequence/types";
 export const PREVIEW_SAMPLE_STEP_MS = 100;
 
 export type PreviewSample = { atMs: number; pose: ModelPose };
-export type PreviewGhost = { objectId: number; role: "start" | "end" | "cursor"; pose: ModelPose };
 
 const sampleTimes = (resolved: ResolvedActionSequence, stepMs: number): number[] => {
   const times = new Set<number>([0, resolved.totalMs]);
@@ -33,19 +32,10 @@ export const sampleSequencePaths = (
   return result;
 };
 
-export const previewGhostsAt = (
+export const previewPosesAt = (
   resolved: ResolvedActionSequence,
   cursorMs: number,
-): PreviewGhost[] => {
-  const start = evaluateResolvedSequence(resolved, 0);
-  const other = cursorMs <= 0
-    ? { role: "end" as const, poses: evaluateResolvedSequence(resolved, resolved.totalMs) }
-    : { role: "cursor" as const, poses: evaluateResolvedSequence(resolved, cursorMs) };
-  const ghosts: PreviewGhost[] = [];
-  for (const [objectId, pose] of start) ghosts.push({ objectId, role: "start", pose });
-  for (const [objectId, pose] of other.poses) ghosts.push({ objectId, role: other.role, pose });
-  return ghosts;
-};
+): Map<number, ModelPose> => evaluateResolvedSequence(resolved, cursorMs);
 
 export const advancePreviewCursor = (args: {
   cursorMs: number;
