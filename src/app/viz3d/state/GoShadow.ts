@@ -34,9 +34,11 @@ export class GoShadow {
     target: VirtualAxisValues,
     private readonly scene: Scene,
     private readonly colors: Viz3DColorMap,
+    color?: number,
   ) {
     const config = handle.getConfig();
     const transform = resolveVirtualAxisTransform(config, target);
+    const ghostColor = color ?? colors.secondary;
 
     this.root = new TransformNode(`viz3d-go-shadow-${handle.id}`, scene);
     this.root.position.set(transform.position.x, transform.position.y, transform.position.z);
@@ -52,7 +54,7 @@ export class GoShadow {
     const ghost = createPbrStandardMaterial({
       scene,
       name: `viz3d-go-shadow-material-${handle.id}`,
-      color: hexToColor3(colors.secondary),
+      color: hexToColor3(ghostColor),
       alpha: 0.35,
       backFaceCulling: false,
     });
@@ -68,7 +70,7 @@ export class GoShadow {
       { points: [Vector3.Zero(), Vector3.Zero()], updatable: true },
       scene,
     );
-    this.line.color = hexToColor3(colors.secondary);
+    this.line.color = hexToColor3(ghostColor);
     this.line.isPickable = false;
     this.updateConnector();
   }
