@@ -283,6 +283,38 @@ vi.mock("../action-builder/use-action-builder", () => ({
   useActionBuilder: () => actionBuilderState.current,
 }));
 
+const {
+  togglePreviewMock,
+  startPreviewMock,
+  stopPreviewMock,
+  previewSequenceIdRef,
+} = vi.hoisted(() => ({
+  togglePreviewMock: vi.fn(),
+  startPreviewMock: vi.fn(),
+  stopPreviewMock: vi.fn(),
+  previewSequenceIdRef: { current: null as number | null },
+}));
+
+vi.mock("../../hooks/sequence-preview-provider", () => ({
+  useSequencePreview: () => ({
+    sequenceId: previewSequenceIdRef.current,
+    togglePreview: togglePreviewMock,
+    startPreview: startPreviewMock,
+    stopPreview: stopPreviewMock,
+    cursorMs: 0,
+    isPlaying: false,
+    holdMode: false,
+    faderPercent: 100,
+    multiplier: 1,
+    totalMs: 0,
+    resolved: null,
+    setCursorMs: vi.fn(),
+    play: vi.fn(),
+    pause: vi.fn(),
+    setMultiplier: vi.fn(),
+  }),
+}));
+
 import { ExecArea } from "./exec-area";
 import { ContentLibraryPanel } from "../action-builder/content-library/content-library-panel";
 import { ProgramPanel } from "../program-panel/program-panel";
@@ -430,6 +462,10 @@ afterEach(() => {
   clearSlotReadyMock.mockClear();
   setSlotBusyMock.mockClear();
   setSlotRunningMock.mockClear();
+  togglePreviewMock.mockClear();
+  startPreviewMock.mockClear();
+  stopPreviewMock.mockClear();
+  previewSequenceIdRef.current = null;
   execCardsRef.current = [];
   capturedTriggers.onTriggerSequence = null;
   documentRef.current = null;
@@ -510,6 +546,10 @@ describe("FaderSlot Ready/GO gate", () => {
         <FaderSlot
           slot={seqSlot}
           repairMessage="动作序列无轨道，待修复"
+          isPreviewing={false}
+          onPreviewToggle={vi.fn()}
+          onPreviewHoldStart={vi.fn()}
+          onPreviewHoldEnd={vi.fn()}
           onGo={onGoSeq}
           onFaderChange={vi.fn()}
           onAssignFromDrag={vi.fn()}
@@ -540,6 +580,10 @@ describe("FaderSlot Ready/GO gate", () => {
               durationMs: 2000,
             },
           })}
+          isPreviewing={false}
+          onPreviewToggle={vi.fn()}
+          onPreviewHoldStart={vi.fn()}
+          onPreviewHoldEnd={vi.fn()}
           onGo={onGo}
           onFaderChange={vi.fn()}
           onAssignFromDrag={vi.fn()}
@@ -566,6 +610,10 @@ describe("FaderSlot Ready/GO gate", () => {
             },
             phase: "ready",
           })}
+          isPreviewing={false}
+          onPreviewToggle={vi.fn()}
+          onPreviewHoldStart={vi.fn()}
+          onPreviewHoldEnd={vi.fn()}
           onGo={onGo}
           onFaderChange={vi.fn()}
           onAssignFromDrag={vi.fn()}
@@ -583,6 +631,10 @@ describe("FaderSlot Ready/GO gate", () => {
       withMode(
         <FaderSlot
           slot={makeFaderSlot({ index: 0 })}
+          isPreviewing={false}
+          onPreviewToggle={vi.fn()}
+          onPreviewHoldStart={vi.fn()}
+          onPreviewHoldEnd={vi.fn()}
           onGo={vi.fn()}
           onFaderChange={vi.fn()}
           onAssignFromDrag={vi.fn()}
@@ -604,6 +656,10 @@ describe("FaderSlot Ready/GO gate", () => {
             faderValue: 120,
             sequence: { id: 15, name: "开幕A", durationMs: 2000 },
           })}
+          isPreviewing={false}
+          onPreviewToggle={vi.fn()}
+          onPreviewHoldStart={vi.fn()}
+          onPreviewHoldEnd={vi.fn()}
           onGo={vi.fn()}
           onFaderChange={onFaderChange}
           onAssignFromDrag={vi.fn()}
@@ -616,6 +672,127 @@ describe("FaderSlot Ready/GO gate", () => {
     expect(slider.getAttribute("aria-disabled")).toBeNull();
     fireEvent.keyDown(slider, { key: "ArrowUp" });
     expect(onFaderChange).toHaveBeenCalledWith(121);
+  });
+});
+
+describe("FaderSlot sequence preview", () => {
+  const filledSlot = () =>
+    makeFaderSlot({
+      index: 0,
+      sequence: { id: 15, name: "开幕A", durationMs: 2000 },
+    });
+
+  const renderPreviewSlot = (overrides: {
+    repairMessage?: string | null;
+    isPreviewing?: boolean;
+    onPreviewToggle?: () => void;
+    onPreviewHoldStart?: () => void;
+    onPreviewHoldEnd?: () => void;
+  } = {}) => {
+    const onPreviewToggle = overrides.onPreviewToggle ?? vi.fn();
+    const onPreviewHoldStart = overrides.onPreviewHoldStart ?? vi.fn();
+    const onPreviewHoldEnd = overrides.onPreviewHoldEnd ?? vi.fn();
+    render(
+      withMode(
+        <FaderSlot
+          slot={filledSlot()}
+          repairMessage={overrides.repairMessage}
+          isPreviewing={overrides.isPreviewing ?? false}
+          onPreviewToggle={onPreviewToggle}
+          onPreviewHoldStart={onPreviewHoldStart}
+          onPreviewHoldEnd={onPreviewHoldEnd}
+          onGo={vi.fn()}
+          onFaderChange={vi.fn()}
+          onAssignFromDrag={vi.fn()}
+        />,
+      ),
+    );
+    return { onPreviewToggle, onPreviewHoldStart, onPreviewHoldEnd };
+  };
+
+  it("exposes a name preview button that toggles and disables when repair is required", () => {
+    const onPreviewToggle = vi.fn();
+    const { rerender } = render(
+      withMode(
+        <FaderSlot
+          slot={filledSlot()}
+          isPreviewing={false}
+          onPreviewToggle={onPreviewToggle}
+          onPreviewHoldStart={vi.fn()}
+          onPreviewHoldEnd={vi.fn()}
+          onGo={vi.fn()}
+          onFaderChange={vi.fn()}
+          onAssignFromDrag={vi.fn()}
+        />,
+      ),
+    );
+
+    const preview = screen.getByRole("button", { name: "预览 开幕A" });
+    expect(preview.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByText("开幕A")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Ready/i })).toBeTruthy();
+    fireEvent.click(preview);
+    expect(onPreviewToggle).toHaveBeenCalledTimes(1);
+
+    rerender(
+      withMode(
+        <FaderSlot
+          slot={filledSlot()}
+          repairMessage="动作序列无轨道，待修复"
+          isPreviewing={false}
+          onPreviewToggle={onPreviewToggle}
+          onPreviewHoldStart={vi.fn()}
+          onPreviewHoldEnd={vi.fn()}
+          onGo={vi.fn()}
+          onFaderChange={vi.fn()}
+          onAssignFromDrag={vi.fn()}
+        />,
+      ),
+    );
+    expect((screen.getByRole("button", { name: "预览 开幕A" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
+
+  it("long-press starts hold preview and suppresses the following click", () => {
+    vi.useFakeTimers();
+    const onPreviewToggle = vi.fn();
+    const onPreviewHoldStart = vi.fn();
+    const onPreviewHoldEnd = vi.fn();
+    try {
+      renderPreviewSlot({ onPreviewToggle, onPreviewHoldStart, onPreviewHoldEnd });
+      const preview = screen.getByRole("button", { name: "预览 开幕A" });
+      fireEvent.pointerDown(preview, { clientX: 10, clientY: 10 });
+      vi.advanceTimersByTime(400);
+      expect(onPreviewHoldStart).toHaveBeenCalledTimes(1);
+      fireEvent.pointerUp(preview);
+      expect(onPreviewHoldEnd).toHaveBeenCalledTimes(1);
+      fireEvent.click(preview);
+      expect(onPreviewToggle).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("pointer move of 20px before 400ms cancels hold and still toggles on click", () => {
+    vi.useFakeTimers();
+    const onPreviewToggle = vi.fn();
+    const onPreviewHoldStart = vi.fn();
+    const onPreviewHoldEnd = vi.fn();
+    try {
+      renderPreviewSlot({ onPreviewToggle, onPreviewHoldStart, onPreviewHoldEnd });
+      const preview = screen.getByRole("button", { name: "预览 开幕A" });
+      fireEvent.pointerDown(preview, { clientX: 0, clientY: 0 });
+      fireEvent.pointerMove(preview, { clientX: 20, clientY: 0 });
+      vi.advanceTimersByTime(400);
+      expect(onPreviewHoldStart).not.toHaveBeenCalled();
+      fireEvent.pointerUp(preview);
+      expect(onPreviewHoldEnd).not.toHaveBeenCalled();
+      fireEvent.click(preview);
+      expect(onPreviewToggle).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -711,6 +888,7 @@ describe("ExecArea launch guard", () => {
       speedPercent: 150,
       source: { kind: "fader", slotIndex: 1 },
     });
+    expect(stopPreviewMock).toHaveBeenCalledTimes(1);
   });
 
   it("GO failure stays ready and does not launch", async () => {
@@ -823,6 +1001,12 @@ describe("program panel launch guards", () => {
     expect(readySequenceMock).not.toHaveBeenCalled();
     expect(goSequenceMock).not.toHaveBeenCalled();
     expect(toastWarning).not.toHaveBeenCalled();
+  });
+
+  it("control ProgramPanel row click toggles sequence preview", () => {
+    render(withMode(<ProgramPanel variant="control" />));
+    fireEvent.click(screen.getByRole("treeitem", { name: /^正常序列$/i }));
+    expect(togglePreviewMock).toHaveBeenCalledWith(15);
   });
 
   it("action-builder ProgramPanel blocks handleLaunch for unrepaired items", async () => {

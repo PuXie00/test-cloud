@@ -3,6 +3,7 @@ import { getProgramRepairIssues } from "@/app/project/project-motion-readiness";
 import { useProject } from "@/app/project/use-project";
 import { useProgram } from "../../hooks/use-program";
 import { useSelection } from "../../hooks/use-selection";
+import { useSequencePreview } from "../../hooks/sequence-preview-provider";
 import { AuthoringProgramPanel } from "./authoring-program-panel";
 import type { ChapterItem } from "./program-data";
 import { ProgramHeader } from "./program-header";
@@ -29,6 +30,7 @@ const ControlProgramPanel = ({ className }: { className?: string }) => {
   } = useProgram();
   const { clearSelection } = useSelection();
   const { currentProject } = useProject();
+  const { sequenceId: previewSequenceId, togglePreview } = useSequencePreview();
   const document = currentProject?.document;
   const programRepairIssues = document ? getProgramRepairIssues(document, program.id) : [];
   const programRepairWarning =
@@ -78,6 +80,8 @@ const ControlProgramPanel = ({ className }: { className?: string }) => {
               onSelectChapter={() => setCurrentChapter(chapter.id)}
               onSelectPage={(pageIndex) => handleSelectPage(chapter.id, pageIndex)}
               onItemDragStart={handleItemDragStart}
+              onClickItem={(item) => togglePreview(item.sequence.id)}
+              activeSequenceId={previewSequenceId}
             />
           ))
         )}
