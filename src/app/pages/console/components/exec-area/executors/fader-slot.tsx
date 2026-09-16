@@ -63,8 +63,17 @@ export const FaderSlot = ({
     }
   };
 
-  const handleNamePointerDown = (event: React.PointerEvent) => {
-    if (event.button !== 0 || repairMessage) return;
+  const handlePreviewClick = () => {
+    if (isEmpty || repairMessage) return;
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
+    onPreviewToggle();
+  };
+
+  const handlePreviewPointerDown = (event: React.PointerEvent) => {
+    if (isEmpty || event.button !== 0 || repairMessage) return;
     suppressClickRef.current = false;
     startPointRef.current = { x: event.clientX, y: event.clientY };
     holdActiveRef.current = false;
@@ -76,7 +85,7 @@ export const FaderSlot = ({
     }, LONG_PRESS_MS);
   };
 
-  const handleNamePointerMove = (event: React.PointerEvent) => {
+  const handlePreviewPointerMove = (event: React.PointerEvent) => {
     const start = startPointRef.current;
     if (!start || timerRef.current == null) return;
     const dx = event.clientX - start.x;
@@ -86,21 +95,13 @@ export const FaderSlot = ({
     }
   };
 
-  const handleNamePointerUp = () => {
+  const handlePreviewPointerUp = () => {
     clearTimer();
     if (holdActiveRef.current) {
       holdActiveRef.current = false;
       onPreviewHoldEnd();
       suppressClickRef.current = true;
     }
-  };
-
-  const handleNameClick = () => {
-    if (suppressClickRef.current) {
-      suppressClickRef.current = false;
-      return;
-    }
-    onPreviewToggle();
   };
 
   const handleDragOver = (event: React.DragEvent) => {
@@ -128,7 +129,7 @@ export const FaderSlot = ({
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       className={cn(
-        "flex h-full min-h-0 min-w-[72px] w-full flex-col gap-1 rounded-sm border bg-card p-2 transition-colors",
+        "relative flex h-full min-h-0 min-w-[72px] w-full flex-col gap-1 rounded-sm border bg-card p-2 transition-colors",
         isRunning
           ? "border-show/60"
           : isEmpty
@@ -140,7 +141,25 @@ export const FaderSlot = ({
                 : "border-border",
       )}
     >
-      <div className="flex items-center gap-1">
+      {!isEmpty ? (
+        <button
+          type="button"
+          aria-label={`预览 ${slot.sequence?.name}`}
+          aria-pressed={isPreviewing}
+          disabled={Boolean(repairMessage)}
+          onClick={handlePreviewClick}
+          onPointerDown={handlePreviewPointerDown}
+          onPointerMove={handlePreviewPointerMove}
+          onPointerUp={handlePreviewPointerUp}
+          onPointerLeave={cancelHold}
+          onPointerCancel={cancelHold}
+          onContextMenu={(event) => event.preventDefault()}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+          className="absolute inset-0 z-0 rounded-sm disabled:pointer-events-none"
+        />
+      ) : null}
+      <div className="pointer-events-none relative z-[1] flex items-center gap-1">
         <span className="font-mono text-label-caps text-muted-foreground">{slot.label}</span>
         <span
           className={cn(
@@ -159,33 +178,23 @@ export const FaderSlot = ({
       </div>
       {!isEmpty ? (
         <>
-          <button
-            type="button"
-            aria-label={`预览 ${slot.sequence?.name}`}
-            aria-pressed={isPreviewing}
-            disabled={Boolean(repairMessage)}
-            onClick={handleNameClick}
-            onPointerDown={handleNamePointerDown}
-            onPointerMove={handleNamePointerMove}
-            onPointerUp={handleNamePointerUp}
-            onPointerLeave={cancelHold}
-            onPointerCancel={cancelHold}
-            onContextMenu={(e) => e.preventDefault()}
+          <span
             className={cn(
-              "line-clamp-1 text-left text-body-sm disabled:pointer-events-none disabled:opacity-60",
+              "pointer-events-none relative z-[1] line-clamp-1 text-left text-body-sm",
               isPreviewing ? "text-primary" : "text-foreground",
+              repairMessage && "opacity-60",
             )}
           >
             {slot.sequence?.name}
-          </button>
+          </span>
           {repairMessage ? (
-            <span id={reasonId} className="line-clamp-2 text-body-sm text-warning">
+            <span id={reasonId} className="pointer-events-none relative z-[1] line-clamp-2 text-body-sm text-warning">
               {repairMessage}
             </span>
           ) : null}
         </>
       ) : null}
-      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col">
         <VerticalFader
           value={slot.faderValue}
           onChange={onFaderChange}
@@ -211,7 +220,7 @@ export const FaderSlot = ({
         aria-describedby={repairMessage ? reasonId : undefined}
         onClick={onGo}
         className={cn(
-          "inline-flex h-9 shrink-0 items-center justify-center gap-1 rounded-sm font-semibold transition-colors disabled:pointer-events-none disabled:opacity-30",
+          "relative z-10 inline-flex h-9 shrink-0 items-center justify-center gap-1 rounded-sm font-semibold transition-colors disabled:pointer-events-none disabled:opacity-30",
           isRunning
             ? "bg-show text-background"
             : isBlocked

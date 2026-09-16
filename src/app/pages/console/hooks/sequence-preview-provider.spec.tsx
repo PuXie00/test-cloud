@@ -207,6 +207,26 @@ describe("SequencePreviewProvider", () => {
     expect(fast / slow).toBeCloseTo(4, 1);
   });
 
+  it("play at the end rewinds to 0 then plays", () => {
+    const { result } = renderHook(() => useSequencePreview(), { wrapper: SequencePreviewProvider });
+
+    act(() => {
+      result.current.startPreview(1);
+    });
+    act(() => {
+      result.current.setCursorMs(result.current.totalMs);
+    });
+    expect(result.current.cursorMs).toBe(1000);
+    expect(result.current.isPlaying).toBe(false);
+
+    act(() => {
+      result.current.play();
+    });
+
+    expect(result.current.cursorMs).toBe(0);
+    expect(result.current.isPlaying).toBe(true);
+  });
+
   it("invalid empty-blocks sequence toasts and does not start", () => {
     const { result } = renderHook(() => useSequencePreview(), { wrapper: SequencePreviewProvider });
 

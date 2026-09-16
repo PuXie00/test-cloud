@@ -144,7 +144,14 @@ export const SequencePreviewProvider: FC<{ children: ReactNode }> = ({ children 
   }, []);
 
   const play = useCallback(() => {
-    setState((current) => (current.sequenceId === null ? current : { ...current, isPlaying: true }));
+    setState((current) => {
+      if (current.sequenceId === null) return current;
+      if (current.totalMs > 0 && current.cursorMs >= current.totalMs) {
+        cursorMsRef.current = 0;
+        return { ...current, cursorMs: 0, isPlaying: true };
+      }
+      return { ...current, isPlaying: true };
+    });
   }, []);
 
   const pause = useCallback(() => {

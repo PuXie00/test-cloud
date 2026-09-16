@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Entry points are the F-slot **name** and the control program **row**. Not Ready/GO, not the fader, not hover.
+- Entry points are the F-slot **card** (except fader and Ready/GO) and the control program **row**. Not Ready/GO, not the fader, not hover.
 - Click toggles; a different id switches. Long-press (≥ 400ms, < 8px movement) = hold-mode autoplay, release clears.
 - Ghosts reuse `GoShadow` with `colors.primary`; GO shadows stay `colors.secondary`. Paths are cyan `LinesMesh`, `isPickable = false`.
 - Sampling: 100ms step + segment boundaries. Positions computed inside the engine from `handle.getConfig()` via `resolveVirtualAxisTransform`.

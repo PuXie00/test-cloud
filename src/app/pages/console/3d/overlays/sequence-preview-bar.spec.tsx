@@ -76,6 +76,16 @@ describe("SequencePreviewBar", () => {
     expect(screen.getByRole("button", { name: "暂停" })).toBeTruthy();
   });
 
+  it("paused at the end shows 重新播放 and click calls play", () => {
+    preview.current = { ...preview.current, cursorMs: 12300, totalMs: 12300, isPlaying: false };
+    render(<SequencePreviewBar />);
+    const replay = screen.getByRole("button", { name: "重新播放" });
+    expect(replay).toBeTruthy();
+    fireEvent.click(replay);
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(pause).not.toHaveBeenCalled();
+  });
+
   it("clicking close calls stopPreview", () => {
     render(<SequencePreviewBar />);
     fireEvent.click(screen.getByRole("button", { name: "退出预览" }));

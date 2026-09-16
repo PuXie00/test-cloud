@@ -9,8 +9,8 @@ Operators on the control page need to see what an action sequence will do before
 - **Preview trajectory and time**: for the chosen sequence, draw each member object's path in the 3D viewport and show the authored total duration.
 - **Preview the run**: the scene objects themselves take the pose at `cursorMs`. Scrub or auto-play; closing preview restores live telemetry poses. No ghost clones.
 - Two gestures on the same entry points, sharing one preview state:
-  - **B — click**: click the sequence name on an F slot or a program row → preview mode with a mini transport bar in the viewport. Click again or `Esc` to exit.
-  - **C — long-press**: press and hold the F slot name ≥ 400ms → objects auto-play while held; release → preview cleared.
+  - **B — click**: click the F-slot card (except the fader and Ready/GO) or a program row → preview mode with a mini transport bar in the viewport. Click again or `Esc` to exit.
+  - **C — long-press**: press and hold the F-slot card (except the fader and Ready/GO) ≥ 400ms → objects auto-play while held; release → preview cleared.
 - Local evaluation only (`resolveActionSequence` + `evaluateResolvedSequence`). No PLC download, no Ready, no GO.
 
 ## Non-goals
@@ -28,9 +28,9 @@ Operators on the control page need to see what an action sequence will do before
 
 | Topic | Decision |
 |---|---|
-| Entry points | F slot **name** (`fader-slot.tsx`) and control **program row** (`ProgramSequenceRow` via `ChapterItemRow`). Not the Ready/GO button, not the fader. |
+| Entry points | F slot **card** except fader and Ready/GO (`fader-slot.tsx` overlay) and control **program row** (`ProgramSequenceRow` via `ChapterItemRow`). |
 | Click (B) | Toggles preview for that sequence. Clicking a different entry switches the previewed sequence. |
-| Long-press (C) | ≥ 400ms on the F slot name. Starts preview with `isPlaying: true`, `holdMode: true`. `pointerup` / `pointercancel` / `pointerleave` → `stopPreview()`. Pointer movement > 8px before the timer fires cancels the long-press (so drag-to-assign keeps working). |
+| Long-press (C) | ≥ 400ms on the F-slot overlay. Starts preview with `isPlaying: true`, `holdMode: true`. `pointerup` / `pointercancel` / `pointerleave` → `stopPreview()`. Pointer movement > 8px before the timer fires cancels the long-press (so drag-to-assign keeps working). |
 | Program row long-press | Not required this phase (rows already use click). |
 | Ghost rendering | None. Preview does not use `GoShadow`. GO shadows stay `secondary`. |
 | Viewport motion | Member meshes take `evaluateResolvedSequence(resolved, cursorMs)` via `applyVirtualAxisPose`. Telemetry skips those ids while previewing. Exit restores live `snapshots.positions` (or v1/v2/v3 = 0 if none). |
@@ -38,10 +38,10 @@ Operators on the control page need to see what an action sequence will do before
 | Sampling | Every **100ms** from 0 to `totalMs`, plus every segment `startMs` / `endMs`. Positions from `resolveVirtualAxisTransform(config, pose).position`. |
 | Labels | Member axis labels follow `cursorMs` during preview; others stay on telemetry. |
 | Non-members | Stay opaque during control preview. Do not dim. Stay at live telemetry pose. |
-| Transport bar | Bottom of the viewport, inside `ViewportOverlay`, only when `activeNav === "control"` and a preview is active. Height 32px, `bg-card/90`. Content: ▶/⏸, range slider (step 100ms), `mm:ss.s / mm:ss.s`, speed chips `1× 2× 4×`, `×` close. |
+| Transport bar | Bottom of the viewport, inside `ViewportOverlay`, only when `activeNav === "control"` and a preview is active. Height 32px, `bg-card/90`. Content: ▶/⏸/↺, range slider (step 100ms), `mm:ss.s / mm:ss.s`, speed chips `1× 2× 4×`, `×` close. When paused at `cursorMs >= totalMs`, the play control is a replay icon (`重新播放`); `play()` rewinds to 0 then starts. |
 | Time display | Authored time (`cursorMs / totalMs`) using `formatExecTime` (`00:05.2 / 00:12.3`). |
 | Playback speed | `advance = dt × (faderPercent / 100) × multiplier`. `faderPercent` = slot fader value when preview started from an F slot, else 100. `multiplier` from chips (1/2/4), default 1. |
-| End of playback | Click-mode: stop at `totalMs` and leave members at the end pose until exit. Hold-mode: loop back to 0 while held. |
+| End of playback | Click-mode: stop at `totalMs` and leave members at the end pose until exit. Play at end rewinds to 0. Hold-mode: loop back to 0 while held. |
 | Keyboard (click-mode) | `Space` play/pause, `Esc` exit, `←`/`→` ±100ms, `Home`/`End`. Only when focus is not in an input. |
 | Auto-exit | On GO launch (any slot), on leaving the control nav, on project change, on the previewed sequence being removed or becoming invalid. |
 | Ready / GO while previewing | Allowed; GO auto-exits preview. Ready does not. |
@@ -111,12 +111,12 @@ Auto-exit: effect on `activeNav !== "control"`, on `currentProject?.id` change, 
 ### `SequencePreviewBar` (`src/app/pages/console/3d/overlays/sequence-preview-bar.tsx`)
 
 - Rendered by `ViewportOverlay` when `isControl && preview.sequenceId !== null && !preview.holdMode`.
-- `role="toolbar" aria-label="序列预览"`. Slider `aria-label="预览进度"`, play button `aria-label` `播放` / `暂停`, close `aria-label="退出预览"`, speed chips `aria-pressed`.
+- `role="toolbar" aria-label="序列预览"`. Slider `aria-label="预览进度"`, play button `aria-label` `播放` / `暂停` / `重新播放` (paused at end), close `aria-label="退出预览"`, speed chips `aria-pressed`.
 - Keyboard handler on `window` while mounted.
 
 ### Entry points
 
-- `FaderSlot`: new props `isPreviewing`, `onPreviewToggle()`, `onPreviewHoldStart()`, `onPreviewHoldEnd()`. The name `<span>` becomes a `<button type="button" aria-label="预览 {name}" aria-pressed>` with the long-press pointer handlers. Disabled when empty or `repairMessage`.
+- `FaderSlot`: new props `isPreviewing`, `onPreviewToggle()`, `onPreviewHoldStart()`, `onPreviewHoldEnd()`. A full-card overlay `<button type="button" aria-label="预览 {name}" aria-pressed>` sits behind the fader and Ready/GO (`z-10`). Header/name are `pointer-events-none` so clicks hit the overlay. Disabled when empty or `repairMessage`.
 - `Executors`: wires the above from `useSequencePreview()`; passes `faderPercent: slot.faderValue`.
 - `ControlProgramPanel`: `onClickItem={(item) => togglePreview(item.sequence.id)}`; `ChapterItemRow` gets `isActive` from the preview id.
 - `ExecArea.handleTriggerSequence`: after a successful GO `launch`, call `stopPreview()`.
@@ -149,8 +149,9 @@ Targeted vitest only. No GUI / screen tests, no full suite, no `tsc --noEmit`, n
 - `sequence-preview.spec.ts`: sample count/uniqueness, segment boundary inclusion, `previewPosesAt` one pose per member, `advancePreviewCursor` speed and end/loop.
 - `sequence-preview-provider.spec.tsx`: toggle on/off, switch id, hold-mode autoplay + release clears, multiplier, auto-exit on nav change (mock `useConsoleNav`).
 - `preview-path-points.spec.ts`: v1 lift maps to y, direction 2 inverts.
-- `fader-slot` in `exec-area.test.tsx`: name button `aria-pressed`, click calls `onPreviewToggle`, long-press timers call hold start/end, disabled when repair.
-- `sequence-preview-bar.spec.tsx`: renders times, play toggles label, Esc calls stop, close calls stop.
+- `fader-slot` in `exec-area.test.tsx`: overlay `aria-pressed`, click calls `onPreviewToggle`, long-press timers call hold start/end, disabled when repair; Ready and fader do not toggle.
+- `sequence-preview-bar.spec.tsx`: renders times, play toggles label, paused-at-end is `重新播放`, Esc calls stop, close calls stop.
+- `sequence-preview-provider.spec.tsx`: `play()` at end rewinds to 0.
 - `exec-area.test.tsx`: GO success calls `stopPreview`.
 
 ## Out of range

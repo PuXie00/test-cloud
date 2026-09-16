@@ -1,5 +1,5 @@
 import { useEffect, type PointerEvent as ReactPointerEvent } from "react";
-import { Pause, Play, X } from "lucide-react";
+import { Pause, Play, RotateCcw, X } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
 import {
   useSequencePreview,
@@ -31,6 +31,9 @@ export const SequencePreviewBar = () => {
     setCursorMs,
     setMultiplier,
   } = useSequencePreview();
+
+  const atEnd = totalMs > 0 && cursorMs >= totalMs;
+  const playLabel = isPlaying ? "暂停" : atEnd ? "重新播放" : "播放";
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -76,14 +79,14 @@ export const SequencePreviewBar = () => {
     >
       <button
         type="button"
-        aria-label={isPlaying ? "暂停" : "播放"}
+        aria-label={playLabel}
         className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-primary hover:bg-accent"
         onClick={() => {
           if (isPlaying) pause();
           else play();
         }}
       >
-        {isPlaying ? <Pause aria-hidden /> : <Play aria-hidden />}
+        {isPlaying ? <Pause aria-hidden /> : atEnd ? <RotateCcw aria-hidden /> : <Play aria-hidden />}
       </button>
       <input
         type="range"

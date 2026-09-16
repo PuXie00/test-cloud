@@ -710,7 +710,7 @@ describe("FaderSlot sequence preview", () => {
     return { onPreviewToggle, onPreviewHoldStart, onPreviewHoldEnd };
   };
 
-  it("exposes a name preview button that toggles and disables when repair is required", () => {
+  it("exposes a card preview overlay that toggles and disables when repair is required", () => {
     const onPreviewToggle = vi.fn();
     const { rerender } = render(
       withMode(
@@ -729,6 +729,8 @@ describe("FaderSlot sequence preview", () => {
 
     const preview = screen.getByRole("button", { name: "预览 开幕A" });
     expect(preview.getAttribute("aria-pressed")).toBe("false");
+    expect(preview.className).toContain("absolute");
+    expect(preview.className).toContain("inset-0");
     expect(screen.getByText("开幕A")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Ready/i })).toBeTruthy();
     fireEvent.click(preview);
@@ -814,6 +816,50 @@ describe("FaderSlot sequence preview", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("Ready does not toggle preview", () => {
+    const onPreviewToggle = vi.fn();
+    const onGo = vi.fn();
+    render(
+      withMode(
+        <FaderSlot
+          slot={filledSlot()}
+          isPreviewing={false}
+          onPreviewToggle={onPreviewToggle}
+          onPreviewHoldStart={vi.fn()}
+          onPreviewHoldEnd={vi.fn()}
+          onGo={onGo}
+          onFaderChange={vi.fn()}
+          onAssignFromDrag={vi.fn()}
+        />,
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Ready/i }));
+    expect(onGo).toHaveBeenCalledTimes(1);
+    expect(onPreviewToggle).not.toHaveBeenCalled();
+  });
+
+  it("fader slider does not toggle preview", () => {
+    const onPreviewToggle = vi.fn();
+    render(
+      withMode(
+        <FaderSlot
+          slot={filledSlot()}
+          isPreviewing={false}
+          onPreviewToggle={onPreviewToggle}
+          onPreviewHoldStart={vi.fn()}
+          onPreviewHoldEnd={vi.fn()}
+          onGo={vi.fn()}
+          onFaderChange={vi.fn()}
+          onAssignFromDrag={vi.fn()}
+        />,
+      ),
+    );
+    const slider = screen.getByRole("slider", { name: "F1 速度" });
+    fireEvent.pointerDown(slider, { clientX: 10, clientY: 10, button: 0 });
+    fireEvent.click(slider);
+    expect(onPreviewToggle).not.toHaveBeenCalled();
   });
 });
 
