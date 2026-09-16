@@ -105,6 +105,10 @@ import {
 } from "./capture-object-top-view";
 import { resolveVirtualAxisTransform } from "../telemetry/virtual-axis-mapper";
 import { GoShadowController, type GoShadowEntry } from "../state/GoShadowController";
+import {
+  SequencePreviewController,
+  type SequencePreviewEntries,
+} from "../state/SequencePreviewController";
 import { DimmedObjects } from "../state/DimmedObjects";
 import {
   DEFAULT_HOIST_LABEL_MODE,
@@ -161,6 +165,7 @@ export class Viz3DEngine implements Disposable {
   private colors = readThemeColors(domGetCssVar);
   private telemetryController: TelemetryController | null = null;
   private goShadowController: GoShadowController | null = null;
+  private sequencePreviewController: SequencePreviewController | null = null;
   /** 动作页成员标识：非成员 visibility 0.7；跨 unmount 保留，dispose 时清空 */
   private readonly dimmedObjects = new DimmedObjects();
   /** Session display unit for telemetry labels; default mm until React injects. */
@@ -275,6 +280,9 @@ export class Viz3DEngine implements Disposable {
 
     this.goShadowController?.dispose();
     this.goShadowController = null;
+
+    this.sequencePreviewController?.dispose();
+    this.sequencePreviewController = null;
 
     this.measureMarkers?.dispose();
     this.measureMarkers = null;
@@ -1000,6 +1008,14 @@ export class Viz3DEngine implements Disposable {
     this.goShadowController?.clear();
   }
 
+  setSequencePreview(entries: SequencePreviewEntries): void {
+    this.sequencePreviewController?.set(entries);
+  }
+
+  clearSequencePreview(): void {
+    this.sequencePreviewController?.clear();
+  }
+
   setDimmedObjects(ids: string[]): void {
     this.dimmedObjects.set(ids);
     this.applyDimmedObjects();
@@ -1391,6 +1407,12 @@ export class Viz3DEngine implements Disposable {
     this.telemetryController.setDisplayLengthUnit(this.displayLengthUnit);
 
     this.goShadowController = new GoShadowController(
+      scene,
+      (id) => registry.get(id),
+      this.colors,
+    );
+
+    this.sequencePreviewController = new SequencePreviewController(
       scene,
       (id) => registry.get(id),
       this.colors,
