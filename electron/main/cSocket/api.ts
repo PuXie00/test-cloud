@@ -701,6 +701,8 @@ export class CsocketApiService {
     items: ActionDataSaveItem[],
     opts?: CsocketSendOpts,
   ) {
+    console.log('actionDataSavePlc', JSON.stringify(items));
+    
     return this.sendBuilt('Config|actionDataSave', '0x1016', items, opts)
   }
   // 规则启动
