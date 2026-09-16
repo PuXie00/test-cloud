@@ -29,6 +29,7 @@ export const Viz3DVirtualAxisLabelSync = () => {
         activeNav,
         dockMode,
         sequence,
+        controlPreviewSequence: null,
         allObjectIds: objects.map((object) => object.id),
         pickedObjectIds: [],
       }),
