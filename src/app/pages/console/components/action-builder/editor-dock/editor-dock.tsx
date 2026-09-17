@@ -6,6 +6,7 @@ import {
   resolveActionSequence,
   type ResolvedActionSequence,
 } from "@/app/project/action-sequence/resolve-sequence";
+import { sequencePathIsClosed, SEQUENCE_LOOP_DISABLED_HINT } from "@/app/project/action-sequence/sequence-loop";
 import { invalidTimelineTargets } from "@/app/project/action-sequence/validate-sequence";
 import { useActionBuilder } from "../use-action-builder";
 import { selectionBlockIds } from "../sequence-selection";
@@ -54,6 +55,7 @@ const SequenceEditor = () => {
     handleTimelineZoomOut,
     handleSave,
     handleTrajectoryModeChange,
+    handleLoopChange,
     sequenceIssues,
   } = useActionBuilder();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -112,6 +114,10 @@ const SequenceEditor = () => {
         sequenceName={sequence.name}
         trajectoryMode={sequence.trajectoryMode}
         onTrajectoryModeChange={handleTrajectoryModeChange}
+        loop={sequence.loop === true}
+        canLoop={resolved !== null && sequencePathIsClosed(resolved)}
+        loopDisabledHint={SEQUENCE_LOOP_DISABLED_HINT}
+        onLoopChange={handleLoopChange}
         majorStepSec={majorStepSec}
         canZoomIn={timelinePxPerSecond > TIMELINE_PX_PER_SECOND_MIN}
         canZoomOut={timelinePxPerSecond < TIMELINE_PX_PER_SECOND_MAX}

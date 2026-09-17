@@ -89,6 +89,7 @@ const mockBuilder = (overrides: Record<string, unknown> = {}) => {
     handleTimelineZoomOut: vi.fn(),
     handleSave: vi.fn(),
     handleTrajectoryModeChange: vi.fn(),
+    handleLoopChange: vi.fn(),
     sequenceIssues: [],
     ...overrides,
   };
@@ -174,5 +175,85 @@ describe("editor dock sequence editor", () => {
     expect(toggle.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(toggle);
     expect(handleTrajectoryModeChange).toHaveBeenCalledWith("non-forced");
+  });
+
+  it("disables 循环 when the sequence path is not closed", () => {
+    const handleLoopChange = vi.fn();
+    mockBuilder({ handleLoopChange });
+    render(<EditorDock />);
+    const toggle = screen.getByRole("switch", { name: "循环" });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(toggle.getAttribute("data-disabled")).toBe("");
+    fireEvent.click(toggle);
+    expect(handleLoopChange).not.toHaveBeenCalled();
+  });
+
+  it("toggles 循环 on when start and end poses match", () => {
+    const handleLoopChange = vi.fn();
+    const closed: ActionSequenceConfig = {
+      id: 1,
+      name: "Closed",
+      trajectoryMode: "non-forced",
+      loop: false,
+      blocks: [
+        {
+          id: "a",
+          kind: "pose",
+          objectId: 7,
+          atMs: 0,
+          pose: { v1: 0, v2: 0, v3: 0 },
+        },
+        {
+          id: "b",
+          kind: "pose",
+          objectId: 7,
+          atMs: 1000,
+          pose: { v1: 100, v2: 0, v3: 0 },
+        },
+        {
+          id: "c",
+          kind: "pose",
+          objectId: 7,
+          atMs: 2000,
+          pose: { v1: 0, v2: 0, v3: 0 },
+        },
+      ],
+      segments: [],
+    };
+    mockBuilder({ sequence: closed, handleLoopChange });
+    render(<EditorDock />);
+    const toggle = screen.getByRole("switch", { name: "循环" });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(toggle.getAttribute("data-disabled")).toBeNull();
+    fireEvent.click(toggle);
+    expect(handleLoopChange).toHaveBeenCalledWith(true);
+  });
+
+  it("toggles 循环 off when it is already on", () => {
+    const handleLoopChange = vi.fn();
+    mockBuilder({
+      sequence: {
+        id: 1,
+        name: "Closed",
+        trajectoryMode: "non-forced",
+        loop: true,
+        blocks: [
+          {
+            id: "a",
+            kind: "pose",
+            objectId: 7,
+            atMs: 0,
+            pose: { v1: 40, v2: 0, v3: 0 },
+          },
+        ],
+        segments: [],
+      },
+      handleLoopChange,
+    });
+    render(<EditorDock />);
+    const toggle = screen.getByRole("switch", { name: "循环" });
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(toggle);
+    expect(handleLoopChange).toHaveBeenCalledWith(false);
   });
 });

@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { toast } from "sonner";
 import type { TrajectoryMode } from "@shared/action-sequence";
 import {
   hydrateMotionForActionBuilder,
@@ -19,6 +20,11 @@ import type { SequenceIssue } from "@/app/project/action-sequence/validate-seque
 import { sequenceValidationContextFromSetup } from "@/app/project/project-motion-readiness";
 import { allocateSequenceIdsInProject } from "@/app/project/action-sequence/sequence-id";
 import type { ActionSequenceConfig, ModelPose, MotionSegmentSettings, TimelineBlock } from "@/app/project/action-sequence/types";
+import {
+  actionSequencePathIsClosed,
+  reconcileSequenceLoop,
+  SEQUENCE_LOOP_CLEARED_TOAST,
+} from "@/app/project/action-sequence/sequence-loop";
 import type { ProjectMotion, VirtualAxisId } from "@/app/project/project-document-types";
 import {
   createEmptySequence,
@@ -256,8 +262,12 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       if (!current) return false;
       const next = updater(current);
       if (next === null || next === current) return false;
+      const reconciled = reconcileSequenceLoop(next);
+      if (reconciled.cleared) toast.warning(SEQUENCE_LOOP_CLEARED_TOAST);
       return commitSequences(
-        motionRef.current.sequences.map((item) => (item.id === selectedSequenceId ? next : item)),
+        motionRef.current.sequences.map((item) =>
+          item.id === selectedSequenceId ? reconciled.sequence : item,
+        ),
       );
     },
     [selectedSequenceId, commitSequences],
@@ -397,6 +407,17 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   const handleTrajectoryModeChange = useCallback(
     (trajectoryMode: TrajectoryMode) => {
       updateSelectedSequence((current) => ({ ...current, trajectoryMode }));
+    },
+    [updateSelectedSequence],
+  );
+
+  const handleLoopChange = useCallback(
+    (loop: boolean) => {
+      updateSelectedSequence((current) => {
+        if (loop && !actionSequencePathIsClosed(current)) return current;
+        if (!loop && current.loop !== true) return current;
+        return { ...current, loop };
+      });
     },
     [updateSelectedSequence],
   );
@@ -726,6 +747,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleUpdateSegmentSettings,
       handleBlockDelete,
       handleTrajectoryModeChange,
+      handleLoopChange,
       handleBlockCopy,
       handleBlockPaste,
       handleTimelinePxPerSecondChange,
@@ -780,6 +802,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleUpdateSegmentSettings,
       handleBlockDelete,
       handleTrajectoryModeChange,
+      handleLoopChange,
       handleBlockCopy,
       handleBlockPaste,
       handleTimelinePxPerSecondChange,

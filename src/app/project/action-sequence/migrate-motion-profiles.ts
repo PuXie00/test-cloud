@@ -127,5 +127,8 @@ export const migrateActionSequenceProfiles = (
   next.blocks = next.blocks.map((block) =>
     block.kind === "dynamic-preset" ? migrateDynamicPreset(block) : block,
   );
+  if (sequence.loop !== undefined) {
+    next.loop = sequence.loop === true;
+  }
   return next;
 };

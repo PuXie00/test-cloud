@@ -13,6 +13,10 @@ type TimelineToolbarProps = {
   sequenceName?: string;
   trajectoryMode?: TrajectoryMode;
   onTrajectoryModeChange?: (mode: TrajectoryMode) => void;
+  loop?: boolean;
+  canLoop?: boolean;
+  loopDisabledHint?: string;
+  onLoopChange?: (loop: boolean) => void;
   /** 当前自适应主刻度间隔（秒），仅展示 */
   majorStepSec: number;
   canZoomIn: boolean;
@@ -34,6 +38,10 @@ export const TimelineToolbar = ({
   sequenceName,
   trajectoryMode,
   onTrajectoryModeChange,
+  loop = false,
+  canLoop = false,
+  loopDisabledHint,
+  onLoopChange,
   majorStepSec,
   canZoomIn,
   canZoomOut,
@@ -64,6 +72,23 @@ export const TimelineToolbar = ({
             }
           />
         </label>
+        {onLoopChange ? (
+          <label
+            className="inline-flex h-7 items-center gap-2 px-1"
+            title={!canLoop ? loopDisabledHint : undefined}
+          >
+            <span className="text-body-sm text-foreground">循环</span>
+            <Switch
+              aria-label="循环"
+              checked={loop && canLoop}
+              disabled={!canLoop}
+              onCheckedChange={(checked) => {
+                if (!canLoop) return;
+                onLoopChange(checked);
+              }}
+            />
+          </label>
+        ) : null}
         <div className="mx-1 h-4 w-px bg-border" aria-hidden />
       </>
     ) : null}
