@@ -151,4 +151,11 @@ describe("migrateActionSequenceProfiles", () => {
     expect(block).not.toHaveProperty("profile");
     expect(next.blocks[0]).not.toBe(sequence.blocks[0]);
   });
+
+  it("defaults missing loop to false and keeps true", () => {
+    expect(migrateActionSequenceProfiles(sequenceOf({})).loop).toBeUndefined();
+    expect(migrateActionSequenceProfiles(sequenceOf({ loop: true })).loop).toBe(true);
+    expect(migrateActionSequenceProfiles(sequenceOf({ loop: false })).loop).toBe(false);
+    expect(migrateActionSequenceProfiles(sequenceOf({ loop: "yes" })).loop).toBe(false);
+  });
 });

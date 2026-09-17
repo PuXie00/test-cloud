@@ -36,6 +36,7 @@ describe("buildCapturedPoseSequence", () => {
     expect(sequence!.name).toBe(CAPTURED_SEQUENCE_NAME);
     expect(CAPTURED_SEQUENCE_NAME).toBe("新建动作序列");
     expect(sequence!.trajectoryMode).toBe("non-forced");
+    expect(sequence!.loop).toBe(false);
     expect(sequence!.segments).toEqual([]);
     expect(sequence!.blocks).toHaveLength(2);
     expect(sequence!.blocks.every((block) => block.kind === "pose" && block.atMs === 0)).toBe(true);

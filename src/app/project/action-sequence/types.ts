@@ -87,6 +87,8 @@ export type ActionSequenceConfig = {
   name: string;
   note?: string;
   trajectoryMode: TrajectoryMode;
+  /** Closed-path repeat until stop. Missing/false = play once. */
+  loop?: boolean;
   blocks: TimelineBlock[];
   segments: MotionSegmentConfig[];
 };

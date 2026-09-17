@@ -14,6 +14,7 @@ export const createEmptySequence = (id: number, name?: string): ActionSequenceCo
   id,
   name: name ?? "新建动作序列",
   trajectoryMode: "non-forced",
+  loop: false,
   blocks: [],
   segments: [],
 });
