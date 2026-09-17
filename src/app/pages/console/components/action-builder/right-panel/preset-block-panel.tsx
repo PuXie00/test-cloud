@@ -23,7 +23,6 @@ import {
 import { useActionBuilder } from "../use-action-builder";
 import {
   VIRTUAL_AXIS_IDS,
-  formatTime,
   msToSeconds,
   secondsToMs,
   type ControlledObject,
@@ -40,15 +39,30 @@ const usePresetBuilder = () => {
   };
 };
 
-const formatNumber = (value: number): string =>
-  Number.isInteger(value) ? String(value) : value.toFixed(2);
-
-const Field = ({ label, children }: { label: string; children: ReactNode }) => (
-  <div className="mb-3">
-    <p className="mb-1 text-body-sm text-muted-foreground">{label}</p>
-    {children}
-  </div>
-);
+const Field = ({
+  label,
+  children,
+  stacked = false,
+}: {
+  label: string;
+  children: ReactNode;
+  stacked?: boolean;
+}) => {
+  if (stacked) {
+    return (
+      <div className="mb-3">
+        <p className="mb-1 text-body-sm text-muted-foreground">{label}</p>
+        {children}
+      </div>
+    );
+  }
+  return (
+    <div className="mb-2 flex min-h-10 items-center justify-between gap-3">
+      <p className="w-24 shrink-0 text-body-sm text-muted-foreground">{label}</p>
+      <div className="min-w-0 flex-1">{children}</div>
+    </div>
+  );
+};
 
 const axisContextFromObject = (
   object: ControlledObject | undefined,
@@ -107,114 +121,6 @@ const PresetParamControl = ({
       max={field.max}
       onChange={(next) => onChange(next)}
     />
-  );
-};
-
-const ParticipantOrder = ({
-  orderedObjectIds,
-  onReorder,
-}: {
-  orderedObjectIds: number[];
-  onReorder: (orderedObjectIds: number[]) => void;
-}) => {
-  const { getTimelineObject } = usePresetBuilder();
-  const handleMove = (from: number, to: number) => {
-    if (to < 0 || to >= orderedObjectIds.length) return;
-    const next = [...orderedObjectIds];
-    const [item] = next.splice(from, 1);
-    if (item === undefined) return;
-    next.splice(to, 0, item);
-    onReorder(next);
-  };
-
-  return (
-    <Field label="参与物体顺序">
-      <ul className="space-y-1">
-        {orderedObjectIds.map((objectId, index) => {
-          const name = getTimelineObject(objectId)?.name;
-          return (
-            <li
-              key={`${objectId}-${index}`}
-              className="flex items-center gap-2 rounded-md bg-input-background px-2 py-1"
-            >
-              <span className="min-w-0 flex-1 truncate text-body-sm text-foreground">
-                {name ?? `模型 ${objectId}`}
-                <span className="ml-2 font-mono text-mono-sm tabular-nums text-muted-foreground">
-                  {objectId}
-                </span>
-              </span>
-              <button
-                type="button"
-                aria-label={`上移 ${objectId}`}
-                disabled={index === 0}
-                onClick={() => handleMove(index, index - 1)}
-                className="h-8 rounded-md border border-border bg-transparent px-2 text-body-sm text-foreground hover:bg-accent disabled:opacity-40"
-              >
-                上移
-              </button>
-              <button
-                type="button"
-                aria-label={`下移 ${objectId}`}
-                disabled={index === orderedObjectIds.length - 1}
-                onClick={() => handleMove(index, index + 1)}
-                className="h-8 rounded-md border border-border bg-transparent px-2 text-body-sm text-foreground hover:bg-accent disabled:opacity-40"
-              >
-                下移
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </Field>
-  );
-};
-
-const poseOutOfRange = (
-  point: ResolvedPosePoint,
-  rangeByAxis:
-    | Partial<Record<"v1" | "v2" | "v3", { min: number; max: number }>>
-    | undefined,
-): boolean => {
-  if (!rangeByAxis) return false;
-  return (["v1", "v2", "v3"] as const).some((axis) => {
-    const range = rangeByAxis[axis];
-    if (!range) return false;
-    const value = point.pose[axis];
-    return value < range.min || value > range.max;
-  });
-};
-
-const GeneratedPoseRows = ({ poses }: { poses: ResolvedPosePoint[] }) => {
-  const { getTimelineObject } = usePresetBuilder();
-  return (
-    <Field label="生成位姿">
-      <ul aria-label="生成位姿" className="space-y-1">
-        {poses.map((point, index) => {
-          const invalid = poseOutOfRange(point, getTimelineObject(point.objectId)?.rangeByAxis);
-          return (
-            <li
-              key={point.sourceRef}
-              className={cn(
-                "rounded-md px-3 py-2 text-body-sm",
-                index % 2 === 0 ? "bg-input-background" : "bg-accent",
-                invalid ? "text-warning" : "text-muted-foreground",
-              )}
-            >
-              <span className="mr-3">
-                {getTimelineObject(point.objectId)?.name ?? `模型 ${point.objectId}`}
-              </span>
-              <span className="mr-3 font-mono tabular-nums">
-                {point.atMs === null ? "—" : formatTime(point.atMs)}
-              </span>
-              <span className="font-mono tabular-nums">
-                V1 {formatNumber(point.pose.v1)} / V2 {formatNumber(point.pose.v2)} / V3{" "}
-                {formatNumber(point.pose.v3)}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    </Field>
   );
 };
 
@@ -328,12 +234,14 @@ export const PresetBlockFields = ({
       <RepairBand items={repairItems} />
       {definition ? (
         <>
-          <p className="mb-3 text-body-sm text-muted-foreground">{definition.description}</p>
-          <p className="mb-3 font-mono text-mono-sm tabular-nums text-muted-foreground">
-            {perObject !== undefined
-              ? `每物体 ${perObject} 个位姿 · ${block.orderedObjectIds.length} 个物体`
-              : `生成 ${poses.length} 个位姿 · ${block.orderedObjectIds.length} 个物体`}
-          </p>
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <p className="min-w-0 flex-1 text-body-sm text-muted-foreground">{definition.description}</p>
+            <p className="shrink-0 font-mono text-mono-sm tabular-nums text-muted-foreground">
+              {perObject !== undefined
+                ? `每物体 ${perObject} 个位姿`
+                : `${poses.length} 个位姿`}
+            </p>
+          </div>
           {definition.paramFields.map((field) => (
             <Field key={field.key} label={field.label}>
               <PresetParamControl
@@ -347,25 +255,8 @@ export const PresetBlockFields = ({
       ) : (
         <p className="mb-3 text-body-sm text-warning">未知预设 {block.presetId}</p>
       )}
-      <ParticipantOrder
-        orderedObjectIds={block.orderedObjectIds}
-        onReorder={(orderedObjectIds) => onReplaceBlock({ ...block, orderedObjectIds })}
-      />
       {block.kind === "dynamic-preset" ? (
         <>
-          <Field label="曲线">
-            <MotionProfileEditor
-              value={block.profiles}
-              onChange={(profiles) => onReplaceBlock({ ...block, profiles })}
-              axisContext={axisContextFromObject(
-                block.orderedObjectIds[0] === undefined
-                  ? undefined
-                  : getTimelineObject(block.orderedObjectIds[0]),
-                poseTravelOf(poses, block.orderedObjectIds[0]),
-                Math.max(block.endMs - block.startMs, 0),
-              )}
-            />
-          </Field>
           <Field label="开始">
             <UnitAwareNumericInput
               aria-label="开始时间"
@@ -388,9 +279,21 @@ export const PresetBlockFields = ({
               onChange={(seconds) => onReplaceBlock({ ...block, endMs: secondsToMs(seconds) })}
             />
           </Field>
+          <Field label="曲线" stacked>
+            <MotionProfileEditor
+              value={block.profiles}
+              onChange={(profiles) => onReplaceBlock({ ...block, profiles })}
+              axisContext={axisContextFromObject(
+                block.orderedObjectIds[0] === undefined
+                  ? undefined
+                  : getTimelineObject(block.orderedObjectIds[0]),
+                poseTravelOf(poses, block.orderedObjectIds[0]),
+                Math.max(block.endMs - block.startMs, 0),
+              )}
+            />
+          </Field>
         </>
       ) : null}
-      <GeneratedPoseRows poses={poses} />
     </>
   );
 };
