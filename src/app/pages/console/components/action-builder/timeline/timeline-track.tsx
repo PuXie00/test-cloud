@@ -1,3 +1,4 @@
+import { presetLabelOf } from "@/app/project/action-sequence/preset-registry";
 import type {
   DynamicPresetBlock,
   InstructionBlock,
@@ -52,7 +53,7 @@ const isSegmentSelected = (
   selection.toRef === segment.toRef;
 
 const presetLabel = (block: StaticPresetBlock | DynamicPresetBlock): string =>
-  block.label ?? block.presetId;
+  block.label ?? presetLabelOf(block.presetId);
 
 const presetInitialPoseAtMs = (
   initial: ResolvedPosePoint | undefined,

@@ -14,6 +14,8 @@ import {
 import { actionBuilderStateToMotion } from "@/app/project/motion-persist";
 import { useProject } from "@/app/project/use-project";
 import { createDefaultAxisProfiles } from "@/app/project/action-sequence/motion-profile";
+import { fitPresetParams } from "@/app/project/action-sequence/preset-defaults";
+import { presetLabelOf } from "@/app/project/action-sequence/preset-registry";
 import { validateActionSequence } from "@/app/project/action-sequence/validate-sequence";
 import type { SequenceIssue } from "@/app/project/action-sequence/validate-sequence";
 import { sequenceValidationContextFromSetup } from "@/app/project/project-motion-readiness";
@@ -22,7 +24,6 @@ import type { ActionSequenceConfig, ModelPose, MotionSegmentSettings, TimelineBl
 import type { ProjectMotion, VirtualAxisId } from "@/app/project/project-document-types";
 import {
   createEmptySequence,
-  defaultPresetParams,
   DEFAULT_BLOCK_MS,
   nextId,
 } from "./action-builder-ops";
@@ -59,7 +60,6 @@ import type {
   ActionBuilderContextValue,
   EditorDockMode,
   ProgramItemInput,
-  StaticPresetParams,
 } from "./action-builder-context-types";
 import { ActionBuilderContext } from "./action-builder-react-context";
 import type { ContextSelection } from "./context-bar/selection-context-bar";
@@ -510,26 +510,39 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   );
 
   const handleApplyStaticPreset = useCallback(
-    (presetId: string, objectIds: number[], params: StaticPresetParams) => {
+    (presetId: string, objectIds: number[]) => {
       if (!selectedSequenceId || !sequence) {
         setSequenceMissingHint(true);
         return;
       }
-      const registryParams = defaultPresetParams(presetId, params);
-      if (!registryParams || objectIds.length < 2) return;
+      if (objectIds.length < 2) return;
+      const fitted = fitPresetParams(
+        presetId,
+        objectIds.map((objectId) => {
+          const object = getTimelineObject(objectId);
+          return {
+            id: objectId,
+            rangeByAxis: object?.rangeByAxis,
+            maxSpeedByAxis: object?.maxSpeedByAxis,
+            minAccelTimeByAxis: object?.minAccelTimeByAxis,
+          };
+        }),
+      );
+      if (!fitted) return;
       const block: TimelineBlock = {
         id: nextId("blk"),
         kind: "static-preset",
         presetId,
         atMs: cursorMs,
         orderedObjectIds: [...objectIds],
-        params: registryParams,
+        params: fitted.params,
+        label: presetLabelOf(presetId),
       };
       if (!handleInsertTimelineBlock(block)) return;
       setSelection({ kind: "block", blockId: block.id });
       setSequenceMissingHint(false);
     },
-    [selectedSequenceId, sequence, cursorMs, handleInsertTimelineBlock],
+    [selectedSequenceId, sequence, cursorMs, handleInsertTimelineBlock, getTimelineObject],
   );
 
   const handleApplyDynamicPreset = useCallback(
@@ -538,8 +551,18 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         setSequenceMissingHint(true);
         return;
       }
-      const registryParams = defaultPresetParams(presetId);
-      if (!registryParams || objectIds.length < 2) return;
+      if (objectIds.length < 2) return;
+      const participants = objectIds.map((objectId) => {
+        const object = getTimelineObject(objectId);
+        return {
+          id: objectId,
+          rangeByAxis: object?.rangeByAxis,
+          maxSpeedByAxis: object?.maxSpeedByAxis,
+          minAccelTimeByAxis: object?.minAccelTimeByAxis,
+        };
+      });
+      const fitted = fitPresetParams(presetId, participants);
+      if (!fitted) return;
       const mergedMinAccel: Partial<Record<VirtualAxisId, number>> = {};
       for (const objectId of objectIds) {
         const byAxis = getTimelineObject(objectId)?.minAccelTimeByAxis;
@@ -550,16 +573,18 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
           mergedMinAccel[axis] = Math.max(mergedMinAccel[axis] ?? 0, value);
         }
       }
+      const durationMs = fitted.durationMs > 0 ? fitted.durationMs : DEFAULT_BLOCK_MS;
       const block: TimelineBlock = {
         id: nextId("blk"),
         kind: "dynamic-preset",
         presetId,
         startMs: cursorMs,
-        endMs: cursorMs + DEFAULT_BLOCK_MS,
+        endMs: cursorMs + durationMs,
         orderedObjectIds: [...objectIds],
-        params: registryParams,
+        params: fitted.params,
+        label: presetLabelOf(presetId),
         profiles: createDefaultAxisProfiles(
-          DEFAULT_BLOCK_MS,
+          durationMs,
           Object.keys(mergedMinAccel).length > 0 ? mergedMinAccel : undefined,
         ),
       };

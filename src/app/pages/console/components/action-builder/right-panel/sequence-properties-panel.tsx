@@ -3,17 +3,13 @@ import { clampNumeric } from "@/app/components/ics/numeric-input-utils";
 import { TabBar } from "@/app/components/ics/tab-bar";
 import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-input";
 import { cn } from "@/app/components/ui/utils";
-import { getPresetDefinition } from "@/app/project/action-sequence/preset-registry";
 import { instructionBlockTitle } from "@/app/project/action-sequence/instruction-registry";
-import type { ResolvedActionSequence, ResolvedPosePoint } from "@/app/project/action-sequence/resolve-sequence";
+import type { ResolvedActionSequence } from "@/app/project/action-sequence/resolve-sequence";
 import type {
   ActionSequenceConfig,
-  DynamicPresetBlock,
   ModelPose,
   MotionSegmentSettings,
   PoseBlock,
-  PresetParamValue,
-  StaticPresetBlock,
   TimelineBlock,
 } from "@/app/project/action-sequence/types";
 import {
@@ -25,11 +21,11 @@ import {
   resolveEnabledAxes,
 } from "../motion-profile/motion-profile-status";
 import { EmptySelectionState } from "./empty-selection-state";
+import { PresetBlockFields, presetBlockTitle } from "./preset-block-panel";
 import { lookupSequenceSelection, type SequenceSelection } from "../sequence-selection";
 import type { PoseAxisWrite } from "../sequence-ops";
 import {
   VIRTUAL_AXIS_IDS,
-  formatTime,
   msToSeconds,
   secondsToMs,
   type ControlledObject,
@@ -49,26 +45,6 @@ export type SequencePropertiesPanelProps = {
     settings: MotionSegmentSettings,
   ) => void;
   onDeleteBlock: (blockId: string) => void;
-};
-
-const PRESET_LABELS: Record<string, string> = {
-  "static-flat": "平面",
-  "static-slope": "斜面",
-  "static-arc": "弧形",
-  "static-wave": "静态波浪",
-  "dynamic-level": "水平升降",
-  "dynamic-wave": "行进波浪",
-};
-
-const formatNumber = (value: number): string =>
-  Number.isInteger(value) ? String(value) : value.toFixed(2);
-
-const paramUnit = (key: string): string | undefined => {
-  if (key === "sampleIntervalMs") return "ms";
-  if (/V1$|^v1$|^amplitude$/i.test(key)) return "mm";
-  if (/V2$|^v2$|V3$|^v3$|Deg$/i.test(key)) return "°";
-  if (key.endsWith("Ms")) return "ms";
-  return undefined;
 };
 
 const PropertiesShell = ({
@@ -381,136 +357,6 @@ const MultiPoseAxesEditor = ({ poses }: { poses: PoseBlock[] }) => {
   );
 };
 
-const PresetParamFields = ({
-  params,
-  onChange,
-}: {
-  params: Record<string, PresetParamValue>;
-  onChange: (key: string, value: PresetParamValue) => void;
-}) => (
-  <>
-    {Object.entries(params).map(([key, value]) => {
-      if (typeof value === "boolean") {
-        return (
-          <Field key={key} label={key}>
-            <input
-              type="checkbox"
-              aria-label={key}
-              checked={value}
-              onChange={() => onChange(key, !value)}
-              className="h-4 w-4 accent-primary"
-            />
-          </Field>
-        );
-      }
-      if (typeof value === "string") {
-        return (
-          <Field key={key} label={key}>
-            <input
-              type="text"
-              aria-label={key}
-              value={value}
-              onChange={(event) => onChange(key, event.target.value)}
-              className="w-full rounded-md border border-border/60 bg-input-background px-2 py-1 font-mono text-mono-sm tabular-nums text-foreground outline-none focus:ring-1 focus:ring-ring"
-            />
-          </Field>
-        );
-      }
-      return (
-        <Field key={key} label={key}>
-          <UnitAwareNumericInput
-            aria-label={key}
-            value={value}
-            unit={paramUnit(key)}
-            step={1}
-            precision={1}
-            onChange={(next) => onChange(key, next)}
-          />
-        </Field>
-      );
-    })}
-  </>
-);
-
-const ParticipantOrder = ({
-  orderedObjectIds,
-  onReorder,
-}: {
-  orderedObjectIds: number[];
-  onReorder: (orderedObjectIds: number[]) => void;
-}) => {
-  const handleMove = (from: number, to: number) => {
-    if (to < 0 || to >= orderedObjectIds.length) return;
-    const next = [...orderedObjectIds];
-    const [item] = next.splice(from, 1);
-    if (item === undefined) return;
-    next.splice(to, 0, item);
-    onReorder(next);
-  };
-
-  return (
-    <Field label="参与物体顺序">
-      <ul className="space-y-1">
-        {orderedObjectIds.map((objectId, index) => (
-          <li
-            key={`${objectId}-${index}`}
-            className="flex items-center gap-2 rounded-md bg-input-background px-2 py-1"
-          >
-            <span className="min-w-0 flex-1 font-mono text-mono-sm tabular-nums text-foreground">
-              {objectId}
-            </span>
-            <button
-              type="button"
-              aria-label={`上移 ${objectId}`}
-              disabled={index === 0}
-              onClick={() => handleMove(index, index - 1)}
-              className="h-8 rounded-md border border-border bg-transparent px-2 text-body-sm text-foreground hover:bg-accent disabled:opacity-40"
-            >
-              上移
-            </button>
-            <button
-              type="button"
-              aria-label={`下移 ${objectId}`}
-              disabled={index === orderedObjectIds.length - 1}
-              onClick={() => handleMove(index, index + 1)}
-              className="h-8 rounded-md border border-border bg-transparent px-2 text-body-sm text-foreground hover:bg-accent disabled:opacity-40"
-            >
-              下移
-            </button>
-          </li>
-        ))}
-      </ul>
-    </Field>
-  );
-};
-
-const GeneratedPoseRows = ({ poses }: { poses: ResolvedPosePoint[] }) => (
-  <Field label="生成位姿">
-    <ul aria-label="生成位姿" className="space-y-1">
-      {poses.map((point) => (
-        <li
-          key={point.sourceRef}
-          className="rounded-md bg-input-background px-3 py-2 text-body-sm text-muted-foreground"
-        >
-          <span className="mr-3">模型 {point.objectId}</span>
-          <span className="mr-3 font-mono tabular-nums">
-            {point.atMs === null ? "—" : formatTime(point.atMs)}
-          </span>
-          <span className="font-mono tabular-nums">
-            V1 {formatNumber(point.pose.v1)} / V2 {formatNumber(point.pose.v2)} / V3{" "}
-            {formatNumber(point.pose.v3)}
-          </span>
-        </li>
-      ))}
-    </ul>
-  </Field>
-);
-
-const generatedPosesFor = (
-  resolved: ResolvedActionSequence,
-  blockId: string,
-): ResolvedPosePoint[] => resolved.poses.filter((point) => point.sourceBlockId === blockId);
-
 const EmptyProperties = () => (
   <div className="flex min-h-0 flex-1 flex-col">
     <div className="flex h-9 shrink-0 items-center bg-muted px-3">
@@ -659,86 +505,17 @@ export const SequencePropertiesPanel = ({
     );
   }
 
-  if (block.kind === "static-preset") {
-    const preset: StaticPresetBlock = block;
-    const definition = getPresetDefinition(preset.presetId);
-    const title = `静态预设${PRESET_LABELS[preset.presetId] ? ` · ${PRESET_LABELS[preset.presetId]}` : ""}`;
+  if (block.kind === "static-preset" || block.kind === "dynamic-preset") {
     return (
-      <PropertiesShell title={title} onDelete={() => onDeleteBlock(preset.id)}>
-        {definition ? (
-          <PresetParamFields
-            params={preset.params}
-            onChange={(key, value) =>
-              onReplaceBlock({ ...preset, params: { ...preset.params, [key]: value } })
-            }
-          />
-        ) : (
-          <p className="mb-3 text-body-sm text-warning">未知预设 {preset.presetId}</p>
-        )}
-        <ParticipantOrder
-          orderedObjectIds={preset.orderedObjectIds}
-          onReorder={(orderedObjectIds) => onReplaceBlock({ ...preset, orderedObjectIds })}
+      <PropertiesShell title={presetBlockTitle(block)} onDelete={() => onDeleteBlock(block.id)}>
+        <PresetBlockFields
+          block={block}
+          resolved={resolved}
+          onReplaceBlock={onReplaceBlock}
         />
-        <GeneratedPoseRows poses={generatedPosesFor(resolved, preset.id)} />
       </PropertiesShell>
     );
   }
 
-  const preset: DynamicPresetBlock = block;
-  const definition = getPresetDefinition(preset.presetId);
-  const title = `动态预设${PRESET_LABELS[preset.presetId] ? ` · ${PRESET_LABELS[preset.presetId]}` : ""}`;
-  return (
-    <PropertiesShell title={title} onDelete={() => onDeleteBlock(preset.id)}>
-      {definition ? (
-        <PresetParamFields
-          params={preset.params}
-          onChange={(key, value) =>
-            onReplaceBlock({ ...preset, params: { ...preset.params, [key]: value } })
-          }
-        />
-      ) : (
-        <p className="mb-3 text-body-sm text-warning">未知预设 {preset.presetId}</p>
-      )}
-      <ParticipantOrder
-        orderedObjectIds={preset.orderedObjectIds}
-        onReorder={(orderedObjectIds) => onReplaceBlock({ ...preset, orderedObjectIds })}
-      />
-      <Field label="曲线">
-        <MotionProfileEditor
-          value={preset.profiles}
-          onChange={(profiles) => onReplaceBlock({ ...preset, profiles })}
-          axisContext={axisContextFromObject(
-            preset.orderedObjectIds[0] === undefined
-              ? undefined
-              : getTimelineObject(preset.orderedObjectIds[0]),
-            { v1: 0, v2: 0, v3: 0 },
-            Math.max(preset.endMs - preset.startMs, 0),
-          )}
-        />
-      </Field>
-      <Field label="开始">
-        <UnitAwareNumericInput
-          aria-label="开始时间"
-          value={msToSeconds(preset.startMs)}
-          unit="s"
-          step={0.1}
-          precision={1}
-          min={0}
-          onChange={(seconds) => onReplaceBlock({ ...preset, startMs: secondsToMs(seconds) })}
-        />
-      </Field>
-      <Field label="结束">
-        <UnitAwareNumericInput
-          aria-label="结束时间"
-          value={msToSeconds(preset.endMs)}
-          unit="s"
-          step={0.1}
-          precision={1}
-          min={0}
-          onChange={(seconds) => onReplaceBlock({ ...preset, endMs: secondsToMs(seconds) })}
-        />
-      </Field>
-      <GeneratedPoseRows poses={generatedPosesFor(resolved, preset.id)} />
-    </PropertiesShell>
-  );
+  return <EmptyProperties />;
 };
