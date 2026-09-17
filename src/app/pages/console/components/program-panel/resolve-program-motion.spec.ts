@@ -47,7 +47,16 @@ describe("resolve-program-motion", () => {
     expect(program?.chapters[0]?.items).toHaveLength(1);
     expect(program?.chapters[0]?.items[0]).toMatchObject({
       kind: "sequence",
-      sequence: { id: 1, name: "Seq" },
+      sequence: { id: 1, name: "Seq", trajectoryMode: "non-forced" },
     });
+  });
+
+  it("copies forced trajectoryMode onto the control-page sequence summary", () => {
+    const forcedMotion: ProjectMotion = {
+      ...motion,
+      actionSequences: [{ ...motion.actionSequences[0]!, trajectoryMode: "forced" }],
+    };
+    const program = motionProgramToLegacyProgram(forcedMotion);
+    expect(program?.chapters[0]?.items[0]?.sequence.trajectoryMode).toBe("forced");
   });
 });

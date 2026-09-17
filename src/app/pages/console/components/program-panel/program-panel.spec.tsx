@@ -156,6 +156,7 @@ describe("ProgramPanel variants", () => {
     expect(screen.getByText("2页·9项")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /运行 / })).toBeNull();
     expect(screen.queryByRole("button", { name: "序列" })).toBeNull();
+    expect(screen.queryByText("强制")).toBeNull();
   });
 
   it("control variant row click toggles sequence preview", () => {
@@ -171,6 +172,34 @@ describe("ProgramPanel variants", () => {
     );
     fireEvent.click(screen.getByRole("treeitem", { name: "S1" }));
     expect(togglePreviewMock).toHaveBeenCalledWith(1);
+  });
+
+  it("control variant marks only forced sequences", () => {
+    programState.current = {
+      id: "program-a",
+      name: "节目 A",
+      chapters: [
+        {
+          id: "ch-1",
+          name: "章节 1",
+          items: [
+            { kind: "sequence", sequence: { id: 1, name: "非强制A", durationMs: 1000 } },
+            {
+              kind: "sequence",
+              sequence: { id: 2, name: "强制B", durationMs: 1000, trajectoryMode: "forced" },
+            },
+          ],
+        },
+      ],
+    };
+    render(
+      <ConsoleModeProvider>
+        <ProgramPanel variant="control" />
+      </ConsoleModeProvider>,
+    );
+    expect(screen.getByRole("treeitem", { name: "非强制A" })).toBeTruthy();
+    expect(screen.getByRole("treeitem", { name: "强制B，强制轨迹" })).toBeTruthy();
+    expect(screen.getByText("强制")).toBeTruthy();
   });
 
   it("authoring variant shows pages without current chapter or page", () => {

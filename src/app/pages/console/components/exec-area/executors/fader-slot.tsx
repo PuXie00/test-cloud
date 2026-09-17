@@ -4,6 +4,7 @@ import { cn } from "@/app/components/ui/utils";
 import { useConsoleMode } from "../../../hooks/use-console-mode";
 import type { FaderSlotState } from "../../../hooks/use-executor-slots";
 import { VerticalFader } from "./vertical-fader";
+import { ForcedTrajectoryBadge, isForcedTrajectory } from "../../forced-trajectory-badge";
 
 const LONG_PRESS_MS = 400;
 const LONG_PRESS_MOVE_PX = 8;
@@ -33,6 +34,7 @@ export const FaderSlot = ({
 }: FaderSlotProps) => {
   const { mode } = useConsoleMode();
   const isEmpty = !slot.sequence;
+  const isForced = isForcedTrajectory(slot.sequence?.trajectoryMode);
   const isRunning = slot.phase === "running";
   const isReady = slot.phase === "ready";
   const actionLabel = isReady || isRunning ? "GO" : "Ready";
@@ -144,7 +146,9 @@ export const FaderSlot = ({
       {!isEmpty ? (
         <button
           type="button"
-          aria-label={`预览 ${slot.sequence?.name}`}
+          aria-label={
+            isForced ? `预览 ${slot.sequence?.name}，强制轨迹` : `预览 ${slot.sequence?.name}`
+          }
           aria-pressed={isPreviewing}
           disabled={Boolean(repairMessage)}
           onClick={handlePreviewClick}
@@ -161,6 +165,7 @@ export const FaderSlot = ({
       ) : null}
       <div className="pointer-events-none relative z-[1] flex items-center gap-1">
         <span className="font-mono text-label-caps text-muted-foreground">{slot.label}</span>
+        {isForced ? <ForcedTrajectoryBadge /> : null}
         <span
           className={cn(
             "ml-auto h-1.5 w-1.5 rounded-full",

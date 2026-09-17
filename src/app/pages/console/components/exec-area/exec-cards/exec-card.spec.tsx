@@ -40,6 +40,20 @@ describe("ExecCardView run status", () => {
     expect(screen.queryByText("C++ 运行中")).toBeNull();
     expect(screen.queryByText("暂停")).toBeNull();
     expect(document.querySelector("[style*='width']")).toBeNull();
+    expect(screen.queryByText("Seq")).toBeNull();
+    expect(screen.queryByText("强制")).toBeNull();
+  });
+
+  it("shows 强制 only for a forced-trajectory sequence", () => {
+    render(
+      <ExecCardView
+        card={card({ trajectoryMode: "forced" })}
+        hasNextSequence
+        {...handlers}
+      />,
+    );
+    expect(screen.getByText("强制")).toBeTruthy();
+    expect(screen.queryByText("Seq")).toBeNull();
   });
 
   it("disables restart and skip while running; stop is enabled", () => {

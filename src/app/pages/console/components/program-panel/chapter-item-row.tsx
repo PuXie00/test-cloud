@@ -1,5 +1,6 @@
 import type { ChapterItem } from "./program-data";
 import { ProgramSequenceRow } from "./program-sequence-row";
+import { isForcedTrajectory } from "../forced-trajectory-badge";
 
 type ChapterItemRowProps = {
   item: ChapterItem;
@@ -37,6 +38,7 @@ export const ChapterItemRow = ({
       indexLabel={slotLabel}
       durationLabel={(durationMs / 1000).toFixed(1)}
       repairMessage={repairMessage}
+      forced={isForcedTrajectory(item.sequence.trajectoryMode)}
       draggable={draggable}
       striped={striped}
       ariaSelected={isActive}

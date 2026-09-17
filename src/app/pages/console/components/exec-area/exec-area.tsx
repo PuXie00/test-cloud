@@ -77,6 +77,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
             speedPercent: started.speedPercent,
             sequenceId,
             sequenceHandle: started.sequenceHandle,
+            trajectoryMode: slot.sequence.trajectoryMode,
           });
           stopPreview();
         } finally {

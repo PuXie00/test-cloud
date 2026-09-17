@@ -672,6 +672,29 @@ describe("FaderSlot Ready/GO gate", () => {
     expect(slider.getAttribute("aria-disabled")).toBeNull();
     fireEvent.keyDown(slider, { key: "ArrowUp" });
     expect(onFaderChange).toHaveBeenCalledWith(121);
+    expect(screen.queryByText("强制")).toBeNull();
+  });
+
+  it("shows 强制 only for a forced-trajectory sequence", () => {
+    render(
+      withMode(
+        <FaderSlot
+          slot={makeFaderSlot({
+            index: 0,
+            sequence: { id: 15, name: "开幕A", durationMs: 2000, trajectoryMode: "forced" },
+          })}
+          isPreviewing={false}
+          onPreviewToggle={vi.fn()}
+          onPreviewHoldStart={vi.fn()}
+          onPreviewHoldEnd={vi.fn()}
+          onGo={vi.fn()}
+          onFaderChange={vi.fn()}
+          onAssignFromDrag={vi.fn()}
+        />,
+      ),
+    );
+    expect(screen.getByText("强制")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "预览 开幕A，强制轨迹" })).toBeTruthy();
   });
 });
 
