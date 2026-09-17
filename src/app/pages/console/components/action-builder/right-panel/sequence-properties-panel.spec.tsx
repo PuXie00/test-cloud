@@ -566,7 +566,7 @@ describe("SequencePropertiesPanel edits", () => {
 
 
 
-  it("edits static preset registry params and reorders participants", () => {
+  it("edits static preset registry params without participant reorder or pose table", () => {
 
     renderPanel({ selection: { kind: "block", blockId: "static" } });
 
@@ -584,35 +584,13 @@ describe("SequencePropertiesPanel edits", () => {
 
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "下移 8" }));
+    expect(screen.queryByRole("button", { name: "下移 8" })).toBeNull();
 
-    expect(handlers.onReplaceBlock).toHaveBeenCalledWith(
+    expect(screen.queryByRole("button", { name: "上移 8" })).toBeNull();
 
-      expect.objectContaining({
+    expect(screen.queryByLabelText("生成位姿")).toBeNull();
 
-        id: "static",
-
-        orderedObjectIds: [9, 8],
-
-      }),
-
-    );
-
-  });
-
-
-
-  it("shows generated preset poses as read-only inspection rows", () => {
-
-    renderPanel({ selection: { kind: "block", blockId: "static" } });
-
-    const inspection = screen.getByLabelText("生成位姿");
-
-    expect(within(inspection).queryByRole("button", { name: "增加" })).toBeNull();
-
-    expect(within(inspection).queryByRole("checkbox")).toBeNull();
-
-    expect(within(inspection).getAllByRole("listitem").length).toBeGreaterThan(0);
+    expect(screen.queryByText("参与物体顺序")).toBeNull();
 
     expect(screen.getByText(/每物体 1 个位姿/)).not.toBeNull();
 
