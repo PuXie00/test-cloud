@@ -127,7 +127,7 @@ const sequence: ActionSequenceConfig = {
 
       orderedObjectIds: [8, 9],
 
-      params: { v1: 0, v2: 0, v3: 0 },
+      params: { heightMm: 0 },
 
     },
 
@@ -145,7 +145,7 @@ const sequence: ActionSequenceConfig = {
 
       orderedObjectIds: [10, 11],
 
-      params: { startV1: 0, targetV1: 100, v2: 0, v3: 0 },
+      params: { startHeightMm: 0, endHeightMm: 100 },
 
       profiles: profiles(200, 200),
 
@@ -567,7 +567,7 @@ describe("SequencePropertiesPanel edits", () => {
 
     renderPanel({ selection: { kind: "block", blockId: "static" } });
 
-    stepUp("v1");
+    stepUp("高度");
 
     expect(handlers.onReplaceBlock).toHaveBeenCalledWith(
 
@@ -575,7 +575,7 @@ describe("SequencePropertiesPanel edits", () => {
 
         id: "static",
 
-        params: expect.objectContaining({ v1: 1 }),
+        params: expect.objectContaining({ heightMm: 1 }),
 
       }),
 
@@ -610,6 +610,22 @@ describe("SequencePropertiesPanel edits", () => {
     expect(within(inspection).queryByRole("checkbox")).toBeNull();
 
     expect(within(inspection).getAllByRole("listitem").length).toBeGreaterThan(0);
+
+  });
+
+
+
+  it("shows read-only average speed for a level lift", () => {
+
+    renderPanel({ selection: { kind: "block", blockId: "dynamic" } });
+
+    expect(screen.getByLabelText("平均速度").textContent).toMatch(/100(\.0+)? mm\/s/);
+
+    expect(screen.getByLabelText("起点高度")).not.toBeNull();
+
+    expect(screen.getByLabelText("目标高度")).not.toBeNull();
+
+    expect(screen.queryByLabelText("startV1")).toBeNull();
 
   });
 

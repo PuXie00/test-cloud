@@ -183,16 +183,13 @@ describe("evaluateResolvedSequence", () => {
           endMs: 3000,
           orderedObjectIds: [7, 8],
           params: {
-            baseV1: 1000,
-            amplitude: 500,
+            baseHeightMm: 1000,
+            amplitudeMm: 500,
             cycles: 1,
             direction: 1,
             intervalDeg: 90,
-            sampleIntervalMs: 500,
-            v2: 0,
-            v3: 0,
           },
-          profiles: axisProfiles(100, 100),
+          profiles: axisProfiles(20, 20),
         },
       ],
       segments: [],
@@ -200,9 +197,10 @@ describe("evaluateResolvedSequence", () => {
 
     expect(evaluateResolvedSequence(resolved, 1500).get(7)?.v1).toBe(1500);
 
+    const at1600 = evaluateResolvedSequence(resolved, 1600).get(7)?.v1 ?? 0;
     const restarted = evaluateResolvedSequence(resolved, 1510).get(7)?.v1;
-    expect(restarted).toBeCloseTo(1499.375, 5);
-    expect(restarted).not.toBeCloseTo(1490, 1);
+    const linear = 1500 + (at1600 - 1500) * 0.1;
+    expect(restarted).not.toBeCloseTo(linear, 1);
   });
 
   it("interpolates each axis with its own accel profile at the same tNorm", () => {

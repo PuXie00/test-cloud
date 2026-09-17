@@ -148,7 +148,35 @@ describe("migrateActionSequenceProfiles", () => {
     expect(block.profiles.v1.params).toEqual({ accelMs: 300, decelMs: 300 });
     expect(block.profiles.v2.params).toEqual({ accelMs: 300, decelMs: 300 });
     expect(block.profiles.v3.params).toEqual({ accelMs: 300, decelMs: 300 });
+    expect(block.params).toEqual({ startHeightMm: 0, endHeightMm: 1 });
     expect(block).not.toHaveProperty("profile");
     expect(next.blocks[0]).not.toBe(sequence.blocks[0]);
+  });
+
+  it("migrates authored v1-centric preset params on load", () => {
+    const sequence = sequenceOf({
+      blocks: [
+        {
+          id: "slope",
+          kind: "static-preset",
+          presetId: "static-slope",
+          atMs: 1000,
+          orderedObjectIds: [7, 8],
+          params: { baseV1: 0, stepV1: 100, v2: 0, v3: 0 },
+        },
+      ],
+    });
+    const next = migrateActionSequenceProfiles(sequence);
+    const block = next.blocks[0];
+    expect(block).toMatchObject({
+      id: "slope",
+      kind: "static-preset",
+      params: {
+        baseHeightMm: 0,
+        spacingMm: 1000,
+        alignTilt: true,
+      },
+    });
+    expect(typeof (block as { params: { slopeDeg: number } }).params.slopeDeg).toBe("number");
   });
 });

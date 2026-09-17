@@ -108,7 +108,7 @@ describe("action sequence project structure", () => {
             startMs: 0,
             endMs: 1000,
             orderedObjectIds: [7],
-            params: { startV1: 0, targetV1: 1, v2: 0, v3: 0 },
+            params: { startHeightMm: 0, endHeightMm: 1 },
             profiles: axisProfiles,
           },
         ],

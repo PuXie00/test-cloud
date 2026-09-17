@@ -33,7 +33,7 @@ const staticSlopePreset = (
   presetId: "static-slope",
   orderedObjectIds,
   atMs,
-  params: { baseV1: 0, stepV1: 10, v2: 0, v3: 0 },
+  params: { baseHeightMm: 0, slopeDeg: 0, spacingMm: 1000, alignTilt: false },
 });
 
 const makeObject = (

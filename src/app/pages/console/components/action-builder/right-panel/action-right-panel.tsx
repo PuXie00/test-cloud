@@ -5,7 +5,7 @@ import type {
   MotionSegmentSettings,
   TimelineBlock,
 } from "@/app/project/action-sequence/types";
-import type { EditorDockMode, StaticPresetParams } from "../action-builder-context-types";
+import type { EditorDockMode } from "../action-builder-context-types";
 import type { SequenceSelection } from "../sequence-selection";
 import { ProgramPanel } from "../../program-panel/program-panel";
 import { SelectionTabContent } from "./selection-tab-content";
@@ -36,7 +36,7 @@ type ActionRightPanelProps = {
   onCreatePose: (objectIds: number[]) => void;
   onCreateSetEnabled: (objectIds: number[], enabled: boolean) => void;
   onCreateSequence: (objectIds: number[]) => void;
-  onApplyStaticPreset: (presetId: string, objectIds: number[], params: StaticPresetParams) => void;
+  onApplyStaticPreset: (presetId: string, objectIds: number[]) => void;
   onApplyDynamicPreset: (presetId: string, objectIds: number[]) => void;
 };
 

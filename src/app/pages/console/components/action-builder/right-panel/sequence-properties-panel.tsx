@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { clampNumeric } from "@/app/components/ics/numeric-input-utils";
 import { TabBar } from "@/app/components/ics/tab-bar";
 import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-input";
 import { cn } from "@/app/components/ui/utils";
-import { getPresetDefinition } from "@/app/project/action-sequence/preset-registry";
+import { getPresetDefinition, type PresetParamField } from "@/app/project/action-sequence/preset-registry";
 import { instructionBlockTitle } from "@/app/project/action-sequence/instruction-registry";
 import type { ResolvedActionSequence, ResolvedPosePoint } from "@/app/project/action-sequence/resolve-sequence";
 import type {
@@ -51,24 +51,13 @@ export type SequencePropertiesPanelProps = {
   onDeleteBlock: (blockId: string) => void;
 };
 
-const PRESET_LABELS: Record<string, string> = {
-  "static-flat": "平面",
-  "static-slope": "斜面",
-  "static-arc": "弧形",
-  "static-wave": "静态波浪",
-  "dynamic-level": "水平升降",
-  "dynamic-wave": "行进波浪",
-};
-
 const formatNumber = (value: number): string =>
   Number.isInteger(value) ? String(value) : value.toFixed(2);
 
-const paramUnit = (key: string): string | undefined => {
-  if (key === "sampleIntervalMs") return "ms";
-  if (/V1$|^v1$|^amplitude$/i.test(key)) return "mm";
-  if (/V2$|^v2$|V3$|^v3$|Deg$/i.test(key)) return "°";
-  if (key.endsWith("Ms")) return "ms";
-  return undefined;
+const presetBlockTitle = (kind: "static" | "dynamic", presetId: string): string => {
+  const prefix = kind === "static" ? "静态预设" : "动态预设";
+  const label = getPresetDefinition(presetId)?.label;
+  return label ? `${prefix} · ${label}` : prefix;
 };
 
 const PropertiesShell = ({
@@ -184,6 +173,19 @@ const PoseAxisRow = ({
       />
     </div>
   );
+};
+
+const dynamicPresetTravel = (preset: DynamicPresetBlock): ModelPose => {
+  if (preset.presetId === "dynamic-level") {
+    const startHeightMm = typeof preset.params.startHeightMm === "number" ? preset.params.startHeightMm : 0;
+    const endHeightMm = typeof preset.params.endHeightMm === "number" ? preset.params.endHeightMm : 0;
+    return { v1: endHeightMm - startHeightMm, v2: 0, v3: 0 };
+  }
+  if (preset.presetId === "dynamic-wave") {
+    const amplitudeMm = typeof preset.params.amplitudeMm === "number" ? preset.params.amplitudeMm : 0;
+    return { v1: 2 * Math.abs(amplitudeMm), v2: 0, v3: 0 };
+  }
+  return { v1: 0, v2: 0, v3: 0 };
 };
 
 const axisContextFromObject = (
@@ -382,55 +384,97 @@ const MultiPoseAxesEditor = ({ poses }: { poses: PoseBlock[] }) => {
 };
 
 const PresetParamFields = ({
+  fields,
   params,
   onChange,
 }: {
+  fields: readonly PresetParamField[];
   params: Record<string, PresetParamValue>;
   onChange: (key: string, value: PresetParamValue) => void;
 }) => (
   <>
-    {Object.entries(params).map(([key, value]) => {
-      if (typeof value === "boolean") {
+    {fields.map((field) => {
+      if (field.kind === "boolean") {
+        const checked = params[field.key] === true;
+        const handleToggle = () => onChange(field.key, !checked);
+        const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          handleToggle();
+        };
         return (
-          <Field key={key} label={key}>
+          <Field key={field.key} label={field.label}>
             <input
               type="checkbox"
-              aria-label={key}
-              checked={value}
-              onChange={() => onChange(key, !value)}
+              aria-label={field.label}
+              checked={checked}
+              onChange={handleToggle}
+              onKeyDown={handleKeyDown}
               className="h-4 w-4 accent-primary"
             />
           </Field>
         );
       }
-      if (typeof value === "string") {
+      if (field.kind === "enum") {
+        const current = params[field.key];
+        const selected =
+          typeof current === "number" && field.options.some((option) => option.value === current)
+            ? current
+            : field.options[0]?.value;
         return (
-          <Field key={key} label={key}>
-            <input
-              type="text"
-              aria-label={key}
-              value={value}
-              onChange={(event) => onChange(key, event.target.value)}
-              className="w-full rounded-md border border-border/60 bg-input-background px-2 py-1 font-mono text-mono-sm tabular-nums text-foreground outline-none focus:ring-1 focus:ring-ring"
-            />
+          <Field key={field.key} label={field.label}>
+            <select
+              aria-label={field.label}
+              value={selected === undefined ? "" : String(selected)}
+              onChange={(event) => onChange(field.key, Number(event.target.value))}
+              className="h-9 w-full rounded-md border border-border/60 bg-input-background px-2 text-body-sm text-foreground outline-none focus:ring-1 focus:ring-ring"
+            >
+              {field.options.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </Field>
         );
       }
+      const numeric = typeof params[field.key] === "number" ? params[field.key] : 0;
       return (
-        <Field key={key} label={key}>
+        <Field key={field.key} label={field.label}>
           <UnitAwareNumericInput
-            aria-label={key}
-            value={value}
-            unit={paramUnit(key)}
-            step={1}
-            precision={1}
-            onChange={(next) => onChange(key, next)}
+            aria-label={field.label}
+            value={numeric}
+            unit={field.unit}
+            step={field.step ?? 1}
+            precision={field.precision ?? 1}
+            min={field.min}
+            max={field.max}
+            onChange={(next) => onChange(field.key, next)}
           />
         </Field>
       );
     })}
   </>
 );
+
+const LevelAverageSpeed = ({
+  startHeightMm,
+  endHeightMm,
+  durationMs,
+}: {
+  startHeightMm: number;
+  endHeightMm: number;
+  durationMs: number;
+}) => {
+  const speed = durationMs > 0 ? Math.abs(endHeightMm - startHeightMm) / (durationMs / 1000) : 0;
+  return (
+    <Field label="平均速度">
+      <p className="font-mono text-mono-sm tabular-nums text-foreground" aria-label="平均速度">
+        {formatNumber(speed)} mm/s
+      </p>
+    </Field>
+  );
+};
 
 const ParticipantOrder = ({
   orderedObjectIds,
@@ -662,11 +706,12 @@ export const SequencePropertiesPanel = ({
   if (block.kind === "static-preset") {
     const preset: StaticPresetBlock = block;
     const definition = getPresetDefinition(preset.presetId);
-    const title = `静态预设${PRESET_LABELS[preset.presetId] ? ` · ${PRESET_LABELS[preset.presetId]}` : ""}`;
+    const title = presetBlockTitle("static", preset.presetId);
     return (
       <PropertiesShell title={title} onDelete={() => onDeleteBlock(preset.id)}>
         {definition ? (
           <PresetParamFields
+            fields={definition.paramFields}
             params={preset.params}
             onChange={(key, value) =>
               onReplaceBlock({ ...preset, params: { ...preset.params, [key]: value } })
@@ -686,11 +731,15 @@ export const SequencePropertiesPanel = ({
 
   const preset: DynamicPresetBlock = block;
   const definition = getPresetDefinition(preset.presetId);
-  const title = `动态预设${PRESET_LABELS[preset.presetId] ? ` · ${PRESET_LABELS[preset.presetId]}` : ""}`;
+  const title = presetBlockTitle("dynamic", preset.presetId);
+  const startHeightMm =
+    typeof preset.params.startHeightMm === "number" ? preset.params.startHeightMm : 0;
+  const endHeightMm = typeof preset.params.endHeightMm === "number" ? preset.params.endHeightMm : 0;
   return (
     <PropertiesShell title={title} onDelete={() => onDeleteBlock(preset.id)}>
       {definition ? (
         <PresetParamFields
+          fields={definition.paramFields}
           params={preset.params}
           onChange={(key, value) =>
             onReplaceBlock({ ...preset, params: { ...preset.params, [key]: value } })
@@ -699,6 +748,13 @@ export const SequencePropertiesPanel = ({
       ) : (
         <p className="mb-3 text-body-sm text-warning">未知预设 {preset.presetId}</p>
       )}
+      {preset.presetId === "dynamic-level" ? (
+        <LevelAverageSpeed
+          startHeightMm={startHeightMm}
+          endHeightMm={endHeightMm}
+          durationMs={Math.max(preset.endMs - preset.startMs, 0)}
+        />
+      ) : null}
       <ParticipantOrder
         orderedObjectIds={preset.orderedObjectIds}
         onReorder={(orderedObjectIds) => onReplaceBlock({ ...preset, orderedObjectIds })}
@@ -711,7 +767,7 @@ export const SequencePropertiesPanel = ({
             preset.orderedObjectIds[0] === undefined
               ? undefined
               : getTimelineObject(preset.orderedObjectIds[0]),
-            { v1: 0, v2: 0, v3: 0 },
+            dynamicPresetTravel(preset),
             Math.max(preset.endMs - preset.startMs, 0),
           )}
         />

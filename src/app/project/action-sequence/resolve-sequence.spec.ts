@@ -81,7 +81,7 @@ describe("resolveActionSequence", () => {
           presetId: "static-slope",
           atMs: 1000,
           orderedObjectIds: [7, 8],
-          params: { baseV1: 0, stepV1: 100, v2: 0, v3: 0 },
+          params: { baseHeightMm: 0, slopeDeg: 0, spacingMm: 1000, alignTilt: false },
         },
       ]),
     );
@@ -103,7 +103,7 @@ describe("resolveActionSequence", () => {
           startMs: 1000,
           endMs: 3000,
           orderedObjectIds: [7, 8],
-          params: { startV1: 0, targetV1: 100, v2: 0, v3: 0 },
+          params: { startHeightMm: 0, endHeightMm: 100 },
           profiles: axisProfiles(400, 400),
         },
       ]),
@@ -128,7 +128,7 @@ describe("resolveActionSequence", () => {
           presetId: "static-slope",
           atMs: 1000,
           orderedObjectIds: [7, 8],
-          params: { baseV1: 0, stepV1: 100, v2: 0, v3: 0 },
+          params: { baseHeightMm: 0, slopeDeg: 0, spacingMm: 1000, alignTilt: false },
         },
       ],
       segments: [],
@@ -176,7 +176,7 @@ describe("resolveActionSequence", () => {
       presetId: "static-slope",
       atMs: 1000,
       orderedObjectIds: [7, 8],
-      params: { baseV1: 0, stepV1: 100, v2: 0, v3: 0 },
+      params: { baseHeightMm: 0, slopeDeg: 0, spacingMm: 1000, alignTilt: false },
     };
     const presetPoints = resolvePreset(block);
     const resolved = resolveActionSequence(sequenceOf([block]));
@@ -302,7 +302,7 @@ describe("resolveActionSequence", () => {
       startMs: 100,
       endMs: 4000,
       orderedObjectIds: [7, 8],
-      params: { startV1: 0, targetV1: 10, v2: 0, v3: 0 },
+      params: { startHeightMm: 0, endHeightMm: 10 },
       profiles: axisProfiles(780, 780),
     };
     expect(
@@ -336,7 +336,7 @@ describe("resolveActionSequence", () => {
           startMs: 1000,
           endMs: 3000,
           orderedObjectIds: [7, 8],
-          params: { startV1: 0, targetV1: 100, v2: 0, v3: 0 },
+          params: { startHeightMm: 0, endHeightMm: 100 },
           profiles,
         },
       ]),
@@ -479,7 +479,7 @@ describe("resolveActionSequence", () => {
 
   it("does not mutate the authored sequence", () => {
     const orderedObjectIds = [7, 8];
-    const params = { startV1: 0, targetV1: 10, v2: 0, v3: 0 };
+    const params = { startHeightMm: 0, endHeightMm: 10 };
     const blocks: TimelineBlock[] = [
       {
         id: "z",
@@ -563,7 +563,7 @@ describe("resolveActionSequence", () => {
           startMs: 1000,
           endMs: 3000,
           orderedObjectIds: [7, 8],
-          params: { startV1: 0, targetV1: 100, v2: 0, v3: 0 },
+          params: { startHeightMm: 0, endHeightMm: 100 },
           profiles: axisProfiles(400, 400),
         },
       ]),
@@ -603,20 +603,17 @@ describe("resolveActionSequence", () => {
       endMs: 3000,
       orderedObjectIds: [7, 8],
       params: {
-        baseV1: 1000,
-        amplitude: 500,
+        baseHeightMm: 1000,
+        amplitudeMm: 500,
         cycles: 1,
         direction: 1,
         intervalDeg: 90,
-        sampleIntervalMs: 500,
-        v2: 0,
-        v3: 0,
       },
       profiles,
     };
     const resolved = resolveActionSequence(sequenceOf([block]));
     const internals = resolved.segments.filter((segment) => !segment.configurable);
-    expect(internals).toHaveLength(8);
+    expect(internals).toHaveLength(40);
     expect(
       internals.every(
         (segment) =>
@@ -631,12 +628,12 @@ describe("resolveActionSequence", () => {
     ).toBe(true);
     expect(
       internals.filter((segment) => segment.objectId === 7).map((segment) => [segment.fromRef, segment.toRef]),
-    ).toEqual([
-      ["preset:wave-1:7:0", "preset:wave-1:7:1"],
-      ["preset:wave-1:7:1", "preset:wave-1:7:2"],
-      ["preset:wave-1:7:2", "preset:wave-1:7:3"],
-      ["preset:wave-1:7:3", "preset:wave-1:7:4"],
-    ]);
+    ).toEqual(
+      Array.from({ length: 20 }, (_, index) => [
+        `preset:wave-1:7:${index}`,
+        `preset:wave-1:7:${index + 1}`,
+      ]),
+    );
     expect(resolved.initialPoseByObject.get(7)?.sourceRef).toBe("preset:wave-1:7:0");
     expect(reconcileSegmentConfigs(resolved.segments, [])).toEqual([]);
   });
@@ -675,7 +672,7 @@ describe("reconcileSegmentConfigs", () => {
           startMs: 1000,
           endMs: 3000,
           orderedObjectIds: [7, 8],
-          params: { startV1: 10, targetV1: 20, v2: 0, v3: 0 },
+          params: { startHeightMm: 10, endHeightMm: 20 },
           profiles: axisProfiles(400, 400),
         },
       ],

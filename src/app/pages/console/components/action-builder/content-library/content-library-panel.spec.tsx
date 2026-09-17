@@ -23,7 +23,7 @@ const sequence: ActionSequenceConfig = {
       presetId: "static-slope",
       atMs: 2000,
       orderedObjectIds: [7, 8],
-      params: { baseV1: 0, stepV1: 100, v2: 0, v3: 0 },
+      params: { baseHeightMm: 0, slopeDeg: 0, spacingMm: 1000, alignTilt: false },
     },
   ],
   segments: [],

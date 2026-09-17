@@ -5,7 +5,7 @@ import type {
   MotionSegmentSettings,
   TimelineBlock,
 } from "@/app/project/action-sequence/types";
-import type { EditorDockMode, StaticPresetParams } from "../action-builder-context-types";
+import type { EditorDockMode } from "../action-builder-context-types";
 import type { SequenceSelection } from "../sequence-selection";
 import { EmptySelectionState } from "./empty-selection-state";
 import {
@@ -32,7 +32,7 @@ type SelectionTabContentProps = {
   onCreatePose: (objectIds: number[]) => void;
   onCreateSetEnabled: (objectIds: number[], enabled: boolean) => void;
   onCreateSequence: (objectIds: number[]) => void;
-  onApplyStaticPreset: (presetId: string, objectIds: number[], params: StaticPresetParams) => void;
+  onApplyStaticPreset: (presetId: string, objectIds: number[]) => void;
   onApplyDynamicPreset: (presetId: string, objectIds: number[]) => void;
 };
 

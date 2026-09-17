@@ -66,11 +66,7 @@ describe("object selection creation", () => {
     fireEvent.click(screen.getByRole("button", { name: "断使能" }));
     expect(onCreateSetEnabled).toHaveBeenCalledWith([7, 8], false);
     fireEvent.click(screen.getByRole("button", { name: /静态预设.*斜面/ }));
-    expect(onApplyStaticPreset).toHaveBeenCalledWith(
-      "static-slope",
-      [7, 8],
-      expect.objectContaining({ amplitude: expect.any(Number), phase: expect.any(Number) }),
-    );
+    expect(onApplyStaticPreset).toHaveBeenCalledWith("static-slope", [7, 8]);
     fireEvent.click(screen.getByRole("button", { name: /动态预设.*水平升降/ }));
     expect(onApplyDynamicPreset).toHaveBeenCalledWith("dynamic-level", [7, 8]);
     expect(onCreateSequence).not.toHaveBeenCalled();
