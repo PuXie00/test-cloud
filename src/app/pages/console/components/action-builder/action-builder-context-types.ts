@@ -14,11 +14,6 @@ import type {
   ProgramNode,
 } from "./timeline/timeline-data";
 
-export type StaticPresetParams = {
-  amplitude: number;
-  phase: number;
-};
-
 /** 编辑坞形态：随动作序列库选中项变化 */
 export type EditorDockMode = "sequence" | "empty";
 
@@ -72,7 +67,7 @@ export type ActionBuilderContextValue = {
   handleCreatePose: (objectIds: number[]) => void;
   handleCreateSetEnabled: (objectIds: number[], enabled: boolean) => void;
   handleCreateSequence: (objectIds: number[]) => void;
-  handleApplyStaticPreset: (presetId: string, objectIds: number[], params: StaticPresetParams) => void;
+  handleApplyStaticPreset: (presetId: string, objectIds: number[]) => void;
   handleApplyDynamicPreset: (presetId: string, objectIds: number[]) => void;
   handleProgramNodeSelect: (nodeId: string) => void;
   handleChapterAdd: () => void;

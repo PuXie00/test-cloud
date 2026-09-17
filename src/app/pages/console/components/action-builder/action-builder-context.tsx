@@ -59,7 +59,6 @@ import type {
   ActionBuilderContextValue,
   EditorDockMode,
   ProgramItemInput,
-  StaticPresetParams,
 } from "./action-builder-context-types";
 import { ActionBuilderContext } from "./action-builder-react-context";
 import type { ContextSelection } from "./context-bar/selection-context-bar";
@@ -510,12 +509,12 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   );
 
   const handleApplyStaticPreset = useCallback(
-    (presetId: string, objectIds: number[], params: StaticPresetParams) => {
+    (presetId: string, objectIds: number[]) => {
       if (!selectedSequenceId || !sequence) {
         setSequenceMissingHint(true);
         return;
       }
-      const registryParams = defaultPresetParams(presetId, params);
+      const registryParams = defaultPresetParams(presetId);
       if (!registryParams || objectIds.length < 2) return;
       const block: TimelineBlock = {
         id: nextId("blk"),

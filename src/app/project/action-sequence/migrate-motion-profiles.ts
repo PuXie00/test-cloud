@@ -2,12 +2,14 @@ import {
   cloneAxisProfiles,
   createDefaultAxisProfiles,
 } from "./motion-profile";
+import { migratePresetParams } from "./preset-registry";
 import type {
   ActionSequenceConfig,
   AxisMotionProfiles,
   DynamicPresetBlock,
   MotionProfile,
   MotionSegmentSettings,
+  StaticPresetBlock,
   TimelineBlock,
 } from "./types";
 
@@ -100,16 +102,21 @@ const segmentDurationMs = (
   return Math.max(toTime - fromTime, 0);
 };
 
+const migratePresetBlockParams = <T extends StaticPresetBlock | DynamicPresetBlock>(block: T): T => ({
+  ...block,
+  params: migratePresetParams(block.presetId, block.params),
+});
+
 const migrateDynamicPreset = (block: DynamicPresetBlock): DynamicPresetBlock => {
   const durationMs = Math.max(block.endMs - block.startMs, 0);
   const { profile: legacy, ...rest } = block as DynamicPresetBlock & { profile?: unknown };
   if (isNewAxisProfiles(rest.profiles)) {
-    return { ...rest, profiles: cloneAxisProfiles(rest.profiles) };
+    return migratePresetBlockParams({ ...rest, profiles: cloneAxisProfiles(rest.profiles) });
   }
   if (isLegacyTrapezoid(legacy)) {
-    return { ...rest, profiles: expandLegacy(legacy, durationMs) };
+    return migratePresetBlockParams({ ...rest, profiles: expandLegacy(legacy, durationMs) });
   }
-  return rest as DynamicPresetBlock;
+  return migratePresetBlockParams(rest as DynamicPresetBlock);
 };
 
 export const migrateActionSequenceProfiles = (
@@ -124,8 +131,10 @@ export const migrateActionSequenceProfiles = (
       segmentDurationMs(next, segment.fromRef, segment.toRef),
     ),
   }));
-  next.blocks = next.blocks.map((block) =>
-    block.kind === "dynamic-preset" ? migrateDynamicPreset(block) : block,
-  );
+  next.blocks = next.blocks.map((block) => {
+    if (block.kind === "dynamic-preset") return migrateDynamicPreset(block);
+    if (block.kind === "static-preset") return migratePresetBlockParams(block);
+    return block;
+  });
   return next;
 };

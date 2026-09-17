@@ -1,21 +1,20 @@
+import type { LucideIcon } from "lucide-react";
 import { Circle, Power, Spline, Waves, Wind } from "lucide-react";
 import { SectionHeader } from "@/app/components/ics/section-header";
-import type { StaticPresetParams } from "../action-builder-context-types";
+import { listPresetDefinitions } from "@/app/project/action-sequence/preset-registry";
 import type { ObjectSelectionMode } from "./object-selection-mode";
 
-const STATIC_PRESETS = [
-  { id: "static-flat", label: "平面", icon: Circle },
-  { id: "static-slope", label: "斜面", icon: Spline },
-  { id: "static-arc", label: "弧形", icon: Spline },
-  { id: "static-wave", label: "静态波浪", icon: Waves },
-] as const;
+const PRESET_ICONS: Record<string, LucideIcon> = {
+  "static-flat": Circle,
+  "static-slope": Spline,
+  "static-arc": Spline,
+  "static-wave": Waves,
+  "dynamic-level": Wind,
+  "dynamic-wave": Waves,
+};
 
-const DYNAMIC_PRESETS = [
-  { id: "dynamic-level", label: "水平升降", icon: Wind },
-  { id: "dynamic-wave", label: "行进波浪", icon: Waves },
-] as const;
-
-const DEFAULT_STATIC_PRESET_PARAMS: StaticPresetParams = { amplitude: 100, phase: 0 };
+const STATIC_PRESETS = listPresetDefinitions("static");
+const DYNAMIC_PRESETS = listPresetDefinitions("dynamic");
 
 type ObjectSelectionPanelProps = {
   mode: ObjectSelectionMode;
@@ -24,7 +23,7 @@ type ObjectSelectionPanelProps = {
   onCreatePose: (objectIds: number[]) => void;
   onCreateSetEnabled: (objectIds: number[], enabled: boolean) => void;
   onCreateSequence: (objectIds: number[]) => void;
-  onApplyStaticPreset: (presetId: string, objectIds: number[], params: StaticPresetParams) => void;
+  onApplyStaticPreset: (presetId: string, objectIds: number[]) => void;
   onApplyDynamicPreset: (presetId: string, objectIds: number[]) => void;
 };
 
@@ -87,35 +86,39 @@ export const ObjectSelectionPanel = ({
             <>
               <SectionHeader title="静态预设" />
               <div className="mb-4 grid grid-cols-2 gap-2">
-                {STATIC_PRESETS.map((preset) => (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    aria-label={`静态预设 ${preset.label}`}
-                    onClick={() =>
-                      onApplyStaticPreset(preset.id, selectedObjectIds, DEFAULT_STATIC_PRESET_PARAMS)
-                    }
-                    className="flex min-h-10 flex-col items-center justify-center gap-1 rounded-md border border-border bg-background px-2 py-2 text-body-sm text-foreground hover:bg-accent"
-                  >
-                    <preset.icon className="h-4 w-4 text-primary" aria-hidden />
-                    {preset.label}
-                  </button>
-                ))}
+                {STATIC_PRESETS.map((preset) => {
+                  const Icon = PRESET_ICONS[preset.id] ?? Circle;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      aria-label={`静态预设 ${preset.label}`}
+                      onClick={() => onApplyStaticPreset(preset.id, selectedObjectIds)}
+                      className="flex min-h-10 flex-col items-center justify-center gap-1 rounded-md border border-border bg-background px-2 py-2 text-body-sm text-foreground hover:bg-accent"
+                    >
+                      <Icon className="h-4 w-4 text-primary" aria-hidden />
+                      {preset.label}
+                    </button>
+                  );
+                })}
               </div>
               <SectionHeader title="动态预设" />
               <div className="mb-4 grid grid-cols-2 gap-2">
-                {DYNAMIC_PRESETS.map((preset) => (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    aria-label={`动态预设 ${preset.label}`}
-                    onClick={() => onApplyDynamicPreset(preset.id, selectedObjectIds)}
-                    className="flex min-h-10 flex-col items-center justify-center gap-1 rounded-md border border-border bg-background px-2 py-2 text-body-sm text-foreground hover:bg-accent"
-                  >
-                    <preset.icon className="h-4 w-4 text-secondary" aria-hidden />
-                    {preset.label}
-                  </button>
-                ))}
+                {DYNAMIC_PRESETS.map((preset) => {
+                  const Icon = PRESET_ICONS[preset.id] ?? Waves;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      aria-label={`动态预设 ${preset.label}`}
+                      onClick={() => onApplyDynamicPreset(preset.id, selectedObjectIds)}
+                      className="flex min-h-10 flex-col items-center justify-center gap-1 rounded-md border border-border bg-background px-2 py-2 text-body-sm text-foreground hover:bg-accent"
+                    >
+                      <Icon className="h-4 w-4 text-secondary" aria-hidden />
+                      {preset.label}
+                    </button>
+                  );
+                })}
               </div>
             </>
           )}

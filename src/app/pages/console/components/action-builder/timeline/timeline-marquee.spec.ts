@@ -26,7 +26,7 @@ const sequence: ActionSequenceConfig = {
       startMs: 5000,
       endMs: 7000,
       orderedObjectIds: [7, 8],
-      params: { startV1: 0, targetV1: 100, v2: 0, v3: 0 },
+      params: { startHeightMm: 0, endHeightMm: 100 },
       profiles: createDefaultAxisProfiles(2000),
     },
   ],

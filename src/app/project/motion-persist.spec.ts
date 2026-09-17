@@ -57,14 +57,11 @@ describe("motion-persist authored sequences", () => {
           endMs: 3000,
           orderedObjectIds: [7, 8],
           params: {
-            baseV1: 0,
-            amplitude: 100,
+            baseHeightMm: 0,
+            amplitudeMm: 100,
             cycles: 1,
             direction: 1,
             intervalDeg: 90,
-            sampleIntervalMs: 500,
-            v2: 0,
-            v3: 0,
           },
           profiles: {
             v1: { kind: "trapezoid", params: { accelMs: 400, decelMs: 400 } },
@@ -214,7 +211,7 @@ describe("motion-persist authored sequences", () => {
     });
     expect(program?.chapters[0]?.items[0]).toEqual({
       kind: "sequence",
-      sequence: { id: 1, name: "Seq", durationMs: 1000 },
+      sequence: { id: 1, name: "Seq", durationMs: 1000, trajectoryMode: "non-forced" },
     });
   });
 
@@ -255,7 +252,7 @@ describe("motion-persist authored sequences", () => {
     const program = motionProgramToLegacyProgram(motion);
     expect(program?.chapters[0]?.items[0]).toEqual({
       kind: "sequence",
-      sequence: { id: 1, name: "Seq", durationMs: 0 },
+      sequence: { id: 1, name: "Seq", durationMs: 0, trajectoryMode: "non-forced" },
     });
   });
 });
