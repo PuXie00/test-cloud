@@ -25,6 +25,7 @@ export const buildCapturedPoseSequence = (args: {
     id: args.id,
     name: CAPTURED_SEQUENCE_NAME,
     trajectoryMode: "non-forced",
+    loop: false,
     blocks,
     segments: [],
   };

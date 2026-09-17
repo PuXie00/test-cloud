@@ -59,6 +59,7 @@ export type ActionBuilderContextValue = {
   ) => void;
   handleBlockDelete: (blockIds?: string | string[]) => void;
   handleTrajectoryModeChange: (mode: TrajectoryMode) => void;
+  handleLoopChange: (loop: boolean) => void;
   handleBlockCopy: () => void;
   handleBlockPaste: () => void;
   handleTimelinePxPerSecondChange: (pxPerSecond: number) => void;

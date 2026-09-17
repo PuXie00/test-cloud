@@ -429,6 +429,7 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
     expect(created).toMatchObject({
       name: "新建动作序列",
       trajectoryMode: "non-forced",
+      loop: false,
       blocks: [],
       segments: [],
     });

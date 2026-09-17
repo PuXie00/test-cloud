@@ -46,6 +46,7 @@ const mockBuilder = (overrides: Record<string, unknown> = {}) => {
     handleUpdateSegmentSettings: vi.fn(),
     handleBlockDelete: vi.fn(),
     handleTrajectoryModeChange: vi.fn(),
+    handleLoopChange: vi.fn(),
     handleCreatePose: vi.fn(),
     handleCreateSetEnabled: vi.fn(),
     handleCreateSequence: vi.fn(),
@@ -84,6 +85,7 @@ describe("action builder right sidebar", () => {
     });
     render(<ActionBuilderRightSidebar />);
     expect(screen.queryByRole("switch", { name: "强制轨迹" })).toBeNull();
+    expect(screen.queryByRole("switch", { name: "循环" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "动作序列" })).toBeNull();
   });
 });

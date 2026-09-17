@@ -88,6 +88,30 @@ describe("action sequence project structure", () => {
     expect(() => assertProjectDocumentStructure(document)).toThrow(/legacy curve/);
   });
 
+  it("accepts optional loop and rejects a non-boolean", () => {
+    const document = createEmptyDocument({ id: "p", name: "P", author: "tester" });
+    const sequence: ActionSequenceConfig = {
+      id: 1,
+      name: "序列",
+      trajectoryMode: "non-forced",
+      blocks: [],
+      segments: [],
+    };
+    document.motion.actionSequences = [sequence];
+    expect(() => assertProjectDocumentStructure(document)).not.toThrow();
+
+    document.motion.actionSequences = [{ ...sequence, loop: true }];
+    expect(() => assertProjectDocumentStructure(document)).not.toThrow();
+
+    document.motion.actionSequences = [{ ...sequence, loop: false }];
+    expect(() => assertProjectDocumentStructure(document)).not.toThrow();
+
+    document.motion.actionSequences = [
+      { ...sequence, loop: "yes" } as unknown as ActionSequenceConfig,
+    ];
+    expect(() => assertProjectDocumentStructure(document)).toThrow(/loop/);
+  });
+
   it("accepts a trapezoid motion profile on segments and dynamic presets", () => {
     const document = createEmptyDocument({ id: "p", name: "P", author: "tester" });
     const axisProfiles = {
