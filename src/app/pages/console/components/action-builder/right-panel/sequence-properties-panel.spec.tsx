@@ -81,6 +81,7 @@ const { builderState } = vi.hoisted(() => ({
         | undefined,
 
       handleApplyPoseAxisWrite: vi.fn(),
+      sequenceIssues: [] as unknown[],
 
     },
 
@@ -226,6 +227,8 @@ afterEach(() => {
   builderState.current.getTimelineObject = () => undefined;
 
   builderState.current.handleApplyPoseAxisWrite.mockClear();
+
+  builderState.current.sequenceIssues = [];
 
   handlers.onReplaceBlock.mockClear();
 
@@ -567,7 +570,7 @@ describe("SequencePropertiesPanel edits", () => {
 
     renderPanel({ selection: { kind: "block", blockId: "static" } });
 
-    stepUp("v1");
+    stepUp("升降");
 
     expect(handlers.onReplaceBlock).toHaveBeenCalledWith(
 
@@ -610,6 +613,38 @@ describe("SequencePropertiesPanel edits", () => {
     expect(within(inspection).queryByRole("checkbox")).toBeNull();
 
     expect(within(inspection).getAllByRole("listitem").length).toBeGreaterThan(0);
+
+    expect(screen.getByText(/每物体 1 个位姿/)).not.toBeNull();
+
+  });
+
+
+
+  it("shows 待修复内容 when preset params put generated poses outside limits", () => {
+
+    builderState.current.sequenceIssues = [
+
+      {
+
+        severity: "error",
+
+        code: "limit-exceeded",
+
+        message: "axis v1 position 1800 outside [0, 1000]",
+
+        objectId: 8,
+
+        blockId: "static",
+
+      },
+
+    ];
+
+    renderPanel({ selection: { kind: "block", blockId: "static" } });
+
+    expect(screen.getByLabelText("待修复内容")).not.toBeNull();
+
+    expect(screen.getByText("模型 8 虚轴1 位姿 1800 超出范围 [0, 1000]")).not.toBeNull();
 
   });
 

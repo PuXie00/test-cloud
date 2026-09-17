@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultAxisProfiles } from "./motion-profile";
 import {
+  countPosesPerObject,
   getPresetDefinition,
+  listPresetDefinitions,
   resolvePreset,
 } from "./preset-registry";
 import type { DynamicPresetBlock, StaticPresetBlock } from "./types";
@@ -338,5 +340,48 @@ describe("preset registry", () => {
         endMs: 1000,
       }),
     ).toThrow("dynamic preset endMs must be greater than startMs");
+  });
+
+  it("lists catalog metadata with distinct formulas and labeled params", () => {
+    const staticIds = listPresetDefinitions("static").map((item) => item.id);
+    const dynamicIds = listPresetDefinitions("dynamic").map((item) => item.id);
+    expect(staticIds).toEqual(["static-flat", "static-slope", "static-arc", "static-wave"]);
+    expect(dynamicIds).toEqual(["dynamic-level", "dynamic-wave"]);
+    for (const definition of listPresetDefinitions()) {
+      expect(definition.label.length).toBeGreaterThan(0);
+      expect(definition.description.length).toBeGreaterThan(0);
+      expect(definition.paramFields.length).toBeGreaterThan(0);
+      expect(new Set(definition.paramFields.map((field) => field.key)).size).toBe(
+        definition.paramFields.length,
+      );
+    }
+    expect(getPresetDefinition("static-slope")?.paramFields.map((field) => field.key)).toEqual([
+      "baseV1",
+      "stepV1",
+      "v2",
+      "v3",
+    ]);
+    expect(getPresetDefinition("dynamic-wave")?.paramFields.some((field) => field.kind === "choice")).toBe(
+      true,
+    );
+  });
+
+  it("enforces one pose per object for static presets and at least two for dynamic", () => {
+    const staticPoints = resolvePreset(slopeBlock());
+    expect([...countPosesPerObject(staticPoints).values()]).toEqual([1, 1, 1]);
+    const level = resolvePreset({
+      id: "lvl-1",
+      kind: "dynamic-preset",
+      presetId: "dynamic-level",
+      startMs: 100,
+      endMs: 400,
+      orderedObjectIds: [3, 1],
+      params: { startV1: 10, targetV1: 40, v2: 5, v3: 6 },
+      profiles: createDefaultAxisProfiles(300),
+    });
+    expect([...countPosesPerObject(level).values()]).toEqual([2, 2]);
+    const wave = resolvePreset(waveBlock());
+    expect(countPosesPerObject(wave).get(7)).toBeGreaterThanOrEqual(2);
+    expect(countPosesPerObject(wave).get(8)).toBeGreaterThanOrEqual(2);
   });
 });

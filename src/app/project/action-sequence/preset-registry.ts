@@ -13,11 +13,30 @@ export type ResolvedPresetPose = {
   pose: ModelPose;
 };
 
+export type PresetParamChoice = {
+  value: number;
+  label: string;
+};
+
+export type PresetParamField = {
+  key: string;
+  label: string;
+  kind: "number" | "choice";
+  unit?: string;
+  step?: number;
+  min?: number;
+  max?: number;
+  options?: readonly PresetParamChoice[];
+};
+
 export type PresetDefinition = {
   id: string;
   kind: "static" | "dynamic";
+  label: string;
+  description: string;
   minObjects: number;
   maxObjects?: number;
+  paramFields: readonly PresetParamField[];
   resolve: (block: StaticPresetBlock | DynamicPresetBlock) => ResolvedPresetPose[];
   validateParams: (params: Record<string, PresetParamValue>) => string[];
 };
@@ -44,6 +63,8 @@ const pointOf = (
   atMs,
   pose,
 });
+
+const fieldKeys = (fields: readonly PresetParamField[]): string[] => fields.map((field) => field.key);
 
 const numericParams = (
   params: Record<string, PresetParamValue>,
@@ -76,6 +97,60 @@ const numericParams = (
 const numbers = (params: Record<string, PresetParamValue>): Record<string, number> =>
   params as Record<string, number>;
 
+const AXIS_FIELDS: readonly PresetParamField[] = [
+  { key: "v2", label: "摆动 X", kind: "number", unit: "°", step: 0.1 },
+  { key: "v3", label: "摆动 Y", kind: "number", unit: "°", step: 0.1 },
+];
+
+const STATIC_FLAT_FIELDS: readonly PresetParamField[] = [
+  { key: "v1", label: "升降", kind: "number", unit: "mm", step: 1 },
+  ...AXIS_FIELDS,
+];
+
+const STATIC_SLOPE_FIELDS: readonly PresetParamField[] = [
+  { key: "baseV1", label: "起点升降", kind: "number", unit: "mm", step: 1 },
+  { key: "stepV1", label: "级差", kind: "number", unit: "mm", step: 1 },
+  ...AXIS_FIELDS,
+];
+
+const STATIC_ARC_FIELDS: readonly PresetParamField[] = [
+  { key: "baseV1", label: "基准升降", kind: "number", unit: "mm", step: 1 },
+  { key: "amplitude", label: "拱高", kind: "number", unit: "mm", step: 1 },
+  ...AXIS_FIELDS,
+];
+
+const STATIC_WAVE_FIELDS: readonly PresetParamField[] = [
+  { key: "baseV1", label: "基准升降", kind: "number", unit: "mm", step: 1 },
+  { key: "amplitude", label: "振幅", kind: "number", unit: "mm", step: 1 },
+  { key: "phaseDeg", label: "相位", kind: "number", unit: "°", step: 1 },
+  { key: "intervalDeg", label: "间隔", kind: "number", unit: "°", step: 1 },
+  ...AXIS_FIELDS,
+];
+
+const DYNAMIC_LEVEL_FIELDS: readonly PresetParamField[] = [
+  { key: "startV1", label: "起点升降", kind: "number", unit: "mm", step: 1 },
+  { key: "targetV1", label: "终点升降", kind: "number", unit: "mm", step: 1 },
+  ...AXIS_FIELDS,
+];
+
+const DYNAMIC_WAVE_FIELDS: readonly PresetParamField[] = [
+  { key: "baseV1", label: "基准升降", kind: "number", unit: "mm", step: 1 },
+  { key: "amplitude", label: "振幅", kind: "number", unit: "mm", step: 1 },
+  { key: "cycles", label: "周期数", kind: "number", step: 0.5, min: 0 },
+  {
+    key: "direction",
+    label: "方向",
+    kind: "choice",
+    options: [
+      { value: 1, label: "正向" },
+      { value: -1, label: "反向" },
+    ],
+  },
+  { key: "intervalDeg", label: "间隔", kind: "number", unit: "°", step: 1 },
+  { key: "sampleIntervalMs", label: "采样间隔", kind: "number", unit: "ms", step: 100, min: 1 },
+  ...AXIS_FIELDS,
+];
+
 const mapStatic = (
   block: StaticPresetBlock,
   v1At: (participantIndex: number, count: number) => number,
@@ -90,8 +165,11 @@ const mapStatic = (
 const staticFlat: PresetDefinition = {
   id: "static-flat",
   kind: "static",
+  label: "平面",
+  description: "同一时刻全体同一位姿",
   minObjects: 2,
-  validateParams: (params) => numericParams(params, ["v1", "v2", "v3"]),
+  paramFields: STATIC_FLAT_FIELDS,
+  validateParams: (params) => numericParams(params, fieldKeys(STATIC_FLAT_FIELDS)),
   resolve: (block) => {
     const { v1 } = numbers(asStatic(block).params);
     return mapStatic(asStatic(block), () => v1);
@@ -101,8 +179,11 @@ const staticFlat: PresetDefinition = {
 const staticSlope: PresetDefinition = {
   id: "static-slope",
   kind: "static",
+  label: "斜面",
+  description: "沿参与顺序按级差排布升降",
   minObjects: 2,
-  validateParams: (params) => numericParams(params, ["baseV1", "stepV1", "v2", "v3"]),
+  paramFields: STATIC_SLOPE_FIELDS,
+  validateParams: (params) => numericParams(params, fieldKeys(STATIC_SLOPE_FIELDS)),
   resolve: (block) => {
     const { baseV1, stepV1 } = numbers(asStatic(block).params);
     return mapStatic(asStatic(block), (participantIndex) => baseV1 + participantIndex * stepV1);
@@ -112,8 +193,11 @@ const staticSlope: PresetDefinition = {
 const staticArc: PresetDefinition = {
   id: "static-arc",
   kind: "static",
+  label: "弧形",
+  description: "沿参与顺序形成拱形",
   minObjects: 2,
-  validateParams: (params) => numericParams(params, ["baseV1", "amplitude", "v2", "v3"]),
+  paramFields: STATIC_ARC_FIELDS,
+  validateParams: (params) => numericParams(params, fieldKeys(STATIC_ARC_FIELDS)),
   resolve: (block) => {
     const { baseV1, amplitude } = numbers(asStatic(block).params);
     return mapStatic(asStatic(block), (participantIndex, count) => {
@@ -126,9 +210,11 @@ const staticArc: PresetDefinition = {
 const staticWave: PresetDefinition = {
   id: "static-wave",
   kind: "static",
+  label: "静态波浪",
+  description: "沿参与顺序按相位采样正弦",
   minObjects: 2,
-  validateParams: (params) =>
-    numericParams(params, ["baseV1", "amplitude", "phaseDeg", "intervalDeg", "v2", "v3"]),
+  paramFields: STATIC_WAVE_FIELDS,
+  validateParams: (params) => numericParams(params, fieldKeys(STATIC_WAVE_FIELDS)),
   resolve: (block) => {
     const { baseV1, amplitude, phaseDeg, intervalDeg } = numbers(asStatic(block).params);
     return mapStatic(
@@ -142,8 +228,11 @@ const staticWave: PresetDefinition = {
 const dynamicLevel: PresetDefinition = {
   id: "dynamic-level",
   kind: "dynamic",
+  label: "水平升降",
+  description: "全体从起点升降到终点",
   minObjects: 2,
-  validateParams: (params) => numericParams(params, ["startV1", "targetV1", "v2", "v3"]),
+  paramFields: DYNAMIC_LEVEL_FIELDS,
+  validateParams: (params) => numericParams(params, fieldKeys(DYNAMIC_LEVEL_FIELDS)),
   resolve: (block) => {
     const dyn = asDynamic(block);
     const { startV1, targetV1, v2, v3 } = numbers(dyn.params);
@@ -156,7 +245,7 @@ const dynamicLevel: PresetDefinition = {
   },
 };
 
-const sampleTimesMs = (startMs: number, endMs: number, sampleIntervalMs: number): number[] => {
+export const sampleTimesMs = (startMs: number, endMs: number, sampleIntervalMs: number): number[] => {
   const times: number[] = [];
   const steps = Math.floor((endMs - startMs) / sampleIntervalMs);
   for (let step = 0; step <= steps; step += 1) {
@@ -171,18 +260,12 @@ const sampleTimesMs = (startMs: number, endMs: number, sampleIntervalMs: number)
 const dynamicWave: PresetDefinition = {
   id: "dynamic-wave",
   kind: "dynamic",
+  label: "行进波浪",
+  description: "沿时间推进的行进正弦波",
   minObjects: 2,
+  paramFields: DYNAMIC_WAVE_FIELDS,
   validateParams: (params) => {
-    const errors = numericParams(params, [
-      "baseV1",
-      "amplitude",
-      "cycles",
-      "direction",
-      "intervalDeg",
-      "sampleIntervalMs",
-      "v2",
-      "v3",
-    ]);
+    const errors = numericParams(params, fieldKeys(DYNAMIC_WAVE_FIELDS));
     const sampleIntervalMs = params.sampleIntervalMs;
     if (typeof sampleIntervalMs === "number" && Number.isFinite(sampleIntervalMs) && sampleIntervalMs <= 0) {
       errors.push("parameter sampleIntervalMs must be > 0");
@@ -213,16 +296,87 @@ const dynamicWave: PresetDefinition = {
   },
 };
 
-const PRESETS: Record<string, PresetDefinition> = {
-  "static-flat": staticFlat,
-  "static-slope": staticSlope,
-  "static-arc": staticArc,
-  "static-wave": staticWave,
-  "dynamic-level": dynamicLevel,
-  "dynamic-wave": dynamicWave,
-};
+const PRESET_ORDER = [
+  staticFlat,
+  staticSlope,
+  staticArc,
+  staticWave,
+  dynamicLevel,
+  dynamicWave,
+] as const;
+
+const PRESETS: Record<string, PresetDefinition> = Object.fromEntries(
+  PRESET_ORDER.map((definition) => [definition.id, definition]),
+);
 
 export const getPresetDefinition = (presetId: string): PresetDefinition | undefined => PRESETS[presetId];
+
+export const listPresetDefinitions = (kind?: "static" | "dynamic"): PresetDefinition[] =>
+  PRESET_ORDER.filter((definition) => kind === undefined || definition.kind === kind);
+
+export const presetLabelOf = (presetId: string): string => getPresetDefinition(presetId)?.label ?? presetId;
+
+export const presetParamLabelOf = (presetId: string, key: string): string => {
+  const field = getPresetDefinition(presetId)?.paramFields.find((item) => item.key === key);
+  return field?.label ?? key;
+};
+
+export const countPosesPerObject = (
+  points: readonly ResolvedPresetPose[],
+): Map<number, number> => {
+  const counts = new Map<number, number>();
+  for (const point of points) {
+    counts.set(point.objectId, (counts.get(point.objectId) ?? 0) + 1);
+  }
+  return counts;
+};
+
+const assertPoseContract = (
+  definition: PresetDefinition,
+  block: PresetBlock,
+  points: ResolvedPresetPose[],
+): void => {
+  const expectedIds = [...block.orderedObjectIds];
+  const grouped = new Map<number, ResolvedPresetPose[]>();
+  for (const point of points) {
+    const list = grouped.get(point.objectId);
+    if (list) list.push(point);
+    else grouped.set(point.objectId, [point]);
+  }
+  if (grouped.size !== expectedIds.length || expectedIds.some((id) => !grouped.has(id))) {
+    throw new Error("preset pose objects must match orderedObjectIds");
+  }
+  for (const objectId of expectedIds) {
+    const series = grouped.get(objectId) ?? [];
+    if (definition.kind === "static") {
+      if (series.length !== 1) {
+        throw new Error("static preset must emit exactly 1 pose per object");
+      }
+      if (series[0]?.atMs !== asStatic(block).atMs) {
+        throw new Error("static preset pose time must equal atMs");
+      }
+      continue;
+    }
+    if (series.length < 2) {
+      throw new Error("dynamic preset must emit at least 2 poses per object");
+    }
+    const dyn = asDynamic(block);
+    if (series[0]?.atMs !== dyn.startMs) {
+      throw new Error("dynamic preset first pose must be at startMs");
+    }
+    if (series[series.length - 1]?.atMs !== dyn.endMs) {
+      throw new Error("dynamic preset last pose must be at endMs");
+    }
+    for (let index = 1; index < series.length; index += 1) {
+      const previous = series[index - 1];
+      const current = series[index];
+      if (previous === undefined || current === undefined) continue;
+      if (current.atMs <= previous.atMs) {
+        throw new Error("dynamic preset pose times must be strictly increasing");
+      }
+    }
+  }
+};
 
 export const resolvePreset = (block: StaticPresetBlock | DynamicPresetBlock): ResolvedPresetPose[] => {
   const definition = getPresetDefinition(block.presetId);
@@ -256,5 +410,7 @@ export const resolvePreset = (block: StaticPresetBlock | DynamicPresetBlock): Re
       throw new Error("dynamic preset endMs must be greater than startMs");
     }
   }
-  return definition.resolve(block);
+  const points = definition.resolve(block);
+  assertPoseContract(definition, block, points);
+  return points;
 };

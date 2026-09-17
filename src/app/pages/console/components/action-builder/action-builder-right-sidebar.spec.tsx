@@ -51,6 +51,8 @@ const mockBuilder = (overrides: Record<string, unknown> = {}) => {
     handleCreateSequence: vi.fn(),
     handleApplyStaticPreset: vi.fn(),
     handleApplyDynamicPreset: vi.fn(),
+    getTimelineObject: () => undefined,
+    sequenceIssues: [],
     ...overrides,
   };
 };
