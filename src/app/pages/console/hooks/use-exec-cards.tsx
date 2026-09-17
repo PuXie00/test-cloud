@@ -1,3 +1,4 @@
+import type { TrajectoryMode } from "@shared/action-sequence";
 import {
   createContext,
   useCallback,
@@ -36,6 +37,7 @@ export type ExecCard = {
   emergencyStopped: boolean;
   sequenceId?: number;
   sequenceHandle?: SequenceRuntimeHandle;
+  trajectoryMode?: TrajectoryMode;
 };
 
 type ExecCardsContextValue = {
@@ -48,6 +50,7 @@ type ExecCardsContextValue = {
     speedPercent?: number;
     sequenceId?: number;
     sequenceHandle?: SequenceRuntimeHandle;
+    trajectoryMode?: TrajectoryMode;
   }) => string;
   pause: (id: string) => void;
   resume: (id: string) => void;
@@ -155,7 +158,7 @@ export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
   }, [cards]);
 
   const launch = useCallback<ExecCardsContextValue["launch"]>(
-    ({ kind, name, durationMs, source, speedPercent = 100, sequenceId, sequenceHandle }) => {
+    ({ kind, name, durationMs, source, speedPercent = 100, sequenceId, sequenceHandle, trajectoryMode }) => {
       const id = `card-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
       setCards((current) => [
         {
@@ -171,6 +174,7 @@ export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
           emergencyStopped: false,
           ...(sequenceId !== undefined ? { sequenceId } : {}),
           ...(sequenceHandle ? { sequenceHandle } : {}),
+          ...(trajectoryMode ? { trajectoryMode } : {}),
         },
         ...current,
       ]);

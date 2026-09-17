@@ -37,6 +37,7 @@ const resolvedToChapterItems = (resolved: ResolvedChapterItem[]): ChapterItem[] 
       name: item.sequence.name,
       ...(item.sequence.note ? { note: item.sequence.note } : {}),
       durationMs: sequenceDisplayDurationMs(item.sequence),
+      trajectoryMode: item.sequence.trajectoryMode,
     },
   }));
 

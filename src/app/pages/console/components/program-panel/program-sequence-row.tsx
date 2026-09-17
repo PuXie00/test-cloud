@@ -1,12 +1,14 @@
 import { Play, X } from "lucide-react";
 import type { DragEvent } from "react";
 import { cn } from "@/app/components/ui/utils";
+import { ForcedTrajectoryBadge } from "../forced-trajectory-badge";
 
 export type ProgramSequenceRowProps = {
   name: string;
   indexLabel: string;
   durationLabel?: string | null;
   repairMessage?: string | null;
+  forced?: boolean;
   draggable?: boolean;
   dropActive?: boolean;
   striped?: boolean;
@@ -28,6 +30,7 @@ export const ProgramSequenceRow = ({
   indexLabel,
   durationLabel,
   repairMessage,
+  forced = false,
   draggable = false,
   dropActive = false,
   striped = false,
@@ -43,14 +46,15 @@ export const ProgramSequenceRow = ({
   onRemove,
   launchDisabled,
 }: ProgramSequenceRowProps) => {
-  const accessibleWarning = repairMessage ?? undefined;
+  const warning = repairMessage ?? undefined;
+  const accessibleLabel = [name, forced ? "强制轨迹" : null, warning].filter(Boolean).join("，");
 
   return (
     <div
       role={role}
       aria-selected={role === "treeitem" ? Boolean(ariaSelected) : undefined}
-      aria-label={accessibleWarning ? `${name}，${accessibleWarning}` : name}
-      title={accessibleWarning}
+      aria-label={accessibleLabel}
+      title={warning}
       draggable={draggable}
       onDragStart={onDragStart}
       onDragOver={onDragOver}
@@ -70,7 +74,8 @@ export const ProgramSequenceRow = ({
         {indexLabel}
       </span>
       <span className="min-w-0 flex-1 truncate text-body-sm text-foreground">{name}</span>
-      {accessibleWarning ? (
+      {forced ? <ForcedTrajectoryBadge /> : null}
+      {warning ? (
         <span className="shrink-0 text-body-sm text-warning">待修复</span>
       ) : null}
       {durationLabel ? (

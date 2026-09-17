@@ -2,6 +2,7 @@ import { MoreVertical, Play, SkipForward, Square, Minus, Plus, X, RotateCcw } fr
 import { cn } from "@/app/components/ui/utils";
 import type { ExecCard, ExecCardSource } from "../../../hooks/use-exec-cards";
 import { EXAMPLE_SEQUENCE_RUNTIME, formatExecTime } from "../../../hooks/sequence-run-status";
+import { ForcedTrajectoryBadge, isForcedTrajectory } from "../../forced-trajectory-badge";
 
 type ExecCardProps = {
   card: ExecCard;
@@ -63,9 +64,13 @@ export const ExecCardView = ({
         <span className="min-w-0 flex-1 truncate text-body-sm font-semibold text-foreground">
           {card.name}
         </span>
-        <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-label-caps text-muted-foreground">
-          Seq
-        </span>
+        {isForcedTrajectory(card.trajectoryMode) ? (
+          <ForcedTrajectoryBadge className="px-1.5 text-muted-foreground" />
+        ) : (
+          <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-label-caps text-muted-foreground">
+            Seq
+          </span>
+        )}
         <span className="shrink-0 font-mono text-mono-sm tabular-nums text-muted-foreground">
           {sourceLabel(card.source)}
         </span>

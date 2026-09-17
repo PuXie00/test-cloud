@@ -1,3 +1,5 @@
+import type { TrajectoryMode } from "@shared/action-sequence";
+
 export const PROGRAM_SLOTS_PER_PAGE = 8;
 
 export type ActionSequence = {
@@ -6,6 +8,8 @@ export type ActionSequence = {
   note?: string;
   /** Display duration from `resolveActionSequence`; not an authored field. */
   durationMs: number;
+  /** Missing or `non-forced` is unmarked on the control page. */
+  trajectoryMode?: TrajectoryMode;
 };
 
 export type ChapterItem = {
