@@ -66,11 +66,7 @@ export const ExecCardView = ({
         </span>
         {isForcedTrajectory(card.trajectoryMode) ? (
           <ForcedTrajectoryBadge className="px-1.5 text-muted-foreground" />
-        ) : (
-          <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-label-caps text-muted-foreground">
-            Seq
-          </span>
-        )}
+        ) : null}
         <span className="shrink-0 font-mono text-mono-sm tabular-nums text-muted-foreground">
           {sourceLabel(card.source)}
         </span>
