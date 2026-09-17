@@ -6,11 +6,15 @@ export const SEQUENCE_LOOP_DISABLED_HINT = "起点与终点位姿不一致，无
 
 const V1_EPS_MM = 1;
 const ANGLE_EPS_DEG = 0.1;
+const CLOSED_POSE_SLACK = 1e-9;
+
+const within = (left: number, right: number, epsilon: number): boolean =>
+  Math.abs(left - right) <= epsilon + CLOSED_POSE_SLACK;
 
 export const posesAreClosed = (start: ModelPose, end: ModelPose): boolean =>
-  Math.abs(start.v1 - end.v1) <= V1_EPS_MM &&
-  Math.abs(start.v2 - end.v2) <= ANGLE_EPS_DEG &&
-  Math.abs(start.v3 - end.v3) <= ANGLE_EPS_DEG;
+  within(start.v1, end.v1, V1_EPS_MM) &&
+  within(start.v2, end.v2, ANGLE_EPS_DEG) &&
+  within(start.v3, end.v3, ANGLE_EPS_DEG);
 
 export const sequencePathIsClosed = (resolved: ResolvedActionSequence): boolean => {
   if (resolved.posesByObject.size === 0) return false;
