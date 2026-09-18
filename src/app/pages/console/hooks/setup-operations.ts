@@ -301,8 +301,8 @@ export const changeObjectControlType = (
           initialTiltDirection: _dropInitialTilt,
           mountRotation: _dropMountRotation,
           mountLayout: _dropMountLayout,
-          pMaxVelocity: _dropPMaxVelocity,
-          yMaxVelocity: _dropYMaxVelocity,
+          pDefaultMaxVelocity: _dropPMaxVelocity,
+          yDefaultMaxVelocity: _dropYMaxVelocity,
           ...rest
         } = item;
         return {
@@ -344,8 +344,8 @@ export const changeObjectControlType = (
         initialTiltDirection: _dropInitialTilt,
         mountRotation: _dropMountRotation,
         mountLayout: _dropMountLayout,
-        pMaxVelocity: _dropPMaxVelocity,
-        yMaxVelocity: _dropYMaxVelocity,
+        pDefaultMaxVelocity: _dropPMaxVelocity,
+        yDefaultMaxVelocity: _dropYMaxVelocity,
         ...rest
       } = item;
 

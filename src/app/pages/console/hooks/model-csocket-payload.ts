@@ -95,7 +95,7 @@ export type ModelParamCount = ModelBindingParamCount & {
   pMaxAcceleration?: number;
   pMaxDeceleration?: number;
   pAbnormalDeceleration?: number;
-  pMaxVelocity?: number;
+  pDefaultMaxVelocity?: number;
   yMaxStroke?: number;
   yMinStroke?: number;
   yDefaultVelocity?: number;
@@ -104,7 +104,7 @@ export type ModelParamCount = ModelBindingParamCount & {
   yMaxAcceleration?: number;
   yMaxDeceleration?: number;
   yAbnormalDeceleration?: number;
-  yMaxVelocity?: number;
+  yDefaultMaxVelocity?: number;
 };
 
 export type ModelConfigurePayload = {
@@ -212,9 +212,9 @@ export const buildModelParamPayload = (
       hMaxDeceleration: h.maxDeceleration,
       hAbnormalDeceleration: h.abnormalDeceleration,
       ...(p ? prefixedAxisFields("p", p) : {}),
-      ...(p && object.pMaxVelocity !== undefined ? { pMaxVelocity: object.pMaxVelocity } : {}),
+      ...(p && object.pDefaultMaxVelocity !== undefined ? { pDefaultMaxVelocity: object.pDefaultMaxVelocity } : {}),
       ...(y ? prefixedAxisFields("y", y) : {}),
-      ...(y && object.yMaxVelocity !== undefined ? { yMaxVelocity: object.yMaxVelocity } : {}),
+      ...(y && object.yDefaultMaxVelocity !== undefined ? { yDefaultMaxVelocity: object.yDefaultMaxVelocity } : {}),
     },
   };
 };

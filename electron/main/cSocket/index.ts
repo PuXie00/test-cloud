@@ -4,8 +4,8 @@ import { registerCppSocketIpc } from './ipc'
 import { startCppRuntime, stopCppRuntime } from './process'
 
 /** 可用环境变量 YZ_CPP_WS_URL 覆盖 */
-// export const DEFAULT_CPP_WS_URL = 'ws://192.168.82.105:8080'
-export const DEFAULT_CPP_WS_URL = 'ws://127.0.0.1:8080'
+export const DEFAULT_CPP_WS_URL = 'ws://192.168.82.103:8080'
+// export const DEFAULT_CPP_WS_URL = 'ws://127.0.0.1:8080'
 
 /** C++ 进程起来后再连，给监听端口一点时间 */
 const CONNECT_AFTER_SPAWN_MS = 3000

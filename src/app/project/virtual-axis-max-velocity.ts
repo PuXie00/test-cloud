@@ -13,8 +13,8 @@ export type MotorVelocitySource = {
 export type VirtualAxisMaxObject = {
   id: number;
   enabledVirtualAxes: readonly VirtualAxisId[];
-  pMaxVelocity?: number;
-  yMaxVelocity?: number;
+  pDefaultMaxVelocity?: number;
+  yDefaultMaxVelocity?: number;
 };
 
 const isPositiveFinite = (value: unknown): value is number =>
@@ -25,15 +25,15 @@ const positiveOrDefault = (value: unknown, fallback: number): number =>
 
 export const virtualAxisMaxFieldsFor = (
   enabledVirtualAxes: readonly VirtualAxisId[],
-  current?: { pMaxVelocity?: number; yMaxVelocity?: number },
-): { pMaxVelocity?: number; yMaxVelocity?: number } => {
+  current?: { pDefaultMaxVelocity?: number; yDefaultMaxVelocity?: number },
+): { pDefaultMaxVelocity?: number; yDefaultMaxVelocity?: number } => {
   const enabled = new Set(enabledVirtualAxes);
   return {
     ...(enabled.has("v2")
-      ? { pMaxVelocity: positiveOrDefault(current?.pMaxVelocity, DEFAULT_SWING_AXIS_MAX_VELOCITY) }
+      ? { pDefaultMaxVelocity: positiveOrDefault(current?.pDefaultMaxVelocity, DEFAULT_SWING_AXIS_MAX_VELOCITY) }
       : {}),
     ...(enabled.has("v3")
-      ? { yMaxVelocity: positiveOrDefault(current?.yMaxVelocity, DEFAULT_SWING_AXIS_MAX_VELOCITY) }
+      ? { yDefaultMaxVelocity: positiveOrDefault(current?.yDefaultMaxVelocity, DEFAULT_SWING_AXIS_MAX_VELOCITY) }
       : {}),
   };
 };
@@ -62,12 +62,12 @@ export const resolveVirtualAxisMaxVelocity = (
       resolved.v1 = v1MaxFromMotors(object.id, motors);
       continue;
     }
-    if (axis === "v2" && isPositiveFinite(object.pMaxVelocity)) {
-      resolved.v2 = object.pMaxVelocity;
+    if (axis === "v2" && isPositiveFinite(object.pDefaultMaxVelocity)) {
+      resolved.v2 = object.pDefaultMaxVelocity;
       continue;
     }
-    if (axis === "v3" && isPositiveFinite(object.yMaxVelocity)) {
-      resolved.v3 = object.yMaxVelocity;
+    if (axis === "v3" && isPositiveFinite(object.yDefaultMaxVelocity)) {
+      resolved.v3 = object.yDefaultMaxVelocity;
     }
   }
   return resolved;

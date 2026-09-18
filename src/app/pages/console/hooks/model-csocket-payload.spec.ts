@@ -40,8 +40,8 @@ const baseObject: ControlledObject = {
 const multiPointObject: ControlledObject = {
   ...baseObject,
   controlType: "multiPointSwing",
-  pMaxVelocity: 4,
-  yMaxVelocity: 5,
+  pDefaultMaxVelocity: 4,
+  yDefaultMaxVelocity: 5,
   safetyRadius: 1500,
   initialTiltDirection: 90,
   motionParams: {
@@ -67,8 +67,8 @@ const hoistObject: ControlledObject = {
 const twoPointSwingObject: ControlledObject = {
   ...baseObject,
   controlType: "twoPointSwing",
-  pMaxVelocity: 4,
-  yMaxVelocity: 5,
+  pDefaultMaxVelocity: 4,
+  yDefaultMaxVelocity: 5,
   motionParams: {
     move: axisParams(),
     swingX: axisParams({ minAngle: -20, maxAngle: 20, speed: 2 }),
@@ -82,21 +82,21 @@ const twoPointSwingObject: ControlledObject = {
 describe("buildModelParamPayload max velocity", () => {
   it("includes p/y max velocity and never hMaxVelocity", () => {
     const payload = buildModelParamPayload(multiPointObject, []);
-    expect(payload?.paramCount.pMaxVelocity).toBe(4);
-    expect(payload?.paramCount.yMaxVelocity).toBe(5);
+    expect(payload?.paramCount.pDefaultMaxVelocity).toBe(4);
+    expect(payload?.paramCount.yDefaultMaxVelocity).toBe(5);
     expect(payload?.paramCount).not.toHaveProperty("hMaxVelocity");
   });
 
   it("omits p/y max velocity for hoist-only objects", () => {
     const payload = buildModelParamPayload(hoistObject, []);
-    expect(payload?.paramCount).not.toHaveProperty("pMaxVelocity");
-    expect(payload?.paramCount).not.toHaveProperty("yMaxVelocity");
+    expect(payload?.paramCount).not.toHaveProperty("pDefaultMaxVelocity");
+    expect(payload?.paramCount).not.toHaveProperty("yDefaultMaxVelocity");
   });
 
-  it("includes only pMaxVelocity for two-point swing", () => {
+  it("includes only pDefaultMaxVelocity for two-point swing", () => {
     const payload = buildModelParamPayload(twoPointSwingObject, []);
-    expect(payload?.paramCount.pMaxVelocity).toBe(4);
-    expect(payload?.paramCount).not.toHaveProperty("yMaxVelocity");
+    expect(payload?.paramCount.pDefaultMaxVelocity).toBe(4);
+    expect(payload?.paramCount).not.toHaveProperty("yDefaultMaxVelocity");
     expect(payload?.paramCount).not.toHaveProperty("hMaxVelocity");
   });
 });

@@ -37,9 +37,9 @@ const ackFailed = (r: SendData): SendData => ({
 const toCppRelativeProjectPath = (projectPath: string): string => {
   const normalized = projectPath.trim().replace(/\//g, '\\').replace(/\\+$/, '')
   const match = normalized.match(/(?:^|\\)Project\\([^\\]+)$/i)
-  if (match?.[1]) return `..\\Project\\${match[1]}`
+  if (match?.[1]) return `.\\Project\\${match[1]}`
   const name = normalized.split('\\').filter(Boolean).pop() ?? ''
-  return `..\\Project\\${name}`
+  return `.\\Project\\${name}`
 }
 
 type ModelParamCount = {
@@ -67,7 +67,7 @@ type ModelParamCount = {
   pMaxAcceleration?: number
   pMaxDeceleration?: number
   pAbnormalDeceleration?: number
-  pMaxVelocity?: number
+  pDefaultMaxVelocity?: number
   yMaxStroke?: number
   yMinStroke?: number
   yDefaultVelocity?: number
@@ -76,7 +76,7 @@ type ModelParamCount = {
   yMaxAcceleration?: number
   yMaxDeceleration?: number
   yAbnormalDeceleration?: number
-  yMaxVelocity?: number
+  yDefaultMaxVelocity?: number
 }
 
 const broadcast = (channel: string, payload: unknown) => {
@@ -213,6 +213,8 @@ export class CsocketApiService {
   ): Promise<SendData> {
     const projectIdEnabled = opts?.projectId ?? true
     const userEnabled = opts?.user ?? true
+    const paramHeard =
+      opts?.paramHeard && opts.paramHeard.length > 0 ? opts.paramHeard : undefined
     console.log('sendBuilt', id, JSON.stringify(params),)
     return new Promise<SendData>((resolve) => {
       this.client.send(
@@ -220,6 +222,7 @@ export class CsocketApiService {
           OptCmd: id,
           addr,
           params,
+          ...(paramHeard ? { paramHeard } : {}),
           projectId: projectIdEnabled ? this.ctx.projectId : undefined,
           user: userEnabled ? this.ctx.user : undefined,
         },
@@ -690,6 +693,7 @@ export class CsocketApiService {
     }[],
     opts?: CsocketSendOpts,
   ) {
+    console.log('actionSyncCallPlc', JSON.stringify(items));
     return this.sendBuilt('Operation|actionSyncCall', '0x1006', items, opts)
   }
   // 停止动作
@@ -701,9 +705,29 @@ export class CsocketApiService {
     items: ActionDataSaveItem[],
     opts?: CsocketSendOpts,
   ) {
-    console.log('actionDataSavePlc', JSON.stringify(items));
-    
-    return this.sendBuilt('Config|actionDataSave', '0x1016', items, opts)
+    const mapped = items.map((item) => ({
+      actionId: item.actionId,
+      checkCode: 0,
+      safeGroup: 0,
+      totalDuration: item.totalDuration,
+      deviceCount: item.timelineCount
+    }))
+    opts = {
+      ...opts,
+      paramHeard: mapped
+    }
+    const paramsMapped: any[] = []
+    items.forEach((item) => {
+      item.timelineList.forEach((timelineItem) => {
+        paramsMapped.push({
+          deviceId: timelineItem.modelId,
+          virtualAxisNo: timelineItem.virtualAxisNo,
+          segmentCount: timelineItem.segmentCount,
+          segmentList: timelineItem.segmentList
+        })
+      })
+    })
+    return this.sendBuilt('Config|actionDataSave', '0x1016', paramsMapped, opts)
   }
   // 规则启动
   ruleStartPlc(items: { enableFlag: number }[], opts?: CsocketSendOpts) {

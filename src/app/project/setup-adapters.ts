@@ -30,8 +30,8 @@ export const controlledObjectConfigToWizard = (
     motionParams: normalizeMotionParams(config.motionParams),
     motionSpeedControl: config.motionSpeedControl,
     maxAxisVelocity: normalizeMaxAxisVelocity(config.maxAxisVelocity),
-    ...(config.pMaxVelocity !== undefined ? { pMaxVelocity: config.pMaxVelocity } : {}),
-    ...(config.yMaxVelocity !== undefined ? { yMaxVelocity: config.yMaxVelocity } : {}),
+    ...(config.pDefaultMaxVelocity !== undefined ? { pDefaultMaxVelocity: config.pDefaultMaxVelocity } : {}),
+    ...(config.yDefaultMaxVelocity !== undefined ? { yDefaultMaxVelocity: config.yDefaultMaxVelocity } : {}),
     pulleyDistance: config.pulleyDistance ?? DEFAULT_PULLEY_DISTANCE,
     modelRunDirection: normalizeModelRunDirection(
       config.modelRunDirection ?? DEFAULT_MODEL_RUN_DIRECTION,

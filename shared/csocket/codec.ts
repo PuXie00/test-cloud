@@ -20,17 +20,24 @@ const toAckResult = (value: unknown): CppAckResult => {
   }
 }
 
-export const buildEnvelope = (input: BuildEnvelopeInput): CppEnvelope => ({
-  version: input.version ?? PROTOCOL_VERSION,
-  timestamp: input.timestamp ?? Date.now(),
-  messageId: input.messageId ?? randomUUID(),
-  projectId: input.projectId,
-  user: input.user,
-  OptCmd: input.OptCmd,
-  addr: input.addr,
-  params: input.params ?? [],
-  result: input.result,
-})
+export const buildEnvelope = (input: BuildEnvelopeInput): CppEnvelope => {
+  const envelope: CppEnvelope = {
+    version: input.version ?? PROTOCOL_VERSION,
+    timestamp: input.timestamp ?? Date.now(),
+    messageId: input.messageId ?? randomUUID(),
+    projectId: input.projectId,
+    user: input.user,
+    OptCmd: input.OptCmd,
+    addr: input.addr,
+    params: input.params ?? [],
+    result: input.result,
+  }
+  const paramHeard = input.paramHeard
+  if (paramHeard && paramHeard.length > 0) {
+    envelope.paramHeard = paramHeard
+  }
+  return envelope
+}
 
 export const parseEnvelope = (raw: string): CppEnvelope => {
   let data: unknown

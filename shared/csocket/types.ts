@@ -12,6 +12,10 @@ export type CppAckResult<T = unknown> = {
   data?: T[]
 }
 
+export type CsocketParamHeardItem = {
+  [field: string]: number
+}
+
 export type CppEnvelope = {
   version: number
   timestamp: number
@@ -21,6 +25,7 @@ export type CppEnvelope = {
   OptCmd: string
   addr: string
   params: unknown[]
+  paramHeard?: CsocketParamHeardItem[]
   result?: CppAckResult
   code?: number
 }
@@ -35,6 +40,7 @@ export type CsocketSendOpts = {
   timeoutMs?: number
   projectId?: boolean // 是否需要项目id
   user?: boolean // 是否需要用户
+  paramHeard?: CsocketParamHeardItem[]
 }
 
 export type CsocketSendOpts2 = {

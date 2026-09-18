@@ -221,8 +221,8 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
     {
       id: object.id,
       enabledVirtualAxes: enabledVirtualAxesOf(object.controlType),
-      pMaxVelocity: object.pMaxVelocity,
-      yMaxVelocity: object.yMaxVelocity,
+      pDefaultMaxVelocity: object.pDefaultMaxVelocity,
+      yDefaultMaxVelocity: object.yDefaultMaxVelocity,
     },
     motors,
   );
@@ -327,8 +327,8 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
       {
         id: nextObject.id,
         enabledVirtualAxes: enabledVirtualAxesOf(nextObject.controlType),
-        pMaxVelocity: nextObject.pMaxVelocity,
-        yMaxVelocity: nextObject.yMaxVelocity,
+        pDefaultMaxVelocity: nextObject.pDefaultMaxVelocity,
+        yDefaultMaxVelocity: nextObject.yDefaultMaxVelocity,
       },
       motors,
     );
@@ -343,11 +343,11 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
   };
 
   const handlePMaxVelocityChange = (next: number) => {
-    applyResolvedMotion({ pMaxVelocity: next }, { ...object, pMaxVelocity: next });
+    applyResolvedMotion({ pDefaultMaxVelocity: next }, { ...object, pDefaultMaxVelocity: next });
   };
 
   const handleYMaxVelocityChange = (next: number) => {
-    applyResolvedMotion({ yMaxVelocity: next }, { ...object, yMaxVelocity: next });
+    applyResolvedMotion({ yDefaultMaxVelocity: next }, { ...object, yDefaultMaxVelocity: next });
   };
 
   const handleSpeedRatioChange = (speedRatio: number) => {
@@ -472,7 +472,7 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
                     </span>
                     <UnitAwareNumericInput
                       aria-label={`${getVirtualAxisMeta("v2", object.controlType).label}最大速度`}
-                      value={object.pMaxVelocity ?? DEFAULT_SWING_AXIS_MAX_VELOCITY}
+                      value={object.pDefaultMaxVelocity ?? DEFAULT_SWING_AXIS_MAX_VELOCITY}
                       onChange={handlePMaxVelocityChange}
                       min={0.1}
                       step={0.1}
@@ -488,7 +488,7 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
                     </span>
                     <UnitAwareNumericInput
                       aria-label={`${getVirtualAxisMeta("v3", object.controlType).label}最大速度`}
-                      value={object.yMaxVelocity ?? DEFAULT_SWING_AXIS_MAX_VELOCITY}
+                      value={object.yDefaultMaxVelocity ?? DEFAULT_SWING_AXIS_MAX_VELOCITY}
                       onChange={handleYMaxVelocityChange}
                       min={0.1}
                       step={0.1}

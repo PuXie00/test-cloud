@@ -4,7 +4,7 @@
     "id": "gz-2025",
     "name": "2025广州演唱会",
     "createdAt": "2024-10-01T08:00:00Z",
-    "modifiedAt": "2026-08-13T08:51:54.181Z",
+    "modifiedAt": "2026-09-17T03:16:36.819Z",
     "author": "SysAdmin_01",
     "status": "active",
     "tags": [
@@ -254,7 +254,7 @@
         "pulleyDistance": 0,
         "modelRunDirection": 1,
         "maxAxisVelocity": 200,
-        "pMaxVelocity": 3,
+        "pDefaultMaxVelocity": 3,
         "driveAxes": [
           {
             "key": "0",
@@ -340,8 +340,8 @@
         "pulleyDistance": 0,
         "modelRunDirection": 1,
         "maxAxisVelocity": 200,
-        "pMaxVelocity": 3,
-        "yMaxVelocity": 3,
+        "pDefaultMaxVelocity": 3,
+        "yDefaultMaxVelocity": 3,
         "safetyRadius": 0,
         "initialTiltDirection": 0,
         "mountRotation": 0,
@@ -444,17 +444,117 @@
     }
   },
   "motion": {
-    "actionSequences": [],
+    "actionSequences": [
+      {
+        "id": 1,
+        "name": "新建动作序列",
+        "trajectoryMode": "non-forced",
+        "blocks": [
+          {
+            "id": "blk-mu4yja2b-bycf",
+            "kind": "pose",
+            "objectId": 9,
+            "atMs": 8500,
+            "pose": {
+              "v1": 536.8,
+              "v2": 0,
+              "v3": 0
+            }
+          },
+          {
+            "id": "blk-mu4yja2b-4rm2",
+            "kind": "pose",
+            "objectId": 10,
+            "atMs": 8500,
+            "pose": {
+              "v1": 536.8,
+              "v2": 0,
+              "v3": 0
+            }
+          },
+          {
+            "id": "blk-mu4yjd5t-ij14",
+            "kind": "pose",
+            "objectId": 9,
+            "atMs": 500,
+            "pose": {
+              "v1": 0,
+              "v2": 0,
+              "v3": 0
+            }
+          },
+          {
+            "id": "blk-mu4yjd5u-852j",
+            "kind": "pose",
+            "objectId": 10,
+            "atMs": 500,
+            "pose": {
+              "v1": 0,
+              "v2": 0,
+              "v3": 0
+            }
+          }
+        ],
+        "segments": [
+          {
+            "fromRef": "blk-mu4yjd5t-ij14",
+            "toRef": "blk-mu4yja2b-bycf",
+            "settings": {
+              "profiles": {
+                "v1": {
+                  "kind": "trapezoid",
+                  "params": {
+                    "accelMs": 1000,
+                    "decelMs": 1000
+                  }
+                },
+                "v2": {
+                  "kind": "idle"
+                },
+                "v3": {
+                  "kind": "idle"
+                }
+              }
+            }
+          },
+          {
+            "fromRef": "blk-mu4yjd5u-852j",
+            "toRef": "blk-mu4yja2b-4rm2",
+            "settings": {
+              "profiles": {
+                "v1": {
+                  "kind": "trapezoid",
+                  "params": {
+                    "accelMs": 1000,
+                    "decelMs": 1000
+                  }
+                },
+                "v2": {
+                  "kind": "idle"
+                },
+                "v3": {
+                  "kind": "idle"
+                }
+              }
+            }
+          }
+        ]
+      }
+    ],
     "programs": [
       {
         "id": "prog-gz-main",
         "name": "2025广州演唱会",
-        "note": "主体 90 分钟",
         "chapters": [
           {
             "id": "ch-01",
             "name": "第一章 开场",
-            "items": []
+            "items": [
+              {
+                "kind": "sequence",
+                "refId": 1
+              }
+            ]
           },
           {
             "id": "ch-02",
@@ -489,8 +589,8 @@
     ],
     "alpha": 1.22126772255103,
     "beta": 0.9993806344075639,
-    "zoomRadius": 26.76336714179846,
-    "orthoHalfHeight": 13.38168357089923,
+    "zoomRadius": 41.51876660166424,
+    "orthoHalfHeight": 20.75938330083212,
     "preset": "persp",
     "focalLengthMm": 50,
     "gridSize": 20

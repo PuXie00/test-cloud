@@ -158,14 +158,14 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
   const sharedPMax = showPMax
     ? getSharedValue(
         selectedObjects.map(
-          (object) => object.pMaxVelocity ?? DEFAULT_SWING_AXIS_MAX_VELOCITY,
+          (object) => object.pDefaultMaxVelocity ?? DEFAULT_SWING_AXIS_MAX_VELOCITY,
         ),
       )
     : null;
   const sharedYMax = showYMax
     ? getSharedValue(
         selectedObjects.map(
-          (object) => object.yMaxVelocity ?? DEFAULT_SWING_AXIS_MAX_VELOCITY,
+          (object) => object.yDefaultMaxVelocity ?? DEFAULT_SWING_AXIS_MAX_VELOCITY,
         ),
       )
     : null;
@@ -294,8 +294,8 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
       {
         id: object.id,
         enabledVirtualAxes: ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE[object.controlType],
-        pMaxVelocity: object.pMaxVelocity,
-        yMaxVelocity: object.yMaxVelocity,
+        pDefaultMaxVelocity: object.pDefaultMaxVelocity,
+        yDefaultMaxVelocity: object.yDefaultMaxVelocity,
       },
       motors,
     );
@@ -324,9 +324,9 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
   const handlePMaxVelocityChange = (next: number) => {
     patchAll((object) => {
       if (!objectHasVirtualAxis(object, "v2")) return {};
-      const nextObject = { ...object, pMaxVelocity: next };
+      const nextObject = { ...object, pDefaultMaxVelocity: next };
       return {
-        pMaxVelocity: next,
+        pDefaultMaxVelocity: next,
         motionParams: clampMotionParamsToAxisMax(
           object.motionParams ?? {},
           CONTROL_TYPE_DEFINITION_BY_ID[object.controlType].motionAxes,
@@ -339,9 +339,9 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
   const handleYMaxVelocityChange = (next: number) => {
     patchAll((object) => {
       if (!objectHasVirtualAxis(object, "v3")) return {};
-      const nextObject = { ...object, yMaxVelocity: next };
+      const nextObject = { ...object, yDefaultMaxVelocity: next };
       return {
-        yMaxVelocity: next,
+        yDefaultMaxVelocity: next,
         motionParams: clampMotionParamsToAxisMax(
           object.motionParams ?? {},
           CONTROL_TYPE_DEFINITION_BY_ID[object.controlType].motionAxes,

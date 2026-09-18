@@ -452,20 +452,20 @@ const validateCurrentObject = (value: unknown, path: string, a: StructuralAssert
   }
   const enabled: readonly VirtualAxisId[] = ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE[controlType];
   if (enabled.includes("v2")) {
-    const pMaxVelocity = a.finite(object.pMaxVelocity, `${path}.pMaxVelocity`);
-    if (pMaxVelocity <= 0) {
-      a.fail(`${path}.pMaxVelocity`, "expected a positive number");
+    const pDefaultMaxVelocity = a.finite(object.pDefaultMaxVelocity, `${path}.pDefaultMaxVelocity`);
+    if (pDefaultMaxVelocity <= 0) {
+      a.fail(`${path}.pDefaultMaxVelocity`, "expected a positive number");
     }
-  } else if (object.pMaxVelocity !== undefined) {
-    a.fail(`${path}.pMaxVelocity`, "expected pMaxVelocity only when virtual axis v2 is enabled");
+  } else if (object.pDefaultMaxVelocity !== undefined) {
+    a.fail(`${path}.pDefaultMaxVelocity`, "expected pDefaultMaxVelocity only when virtual axis v2 is enabled");
   }
   if (enabled.includes("v3")) {
-    const yMaxVelocity = a.finite(object.yMaxVelocity, `${path}.yMaxVelocity`);
-    if (yMaxVelocity <= 0) {
-      a.fail(`${path}.yMaxVelocity`, "expected a positive number");
+    const yDefaultMaxVelocity = a.finite(object.yDefaultMaxVelocity, `${path}.yDefaultMaxVelocity`);
+    if (yDefaultMaxVelocity <= 0) {
+      a.fail(`${path}.yDefaultMaxVelocity`, "expected a positive number");
     }
-  } else if (object.yMaxVelocity !== undefined) {
-    a.fail(`${path}.yMaxVelocity`, "expected yMaxVelocity only when virtual axis v3 is enabled");
+  } else if (object.yDefaultMaxVelocity !== undefined) {
+    a.fail(`${path}.yDefaultMaxVelocity`, "expected yDefaultMaxVelocity only when virtual axis v3 is enabled");
   }
   if (object.params !== undefined) {
     const params = a.record(object.params, `${path}.params`);

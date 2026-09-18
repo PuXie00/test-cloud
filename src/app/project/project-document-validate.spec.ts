@@ -248,7 +248,7 @@ describe("project-motion-readiness sequence gate", () => {
 });
 
 describe("virtual axis max velocity fields", () => {
-  it("rejects missing pMaxVelocity when v2 is enabled", () => {
+  it("rejects missing pDefaultMaxVelocity when v2 is enabled", () => {
     const document = documentOf({
       setup: {
         plcs: [],
@@ -270,13 +270,13 @@ describe("virtual axis max velocity fields", () => {
         alignment: {},
       },
     });
-    expect(() => assertProjectDocumentStructure(document)).toThrow(/pMaxVelocity/);
+    expect(() => assertProjectDocumentStructure(document)).toThrow(/pDefaultMaxVelocity/);
   });
 
-  it("rejects pMaxVelocity on v1-only objects", () => {
+  it("rejects pDefaultMaxVelocity on v1-only objects", () => {
     const document = documentOf();
-    document.setup.controlledObjects[0] = makeObject(OBJECT_A, "A", { pMaxVelocity: 3 });
-    expect(() => assertProjectDocumentStructure(document)).toThrow(/pMaxVelocity/);
+    document.setup.controlledObjects[0] = makeObject(OBJECT_A, "A", { pDefaultMaxVelocity: 3 });
+    expect(() => assertProjectDocumentStructure(document)).toThrow(/pDefaultMaxVelocity/);
   });
 
   it("accepts swing objects with p/y max velocity", () => {
@@ -288,8 +288,8 @@ describe("virtual axis max velocity fields", () => {
           makeObject(OBJECT_A, "A", {
             controlType: 7,
             enabledVirtualAxes: ["v1", "v2", "v3"],
-            pMaxVelocity: 3,
-            yMaxVelocity: 3,
+            pDefaultMaxVelocity: 3,
+            yDefaultMaxVelocity: 3,
             safetyRadius: 1000,
             initialTiltDirection: 0,
             mountRotation: 0,

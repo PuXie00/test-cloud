@@ -147,7 +147,7 @@ const GZ_SETUP = {
         { key: "1", mount: { x: 700, z: 0 } },
       ],
       maxAxisVelocity: 200,
-      pMaxVelocity: 3,
+      pDefaultMaxVelocity: 3,
       motionParams: {
         move: { ...MOTION_DEFAULTS.move },
         swingX: { ...MOTION_DEFAULTS.swingX },
@@ -175,8 +175,8 @@ const GZ_SETUP = {
         { key: "3", custom: true, mount: { x: 400, z: 400 } },
       ],
       maxAxisVelocity: 200,
-      pMaxVelocity: 3,
-      yMaxVelocity: 3,
+      pDefaultMaxVelocity: 3,
+      yDefaultMaxVelocity: 3,
       motionParams: {
         move: { ...MOTION_DEFAULTS.move },
         swingX: { ...MOTION_DEFAULTS.swingX },

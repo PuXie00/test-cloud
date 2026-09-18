@@ -173,9 +173,9 @@ export type ControlledObjectConfig = {
   /** 最大轴速度，速度比例基准；不是虚轴 1 运行上限 */
   maxAxisVelocity: number;
   /** 虚轴 2 最大速度（°/s）；启用 v2 时必有 */
-  pMaxVelocity?: number;
+  pDefaultMaxVelocity?: number;
   /** 虚轴 3 最大速度（°/s）；启用 v3 时必有 */
-  yMaxVelocity?: number;
+  yDefaultMaxVelocity?: number;
   motionSpeedControl?: MotionSpeedControl;
   /** 扩展属性占位；后续扩展使用 */
   params: Record<string, number>;

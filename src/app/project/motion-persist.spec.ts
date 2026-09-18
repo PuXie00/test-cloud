@@ -280,7 +280,7 @@ const swingObject = (): ControlledObjectConfig => ({
     { key: "1", mount: { x: 0, z: 0 } },
   ],
   maxAxisVelocity: 200,
-  pMaxVelocity: 4,
+  pDefaultMaxVelocity: 4,
   motionParams: {
     move: { ...MOTION_DEFAULTS.move },
     swingX: { ...MOTION_DEFAULTS.swingX },

@@ -12,8 +12,8 @@ import {
 const object = {
   id: 8,
   enabledVirtualAxes: ["v1", "v2", "v3"] as const,
-  pMaxVelocity: 4,
-  yMaxVelocity: 5,
+  pDefaultMaxVelocity: 4,
+  yDefaultMaxVelocity: 5,
 };
 
 const motor = (
@@ -55,12 +55,12 @@ describe("virtualAxisMaxFieldsFor", () => {
   it("adds defaults for enabled swing axes and strips disabled ones", () => {
     expect(virtualAxisMaxFieldsFor(["v1"])).toEqual({});
     expect(virtualAxisMaxFieldsFor(["v1", "v2"])).toEqual({
-      pMaxVelocity: DEFAULT_SWING_AXIS_MAX_VELOCITY,
+      pDefaultMaxVelocity: DEFAULT_SWING_AXIS_MAX_VELOCITY,
     });
     expect(
-      virtualAxisMaxFieldsFor(["v1", "v2", "v3"], { pMaxVelocity: 9, yMaxVelocity: 8 }),
-    ).toEqual({ pMaxVelocity: 9, yMaxVelocity: 8 });
-    expect(virtualAxisMaxFieldsFor(["v1"], { pMaxVelocity: 9, yMaxVelocity: 8 })).toEqual({});
+      virtualAxisMaxFieldsFor(["v1", "v2", "v3"], { pDefaultMaxVelocity: 9, yDefaultMaxVelocity: 8 }),
+    ).toEqual({ pDefaultMaxVelocity: 9, yDefaultMaxVelocity: 8 });
+    expect(virtualAxisMaxFieldsFor(["v1"], { pDefaultMaxVelocity: 9, yDefaultMaxVelocity: 8 })).toEqual({});
   });
 });
 
@@ -83,8 +83,8 @@ describe("clampMotionParamsToAxisMax", () => {
 
 describe("resolveJogAxisMaxVelocity", () => {
   it("takes the min resolved cap across selected objects", () => {
-    const a = { id: 1, enabledVirtualAxes: ["v1", "v2"] as const, pMaxVelocity: 6 };
-    const b = { id: 2, enabledVirtualAxes: ["v1", "v2"] as const, pMaxVelocity: 4 };
+    const a = { id: 1, enabledVirtualAxes: ["v1", "v2"] as const, pDefaultMaxVelocity: 6 };
+    const b = { id: 2, enabledVirtualAxes: ["v1", "v2"] as const, pDefaultMaxVelocity: 4 };
     expect(resolveJogAxisMaxVelocity("v2", [a, b], [])).toBe(4);
     expect(resolveJogAxisMaxVelocity("v1", [a], [motor(1, 120)])).toBe(120);
     expect(resolveJogAxisMaxVelocity("v3", [a], [])).toBeUndefined();
