@@ -68,6 +68,7 @@ export type ActionBuilderContextValue = {
   handleCreatePose: (objectIds: number[]) => void;
   handleCreateSetEnabled: (objectIds: number[], enabled: boolean) => void;
   handleCreateSequence: (objectIds: number[]) => void;
+  handleDeleteSequence: () => void;
   handleApplyStaticPreset: (presetId: string, objectIds: number[]) => void;
   handleApplyDynamicPreset: (presetId: string, objectIds: number[]) => void;
   handleProgramNodeSelect: (nodeId: string) => void;

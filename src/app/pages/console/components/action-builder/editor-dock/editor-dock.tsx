@@ -1,4 +1,4 @@
-import { useMemo, useRef, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, type KeyboardEvent } from "react";
 import { MousePointerClick } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
@@ -48,6 +48,7 @@ const SequenceEditor = () => {
     handleShiftTimelineBlocksEnd,
     handleResizeDynamicPreset,
     handleBlockDelete,
+    handleDeleteSequence,
     handleBlockCopy,
     handleBlockPaste,
     handleTimelinePxPerSecondChange,
@@ -70,6 +71,18 @@ const SequenceEditor = () => {
     () => pickNiceMajorStepSec(timelinePxPerSecond),
     [timelinePxPerSecond],
   );
+
+  useEffect(() => {
+    const onWindowKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (isEditableTarget(event.target)) return;
+      if (event.key !== "Delete" && event.key !== "Backspace") return;
+      if (selectedBlockIds.length === 0) return;
+      event.preventDefault();
+      handleBlockDelete();
+    };
+    window.addEventListener("keydown", onWindowKeyDown);
+    return () => window.removeEventListener("keydown", onWindowKeyDown);
+  }, [handleBlockDelete, selectedBlockIds.length]);
 
   const resolved = useMemo(() => {
     if (!sequence) return null;
@@ -95,11 +108,6 @@ const SequenceEditor = () => {
     if (mod && event.key.toLowerCase() === "v") {
       event.preventDefault();
       handleBlockPaste();
-      return;
-    }
-    if ((event.key === "Delete" || event.key === "Backspace") && selectedBlockIds.length > 0) {
-      event.preventDefault();
-      handleBlockDelete();
     }
   };
 
@@ -121,9 +129,9 @@ const SequenceEditor = () => {
         majorStepSec={majorStepSec}
         canZoomIn={timelinePxPerSecond > TIMELINE_PX_PER_SECOND_MIN}
         canZoomOut={timelinePxPerSecond < TIMELINE_PX_PER_SECOND_MAX}
-        canDelete={selectedBlockIds.length > 0}
+        canDelete
         onSave={handleSave}
-        onDelete={() => handleBlockDelete()}
+        onDelete={handleDeleteSequence}
         onZoomIn={handleTimelineZoomIn}
         onZoomOut={handleTimelineZoomOut}
       />

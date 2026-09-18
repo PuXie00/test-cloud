@@ -52,10 +52,10 @@ export const SegmentBand = ({
         "absolute top-1/2 z-0 flex h-5 -translate-y-1/2 items-center justify-center overflow-hidden rounded-sm px-1",
         invalid
           ? selected
-            ? "border-l-2 border-l-primary bg-warning/75 text-warning"
-            : "border-l-2 border-l-warning bg-warning/75 text-warning"
+            ? "bg-warning/75 text-warning"
+            : "bg-warning/75 text-warning"
           : selected
-            ? "border-l-2 border-l-primary bg-primary/75"
+            ? " bg-primary/75"
             : "bg-secondary/15 text-muted-foreground",
       )}
       style={{

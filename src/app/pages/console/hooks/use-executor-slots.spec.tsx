@@ -94,7 +94,7 @@ describe("ExecutorSlotsProvider", () => {
     expect(result.current.faderSlots[1]?.phase).toBe("ready");
   });
 
-  it("always exposes eight F1–F8 slots", () => {
+  it("always exposes twelve F1–F12 slots", () => {
     const wrapper = ({ children }: { children: ReactNode }) =>
       createElement(
         ExecutorSlotsProvider,
@@ -102,7 +102,7 @@ describe("ExecutorSlotsProvider", () => {
         children,
       );
     const { result } = renderHook(() => useExecutorSlots(), { wrapper });
-    expect(result.current.faderSlots).toHaveLength(8);
+    expect(result.current.faderSlots).toHaveLength(12);
     expect(result.current.faderSlots.map((slot) => slot.label)).toEqual([
       "F1",
       "F2",
@@ -112,6 +112,10 @@ describe("ExecutorSlotsProvider", () => {
       "F6",
       "F7",
       "F8",
+      "F9",
+      "F10",
+      "F11",
+      "F12",
     ]);
     expect(result.current.faderSlots[0]?.sequence?.id).toBe(15);
     expect(result.current.faderSlots[1]?.sequence).toBeNull();

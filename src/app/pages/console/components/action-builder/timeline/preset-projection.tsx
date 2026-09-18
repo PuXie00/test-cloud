@@ -60,6 +60,18 @@ const attachTimeDrag = (
   window.addEventListener("pointerup", handleUp);
 };
 
+const GENERATED_TICK_WIDTH_PX = 1;
+
+const generatedTickOffsetPx = (
+  tickMs: number,
+  startMs: number,
+  widthPx: number,
+  pxPerSecond: number,
+): number => {
+  const offsetPx = msToPx(tickMs - startMs, pxPerSecond);
+  return Math.min(Math.max(offsetPx, 0), Math.max(widthPx - GENERATED_TICK_WIDTH_PX, 0));
+};
+
 export const PresetProjection = ({
   blockId,
   kind,
@@ -120,9 +132,9 @@ export const PresetProjection = ({
           aria-hidden
         />
         {initialPoseAtMs !== undefined ? (
-          <span className="rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
-            起
-          </span>
+           <span className="rounded-full -ml-1.5 text-[10px] font-medium text-white">
+           起
+         </span>
         ) : null}
         {dragLabel && (
           <span className="pointer-events-none absolute -top-5 left-1/2 z-40 -translate-x-1/2 rounded-sm bg-card px-1.5 py-0.5 font-mono text-mono-sm tabular-nums text-foreground">
@@ -134,6 +146,7 @@ export const PresetProjection = ({
   }
 
   const durationMs = Math.max(endMs - startMs, 1);
+  const widthPx = Math.max(msToPx(durationMs, pxPerSecond), 1);
 
   const handleMovePointerDown = (event: PointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return;
@@ -189,39 +202,41 @@ export const PresetProjection = ({
       onKeyDown={handleKeyDown}
       onPointerDown={handleMovePointerDown}
       className={cn(
-        "absolute top-1 z-10 flex h-[calc(100%-8px)] items-center overflow-hidden rounded-sm px-1",
+        "absolute top-1 z-10 flex h-[calc(100%-8px)] items-center rounded-sm px-1",
         invalid
           ? selected
-            ? "border-l-2 border-l-primary bg-warning/75 text-warning"
-            : "border-l-2 border-l-warning bg-warning/75 text-muted-foreground hover:bg-warning/30"
+            ? "bg-warning/75 text-warning"
+            : "bg-warning/75 text-muted-foreground"
           : selected
-            ? "border-l-2 border-l-primary bg-primary/20 text-foreground"
-            : "bg-secondary/40 text-muted-foreground hover:bg-secondary/55",
+            ? "bg-primary/75 text-foreground"
+            : "bg-secondary/40 text-muted-foreground",
       )}
       style={{
         left: viewPxFromMs(startMs, viewStartMs, pxPerSecond),
-        width: Math.max(msToPx(durationMs, pxPerSecond), 1),
+        width: widthPx,
       }}
     >
+      <span className="pointer-events-none absolute inset-0 overflow-hidden rounded-sm" aria-hidden>
+        {generatedAtMs.map((tickMs) => (
+          <span
+            key={tickMs}
+            data-generated-tick=""
+            data-at-ms={String(tickMs)}
+            className="absolute top-0.5 h-2 w-px bg-foreground/70"
+            style={{
+              left: generatedTickOffsetPx(tickMs, startMs, widthPx, pxPerSecond),
+            }}
+          />
+        ))}
+      </span>
       <span
         data-resize="start"
         className="absolute left-0 top-0 z-10 h-full w-2 cursor-ew-resize"
         onPointerDown={handleResizePointerDown("start")}
       />
-      <span className="pointer-events-none font-mono text-mono-sm tabular-nums">{durationMs}</span>
-      {generatedAtMs.map((tickMs) => (
-        <span
-          key={tickMs}
-          data-generated-tick=""
-          data-at-ms={String(tickMs)}
-          aria-hidden
-          className="pointer-events-none absolute top-0.5 h-2 w-px bg-foreground/70"
-          style={{ left: msToPx(tickMs - startMs, pxPerSecond) }}
-        />
-      ))}
       {initialPoseAtMs !== undefined ? (
         <span
-          className="pointer-events-none absolute top-1/2 -translate-y-1/2 rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground"
+          className="pointer-events-none absolute top-1/2 z-[1] -translate-y-1/2 rounded-full text-[10px] font-medium text-white"
           style={{ left: msToPx(initialPoseAtMs - startMs, pxPerSecond) }}
         >
           起
@@ -233,7 +248,7 @@ export const PresetProjection = ({
         onPointerDown={handleResizePointerDown("end")}
       />
       {dragLabel && (
-        <span className="pointer-events-none absolute -top-5 left-1/2 z-40 -translate-x-1/2 rounded-sm bg-card px-1.5 py-0.5 font-mono text-mono-sm tabular-nums text-foreground">
+        <span className="pointer-events-none absolute -top-5 left-0 z-40 rounded-sm bg-card px-1.5 py-0.5 font-mono text-mono-sm tabular-nums text-foreground">
           {dragLabel}
         </span>
       )}

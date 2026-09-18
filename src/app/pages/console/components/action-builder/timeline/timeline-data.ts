@@ -82,3 +82,34 @@ export const findControlledObjectById = (
 
 export const countSequenceBlocks = (sequence: { blocks: readonly unknown[] }): number =>
   sequence.blocks.length;
+
+/** 从节目树去掉对指定动作序列的引用，避免落盘时悬空 ref。 */
+export const stripSequenceFromProgramTree = (
+  programs: ProgramNode[],
+  sequenceId: number,
+): ProgramNode[] => {
+  const dropId = String(sequenceId);
+  const strip = (nodes: ProgramNode[]): ProgramNode[] => {
+    let changed = false;
+    const next: ProgramNode[] = [];
+    for (const node of nodes) {
+      if (node.type === "sequence" && node.id === dropId) {
+        changed = true;
+        continue;
+      }
+      if (!node.children || node.children.length === 0) {
+        next.push(node);
+        continue;
+      }
+      const children = strip(node.children);
+      if (children === node.children) {
+        next.push(node);
+        continue;
+      }
+      changed = true;
+      next.push({ ...node, children });
+    }
+    return changed ? next : nodes;
+  };
+  return strip(programs);
+};

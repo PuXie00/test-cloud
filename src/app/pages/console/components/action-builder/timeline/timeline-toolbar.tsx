@@ -1,12 +1,7 @@
-import {
-  Minus,
-  Plus,
-  Save,
-  ShieldCheck,
-  Trash2,
-} from "lucide-react";
-import { IconButton } from "@/app/components/ics/icon-button";
+import type { ButtonHTMLAttributes, ElementType } from "react";
+import { Minus, Plus, Save, Trash2 } from "lucide-react";
 import { Switch } from "@/app/components/ui/switch";
+import { cn } from "@/app/components/ui/utils";
 import type { TrajectoryMode } from "@shared/action-sequence";
 
 type TimelineToolbarProps = {
@@ -34,6 +29,23 @@ const formatMajorStep = (sec: number): string => {
   return `${sec}s`;
 };
 
+const toolIconClass =
+  "inline-flex h-7 w-7 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40";
+
+const ToolbarIcon = ({
+  icon: Icon,
+  label,
+  className,
+  ...props
+}: {
+  icon: ElementType;
+  label: string;
+} & ButtonHTMLAttributes<HTMLButtonElement>) => (
+  <button type="button" aria-label={label} className={cn(toolIconClass, className)} {...props}>
+    <Icon className="h-3.5 w-3.5" aria-hidden />
+  </button>
+);
+
 export const TimelineToolbar = ({
   sequenceName,
   trajectoryMode,
@@ -51,19 +63,17 @@ export const TimelineToolbar = ({
   onZoomIn,
   onZoomOut,
 }: TimelineToolbarProps) => (
-  <div className="flex h-9 shrink-0 items-center gap-1 border-t border-border bg-muted/30 px-2">
-    {sequenceName && (
-      <>
-        <span className="max-w-[180px] truncate px-1 text-body-sm font-medium text-foreground">
-          {sequenceName}
-        </span>
-        <div className="mx-1 h-4 w-px bg-border" aria-hidden />
-      </>
-    )}
+  <div className="flex h-9 shrink-0 items-center gap-2 bg-muted px-2">
+    {sequenceName ? (
+      <span className="max-w-45 truncate text-body-sm font-medium text-foreground">
+        {sequenceName}
+      </span>
+    ) : null}
+
     {trajectoryMode && onTrajectoryModeChange ? (
-      <>
-        <label className="inline-flex h-7 items-center gap-2 px-1">
-          <span className="text-body-sm text-foreground">强制轨迹</span>
+      <div className="flex items-center gap-3">
+        <label className="inline-flex h-7 items-center gap-1.5">
+          <span className="text-body-sm text-muted-foreground">强制轨迹</span>
           <Switch
             aria-label="强制轨迹"
             checked={trajectoryMode === "forced"}
@@ -74,10 +84,10 @@ export const TimelineToolbar = ({
         </label>
         {onLoopChange ? (
           <label
-            className="inline-flex h-7 items-center gap-2 px-1"
+            className="inline-flex h-7 items-center gap-1.5"
             title={!canLoop ? loopDisabledHint : undefined}
           >
-            <span className="text-body-sm text-foreground">循环</span>
+            <span className="text-body-sm text-muted-foreground">循环</span>
             <Switch
               aria-label="循环"
               checked={loop && canLoop}
@@ -89,29 +99,39 @@ export const TimelineToolbar = ({
             />
           </label>
         ) : null}
-        <div className="mx-1 h-4 w-px bg-border" aria-hidden />
-      </>
+      </div>
     ) : null}
-    <IconButton icon={Trash2} label="删除" onClick={onDelete} disabled={!canDelete} />
-    <div className="mx-1 h-4 w-px bg-border" aria-hidden />
-    <button
-      type="button"
-      onClick={onSave}
-      className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-transparent px-2.5 text-body-sm text-foreground hover:bg-muted"
-    >
-      <Save className="h-3.5 w-3.5" aria-hidden />
-      保存
-      <ShieldCheck className="h-3.5 w-3.5 text-primary" aria-hidden />
-    </button>
+
     <div className="ml-auto flex items-center gap-1">
-      <IconButton icon={Minus} label="缩小间隔（块变宽）" onClick={onZoomOut} disabled={!canZoomOut} />
-      <span
-        className="min-w-[3rem] text-center font-mono text-mono-sm tabular-nums text-muted-foreground"
-        title="自适应主刻度（秒）"
+      <ToolbarIcon icon={Trash2} label="删除序列" onClick={onDelete} disabled={!canDelete} />
+      <button
+        type="button"
+        onClick={onSave}
+        className="inline-flex h-7 items-center gap-1.5 rounded-sm px-2 text-body-sm text-foreground transition-colors hover:bg-accent"
       >
-        {formatMajorStep(majorStepSec)}
-      </span>
-      <IconButton icon={Plus} label="放大间隔（块变窄）" onClick={onZoomIn} disabled={!canZoomIn} />
+        <Save className="h-3.5 w-3.5" aria-hidden />
+        保存
+      </button>
+      <div className="ml-1 flex h-7 items-center rounded-sm bg-input-background">
+        <ToolbarIcon
+          icon={Minus}
+          label="缩小间隔（块变宽）"
+          onClick={onZoomOut}
+          disabled={!canZoomOut}
+        />
+        <span
+          className="min-w-12 px-1 text-center font-mono text-mono-sm tabular-nums text-muted-foreground"
+          title="自适应主刻度（秒）"
+        >
+          {formatMajorStep(majorStepSec)}
+        </span>
+        <ToolbarIcon
+          icon={Plus}
+          label="放大间隔（块变窄）"
+          onClick={onZoomIn}
+          disabled={!canZoomIn}
+        />
+      </div>
     </div>
   </div>
 );

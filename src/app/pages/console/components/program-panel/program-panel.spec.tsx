@@ -142,7 +142,7 @@ describe("ProgramPanel variants", () => {
       id: "program-a",
       name: "节目 A",
       chapters: [
-        { id: "ch-1", name: "章节 1", items: makeChapterItems(9) },
+        { id: "ch-1", name: "章节 1", items: makeChapterItems(13) },
         { id: "ch-2", name: "章节 2", items: makeChapterItems(1) },
       ],
     };
@@ -153,7 +153,7 @@ describe("ProgramPanel variants", () => {
     );
     expect(screen.getByText("当前")).toBeTruthy();
     expect(screen.getByText("页 1/2 · 当前页")).toBeTruthy();
-    expect(screen.getByText("2页·9项")).toBeTruthy();
+    expect(screen.getByText("2页·13项")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /运行 / })).toBeNull();
     expect(screen.queryByRole("button", { name: "序列" })).toBeNull();
     expect(screen.queryByText("强制")).toBeNull();
@@ -214,7 +214,7 @@ describe("ProgramPanel variants", () => {
             id: "ch-1",
             name: "章节 1",
             type: "chapter",
-            children: Array.from({ length: 9 }, (_, index) => ({
+            children: Array.from({ length: 13 }, (_, index) => ({
               id: String(index + 1),
               name: `S${index + 1}`,
               type: "sequence" as const,
@@ -231,7 +231,7 @@ describe("ProgramPanel variants", () => {
     expect(screen.queryByText("当前")).toBeNull();
     expect(screen.queryByText("当前页")).toBeNull();
     expect(screen.getByText("页 1/2")).toBeTruthy();
-    expect(screen.getByText("2页·9项")).toBeTruthy();
+    expect(screen.getByText("2页·13项")).toBeTruthy();
     expect(screen.getByRole("button", { name: "运行 S1" })).toBeTruthy();
   });
 });

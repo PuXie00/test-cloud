@@ -187,6 +187,55 @@ describe("dynamic preset projections", () => {
     expect(onDynamicPresetResize).toHaveBeenCalledWith("dynamic-1", 1000, 2500);
   });
 
+  it("keeps the last generated tick inside the range so overflow-hidden cannot clip it", () => {
+    const startMs = 1000;
+    const endMs = 2000;
+    const pxPerSecond = 100;
+    render(
+      <PresetProjection
+        blockId="dynamic-1"
+        kind="dynamic-preset"
+        label="水平升降"
+        startMs={startMs}
+        endMs={endMs}
+        generatedAtMs={[startMs, 1500, endMs]}
+        selected={false}
+        viewStartMs={0}
+        pxPerSecond={pxPerSecond}
+        onSelect={vi.fn()}
+        onMove={vi.fn()}
+      />,
+    );
+    const range = screen.getByRole("button", { name: /动态预设.*水平升降/ });
+    const ticks = [...range.querySelectorAll("[data-generated-tick]")] as HTMLElement[];
+    expect(ticks.map((tick) => tick.getAttribute("data-at-ms"))).toEqual(["1000", "1500", "2000"]);
+    const width = Number.parseFloat(range.style.width);
+    const lastLeft = Number.parseFloat(ticks[2]!.style.left);
+    expect(lastLeft).toBeLessThan(width);
+  });
+
+  it("shows the drag time label above the range instead of clipping it", () => {
+    render(
+      <PresetProjection
+        blockId="dynamic-1"
+        kind="dynamic-preset"
+        label="水平升降"
+        startMs={1000}
+        endMs={2000}
+        selected={false}
+        viewStartMs={0}
+        pxPerSecond={100}
+        onSelect={vi.fn()}
+        onMove={vi.fn()}
+      />,
+    );
+    const range = screen.getByRole("button", { name: /动态预设.*水平升降/ });
+    expect(range.className.split(/\s+/)).not.toContain("overflow-hidden");
+    fireEvent.pointerDown(range, { clientX: 100, button: 0 });
+    fireEvent.pointerMove(window, { clientX: 150 });
+    expect(screen.getByText("1.5")).toBeTruthy();
+  });
+
   it("positions the initial-pose badge from startMs", () => {
     const initialPoseAtMs = 1500;
     const startMs = 1000;

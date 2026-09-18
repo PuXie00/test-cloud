@@ -6,6 +6,8 @@ import {
   pxToMs,
   secondsToMs,
   snapTimeMs,
+  stripSequenceFromProgramTree,
+  type ProgramNode,
 } from "./timeline-data";
 
 describe("snapTimeMs", () => {
@@ -39,5 +41,36 @@ describe("seconds conversion", () => {
 describe("pxToMs", () => {
   it("still rounds to 1ms so pan is not on the authored grid", () => {
     expect(pxToMs(84.7, 100)).toBe(847);
+  });
+});
+
+describe("stripSequenceFromProgramTree", () => {
+  const tree = (): ProgramNode[] => [
+    {
+      id: "prog",
+      name: "节目",
+      type: "program",
+      children: [
+        {
+          id: "ch",
+          name: "第一章",
+          type: "chapter",
+          children: [
+            { id: "12", name: "A", type: "sequence" },
+            { id: "13", name: "B", type: "sequence" },
+          ],
+        },
+      ],
+    },
+  ];
+
+  it("removes nested sequence nodes by id and keeps siblings", () => {
+    const next = stripSequenceFromProgramTree(tree(), 12);
+    expect(next[0]?.children?.[0]?.children).toEqual([{ id: "13", name: "B", type: "sequence" }]);
+  });
+
+  it("returns the same tree when the sequence is not referenced", () => {
+    const programs = tree();
+    expect(stripSequenceFromProgramTree(programs, 99)).toBe(programs);
   });
 });

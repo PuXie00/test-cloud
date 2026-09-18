@@ -82,6 +82,7 @@ const mockBuilder = (overrides: Record<string, unknown> = {}) => {
     handleMoveTimelineBlock,
     handleResizeDynamicPreset,
     handleBlockDelete: vi.fn(),
+    handleDeleteSequence: vi.fn(),
     handleBlockCopy: vi.fn(),
     handleBlockPaste: vi.fn(),
     handleTimelinePxPerSecondChange: vi.fn(),
@@ -227,6 +228,55 @@ describe("editor dock sequence editor", () => {
     expect(toggle.getAttribute("data-disabled")).toBeNull();
     fireEvent.click(toggle);
     expect(handleLoopChange).toHaveBeenCalledWith(true);
+  });
+
+  it("deletes multi-selected timeline blocks on window Delete when the dock is unfocused", () => {
+    const handleBlockDelete = vi.fn();
+    mockBuilder({
+      selection: { kind: "multi-block", blockIds: ["pose-a", "pose-b"] },
+      handleBlockDelete,
+    });
+    render(<EditorDock />);
+    fireEvent.keyDown(window, { key: "Delete" });
+    expect(handleBlockDelete).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not delete timeline blocks while typing in an input", () => {
+    const handleBlockDelete = vi.fn();
+    mockBuilder({
+      selection: { kind: "multi-block", blockIds: ["pose-a", "pose-b"] },
+      handleBlockDelete,
+    });
+    render(
+      <>
+        <input aria-label="到达时间" />
+        <EditorDock />
+      </>,
+    );
+    fireEvent.keyDown(screen.getByLabelText("到达时间"), { key: "Delete" });
+    expect(handleBlockDelete).not.toHaveBeenCalled();
+  });
+
+  it("toolbar 删除序列 deletes the current sequence even when blocks are selected", () => {
+    const handleDeleteSequence = vi.fn();
+    const handleBlockDelete = vi.fn();
+    mockBuilder({
+      selection: { kind: "multi-block", blockIds: ["pose-a", "pose-b"] },
+      handleDeleteSequence,
+      handleBlockDelete,
+    });
+    render(<EditorDock />);
+    fireEvent.click(screen.getByRole("button", { name: "删除序列" }));
+    expect(handleDeleteSequence).toHaveBeenCalledTimes(1);
+    expect(handleBlockDelete).not.toHaveBeenCalled();
+  });
+
+  it("enables 删除序列 without a timeline block selection", () => {
+    mockBuilder({ selection: null });
+    render(<EditorDock />);
+    expect(
+      (screen.getByRole("button", { name: "删除序列" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
   });
 
   it("toggles 循环 off when it is already on", () => {

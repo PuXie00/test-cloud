@@ -1,6 +1,6 @@
 import type { TrajectoryMode } from "@shared/action-sequence";
 
-export const PROGRAM_SLOTS_PER_PAGE = 8;
+export const PROGRAM_SLOTS_PER_PAGE = 12;
 
 export type ActionSequence = {
   id: number;

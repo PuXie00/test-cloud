@@ -5,7 +5,6 @@ import { useProgram } from "../../../hooks/use-program";
 import { useExecutorSlots } from "../../../hooks/use-executor-slots";
 import { useSequencePreview } from "../../../hooks/sequence-preview-provider";
 import { ExecutorPaginationBar } from "./executor-pagination-bar";
-import { ExecutorSectionGuide } from "./executor-section-guide";
 import { FaderSlot } from "./fader-slot";
 
 type ExecutorsProps = {
@@ -42,10 +41,11 @@ export const Executors = ({ onTriggerSequence }: ExecutorsProps) => {
     <section className="flex h-full flex-col bg-muted">
       <ExecutorPaginationBar />
       <div className="min-h-0 flex-1 overflow-y-hidden p-3">
-        <div className="flex h-full min-h-0 gap-2">
-          <ExecutorSectionGuide className="shrink-0 self-stretch" />
-          <div className="min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
-            <div className="grid h-full w-full grid-cols-[repeat(8,minmax(72px,1fr))] gap-2">
+        <div className="h-full min-h-0 min-w-0 overflow-x-auto overflow-y-hidden">
+          <div
+            className="grid h-full w-full gap-2"
+            style={{ gridTemplateColumns: `repeat(${PROGRAM_SLOTS_PER_PAGE}, minmax(72px, 1fr))` }}
+          >
             {faderSlots.map((slot) => {
               const repairMessage =
                 document && slot.sequence
@@ -76,7 +76,6 @@ export const Executors = ({ onTriggerSequence }: ExecutorsProps) => {
                 />
               );
             })}
-            </div>
           </div>
         </div>
       </div>

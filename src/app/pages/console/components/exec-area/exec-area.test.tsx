@@ -906,7 +906,7 @@ describe("ExecArea launch guard", () => {
           durationMs: 2000,
         },
       }),
-      ...Array.from({ length: 6 }, (_, idx) => makeFaderSlot({ index: idx + 2 })),
+      ...Array.from({ length: 10 }, (_, idx) => makeFaderSlot({ index: idx + 2 })),
     ];
   });
 
@@ -914,7 +914,7 @@ describe("ExecArea launch guard", () => {
     render(withMode(<ExecArea />));
 
     const readyButtons = screen.getAllByRole("button", { name: /Ready/i }) as HTMLButtonElement[];
-    expect(readyButtons).toHaveLength(8);
+    expect(readyButtons).toHaveLength(12);
     expect(readyButtons[0]!.disabled).toBe(true);
     expect(readyButtons[1]!.disabled).toBe(false);
     expect(readyButtons[2]!.disabled).toBe(true);

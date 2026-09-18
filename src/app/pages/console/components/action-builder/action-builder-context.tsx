@@ -57,6 +57,7 @@ import {
 import { clampCursorMs } from "./timeline/timeline-view-extent";
 import {
   clampTimelinePxPerSecond,
+  stripSequenceFromProgramTree,
   TIMELINE_PX_PER_SECOND_DEFAULT,
   TIMELINE_ZOOM_FACTOR,
   type ControlledObject as TimelineControlledObject,
@@ -530,6 +531,17 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     [commitMotionProjection, handleSequenceSelect],
   );
 
+  const handleDeleteSequence = useCallback(() => {
+    const id = selectedSequenceId;
+    if (id === null) return;
+    const remaining = motionRef.current.sequences.filter((seq) => seq.id !== id);
+    if (remaining.length === motionRef.current.sequences.length) return;
+    const nextPrograms = stripSequenceFromProgramTree(motionRef.current.programs, id);
+    if (!commitMotionProjection({ sequences: remaining, programs: nextPrograms })) return;
+    setSelectedProgramNodeId((prev) => (prev === String(id) ? null : prev));
+    handleSequenceSelect(remaining[0]?.id ?? null);
+  }, [selectedSequenceId, commitMotionProjection, handleSequenceSelect]);
+
   const handleApplyStaticPreset = useCallback(
     (presetId: string, objectIds: number[]) => {
       if (!selectedSequenceId || !sequence) {
@@ -781,6 +793,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleCreatePose,
       handleCreateSetEnabled,
       handleCreateSequence,
+      handleDeleteSequence,
       handleApplyStaticPreset,
       handleApplyDynamicPreset,
       handleProgramNodeSelect: setSelectedProgramNodeId,
@@ -836,6 +849,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleCreatePose,
       handleCreateSetEnabled,
       handleCreateSequence,
+      handleDeleteSequence,
       handleApplyStaticPreset,
       handleApplyDynamicPreset,
       handleChapterAdd,

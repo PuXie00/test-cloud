@@ -92,6 +92,50 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
     );
   });
 
+  it("handleDeleteSequence removes the selected sequence and program refs", async () => {
+    const { result } = renderBuilderProjectAndStore();
+    await openFixtureProject(result);
+
+    act(() => result.current.builder.handleCreateSequence([]));
+    const keepId = result.current.builder.selectedSequenceId!;
+    act(() => result.current.builder.handleCreateSequence([]));
+    const deleteId = result.current.builder.selectedSequenceId!;
+    expect(deleteId).not.toBe(keepId);
+
+    act(() => {
+      result.current.builder.handleProgramItemInsert("ch-01", {
+        kind: "sequence",
+        refId: deleteId,
+      });
+    });
+    expect(
+      result.current.project.currentProject!.document!.motion.programs.some((program) =>
+        program.chapters.some((chapter) =>
+          chapter.items.some((item) => item.kind === "sequence" && item.refId === deleteId),
+        ),
+      ),
+    ).toBe(true);
+
+    act(() => result.current.builder.handleDeleteSequence());
+
+    expect(result.current.builder.lastPersistError).toBeNull();
+    expect(result.current.builder.sequences.some((sequence) => sequence.id === deleteId)).toBe(
+      false,
+    );
+    expect(result.current.builder.selectedSequenceId).toBe(keepId);
+    const document = result.current.project.currentProject!.document!;
+    expect(document.motion.actionSequences.some((sequence) => sequence.id === deleteId)).toBe(
+      false,
+    );
+    expect(
+      document.motion.programs.some((program) =>
+        program.chapters.some((chapter) =>
+          chapter.items.some((item) => item.kind === "sequence" && item.refId === deleteId),
+        ),
+      ),
+    ).toBe(false);
+  });
+
   it("supports adding a pose to the selected sequence", async () => {
     const { result } = renderBuilderProjectAndStore();
     await openFixtureProject(result);

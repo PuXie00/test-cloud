@@ -99,7 +99,6 @@ export const ObjectSelectionPanel = ({
                         <span className="text-body-sm text-muted-foreground">
                           {preset.description}
                         </span>
-                        <span className="font-mono text-mono-sm tabular-nums text-show">1 位姿/物体</span>
                       </button>
                     );
                   })}
@@ -123,9 +122,7 @@ export const ObjectSelectionPanel = ({
                         <span className="text-body-sm text-muted-foreground">
                           {preset.description}
                         </span>
-                        <span className="font-mono text-mono-sm tabular-nums text-secondary">
-                          ≥2 位姿/物体
-                        </span>
+                       
                       </button>
                     );
                   })}
