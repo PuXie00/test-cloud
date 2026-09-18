@@ -45,6 +45,7 @@ export type ActionBuilderContextValue = {
   handleObjectSelect: (objectId: number) => void;
   handleObjectsSelect: (objectIds: number[]) => void;
   handleCursorChange: (ms: number) => void;
+  handlePlaybackCursorChange: (ms: number) => void;
   handleInsertTimelineBlock: (block: TimelineBlock) => boolean;
   handleReplaceTimelineBlock: (block: TimelineBlock) => boolean;
   handleApplyPoseAxisWrite: (blockIds: readonly string[], write: PoseAxisWrite) => boolean;

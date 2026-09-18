@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, ElementType } from "react";
-import { Minus, Plus, Save, Trash2 } from "lucide-react";
+import { Minus, Pause, Play, Plus, RotateCcw, Save, Trash2 } from "lucide-react";
 import { Switch } from "@/app/components/ui/switch";
 import { cn } from "@/app/components/ui/utils";
 import type { TrajectoryMode } from "@shared/action-sequence";
@@ -17,6 +17,10 @@ type TimelineToolbarProps = {
   canZoomIn: boolean;
   canZoomOut: boolean;
   canDelete: boolean;
+  canPlay?: boolean;
+  isPlaying?: boolean;
+  atEnd?: boolean;
+  onPlayToggle?: () => void;
   onSave?: () => void;
   onDelete?: () => void;
   onZoomIn?: () => void;
@@ -58,16 +62,34 @@ export const TimelineToolbar = ({
   canZoomIn,
   canZoomOut,
   canDelete,
+  canPlay = false,
+  isPlaying = false,
+  atEnd = false,
+  onPlayToggle,
   onSave,
   onDelete,
   onZoomIn,
   onZoomOut,
-}: TimelineToolbarProps) => (
-  <div className="flex h-9 shrink-0 items-center gap-2 bg-muted px-2">
+}: TimelineToolbarProps) => {
+  const playLabel = isPlaying ? "暂停" : atEnd ? "重新播放" : "播放";
+  const PlayIcon = isPlaying ? Pause : atEnd ? RotateCcw : Play;
+
+  return (
+    <div className="flex h-9 shrink-0 items-center gap-2 bg-muted px-2">
     {sequenceName ? (
       <span className="max-w-45 truncate text-body-sm font-medium text-foreground">
         {sequenceName}
       </span>
+    ) : null}
+
+    {onPlayToggle ? (
+      <ToolbarIcon
+        icon={PlayIcon}
+        label={playLabel}
+        onClick={onPlayToggle}
+        disabled={!canPlay && !isPlaying}
+        className="text-primary hover:text-primary"
+      />
     ) : null}
 
     {trajectoryMode && onTrajectoryModeChange ? (
@@ -134,4 +156,5 @@ export const TimelineToolbar = ({
       </div>
     </div>
   </div>
-);
+  );
+};

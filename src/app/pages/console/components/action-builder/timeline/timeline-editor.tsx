@@ -37,6 +37,7 @@ import {
   usedBandScreenRect,
   viewPxFromMs,
   viewStartForZoomAnchor,
+  followPlayheadViewStart,
   viewWindowEndMs,
   viewportDurationMs,
 } from "./timeline-view-extent";
@@ -47,6 +48,7 @@ export type TimelineEditorProps = {
   objects: TimelineControlledObject[];
   selection: SequenceSelection;
   cursorMs: number;
+  isPlaying?: boolean;
   timelinePxPerSecond: number;
   onSelectionChange: (selection: SequenceSelection) => void;
   onCursorChange: (ms: number) => void;
@@ -111,6 +113,7 @@ export const TimelineEditor = ({
   objects,
   selection,
   cursorMs,
+  isPlaying = false,
   timelinePxPerSecond,
   onSelectionChange,
   onCursorChange,
@@ -153,6 +156,17 @@ export const TimelineEditor = ({
   const canvasWidth = canvasWidthPx(viewportWidth);
   const contentWidth = Math.max(canvasWidth - TIMELINE_PAD_LEFT, 1);
   const used = usedBandScreenRect(occupiedEndMs, viewStartMs, pxPerSecond);
+
+  useEffect(() => {
+    if (!isPlaying) return;
+    setViewStartMs((current) =>
+      followPlayheadViewStart({
+        cursorMs,
+        viewStartMs: current,
+        viewportMs,
+      }),
+    );
+  }, [isPlaying, cursorMs, viewportMs]);
   const majorTicks = useMemo(
     () =>
       computeNiceTimeTicks(pxPerSecond, viewEndMs, viewStartMs).ticks.filter(

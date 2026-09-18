@@ -22,6 +22,19 @@ export const TIMELINE_H_SCROLL_MIN_THUMB_PX = 24;
 export const viewWindowEndMs = (viewStartMs: number, viewportMs: number): number =>
   viewStartMs + viewportMs;
 
+/** 播放中游标跑出窗口时平移 viewStart，使游标落在 [viewStart, viewEnd) 内。 */
+export const followPlayheadViewStart = (input: {
+  cursorMs: number;
+  viewStartMs: number;
+  viewportMs: number;
+}): number => {
+  if (input.viewportMs <= 0) return clampViewStartMs(input.viewStartMs);
+  if (input.cursorMs < input.viewStartMs) return clampViewStartMs(input.cursorMs);
+  const viewEndMs = viewWindowEndMs(input.viewStartMs, input.viewportMs);
+  if (input.cursorMs < viewEndMs) return input.viewStartMs;
+  return clampViewStartMs(input.cursorMs - input.viewportMs + 1);
+};
+
 export const totEndMs = (occupiedEndMs: number, viewEndMs: number, viewportMs: number): number =>
   Math.max(occupiedEndMs, viewEndMs, viewportMs);
 

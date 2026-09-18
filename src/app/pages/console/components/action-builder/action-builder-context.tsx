@@ -327,6 +327,10 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     setCursorMs(clampCursorMs(ms));
   }, []);
 
+  const handlePlaybackCursorChange = useCallback((ms: number) => {
+    setCursorMs(Math.max(0, ms));
+  }, []);
+
   const sequenceEditOptions = useMemo<SequenceEditOptions>(
     () => ({
       minAccelTimeByObject: (objectId) => getTimelineObject(objectId)?.minAccelTimeByAxis,
@@ -774,6 +778,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleObjectSelect,
       handleObjectsSelect,
       handleCursorChange,
+      handlePlaybackCursorChange,
       handleInsertTimelineBlock,
       handleReplaceTimelineBlock,
       handleApplyPoseAxisWrite,
@@ -830,6 +835,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleObjectSelect,
       handleObjectsSelect,
       handleCursorChange,
+      handlePlaybackCursorChange,
       handleInsertTimelineBlock,
       handleReplaceTimelineBlock,
       handleApplyPoseAxisWrite,

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
 import { TIMELINE_PAD_LEFT, msToPx } from "./timeline-data";
 import { TimelineEditor } from "./timeline-editor";
-import { createTimelineProps, installTimelinePaneWidth } from "./timeline-test-helpers";
+import { createTimelineProps, installTimelinePaneWidth, TIMELINE_TEST_PANE_PX } from "./timeline-test-helpers";
 
 const sequence: ActionSequenceConfig = {
   id: 1,
@@ -206,6 +206,16 @@ describe("sequence track", () => {
       `${TIMELINE_PAD_LEFT + msToPx(1000, 100)}px`,
     );
     expect(screen.queryByText("起始")).toBeNull();
+  });
+
+  it("pans the playhead into the window while playing", () => {
+    const { rerender } = render(
+      <TimelineEditor {...createTimelineProps(sequence)} cursorMs={0} isPlaying />,
+    );
+    rerender(<TimelineEditor {...createTimelineProps(sequence)} cursorMs={9000} isPlaying />);
+    const line = document.querySelector("[data-testid='timeline-playhead-line']") as HTMLElement;
+    expect(Number.parseFloat(line.style.left)).toBeLessThan(TIMELINE_TEST_PANE_PX);
+    expect(Number.parseFloat(line.style.left)).toBeGreaterThan(TIMELINE_PAD_LEFT);
   });
 
   it("keeps the playhead head and shaft on one centered line", () => {

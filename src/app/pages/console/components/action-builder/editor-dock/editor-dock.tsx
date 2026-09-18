@@ -17,6 +17,7 @@ import {
 import { pickNiceMajorStepSec } from "../timeline/timeline-ticks";
 import { TimelineEditor } from "../timeline/timeline-editor";
 import { TimelineToolbar } from "../timeline/timeline-toolbar";
+import { useTimelinePlayback } from "../timeline/use-timeline-playback";
 
 const isEditableTarget = (target: EventTarget | null): boolean => {
   if (!(target instanceof HTMLElement)) return false;
@@ -43,6 +44,7 @@ const SequenceEditor = () => {
     timelinePxPerSecond,
     handleSelectionChange,
     handleCursorChange,
+    handlePlaybackCursorChange,
     handleMoveTimelineBlock,
     handleShiftTimelineBlocks,
     handleShiftTimelineBlocksEnd,
@@ -72,18 +74,6 @@ const SequenceEditor = () => {
     [timelinePxPerSecond],
   );
 
-  useEffect(() => {
-    const onWindowKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (isEditableTarget(event.target)) return;
-      if (event.key !== "Delete" && event.key !== "Backspace") return;
-      if (selectedBlockIds.length === 0) return;
-      event.preventDefault();
-      handleBlockDelete();
-    };
-    window.addEventListener("keydown", onWindowKeyDown);
-    return () => window.removeEventListener("keydown", onWindowKeyDown);
-  }, [handleBlockDelete, selectedBlockIds.length]);
-
   const resolved = useMemo(() => {
     if (!sequence) return null;
     try {
@@ -92,6 +82,33 @@ const SequenceEditor = () => {
       return null;
     }
   }, [sequence]);
+
+  const totalMs = resolved?.totalMs ?? 0;
+  const canPlay = resolved !== null && totalMs > 0;
+  const { isPlaying, toggle: handlePlayToggle } = useTimelinePlayback({
+    cursorMs,
+    totalMs,
+    onCursorMs: handlePlaybackCursorChange ?? (() => {}),
+    pauseKey: sequence,
+  });
+
+  useEffect(() => {
+    const onWindowKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (isEditableTarget(event.target)) return;
+      if (event.key === " " || event.code === "Space") {
+        if (!canPlay && !isPlaying) return;
+        event.preventDefault();
+        handlePlayToggle();
+        return;
+      }
+      if (event.key !== "Delete" && event.key !== "Backspace") return;
+      if (selectedBlockIds.length === 0) return;
+      event.preventDefault();
+      handleBlockDelete();
+    };
+    window.addEventListener("keydown", onWindowKeyDown);
+    return () => window.removeEventListener("keydown", onWindowKeyDown);
+  }, [canPlay, handleBlockDelete, handlePlayToggle, isPlaying, selectedBlockIds.length]);
 
   if (!sequence) return null;
 
@@ -130,6 +147,10 @@ const SequenceEditor = () => {
         canZoomIn={timelinePxPerSecond > TIMELINE_PX_PER_SECOND_MIN}
         canZoomOut={timelinePxPerSecond < TIMELINE_PX_PER_SECOND_MAX}
         canDelete
+        canPlay={canPlay}
+        isPlaying={isPlaying}
+        atEnd={totalMs > 0 && cursorMs >= totalMs}
+        onPlayToggle={handlePlayToggle}
         onSave={handleSave}
         onDelete={handleDeleteSequence}
         onZoomIn={handleTimelineZoomIn}
@@ -158,6 +179,7 @@ const SequenceEditor = () => {
           objects={timelineObjects}
           selection={selection}
           cursorMs={cursorMs}
+          isPlaying={isPlaying}
           timelinePxPerSecond={timelinePxPerSecond}
           onSelectionChange={handleSelectionChange}
           onCursorChange={handleCursorChange}

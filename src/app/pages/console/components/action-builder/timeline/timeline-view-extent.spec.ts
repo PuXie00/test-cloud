@@ -15,6 +15,7 @@ import {
   viewStartFromThumbDrag,
   viewWindowEndMs,
   viewportDurationMs,
+  followPlayheadViewStart,
 } from "./timeline-view-extent";
 import { TIMELINE_PAD_LEFT, msToPx } from "./timeline-data";
 
@@ -40,6 +41,14 @@ describe("timeline view extent", () => {
 describe("View2D window", () => {
   it("viewWindowEndMs is viewStart plus viewport", () => {
     expect(viewWindowEndMs(2000, 4000)).toBe(6000);
+  });
+
+  it("pans viewStart only when the playhead leaves the window", () => {
+    expect(followPlayheadViewStart({ cursorMs: 500, viewStartMs: 0, viewportMs: 2000 })).toBe(0);
+    expect(followPlayheadViewStart({ cursorMs: 2000, viewStartMs: 0, viewportMs: 2000 })).toBe(1);
+    expect(followPlayheadViewStart({ cursorMs: 2500, viewStartMs: 0, viewportMs: 2000 })).toBe(501);
+    expect(followPlayheadViewStart({ cursorMs: 100, viewStartMs: 500, viewportMs: 2000 })).toBe(100);
+    expect(followPlayheadViewStart({ cursorMs: 100, viewStartMs: 0, viewportMs: 0 })).toBe(0);
   });
 
   it("totEndMs is max of occupied, view end, and one viewport", () => {

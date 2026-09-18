@@ -79,6 +79,7 @@ const mockBuilder = (overrides: Record<string, unknown> = {}) => {
     dockMode: "sequence",
     handleSelectionChange,
     handleCursorChange: vi.fn(),
+    handlePlaybackCursorChange: vi.fn(),
     handleMoveTimelineBlock,
     handleResizeDynamicPreset,
     handleBlockDelete: vi.fn(),
@@ -305,5 +306,80 @@ describe("editor dock sequence editor", () => {
     expect(toggle.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(toggle);
     expect(handleLoopChange).toHaveBeenCalledWith(false);
+  });
+
+  it("disables 播放 when the sequence has no duration", () => {
+    render(<EditorDock />);
+    expect((screen.getByRole("button", { name: "播放" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
+
+  it("disables 播放 when the sequence cannot resolve", () => {
+    const broken: ActionSequenceConfig = {
+      id: 97,
+      name: "Broken",
+      trajectoryMode: "non-forced",
+      blocks: [
+        {
+          id: "bad-preset",
+          kind: "static-preset",
+          presetId: "not-a-preset",
+          atMs: 1000,
+          orderedObjectIds: [7],
+          params: { v1: 0, v2: 0, v3: 0 },
+        },
+      ],
+      segments: [],
+    };
+    mockBuilder({ sequence: broken });
+    render(<EditorDock />);
+    expect((screen.getByRole("button", { name: "播放" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
+
+  it("toggles playback from the toolbar and Space, but not while typing", () => {
+    const playable: ActionSequenceConfig = {
+      id: 1,
+      name: "Seq",
+      trajectoryMode: "non-forced",
+      blocks: [
+        {
+          id: "a",
+          kind: "pose",
+          objectId: 7,
+          atMs: 0,
+          pose: { v1: 0, v2: 0, v3: 0 },
+        },
+        {
+          id: "b",
+          kind: "pose",
+          objectId: 7,
+          atMs: 2000,
+          pose: { v1: 100, v2: 0, v3: 0 },
+        },
+      ],
+      segments: [],
+    };
+    mockBuilder({ sequence: playable });
+    render(
+      <>
+        <input aria-label="到达时间" />
+        <EditorDock />
+      </>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "播放" }));
+    expect(screen.getByRole("button", { name: "暂停" })).toBeTruthy();
+    expect(capturedEditor.current?.isPlaying).toBe(true);
+
+    fireEvent.keyDown(window, { key: " " });
+    expect(screen.getByRole("button", { name: "播放" })).toBeTruthy();
+    expect(capturedEditor.current?.isPlaying).toBe(false);
+
+    fireEvent.keyDown(screen.getByLabelText("到达时间"), { key: " " });
+    expect(screen.getByRole("button", { name: "播放" })).toBeTruthy();
+    expect(capturedEditor.current?.isPlaying).toBe(false);
   });
 });
