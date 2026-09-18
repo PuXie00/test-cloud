@@ -1,7 +1,5 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -10,36 +8,18 @@ import {
   type ReactNode,
 } from "react";
 import { toast } from "sonner";
-import { resolveActionSequence, type ResolvedActionSequence } from "@/app/project/action-sequence/resolve-sequence";
+import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
 import { getMotionItemRepairIssue } from "@/app/project/project-motion-readiness";
 import { useProject } from "@/app/project/use-project";
 import { useConsoleNav } from "./use-console-nav";
 import { advancePreviewCursor } from "./sequence-preview";
-
-export type SequencePreviewMultiplier = 1 | 2 | 4;
-
-export type SequencePreviewState = {
-  sequenceId: number | null;
-  cursorMs: number;
-  isPlaying: boolean;
-  holdMode: boolean;
-  faderPercent: number;
-  multiplier: SequencePreviewMultiplier;
-  totalMs: number;
-  resolved: ResolvedActionSequence | null;
-};
-
-export type StartPreviewOptions = { faderPercent?: number; autoplay?: boolean; holdMode?: boolean };
-
-export type SequencePreviewValue = SequencePreviewState & {
-  startPreview: (sequenceId: number, options?: StartPreviewOptions) => void;
-  togglePreview: (sequenceId: number, options?: StartPreviewOptions) => void;
-  stopPreview: () => void;
-  setCursorMs: (ms: number) => void;
-  play: () => void;
-  pause: () => void;
-  setMultiplier: (m: SequencePreviewMultiplier) => void;
-};
+import {
+  SequencePreviewContext,
+  type SequencePreviewMultiplier,
+  type SequencePreviewState,
+  type SequencePreviewValue,
+  type StartPreviewOptions,
+} from "./sequence-preview-context";
 
 const PREVIEW_UNAVAILABLE = "动作序列无法预览";
 
@@ -53,8 +33,6 @@ const IDLE_STATE: SequencePreviewState = {
   totalMs: 0,
   resolved: null,
 };
-
-const SequencePreviewContext = createContext<SequencePreviewValue | null>(null);
 
 export const SequencePreviewProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const { currentProject } = useProject();
@@ -234,10 +212,4 @@ export const SequencePreviewProvider: FC<{ children: ReactNode }> = ({ children 
   );
 
   return <SequencePreviewContext.Provider value={value}>{children}</SequencePreviewContext.Provider>;
-};
-
-export const useSequencePreview = (): SequencePreviewValue => {
-  const ctx = useContext(SequencePreviewContext);
-  if (!ctx) throw new Error("useSequencePreview must be used inside SequencePreviewProvider");
-  return ctx;
 };

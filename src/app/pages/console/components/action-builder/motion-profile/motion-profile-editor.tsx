@@ -25,6 +25,7 @@ export type MotionProfileEditorProps = {
   onChange: (profiles: AxisMotionProfiles) => void;
   disabled?: boolean;
   compact?: boolean;
+  ownedAxes?: readonly VirtualAxisId[];
   axisContext?: MotionProfileAxisContext;
   segmentContext?: {
     fromRef: string;
@@ -280,12 +281,14 @@ export const MotionProfileEditor = ({
   onChange,
   disabled = false,
   compact = false,
+  ownedAxes,
   axisContext,
   segmentContext,
 }: MotionProfileEditorProps) => {
-  const enabledAxes = axisContext
+  const enabledAxes = (axisContext
     ? resolveEnabledAxes(axisContext.enabledAxes)
-    : VIRTUAL_AXIS_IDS;
+    : VIRTUAL_AXIS_IDS
+  ).filter((axis) => ownedAxes === undefined || ownedAxes.includes(axis));
   const [selectedAxis, setSelectedAxis] = useState<VirtualAxisId>(() =>
     axisContext ? pickDefaultAxis(enabledAxes, axisContext.travel) : "v1",
   );

@@ -50,6 +50,108 @@ const pose = (
 });
 
 describe("resolveActionSequence", () => {
+  it("carries unowned axes from the object's latest pose strictly before a preset point", () => {
+    const resolved = resolveActionSequence(
+      sequenceOf([
+        pose("prior", 7, 500, { v1: 1, v2: 10, v3: 5 }),
+        {
+          id: "slope",
+          kind: "static-preset",
+          presetId: "static-slope",
+          atMs: 1000,
+          orderedObjectIds: [7, 8],
+          params: { baseV1: 0, stepV1: 100, v2: 99, v3: 88 },
+        },
+      ]),
+    );
+
+    expect(resolved.poses.filter((point) => point.sourceKind === "static-preset").map((point) => [
+      point.objectId,
+      point.pose,
+    ])).toEqual([
+      [7, { v1: 0, v2: 10, v3: 5 }],
+      [8, { v1: 100, v2: 0, v3: 0 }],
+    ]);
+  });
+
+  it("fills unowned axes with 0 when a preset has no earlier pose", () => {
+    const resolved = resolveActionSequence(
+      sequenceOf([
+        {
+          id: "slope",
+          kind: "static-preset",
+          presetId: "static-slope",
+          atMs: 1000,
+          orderedObjectIds: [7, 8],
+          params: { baseV1: 0, stepV1: 100 },
+        },
+      ]),
+    );
+
+    expect(resolved.poses.map((point) => point.pose)).toEqual([
+      { v1: 0, v2: 0, v3: 0 },
+      { v1: 100, v2: 0, v3: 0 },
+    ]);
+  });
+
+  it("does not carry from another pose at the same millisecond", () => {
+    const resolved = resolveActionSequence(
+      sequenceOf([
+        pose("same-ms", 7, 1000, { v1: 1, v2: 10, v3: 5 }),
+        {
+          id: "slope",
+          kind: "static-preset",
+          presetId: "static-slope",
+          atMs: 1000,
+          orderedObjectIds: [7, 8],
+          params: { baseV1: 0, stepV1: 100 },
+        },
+      ]),
+    );
+
+    const generated = resolved.poses.find(
+      (point) => point.sourceKind === "static-preset" && point.objectId === 7,
+    );
+    expect(generated?.pose).toEqual({ v1: 0, v2: 0, v3: 0 });
+  });
+
+  it("holds pre-startMs swing across dynamic interior samples", () => {
+    const resolved = resolveActionSequence(
+      sequenceOf([
+        pose("prior", 7, 0, { v1: 0, v2: 10, v3: 5 }),
+        {
+          id: "wave",
+          kind: "dynamic-preset",
+          presetId: "dynamic-wave",
+          startMs: 1000,
+          endMs: 3000,
+          orderedObjectIds: [7, 8],
+          params: {
+            baseV1: 1000,
+            amplitude: 500,
+            cycles: 1,
+            direction: 1,
+            intervalDeg: 90,
+            sampleIntervalMs: 1000,
+            v2: 99,
+            v3: 88,
+          },
+          profiles: axisProfiles(200, 200),
+        },
+      ]),
+    );
+
+    const object7 = resolved.poses.filter(
+      (point) => point.sourceKind === "dynamic-preset" && point.objectId === 7,
+    );
+    expect(object7.length).toBeGreaterThan(2);
+    expect(object7.every((point) => point.pose.v2 === 10 && point.pose.v3 === 5)).toBe(true);
+    const object8 = resolved.poses.filter(
+      (point) => point.sourceKind === "dynamic-preset" && point.objectId === 8,
+    );
+    expect(object8.every((point) => point.pose.v2 === 0 && point.pose.v3 === 0)).toBe(true);
+  });
+
   it("derives the earliest timed pose as each object's initial pose", () => {
     const resolved = resolveActionSequence(sequenceOf([
       pose("later", 7, 5000, { v1: 50, v2: 0, v3: 0 }),

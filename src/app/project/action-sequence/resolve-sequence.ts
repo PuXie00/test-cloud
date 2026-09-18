@@ -1,5 +1,6 @@
+import type { VirtualAxisId } from "../project-document-types";
 import { cloneAxisProfiles, createDefaultAxisProfiles, syncAxisProfileToTravel } from "./motion-profile";
-import { resolvePreset } from "./preset-registry";
+import { getPresetDefinition, resolvePreset } from "./preset-registry";
 import type {
   ActionSequenceConfig,
   DynamicPresetBlock,
@@ -153,6 +154,54 @@ const requireDynamicOwner = (
   return owner;
 };
 
+const ownedAxesByBlockId = (
+  blocks: ActionSequenceConfig["blocks"],
+): Map<string, readonly VirtualAxisId[]> => {
+  const owned = new Map<string, readonly VirtualAxisId[]>();
+  for (const block of blocks) {
+    if (block.kind !== "static-preset" && block.kind !== "dynamic-preset") continue;
+    const axes = getPresetDefinition(block.presetId)?.ownedAxes;
+    if (axes === undefined) continue;
+    owned.set(block.id, axes);
+  }
+  return owned;
+};
+
+const carryUnownedAxes = (
+  timed: ResolvedPosePoint[],
+  ownedByBlockId: ReadonlyMap<string, readonly VirtualAxisId[]>,
+): void => {
+  const lastByObject = new Map<number, ModelPose>();
+  let index = 0;
+  while (index < timed.length) {
+    const atMs = timed[index]?.atMs;
+    if (atMs === undefined) break;
+    let end = index + 1;
+    while (end < timed.length && timed[end]?.atMs === atMs) end += 1;
+    for (let cursor = index; cursor < end; cursor += 1) {
+      const point = timed[cursor];
+      if (point === undefined) continue;
+      const owned =
+        point.sourceBlockId === null ? undefined : ownedByBlockId.get(point.sourceBlockId);
+      if (owned === undefined) continue;
+      const previous = lastByObject.get(point.objectId);
+      const next = clonePose(point.pose);
+      for (const axis of AXES) {
+        if (!owned.includes(axis)) {
+          next[axis] = previous?.[axis] ?? 0;
+        }
+      }
+      point.pose = next;
+    }
+    for (let cursor = index; cursor < end; cursor += 1) {
+      const point = timed[cursor];
+      if (point === undefined) continue;
+      lastByObject.set(point.objectId, point.pose);
+    }
+    index = end;
+  }
+};
+
 export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedActionSequence => {
   const timed: ResolvedPosePoint[] = [];
   const commands: InstructionBlock[] = [];
@@ -205,6 +254,8 @@ export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedA
     if (delta !== 0) return delta;
     return compareSourceRef(left.sourceRef, right.sourceRef);
   });
+
+  carryUnownedAxes(timed, ownedAxesByBlockId(sequence.blocks));
 
   commands.sort((left, right) => {
     if (left.atMs !== right.atMs) return left.atMs - right.atMs;

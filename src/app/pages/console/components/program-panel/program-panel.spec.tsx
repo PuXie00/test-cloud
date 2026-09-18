@@ -98,7 +98,7 @@ const {
   previewSequenceIdRef: { current: null as number | null },
 }));
 
-vi.mock("../../hooks/sequence-preview-provider", () => ({
+vi.mock("../../hooks/use-sequence-preview", () => ({
   useSequencePreview: () => ({
     sequenceId: previewSequenceIdRef.current,
     togglePreview: togglePreviewMock,

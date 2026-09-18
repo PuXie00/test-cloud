@@ -23,7 +23,6 @@ export type FittedPresetParams = {
 };
 
 const FALLBACK_V1: AxisRange = { min: 0, max: 1000 };
-const FALLBACK_SWING: AxisRange = { min: -20, max: 20 };
 
 const isRange = (value: AxisRange | undefined): value is AxisRange =>
   value !== undefined && Number.isFinite(value.min) && Number.isFinite(value.max) && value.min <= value.max;
@@ -54,8 +53,6 @@ const clampTo = (value: number, range: AxisRange): number =>
 
 const snapMs = (ms: number): number =>
   Math.max(PRESET_TIME_STEP_MS, Math.round(ms / PRESET_TIME_STEP_MS) * PRESET_TIME_STEP_MS);
-
-const restAxisValue = (range: AxisRange): number => clampTo(0, range);
 
 const preferredAmplitude = (range: AxisRange, requested = 100): number => {
   const span = range.max - range.min;
@@ -128,15 +125,12 @@ export const fitPresetParams = (
   if (!definition) return null;
 
   const v1 = rangeOf(participants, "v1", FALLBACK_V1);
-  const v2 = rangeOf(participants, "v2", FALLBACK_SWING);
-  const v3 = rangeOf(participants, "v3", FALLBACK_SWING);
-  const rest = { v2: restAxisValue(v2), v3: restAxisValue(v3) };
   const count = Math.max(participants.length, 2);
   const minAccelSec = minAccelSecOf(participants);
   const maxVelocity = maxVelocityOf(participants);
 
   if (presetId === "static-flat") {
-    return { durationMs: PRESET_DEFAULT_DURATION_MS, params: { v1: midOf(v1), ...rest } };
+    return { durationMs: PRESET_DEFAULT_DURATION_MS, params: { v1: midOf(v1) } };
   }
 
   if (presetId === "static-slope") {
@@ -144,20 +138,20 @@ export const fitPresetParams = (
     const stepV1 = count <= 1 ? 0 : Math.min(100, span / Math.max(1, count - 1));
     const occupied = stepV1 * (count - 1);
     const baseV1 = v1.min + (span - occupied) / 2;
-    return { durationMs: PRESET_DEFAULT_DURATION_MS, params: { baseV1, stepV1, ...rest } };
+    return { durationMs: PRESET_DEFAULT_DURATION_MS, params: { baseV1, stepV1 } };
   }
 
   if (presetId === "static-arc") {
     const amplitude = preferredAmplitude(v1);
     const baseV1 = midOf(v1) - amplitude / 2;
-    return { durationMs: PRESET_DEFAULT_DURATION_MS, params: { baseV1, amplitude, ...rest } };
+    return { durationMs: PRESET_DEFAULT_DURATION_MS, params: { baseV1, amplitude } };
   }
 
   if (presetId === "static-wave") {
     const amplitude = preferredAmplitude(v1);
     return {
       durationMs: PRESET_DEFAULT_DURATION_MS,
-      params: { baseV1: midOf(v1), amplitude, phaseDeg: 0, intervalDeg: 90, ...rest },
+      params: { baseV1: midOf(v1), amplitude, phaseDeg: 0, intervalDeg: 90 },
     };
   }
 
@@ -168,7 +162,7 @@ export const fitPresetParams = (
     const { start, end } = centeredSpan(v1, travel);
     return {
       durationMs,
-      params: { startV1: start, targetV1: end, ...rest },
+      params: { startV1: start, targetV1: end },
     };
   }
 
@@ -186,7 +180,6 @@ export const fitPresetParams = (
         direction: 1,
         intervalDeg: 90,
         sampleIntervalMs,
-        ...rest,
       },
     };
   }

@@ -566,6 +566,22 @@ describe("SequencePropertiesPanel edits", () => {
 
 
 
+  it("does not render generic swing fields on preset properties", () => {
+    renderPanel({ selection: { kind: "block", blockId: "static" } });
+    expect(screen.queryByLabelText("摆动 X")).toBeNull();
+    expect(screen.queryByLabelText("摆动 Y")).toBeNull();
+    expect(screen.queryByText("摆动 X")).toBeNull();
+    expect(screen.queryByText("摆动 Y")).toBeNull();
+    expect(screen.getByLabelText("升降")).not.toBeNull();
+
+    cleanup();
+    renderPanel({ selection: { kind: "block", blockId: "dynamic" } });
+    expect(screen.queryByLabelText("摆动 X")).toBeNull();
+    expect(screen.queryByLabelText("摆动 Y")).toBeNull();
+    expect(screen.queryByText("摆动 X")).toBeNull();
+    expect(screen.queryByText("摆动 Y")).toBeNull();
+  });
+
   it("edits static preset registry params without participant reorder or pose table", () => {
 
     renderPanel({ selection: { kind: "block", blockId: "static" } });

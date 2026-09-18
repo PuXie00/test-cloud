@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useConsoleNav } from "../hooks/use-console-nav";
-import { useSequencePreview } from "../hooks/sequence-preview-provider";
+import { useSequencePreview } from "../hooks/use-sequence-preview";
 import { previewPosesAt, sampleSequencePaths } from "../hooks/sequence-preview";
 import { useControlledObjects } from "../hooks/use-controlled-objects";
 import { resolveLivePoses } from "./resolve-live-poses";

@@ -103,8 +103,8 @@ describe("preset registry", () => {
     };
     const points = resolvePreset(block);
     expect(points.map((point) => [point.objectId, point.atMs, point.pose, point.sourceRef])).toEqual([
-      [11, 400, { v1: 200, v2: 3, v3: -4 }, "preset:flat-1:11:0"],
-      [5, 400, { v1: 200, v2: 3, v3: -4 }, "preset:flat-1:5:0"],
+      [11, 400, { v1: 200, v2: 0, v3: 0 }, "preset:flat-1:11:0"],
+      [5, 400, { v1: 200, v2: 0, v3: 0 }, "preset:flat-1:5:0"],
     ]);
   });
 
@@ -119,9 +119,9 @@ describe("preset registry", () => {
     };
     const forward = resolvePreset(block);
     expect(forward.map((point) => [point.objectId, point.pose.v2, point.pose.v3])).toEqual([
-      [4, 1, 2],
-      [5, 1, 2],
-      [6, 1, 2],
+      [4, 0, 0],
+      [5, 0, 0],
+      [6, 0, 0],
     ]);
     expect(forward[0]?.pose.v1).toBeCloseTo(1000, 10);
     expect(forward[1]?.pose.v1).toBeCloseTo(1500, 10);
@@ -179,7 +179,7 @@ describe("preset registry", () => {
       [1, 100, 10, "preset:lvl-1:1:0"],
       [1, 400, 40, "preset:lvl-1:1:1"],
     ]);
-    expect(points.every((point) => point.pose.v2 === 5 && point.pose.v3 === 6)).toBe(true);
+    expect(points.every((point) => point.pose.v2 === 0 && point.pose.v3 === 0)).toBe(true);
   });
 
   it("samples dynamic-wave on a closed interval with order-sensitive phase", () => {
@@ -358,12 +358,36 @@ describe("preset registry", () => {
     expect(getPresetDefinition("static-slope")?.paramFields.map((field) => field.key)).toEqual([
       "baseV1",
       "stepV1",
-      "v2",
-      "v3",
     ]);
     expect(getPresetDefinition("dynamic-wave")?.paramFields.some((field) => field.kind === "choice")).toBe(
       true,
     );
+  });
+
+  it("declares ownedAxes as v1 only and omits swing param fields", () => {
+    for (const definition of listPresetDefinitions()) {
+      expect(definition.ownedAxes, definition.id).toEqual(["v1"]);
+      expect(definition.paramFields.map((field) => field.key), definition.id).not.toContain("v2");
+      expect(definition.paramFields.map((field) => field.key), definition.id).not.toContain("v3");
+    }
+  });
+
+  it("accepts leftover v2/v3 params without requiring or authoring them", () => {
+    const slope = getPresetDefinition("static-slope");
+    expect(slope?.validateParams({ baseV1: 1, stepV1: 1 })).toEqual([]);
+    expect(slope?.validateParams({ baseV1: 1, stepV1: 1, v2: 9, v3: -4 })).toEqual([]);
+    const points = resolvePreset({
+      id: "flat-legacy",
+      kind: "static-preset",
+      presetId: "static-flat",
+      atMs: 400,
+      orderedObjectIds: [11, 5],
+      params: { v1: 200, v2: 3, v3: -4 },
+    });
+    expect(points.map((point) => point.pose)).toEqual([
+      { v1: 200, v2: 0, v3: 0 },
+      { v1: 200, v2: 0, v3: 0 },
+    ]);
   });
 
   it("enforces one pose per object for static presets and at least two for dynamic", () => {

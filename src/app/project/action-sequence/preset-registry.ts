@@ -1,3 +1,4 @@
+import type { VirtualAxisId } from "../project-document-types";
 import type {
   DynamicPresetBlock,
   ModelPose,
@@ -36,6 +37,7 @@ export type PresetDefinition = {
   description: string;
   minObjects: number;
   maxObjects?: number;
+  ownedAxes: readonly VirtualAxisId[];
   paramFields: readonly PresetParamField[];
   resolve: (block: StaticPresetBlock | DynamicPresetBlock) => ResolvedPresetPose[];
   validateParams: (params: Record<string, PresetParamValue>) => string[];
@@ -48,7 +50,10 @@ const DEG_TO_RAD = Math.PI / 180;
 const asStatic = (block: PresetBlock): StaticPresetBlock => block as StaticPresetBlock;
 const asDynamic = (block: PresetBlock): DynamicPresetBlock => block as DynamicPresetBlock;
 
-const poseOf = (v1: number, v2: number, v3: number): ModelPose => ({ v1, v2, v3 });
+const OWNED_V1: readonly VirtualAxisId[] = ["v1"];
+const LEGACY_UNOWNED_PARAM_KEYS = new Set(["v2", "v3"]);
+
+const poseOf = (v1: number): ModelPose => ({ v1, v2: 0, v3: 0 });
 
 const pointOf = (
   block: PresetBlock,
@@ -73,7 +78,7 @@ const numericParams = (
   const errors: string[] = [];
   const allowed = new Set(keys);
   for (const key of Object.keys(params)) {
-    if (!allowed.has(key)) {
+    if (!allowed.has(key) && !LEGACY_UNOWNED_PARAM_KEYS.has(key)) {
       errors.push(`unknown parameter: ${key}`);
     }
   }
@@ -97,26 +102,18 @@ const numericParams = (
 const numbers = (params: Record<string, PresetParamValue>): Record<string, number> =>
   params as Record<string, number>;
 
-const AXIS_FIELDS: readonly PresetParamField[] = [
-  { key: "v2", label: "摆动 X", kind: "number", unit: "°", step: 0.1 },
-  { key: "v3", label: "摆动 Y", kind: "number", unit: "°", step: 0.1 },
-];
-
 const STATIC_FLAT_FIELDS: readonly PresetParamField[] = [
   { key: "v1", label: "升降", kind: "number", unit: "mm", step: 1 },
-  ...AXIS_FIELDS,
 ];
 
 const STATIC_SLOPE_FIELDS: readonly PresetParamField[] = [
   { key: "baseV1", label: "起点升降", kind: "number", unit: "mm", step: 1 },
   { key: "stepV1", label: "级差", kind: "number", unit: "mm", step: 1 },
-  ...AXIS_FIELDS,
 ];
 
 const STATIC_ARC_FIELDS: readonly PresetParamField[] = [
   { key: "baseV1", label: "基准升降", kind: "number", unit: "mm", step: 1 },
   { key: "amplitude", label: "拱高", kind: "number", unit: "mm", step: 1 },
-  ...AXIS_FIELDS,
 ];
 
 const STATIC_WAVE_FIELDS: readonly PresetParamField[] = [
@@ -124,13 +121,11 @@ const STATIC_WAVE_FIELDS: readonly PresetParamField[] = [
   { key: "amplitude", label: "振幅", kind: "number", unit: "mm", step: 1 },
   { key: "phaseDeg", label: "相位", kind: "number", unit: "°", step: 1 },
   { key: "intervalDeg", label: "间隔", kind: "number", unit: "°", step: 1 },
-  ...AXIS_FIELDS,
 ];
 
 const DYNAMIC_LEVEL_FIELDS: readonly PresetParamField[] = [
   { key: "startV1", label: "起点升降", kind: "number", unit: "mm", step: 1 },
   { key: "targetV1", label: "终点升降", kind: "number", unit: "mm", step: 1 },
-  ...AXIS_FIELDS,
 ];
 
 const DYNAMIC_WAVE_FIELDS: readonly PresetParamField[] = [
@@ -148,17 +143,15 @@ const DYNAMIC_WAVE_FIELDS: readonly PresetParamField[] = [
   },
   { key: "intervalDeg", label: "间隔", kind: "number", unit: "°", step: 1 },
   { key: "sampleIntervalMs", label: "采样间隔", kind: "number", unit: "ms", step: 100, min: 1 },
-  ...AXIS_FIELDS,
 ];
 
 const mapStatic = (
   block: StaticPresetBlock,
   v1At: (participantIndex: number, count: number) => number,
 ): ResolvedPresetPose[] => {
-  const { v2, v3 } = numbers(block.params);
   const count = block.orderedObjectIds.length;
   return block.orderedObjectIds.map((objectId, participantIndex) =>
-    pointOf(block, objectId, 0, block.atMs, poseOf(v1At(participantIndex, count), v2, v3)),
+    pointOf(block, objectId, 0, block.atMs, poseOf(v1At(participantIndex, count))),
   );
 };
 
@@ -168,6 +161,7 @@ const staticFlat: PresetDefinition = {
   label: "平面",
   description: "同一时刻全体同一位姿",
   minObjects: 2,
+  ownedAxes: OWNED_V1,
   paramFields: STATIC_FLAT_FIELDS,
   validateParams: (params) => numericParams(params, fieldKeys(STATIC_FLAT_FIELDS)),
   resolve: (block) => {
@@ -182,6 +176,7 @@ const staticSlope: PresetDefinition = {
   label: "斜面",
   description: "沿参与顺序按级差排布升降",
   minObjects: 2,
+  ownedAxes: OWNED_V1,
   paramFields: STATIC_SLOPE_FIELDS,
   validateParams: (params) => numericParams(params, fieldKeys(STATIC_SLOPE_FIELDS)),
   resolve: (block) => {
@@ -196,6 +191,7 @@ const staticArc: PresetDefinition = {
   label: "弧形",
   description: "沿参与顺序形成拱形",
   minObjects: 2,
+  ownedAxes: OWNED_V1,
   paramFields: STATIC_ARC_FIELDS,
   validateParams: (params) => numericParams(params, fieldKeys(STATIC_ARC_FIELDS)),
   resolve: (block) => {
@@ -213,6 +209,7 @@ const staticWave: PresetDefinition = {
   label: "静态波浪",
   description: "沿参与顺序按相位采样正弦",
   minObjects: 2,
+  ownedAxes: OWNED_V1,
   paramFields: STATIC_WAVE_FIELDS,
   validateParams: (params) => numericParams(params, fieldKeys(STATIC_WAVE_FIELDS)),
   resolve: (block) => {
@@ -231,15 +228,16 @@ const dynamicLevel: PresetDefinition = {
   label: "水平升降",
   description: "全体从起点升降到终点",
   minObjects: 2,
+  ownedAxes: OWNED_V1,
   paramFields: DYNAMIC_LEVEL_FIELDS,
   validateParams: (params) => numericParams(params, fieldKeys(DYNAMIC_LEVEL_FIELDS)),
   resolve: (block) => {
     const dyn = asDynamic(block);
-    const { startV1, targetV1, v2, v3 } = numbers(dyn.params);
+    const { startV1, targetV1 } = numbers(dyn.params);
     const points: ResolvedPresetPose[] = [];
     for (const objectId of dyn.orderedObjectIds) {
-      points.push(pointOf(dyn, objectId, 0, dyn.startMs, poseOf(startV1, v2, v3)));
-      points.push(pointOf(dyn, objectId, 1, dyn.endMs, poseOf(targetV1, v2, v3)));
+      points.push(pointOf(dyn, objectId, 0, dyn.startMs, poseOf(startV1)));
+      points.push(pointOf(dyn, objectId, 1, dyn.endMs, poseOf(targetV1)));
     }
     return points;
   },
@@ -263,6 +261,7 @@ const dynamicWave: PresetDefinition = {
   label: "行进波浪",
   description: "沿时间推进的行进正弦波",
   minObjects: 2,
+  ownedAxes: OWNED_V1,
   paramFields: DYNAMIC_WAVE_FIELDS,
   validateParams: (params) => {
     const errors = numericParams(params, fieldKeys(DYNAMIC_WAVE_FIELDS));
@@ -278,7 +277,7 @@ const dynamicWave: PresetDefinition = {
   },
   resolve: (block) => {
     const dyn = asDynamic(block);
-    const { baseV1, amplitude, cycles, direction, intervalDeg, sampleIntervalMs, v2, v3 } = numbers(
+    const { baseV1, amplitude, cycles, direction, intervalDeg, sampleIntervalMs } = numbers(
       dyn.params,
     );
     const times = sampleTimesMs(dyn.startMs, dyn.endMs, sampleIntervalMs);
@@ -289,7 +288,7 @@ const dynamicWave: PresetDefinition = {
       times.forEach((atMs, index) => {
         const tNorm = (atMs - dyn.startMs) / durationMs;
         const v1 = baseV1 + amplitude * Math.sin(2 * Math.PI * cycles * tNorm + spatial);
-        points.push(pointOf(dyn, objectId, index, atMs, poseOf(v1, v2, v3)));
+        points.push(pointOf(dyn, objectId, index, atMs, poseOf(v1)));
       });
     });
     return points;

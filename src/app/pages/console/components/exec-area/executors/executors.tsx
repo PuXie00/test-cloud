@@ -3,7 +3,7 @@ import { PROGRAM_SLOTS_PER_PAGE } from "@/app/pages/console/components/program-p
 import { useProject } from "@/app/project/use-project";
 import { useProgram } from "../../../hooks/use-program";
 import { useExecutorSlots } from "../../../hooks/use-executor-slots";
-import { useSequencePreview } from "../../../hooks/sequence-preview-provider";
+import { useSequencePreview } from "../../../hooks/use-sequence-preview";
 import { ExecutorPaginationBar } from "./executor-pagination-bar";
 import { FaderSlot } from "./fader-slot";
 

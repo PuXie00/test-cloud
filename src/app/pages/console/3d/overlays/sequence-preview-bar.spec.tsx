@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SequencePreviewValue } from "../../hooks/sequence-preview-provider";
+import type { SequencePreviewValue } from "../../hooks/use-sequence-preview";
 import { SequencePreviewBar } from "./sequence-preview-bar";
 
 const { preview, play, pause, stopPreview, setCursorMs, setMultiplier } = vi.hoisted(() => {
@@ -33,7 +33,7 @@ const { preview, play, pause, stopPreview, setCursorMs, setMultiplier } = vi.hoi
   return { preview, play, pause, stopPreview, setCursorMs, setMultiplier };
 });
 
-vi.mock("../../hooks/sequence-preview-provider", () => ({
+vi.mock("../../hooks/use-sequence-preview", () => ({
   useSequencePreview: () => preview.current,
 }));
 

@@ -6,7 +6,8 @@ import { MOTION_DEFAULTS } from "@/app/project/configuration-rules";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
 import type { ControlledObjectConfig, ProjectDocument } from "@/app/project/project-document-types";
 import { createEmptyDocument } from "@/app/project/project-document-empty";
-import { SequencePreviewProvider, useSequencePreview } from "./sequence-preview-provider";
+import { SequencePreviewProvider } from "./sequence-preview-provider";
+import { useSequencePreview } from "./use-sequence-preview";
 
 const OBJECT_ID = 1;
 

@@ -5,7 +5,7 @@ import { ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE } from "@/app/project/configuratio
 import { formatVirtualAxesCompact } from "../components/action-builder/virtual-axis-display";
 import { useActionBuilder } from "../components/action-builder/use-action-builder";
 import { useConsoleNav } from "../hooks/use-console-nav";
-import { useSequencePreview } from "../hooks/sequence-preview-provider";
+import { useSequencePreview } from "../hooks/use-sequence-preview";
 import { previewPosesAt } from "../hooks/sequence-preview";
 import { useControlledObjects } from "../hooks/use-controlled-objects";
 import { useProjectStore } from "../hooks/use-project-store";

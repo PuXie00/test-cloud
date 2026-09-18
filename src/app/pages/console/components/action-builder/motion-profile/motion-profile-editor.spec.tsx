@@ -48,6 +48,16 @@ afterEach(() => {
 });
 
 describe("MotionProfileEditor", () => {
+  it("lists only ownedAxes intersected with enabledAxes", () => {
+    renderEditor({
+      ownedAxes: ["v1"],
+      axisContext: axisContext({ enabledAxes: ["v1", "v2"] }),
+    });
+
+    expect(screen.getByRole("button", { name: "V1" })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "V2" })).toBeNull();
+  });
+
   it("selects the largest-travel axis by default and shows chart sliders at 20%", () => {
     renderEditor();
 

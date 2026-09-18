@@ -283,6 +283,7 @@ export const PresetBlockFields = ({
             <MotionProfileEditor
               value={block.profiles}
               onChange={(profiles) => onReplaceBlock({ ...block, profiles })}
+              ownedAxes={definition?.ownedAxes}
               axisContext={axisContextFromObject(
                 block.orderedObjectIds[0] === undefined
                   ? undefined

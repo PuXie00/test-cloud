@@ -3,7 +3,7 @@ import { getProgramRepairIssues } from "@/app/project/project-motion-readiness";
 import { useProject } from "@/app/project/use-project";
 import { useProgram } from "../../hooks/use-program";
 import { useSelection } from "../../hooks/use-selection";
-import { useSequencePreview } from "../../hooks/sequence-preview-provider";
+import { useSequencePreview } from "../../hooks/use-sequence-preview";
 import { AuthoringProgramPanel } from "./authoring-program-panel";
 import type { ChapterItem } from "./program-data";
 import { ProgramHeader } from "./program-header";

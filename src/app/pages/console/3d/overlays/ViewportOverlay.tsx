@@ -14,7 +14,7 @@ import { cn } from "@/app/components/ui/utils";
 import type { ToolMode } from "@/app/viz3d";
 import { pendingGoEntries } from "../../hooks/go-ready";
 import { useGoReady } from "../../hooks/go-ready-provider";
-import { useSequencePreview } from "../../hooks/sequence-preview-provider";
+import { useSequencePreview } from "../../hooks/use-sequence-preview";
 import { useConsoleNav } from "../../hooks/use-console-nav";
 import { useControlLayout } from "../../hooks/use-control-layout";
 import { setLivePoseHold, useLivePoseHold } from "../live-pose-hold";

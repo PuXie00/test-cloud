@@ -30,6 +30,22 @@ const context = {
 };
 
 describe("fitPresetParams", () => {
+  it("does not write v2 or v3 into fitted params", () => {
+    for (const presetId of [
+      "static-flat",
+      "static-slope",
+      "static-arc",
+      "static-wave",
+      "dynamic-level",
+      "dynamic-wave",
+    ] as const) {
+      const fitted = fitPresetParams(presetId, participants);
+      expect(fitted, presetId).not.toBeNull();
+      expect(fitted!.params, presetId).not.toHaveProperty("v2");
+      expect(fitted!.params, presetId).not.toHaveProperty("v3");
+    }
+  });
+
   it("keeps static-wave poses inside the shared v1 range", () => {
     const fitted = fitPresetParams("static-wave", participants);
     expect(fitted).not.toBeNull();

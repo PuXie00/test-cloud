@@ -4,7 +4,7 @@ import { isTransformToolMode } from "@/app/viz3d";
 import { ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE } from "@/app/project/configuration-rules";
 import type { ControlledObjectStatus, ControlledObjectType } from "../components/monitor-grid/monitor-data";
 import { useConsoleNav } from "../hooks/use-console-nav";
-import { useSequencePreview } from "../hooks/sequence-preview-provider";
+import { useSequencePreview } from "../hooks/use-sequence-preview";
 import { memberObjectIds } from "../hooks/sequence-preview";
 import { useControlledObjects } from "../hooks/use-controlled-objects";
 import { useProjectStore } from "../hooks/use-project-store";

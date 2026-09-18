@@ -4,7 +4,7 @@ import { cn } from "@/app/components/ui/utils";
 import {
   useSequencePreview,
   type SequencePreviewMultiplier,
-} from "../../hooks/sequence-preview-provider";
+} from "../../hooks/use-sequence-preview";
 import { formatExecTime } from "../../hooks/sequence-run-status";
 
 const SPEED_OPTIONS: SequencePreviewMultiplier[] = [1, 2, 4];
