@@ -86,4 +86,26 @@ describe("sequenceValidationContextFromSetup", () => {
     expect(timeline.maxAccelerationByAxis).toBeUndefined();
     expect(timeline.maxDecelerationByAxis).toBeUndefined();
   });
+
+  it("copies safetyRadius only for multi-point swing", () => {
+    const twoPoint = swingObject();
+    const multiPoint: ControlledObjectConfig = {
+      ...twoPoint,
+      id: 9,
+      controlType: 7,
+      enabledVirtualAxes: ["v1", "v2", "v3"],
+      safetyRadius: 1850,
+      motionParams: {
+        ...twoPoint.motionParams,
+        yawY: { ...MOTION_DEFAULTS.yawY },
+      },
+    };
+    const document = createEmptyDocument({ id: "p", name: "P", author: "t" });
+    document.setup.controlledObjects = [twoPoint, multiPoint];
+    document.setup.motors = boundMotors();
+    document.setup.plcs = [{ id: 1, masterTypeId: "AC810_1", ip: "127.0.0.1" }];
+    const ctx = sequenceValidationContextFromSetup(document as ProjectDocument);
+    expect(ctx.objects[0]?.safetyRadius).toBeUndefined();
+    expect(ctx.objects[1]?.safetyRadius).toBe(1850);
+  });
 });

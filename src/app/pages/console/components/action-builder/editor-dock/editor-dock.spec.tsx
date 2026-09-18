@@ -128,6 +128,21 @@ describe("editor dock sequence editor", () => {
     expect(screen.queryByLabelText("关闭添加动作")).toBeNull();
   });
 
+  it("shows an angle-protection banner from sequence issues", () => {
+    mockBuilder({
+      sequenceIssues: [
+        {
+          severity: "error",
+          code: "angle-protection",
+          message: "当前高度 0 mm 下虚轴2 允许 [0, 0]°，实际 10°",
+        },
+      ],
+    });
+    render(<EditorDock />);
+    expect(screen.getByRole("alert").textContent).toContain("虚轴2 允许");
+    expect(screen.getByRole("alert").textContent).toContain("实际 10°");
+  });
+
   it("keeps SequenceEditor toolbar when an unknown preset cannot resolve", () => {
     const broken: ActionSequenceConfig = {
       id: 97,

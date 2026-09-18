@@ -32,6 +32,19 @@ describe("preset repair copy", () => {
     ).toBe("模型 8 虚轴1 速度 900 超过上限 500");
   });
 
+  it("keeps angle-protection copy with the object prefix", () => {
+    expect(
+      formatPresetRepairMessage(
+        issue({
+          code: "angle-protection",
+          message: "当前高度 0 mm 下虚轴2 允许 [0, 0]°，实际 10°",
+          objectId: 7,
+        }),
+        { objectName: (id) => (id === 7 ? "升降灯架-01" : undefined) },
+      ),
+    ).toBe("升降灯架-01 当前高度 0 mm 下虚轴2 允许 [0, 0]°，实际 10°");
+  });
+
   it("uses catalog labels for parameter errors", () => {
     expect(
       formatPresetRepairMessage(

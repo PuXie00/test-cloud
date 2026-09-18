@@ -1,3 +1,7 @@
+import {
+  collectAngleProtectionHits,
+  type AngleProtectionObject,
+} from "@/app/kinematics/angle-protection";
 import { collectMotorOverspeedHits } from "@/app/kinematics/motor-overspeed";
 import type { MotorOverspeedObject } from "@/app/kinematics/motor-overspeed";
 import { getPresetDefinition } from "./preset-registry";
@@ -39,7 +43,8 @@ export type SequenceIssueCode =
   | "phase-shorter-than-min-accel"
   | "insufficient-cruise"
   | "idle-on-moving-axis"
-  | "motor-overspeed";
+  | "motor-overspeed"
+  | "angle-protection";
 
 export type SequenceIssue = {
   severity: SequenceIssueSeverity;
@@ -66,6 +71,7 @@ export type SequenceValidationContext = {
     id: number;
     enabledVirtualAxes: VirtualAxisId[];
     limits: Partial<Record<VirtualAxisId, AxisLimit>>;
+    safetyRadius?: number;
   }>;
   hoistObjects?: MotorOverspeedObject[];
 };
@@ -80,6 +86,27 @@ const uniqueIds = (ids: number[]): number[] => [...new Set(ids)];
 
 const objectByIdMap = (context: SequenceValidationContext): Map<number, ObjectInfo> =>
   new Map(context.objects.map((object) => [object.id, object]));
+
+const angleProtectObjectsOf = (context: SequenceValidationContext): AngleProtectionObject[] =>
+  context.objects.flatMap((object) => {
+    if (!(typeof object.safetyRadius === "number" && object.safetyRadius > 0)) return [];
+    if (!object.enabledVirtualAxes.includes("v1") || !object.enabledVirtualAxes.includes("v2")) {
+      return [];
+    }
+    const height = object.limits.v1;
+    const pitch = object.limits.v2;
+    if (!height || !pitch) return [];
+    return [
+      {
+        objectId: object.id,
+        radius: object.safetyRadius,
+        minHeight: height.min,
+        maxHeight: height.max,
+        minPitch: pitch.min,
+        maxPitch: pitch.max,
+      },
+    ];
+  });
 
 const enabledAxesOf = (object: ObjectInfo | undefined): VirtualAxisId[] =>
   object?.enabledVirtualAxes ?? [];
@@ -525,6 +552,22 @@ const collectResolvedIssues = (
         suggestedDurationMs: hit.suggestedDurationMs,
       });
     }
+  }
+
+  for (const hit of collectAngleProtectionHits(
+    angleProtectObjectsOf(context),
+    resolved.segments,
+    resolved.poses,
+  )) {
+    issues.push({
+      severity: "error",
+      code: "angle-protection",
+      message: hit.message,
+      objectId: hit.objectId,
+      atMs: hit.atMs,
+      ...(hit.segmentKey ? { segmentKey: hit.segmentKey } : {}),
+      ...(hit.blockId ? { blockId: hit.blockId } : {}),
+    });
   }
 
   for (const [objectId, series] of resolved.posesByObject) {

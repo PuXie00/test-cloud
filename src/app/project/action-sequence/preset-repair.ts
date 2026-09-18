@@ -70,6 +70,7 @@ export const formatPresetRepairMessage = (
   if (issue.code === "idle-on-moving-axis") return `${who}运动轴处于空闲曲线`.trim();
   if (issue.code === "missing-motion-limit") return `${who}缺少速度或最短加减速上限`.trim();
   if (issue.code === "motor-overspeed") return issue.message;
+  if (issue.code === "angle-protection") return `${who}${issue.message}`.trim();
   if (issue.code === "motion-overlap") return `${who}运动来源重叠`.trim();
 
   return who ? `${who}${issue.message}`.trim() : issue.message;

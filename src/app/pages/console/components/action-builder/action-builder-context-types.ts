@@ -80,6 +80,6 @@ export type ActionBuilderContextValue = {
   handleSave: () => void;
   /** 最近一次非跟踪 motion 写回失败原因；成功后清空 */
   lastPersistError: string | null;
-  /** 位姿拖拽松开 / 调参提交后刷新的序列校验（含电机叠加超速） */
+  /** 位姿拖拽松开 / 调参提交后刷新的序列校验（含电机叠加超速、角度保护） */
   sequenceIssues: SequenceIssue[];
 };
