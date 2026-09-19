@@ -50,12 +50,12 @@ describe("preset repair copy", () => {
       formatPresetRepairMessage(
         issue({
           code: "invalid-preset",
-          message: "parameter sampleIntervalMs must be > 0",
+          message: "parameter staggerMs must be >= 0",
           blockId: "p1",
         }),
         { presetId: "dynamic-wave" },
       ),
-    ).toBe("参数「采样间隔」必须大于 0");
+    ).toBe("参数「错相间隔」必须大于等于 0");
   });
 
   it("dedupes repair items for one block", () => {

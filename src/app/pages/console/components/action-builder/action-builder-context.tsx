@@ -16,7 +16,7 @@ import { actionBuilderStateToMotion } from "@/app/project/motion-persist";
 import { useProject } from "@/app/project/use-project";
 import { createDefaultAxisProfiles } from "@/app/project/action-sequence/motion-profile";
 import { fitPresetParams } from "@/app/project/action-sequence/preset-defaults";
-import { presetLabelOf } from "@/app/project/action-sequence/preset-registry";
+import { dynamicPresetProfileDurationMs, presetLabelOf } from "@/app/project/action-sequence/preset-registry";
 import { validateActionSequence } from "@/app/project/action-sequence/validate-sequence";
 import type { SequenceIssue } from "@/app/project/action-sequence/validate-sequence";
 import { sequenceValidationContextFromSetup } from "@/app/project/project-motion-readiness";
@@ -621,7 +621,13 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         params: fitted.params,
         label: presetLabelOf(presetId),
         profiles: createDefaultAxisProfiles(
-          durationMs,
+          dynamicPresetProfileDurationMs({
+            presetId,
+            startMs: cursorMs,
+            endMs: cursorMs + durationMs,
+            orderedObjectIds: [...objectIds],
+            params: fitted.params,
+          }),
           Object.keys(mergedMinAccel).length > 0 ? mergedMinAccel : undefined,
         ),
       };

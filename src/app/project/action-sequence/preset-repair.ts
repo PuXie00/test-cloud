@@ -19,6 +19,9 @@ const translateParamConstraint = (rest: string): string => {
   if (rest === "must be a number") return "必须为数字";
   if (rest === "must be finite") return "必须为有限数字";
   if (rest === "must be > 0") return "必须大于 0";
+  if (rest === "must be >= 0") return "必须大于等于 0";
+  if (rest === "must be an integer >= 1") return "必须为大于等于 1 的整数";
+  if (rest === "does not fit in the preset duration") return "无法放入当前时长";
   if (rest === "must be 1 or -1") return "必须为正向或反向";
   return rest;
 };
