@@ -29,6 +29,7 @@ import {
   secondsToMs,
   type ControlledObject,
 } from "../timeline/timeline-data";
+import { presetParamDisplayNumber, presetParamStoredNumber } from "./preset-param-display";
 
 const usePresetBuilder = () => {
   const builder = useActionBuilder() as {
@@ -115,13 +116,13 @@ const PresetParamControl = ({
   return (
     <UnitAwareNumericInput
       aria-label={field.label}
-      value={numeric}
+      value={presetParamDisplayNumber(field, numeric)}
       unit={field.unit}
       step={field.step ?? 1}
       precision={1}
       min={field.min}
       max={field.max}
-      onChange={(next) => onChange(next)}
+      onChange={(next) => onChange(presetParamStoredNumber(field, next))}
     />
   );
 };

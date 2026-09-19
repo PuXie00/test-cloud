@@ -55,7 +55,7 @@ describe("preset repair copy", () => {
         }),
         { presetId: "dynamic-wave" },
       ),
-    ).toBe("参数「错相间隔」必须大于等于 0");
+    ).toBe("参数「错开间隔」必须大于等于 0");
   });
 
   it("dedupes repair items for one block", () => {

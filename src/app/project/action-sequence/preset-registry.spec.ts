@@ -415,6 +415,12 @@ describe("preset registry", () => {
       "cycles",
       "direction",
     ]);
+    expect(getPresetDefinition("dynamic-wave")?.paramFields.find((field) => field.key === "staggerMs")).toMatchObject({
+      label: "错开间隔",
+      unit: "s",
+      step: 0.1,
+      min: 0,
+    });
     expect(getPresetDefinition("dynamic-wave")?.paramFields.some((field) => field.kind === "choice")).toBe(
       true,
     );

@@ -131,7 +131,7 @@ const DYNAMIC_LEVEL_FIELDS: readonly PresetParamField[] = [
 const DYNAMIC_WAVE_FIELDS: readonly PresetParamField[] = [
   { key: "baseV1", label: "基准升降", kind: "number", unit: "mm", step: 1 },
   { key: "amplitude", label: "振幅", kind: "number", unit: "mm", step: 1 },
-  { key: "staggerMs", label: "错相间隔", kind: "number", unit: "ms", step: 100, min: 0 },
+  { key: "staggerMs", label: "错开间隔", kind: "number", unit: "s", step: 0.1, min: 0 },
   { key: "cycles", label: "周期数", kind: "number", step: 1, min: 1 },
   {
     key: "direction",
