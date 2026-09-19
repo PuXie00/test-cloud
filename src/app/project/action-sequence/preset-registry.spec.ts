@@ -29,12 +29,11 @@ const waveBlock = (): DynamicPresetBlock => ({
     amplitude: 500,
     cycles: 1,
     direction: 1,
-    intervalDeg: 90,
-    sampleIntervalMs: 500,
+    staggerMs: 500,
     v2: 0,
     v3: 0,
   },
-  profiles: createDefaultAxisProfiles(2000),
+  profiles: createDefaultAxisProfiles(750),
 });
 
 describe("preset registry", () => {
@@ -67,8 +66,7 @@ describe("preset registry", () => {
         amplitude: 500,
         cycles: 1,
         direction: 1,
-        intervalDeg: 90,
-        sampleIntervalMs: 500,
+        staggerMs: 500,
         v2: 0,
         v3: 0,
       },
@@ -182,46 +180,53 @@ describe("preset registry", () => {
     expect(points.every((point) => point.pose.v2 === 0 && point.pose.v3 === 0)).toBe(true);
   });
 
-  it("samples dynamic-wave on a closed interval with order-sensitive phase", () => {
+  it("staggers a rise-fall chase along participant order", () => {
     const points = resolvePreset(waveBlock());
-    expect(points.map((point) => [point.objectId, point.atMs, point.sourceRef])).toEqual([
-      [7, 1000, "preset:wave-1:7:0"],
-      [7, 1500, "preset:wave-1:7:1"],
-      [7, 2000, "preset:wave-1:7:2"],
-      [7, 2500, "preset:wave-1:7:3"],
-      [7, 3000, "preset:wave-1:7:4"],
-      [8, 1000, "preset:wave-1:8:0"],
-      [8, 1500, "preset:wave-1:8:1"],
-      [8, 2000, "preset:wave-1:8:2"],
-      [8, 2500, "preset:wave-1:8:3"],
-      [8, 3000, "preset:wave-1:8:4"],
+    expect(points.map((point) => [point.objectId, point.atMs, point.pose.v1, point.sourceRef])).toEqual([
+      [7, 1000, 1000, "preset:wave-1:7:0"],
+      [7, 1750, 1500, "preset:wave-1:7:1"],
+      [7, 2500, 1000, "preset:wave-1:7:2"],
+      [8, 1500, 1000, "preset:wave-1:8:0"],
+      [8, 2250, 1500, "preset:wave-1:8:1"],
+      [8, 3000, 1000, "preset:wave-1:8:2"],
     ]);
-    const v1 = points.map((point) => point.pose.v1);
-    expect(v1[0]).toBeCloseTo(1000, 10);
-    expect(v1[1]).toBeCloseTo(1500, 10);
-    expect(v1[2]).toBeCloseTo(1000, 10);
-    expect(v1[3]).toBeCloseTo(500, 10);
-    expect(v1[4]).toBeCloseTo(1000, 10);
-    expect(v1[5]).toBeCloseTo(1500, 10);
-    expect(v1[6]).toBeCloseTo(1000, 10);
-    expect(v1[7]).toBeCloseTo(500, 10);
-    expect(v1[8]).toBeCloseTo(1000, 10);
-    expect(v1[9]).toBeCloseTo(1500, 10);
+    expect(countPosesPerObject(points).get(7)).toBe(3);
+    expect(countPosesPerObject(points).get(8)).toBe(3);
     const reversed = resolvePreset({ ...waveBlock(), orderedObjectIds: [8, 7] });
     expect(reversed[0]?.sourceRef).toBe("preset:wave-1:8:0");
-    expect(reversed[0]?.pose.v1).toBe(1000);
-    expect(reversed.find((point) => point.sourceRef === "preset:wave-1:7:0")?.pose.v1).toBe(1500);
+    expect(reversed.find((point) => point.sourceRef === "preset:wave-1:8:1")?.atMs).toBe(1750);
+    expect(reversed.find((point) => point.sourceRef === "preset:wave-1:7:0")?.atMs).toBe(1500);
+    const backward = resolvePreset({ ...waveBlock(), params: { ...waveBlock().params, direction: -1 } });
+    expect(backward.find((point) => point.sourceRef === "preset:wave-1:7:0")?.atMs).toBe(1500);
+    expect(backward.find((point) => point.sourceRef === "preset:wave-1:8:0")?.atMs).toBe(1000);
   });
 
-  it("always includes the dynamic-wave end sample when the interval does not divide the span", () => {
+  it("stretches equal rise/fall phases when the block duration changes", () => {
     const points = resolvePreset({
       ...waveBlock(),
-      endMs: 2300,
-      orderedObjectIds: [7, 8],
+      endMs: 3100,
     });
     expect(points.filter((point) => point.objectId === 7).map((point) => point.atMs)).toEqual([
-      1000, 1500, 2000, 2300,
+      1000, 1800, 2600,
     ]);
+    expect(points.filter((point) => point.objectId === 8).map((point) => point.atMs)).toEqual([
+      1500, 2300, 3100,
+    ]);
+  });
+
+  it("shares the baseline between stitched cycles", () => {
+    const points = resolvePreset({
+      ...waveBlock(),
+      params: { ...waveBlock().params, cycles: 2 },
+    });
+    expect(points.filter((point) => point.objectId === 7).map((point) => [point.atMs, point.pose.v1])).toEqual([
+      [1000, 1000],
+      [1375, 1500],
+      [1750, 1000],
+      [2125, 1500],
+      [2500, 1000],
+    ]);
+    expect(countPosesPerObject(points).get(7)).toBe(5);
   });
 
   it("does not mutate the authored block", () => {
@@ -288,24 +293,35 @@ describe("preset registry", () => {
         amplitude: 1,
         cycles: 1,
         direction: 1,
-        intervalDeg: 90,
-        sampleIntervalMs: 0,
+        staggerMs: -1,
         v2: 0,
         v3: 0,
       }),
-    ).toEqual(["parameter sampleIntervalMs must be > 0"]);
+    ).toEqual(["parameter staggerMs must be >= 0"]);
     expect(
       wave?.validateParams({
         baseV1: 1,
         amplitude: 1,
         cycles: 1,
         direction: 0,
-        intervalDeg: 90,
-        sampleIntervalMs: 100,
+        staggerMs: 100,
         v2: 0,
         v3: 0,
       }),
     ).toEqual(["parameter direction must be 1 or -1"]);
+    expect(
+      wave?.validateParams({
+        baseV1: 1,
+        amplitude: 1,
+        cycles: 1,
+        direction: 1,
+        staggerMs: 100,
+        intervalDeg: 90,
+        sampleIntervalMs: 500,
+        v2: 0,
+        v3: 0,
+      }),
+    ).toEqual([]);
   });
 
   it("throws from resolvePreset instead of emitting invalid poses", () => {
@@ -358,6 +374,13 @@ describe("preset registry", () => {
     expect(getPresetDefinition("static-slope")?.paramFields.map((field) => field.key)).toEqual([
       "baseV1",
       "stepV1",
+    ]);
+    expect(getPresetDefinition("dynamic-wave")?.paramFields.map((field) => field.key)).toEqual([
+      "baseV1",
+      "amplitude",
+      "staggerMs",
+      "cycles",
+      "direction",
     ]);
     expect(getPresetDefinition("dynamic-wave")?.paramFields.some((field) => field.kind === "choice")).toBe(
       true,

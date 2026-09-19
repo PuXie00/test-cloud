@@ -51,7 +51,7 @@ const asStatic = (block: PresetBlock): StaticPresetBlock => block as StaticPrese
 const asDynamic = (block: PresetBlock): DynamicPresetBlock => block as DynamicPresetBlock;
 
 const OWNED_V1: readonly VirtualAxisId[] = ["v1"];
-const LEGACY_UNOWNED_PARAM_KEYS = new Set(["v2", "v3"]);
+const LEGACY_UNOWNED_PARAM_KEYS = new Set(["v2", "v3", "intervalDeg", "sampleIntervalMs"]);
 
 const poseOf = (v1: number): ModelPose => ({ v1, v2: 0, v3: 0 });
 
@@ -131,7 +131,8 @@ const DYNAMIC_LEVEL_FIELDS: readonly PresetParamField[] = [
 const DYNAMIC_WAVE_FIELDS: readonly PresetParamField[] = [
   { key: "baseV1", label: "基准升降", kind: "number", unit: "mm", step: 1 },
   { key: "amplitude", label: "振幅", kind: "number", unit: "mm", step: 1 },
-  { key: "cycles", label: "周期数", kind: "number", step: 0.5, min: 0 },
+  { key: "staggerMs", label: "错相间隔", kind: "number", unit: "ms", step: 100, min: 0 },
+  { key: "cycles", label: "周期数", kind: "number", step: 1, min: 1 },
   {
     key: "direction",
     label: "方向",
@@ -141,8 +142,6 @@ const DYNAMIC_WAVE_FIELDS: readonly PresetParamField[] = [
       { value: -1, label: "反向" },
     ],
   },
-  { key: "intervalDeg", label: "间隔", kind: "number", unit: "°", step: 1 },
-  { key: "sampleIntervalMs", label: "采样间隔", kind: "number", unit: "ms", step: 100, min: 1 },
 ];
 
 const mapStatic = (
@@ -243,31 +242,77 @@ const dynamicLevel: PresetDefinition = {
   },
 };
 
-export const sampleTimesMs = (startMs: number, endMs: number, sampleIntervalMs: number): number[] => {
-  const times: number[] = [];
-  const steps = Math.floor((endMs - startMs) / sampleIntervalMs);
-  for (let step = 0; step <= steps; step += 1) {
-    times.push(startMs + step * sampleIntervalMs);
-  }
-  if (times[times.length - 1] !== endMs) {
-    times.push(endMs);
-  }
-  return times;
+export const dynamicWaveMotionDurationMs = (
+  startMs: number,
+  endMs: number,
+  objectCount: number,
+  staggerMs: number,
+): number => (endMs - startMs) - Math.max(0, objectCount - 1) * staggerMs;
+
+export const dynamicWavePhaseDurationMs = (
+  startMs: number,
+  endMs: number,
+  objectCount: number,
+  staggerMs: number,
+  cycles: number,
+): number => {
+  const motionMs = dynamicWaveMotionDurationMs(startMs, endMs, objectCount, staggerMs);
+  const phases = cycles * 2;
+  if (!(motionMs > 0) || !(phases > 0)) return 0;
+  return motionMs / phases;
+};
+
+export const dynamicPresetProfileDurationMs = (
+  block: Pick<DynamicPresetBlock, "presetId" | "startMs" | "endMs" | "orderedObjectIds" | "params">,
+): number => {
+  const durationMs = Math.max(block.endMs - block.startMs, 0);
+  if (block.presetId !== "dynamic-wave") return durationMs;
+  const staggerMs = typeof block.params.staggerMs === "number" ? block.params.staggerMs : 0;
+  const cycles = typeof block.params.cycles === "number" ? block.params.cycles : 1;
+  const phaseMs = dynamicWavePhaseDurationMs(
+    block.startMs,
+    block.endMs,
+    block.orderedObjectIds.length,
+    staggerMs,
+    cycles,
+  );
+  return phaseMs > 0 ? phaseMs : durationMs;
+};
+
+const staggerIndexOf = (participantIndex: number, count: number, direction: number): number =>
+  direction === 1 ? participantIndex : count - 1 - participantIndex;
+
+const pushChasePose = (
+  points: ResolvedPresetPose[],
+  block: DynamicPresetBlock,
+  objectId: number,
+  nextIndex: { value: number },
+  atMs: number,
+  v1: number,
+): void => {
+  const previous = points[points.length - 1];
+  if (previous && previous.objectId === objectId && previous.atMs === atMs) return;
+  points.push(pointOf(block, objectId, nextIndex.value, atMs, poseOf(v1)));
+  nextIndex.value += 1;
 };
 
 const dynamicWave: PresetDefinition = {
   id: "dynamic-wave",
   kind: "dynamic",
   label: "行进波浪",
-  description: "沿时间推进的行进正弦波",
+  description: "沿参与顺序错开的升—降起伏",
   minObjects: 2,
   ownedAxes: OWNED_V1,
   paramFields: DYNAMIC_WAVE_FIELDS,
   validateParams: (params) => {
     const errors = numericParams(params, fieldKeys(DYNAMIC_WAVE_FIELDS));
-    const sampleIntervalMs = params.sampleIntervalMs;
-    if (typeof sampleIntervalMs === "number" && Number.isFinite(sampleIntervalMs) && sampleIntervalMs <= 0) {
-      errors.push("parameter sampleIntervalMs must be > 0");
+    const staggerMs = params.staggerMs;
+    if (typeof staggerMs === "number" && Number.isFinite(staggerMs) && staggerMs < 0) {
+      errors.push("parameter staggerMs must be >= 0");
+    }
+    const cycles = params.cycles;
+    if (typeof cycles === "number" && Number.isFinite(cycles) && (cycles < 1 || !Number.isInteger(cycles))) {
+      errors.push("parameter cycles must be an integer >= 1");
     }
     const direction = params.direction;
     if (typeof direction === "number" && Number.isFinite(direction) && direction !== 1 && direction !== -1) {
@@ -277,19 +322,31 @@ const dynamicWave: PresetDefinition = {
   },
   resolve: (block) => {
     const dyn = asDynamic(block);
-    const { baseV1, amplitude, cycles, direction, intervalDeg, sampleIntervalMs } = numbers(
-      dyn.params,
+    const { baseV1, amplitude, cycles, direction, staggerMs } = numbers(dyn.params);
+    const count = dyn.orderedObjectIds.length;
+    const phaseMs = dynamicWavePhaseDurationMs(
+      dyn.startMs,
+      dyn.endMs,
+      count,
+      staggerMs,
+      cycles,
     );
-    const times = sampleTimesMs(dyn.startMs, dyn.endMs, sampleIntervalMs);
-    const durationMs = dyn.endMs - dyn.startMs;
+    if (!(phaseMs > 0)) {
+      throw new Error("parameter staggerMs does not fit in the preset duration");
+    }
+    const peakV1 = baseV1 + amplitude;
     const points: ResolvedPresetPose[] = [];
     dyn.orderedObjectIds.forEach((objectId, participantIndex) => {
-      const spatial = direction * participantIndex * intervalDeg * DEG_TO_RAD;
-      times.forEach((atMs, index) => {
-        const tNorm = (atMs - dyn.startMs) / durationMs;
-        const v1 = baseV1 + amplitude * Math.sin(2 * Math.PI * cycles * tNorm + spatial);
-        points.push(pointOf(dyn, objectId, index, atMs, poseOf(v1)));
-      });
+      const delayMs = staggerIndexOf(participantIndex, count, direction) * staggerMs;
+      const motionStartMs = dyn.startMs + delayMs;
+      const nextIndex = { value: 0 };
+      pushChasePose(points, dyn, objectId, nextIndex, motionStartMs, baseV1);
+      for (let cycle = 0; cycle < cycles; cycle += 1) {
+        const riseEndMs = motionStartMs + (cycle * 2 + 1) * phaseMs;
+        const fallEndMs = motionStartMs + (cycle * 2 + 2) * phaseMs;
+        pushChasePose(points, dyn, objectId, nextIndex, riseEndMs, peakV1);
+        pushChasePose(points, dyn, objectId, nextIndex, fallEndMs, baseV1);
+      }
     });
     return points;
   },
@@ -360,11 +417,11 @@ const assertPoseContract = (
       throw new Error("dynamic preset must emit at least 2 poses per object");
     }
     const dyn = asDynamic(block);
-    if (series[0]?.atMs !== dyn.startMs) {
-      throw new Error("dynamic preset first pose must be at startMs");
+    if (series[0]!.atMs < dyn.startMs) {
+      throw new Error("dynamic preset first pose must be at or after startMs");
     }
-    if (series[series.length - 1]?.atMs !== dyn.endMs) {
-      throw new Error("dynamic preset last pose must be at endMs");
+    if (series[series.length - 1]!.atMs > dyn.endMs) {
+      throw new Error("dynamic preset last pose must be at or before endMs");
     }
     for (let index = 1; index < series.length; index += 1) {
       const previous = series[index - 1];
