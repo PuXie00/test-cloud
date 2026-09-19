@@ -131,8 +131,7 @@ describe("resolveActionSequence", () => {
             amplitude: 500,
             cycles: 1,
             direction: 1,
-            intervalDeg: 90,
-            sampleIntervalMs: 1000,
+            staggerMs: 500,
             v2: 99,
             v3: 88,
           },
@@ -264,6 +263,7 @@ describe("resolveActionSequence", () => {
       atMs: 0,
       pose: { v1: 4, v2: 5, v3: 6 },
       editable: true,
+      visible: true,
     });
     expect(resolved.poses.map((point) => point.sourceRef)).toEqual(["pose-1"]);
     expect(resolved.poses[0]).toBe(initial);
@@ -457,7 +457,7 @@ describe("resolveActionSequence", () => {
           durationMs: 2000,
           configurable: false,
           ownerPresetBlockId: "lvl-1",
-          settings: { profiles: axisProfiles(200, 600) },
+          settings: { profiles: movingV1IdleOthers(200, 600) },
         }),
         expect.objectContaining({
           objectId: 8,
@@ -465,7 +465,7 @@ describe("resolveActionSequence", () => {
           toRef: "preset:lvl-1:8:1",
           configurable: false,
           ownerPresetBlockId: "lvl-1",
-          settings: { profiles: axisProfiles(200, 600) },
+          settings: { profiles: movingV1IdleOthers(200, 600) },
         }),
       ]),
     );
@@ -695,7 +695,7 @@ describe("resolveActionSequence", () => {
     ]);
   });
 
-  it("owns every dynamic-wave sample interval as a cloned shared profile", () => {
+  it("owns every dynamic-wave chase interval as a cloned shared profile", () => {
     const profiles = axisProfiles(400, 400);
     const block: DynamicPresetBlock = {
       id: "wave-1",
@@ -709,38 +709,102 @@ describe("resolveActionSequence", () => {
         amplitude: 500,
         cycles: 1,
         direction: 1,
-        intervalDeg: 90,
-        sampleIntervalMs: 500,
+        staggerMs: 500,
         v2: 0,
         v3: 0,
       },
       profiles,
     };
     const resolved = resolveActionSequence(sequenceOf([block]));
-    const internals = resolved.segments.filter((segment) => !segment.configurable);
-    expect(internals).toHaveLength(8);
-    expect(
-      internals.every(
-        (segment) =>
-          segment.ownerPresetBlockId === "wave-1" &&
-          segment.settings.profiles.v1.kind === "trapezoid" &&
-          segment.settings.profiles.v1.params.accelMs === 400 &&
-          segment.settings.profiles.v1.params.decelMs === 400 &&
-          segment.settings.profiles !== profiles &&
-          segment.settings.profiles.v1.params !== profiles.v1.params &&
-          segment.configurable === false,
-      ),
-    ).toBe(true);
-    expect(
-      internals.filter((segment) => segment.objectId === 7).map((segment) => [segment.fromRef, segment.toRef]),
-    ).toEqual([
-      ["preset:wave-1:7:0", "preset:wave-1:7:1"],
-      ["preset:wave-1:7:1", "preset:wave-1:7:2"],
-      ["preset:wave-1:7:2", "preset:wave-1:7:3"],
-      ["preset:wave-1:7:3", "preset:wave-1:7:4"],
+    const visibles = resolved.poses.filter((point) => point.visible);
+    expect(visibles.filter((point) => point.objectId === 7).map((point) => point.atMs)).toEqual([
+      1000, 1750, 2500,
     ]);
-    expect(resolved.initialPoseByObject.get(7)?.sourceRef).toBe("preset:wave-1:7:0");
+    expect(visibles.filter((point) => point.objectId === 8).map((point) => point.atMs)).toEqual([
+      1500, 2250, 3000,
+    ]);
+    expect(
+      resolved.poses.filter((point) => point.objectId === 7 && !point.visible).map((point) => [
+        point.atMs,
+        point.sourceRef,
+      ]),
+    ).toEqual([[3000, "preset:wave-1:7:hold-end"]]);
+    expect(
+      resolved.poses.filter((point) => point.objectId === 8 && !point.visible).map((point) => [
+        point.atMs,
+        point.sourceRef,
+      ]),
+    ).toEqual([[1000, "preset:wave-1:8:hold-start"]]);
+
+    const internals = resolved.segments.filter((segment) => !segment.configurable);
+    expect(
+      internals.filter((segment) => segment.objectId === 7).map((segment) => [
+        segment.fromRef,
+        segment.toRef,
+        segment.settings.profiles.v1.kind,
+      ]),
+    ).toEqual([
+      ["preset:wave-1:7:0", "preset:wave-1:7:1", "trapezoid"],
+      ["preset:wave-1:7:1", "preset:wave-1:7:2", "trapezoid"],
+      ["preset:wave-1:7:2", "preset:wave-1:7:hold-end", "idle"],
+    ]);
+    expect(
+      internals.filter((segment) => segment.objectId === 8).map((segment) => [
+        segment.fromRef,
+        segment.toRef,
+        segment.settings.profiles.v1.kind,
+      ]),
+    ).toEqual([
+      ["preset:wave-1:8:hold-start", "preset:wave-1:8:0", "idle"],
+      ["preset:wave-1:8:0", "preset:wave-1:8:1", "trapezoid"],
+      ["preset:wave-1:8:1", "preset:wave-1:8:2", "trapezoid"],
+    ]);
     expect(reconcileSegmentConfigs(resolved.segments, [])).toEqual([]);
+  });
+
+  it("attaches neighbors to wave boundary holds, not the first delayed keyframe", () => {
+    const resolved = resolveActionSequence(
+      sequenceOf([
+        pose("prior", 8, 0, { v1: 200, v2: 10, v3: 5 }),
+        {
+          id: "wave-1",
+          kind: "dynamic-preset",
+          presetId: "dynamic-wave",
+          startMs: 1000,
+          endMs: 3000,
+          orderedObjectIds: [7, 8],
+          params: {
+            baseV1: 1000,
+            amplitude: 500,
+            cycles: 1,
+            direction: 1,
+            staggerMs: 500,
+          },
+          profiles: axisProfiles(400, 400),
+        },
+        pose("after", 7, 4000, { v1: 0, v2: 0, v3: 0 }),
+      ]),
+    );
+    expect(resolved.segments.filter((segment) => segment.configurable && segment.objectId === 8)).toEqual([
+      expect.objectContaining({
+        fromRef: "prior",
+        toRef: "preset:wave-1:8:hold-start",
+        endMs: 1000,
+      }),
+    ]);
+    expect(resolved.segments.filter((segment) => segment.configurable && segment.objectId === 7)).toEqual([
+      expect.objectContaining({
+        fromRef: "preset:wave-1:7:hold-end",
+        toRef: "after",
+        startMs: 3000,
+      }),
+    ]);
+    const wait = resolved.segments.find(
+      (segment) => segment.fromRef === "preset:wave-1:8:hold-start" && segment.toRef === "preset:wave-1:8:0",
+    );
+    expect(wait?.fromPose.v1).toBe(200);
+    expect(wait?.toPose.v1).toBe(200);
+    expect(wait?.settings.profiles.v1.kind).toBe("idle");
   });
 });
 

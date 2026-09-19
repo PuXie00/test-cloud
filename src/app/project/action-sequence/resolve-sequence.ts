@@ -18,6 +18,7 @@ export type ResolvedPosePoint = {
   atMs: number;
   pose: ModelPose;
   editable: boolean;
+  visible: boolean;
 };
 
 export type ResolvedMotionSegment = {
@@ -202,6 +203,57 @@ const carryUnownedAxes = (
   }
 };
 
+const WAVE_HOLD_START = "hold-start";
+const WAVE_HOLD_END = "hold-end";
+
+const injectDynamicWaveBoundaryHolds = (
+  timed: ResolvedPosePoint[],
+  blocks: ActionSequenceConfig["blocks"],
+): void => {
+  for (const block of blocks) {
+    if (block.kind !== "dynamic-preset" || block.presetId !== "dynamic-wave") continue;
+    for (const objectId of block.orderedObjectIds) {
+      const visibles = timed.filter(
+        (point) =>
+          point.objectId === objectId &&
+          point.sourceBlockId === block.id &&
+          point.visible,
+      );
+      const first = visibles[0];
+      const last = visibles[visibles.length - 1];
+      if (!first || !last) continue;
+      if (first.atMs > block.startMs) {
+        const previous = [...timed]
+          .filter((point) => point.objectId === objectId && point.atMs < block.startMs)
+          .sort((left, right) => left.atMs - right.atMs)
+          .at(-1);
+        timed.push({
+          sourceRef: `preset:${block.id}:${objectId}:${WAVE_HOLD_START}`,
+          sourceBlockId: block.id,
+          sourceKind: "dynamic-preset",
+          objectId,
+          atMs: block.startMs,
+          pose: clonePose(previous?.pose ?? first.pose),
+          editable: false,
+          visible: false,
+        });
+      }
+      if (last.atMs < block.endMs) {
+        timed.push({
+          sourceRef: `preset:${block.id}:${objectId}:${WAVE_HOLD_END}`,
+          sourceBlockId: block.id,
+          sourceKind: "dynamic-preset",
+          objectId,
+          atMs: block.endMs,
+          pose: clonePose(last.pose),
+          editable: false,
+          visible: false,
+        });
+      }
+    }
+  }
+};
+
 export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedActionSequence => {
   const timed: ResolvedPosePoint[] = [];
   const commands: InstructionBlock[] = [];
@@ -217,6 +269,7 @@ export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedA
         atMs: block.atMs,
         pose: clonePose(block.pose),
         editable: true,
+        visible: true,
       });
       totalMs = Math.max(totalMs, block.atMs);
       continue;
@@ -244,6 +297,7 @@ export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedA
         atMs: point.atMs,
         pose: clonePose(point.pose),
         editable: false,
+        visible: true,
       });
       totalMs = Math.max(totalMs, point.atMs);
     }
@@ -256,6 +310,14 @@ export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedA
   });
 
   carryUnownedAxes(timed, ownedAxesByBlockId(sequence.blocks));
+
+  injectDynamicWaveBoundaryHolds(timed, sequence.blocks);
+
+  timed.sort((left, right) => {
+    const delta = left.atMs - right.atMs;
+    if (delta !== 0) return delta;
+    return compareSourceRef(left.sourceRef, right.sourceRef);
+  });
 
   commands.sort((left, right) => {
     if (left.atMs !== right.atMs) return left.atMs - right.atMs;
@@ -302,22 +364,30 @@ export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedA
         from.sourceBlockId === to.sourceBlockId
       ) {
         const block = requireDynamicOwner(owners, from.sourceBlockId);
-        segments.push({
+        const durationMs = endMs - startMs;
+        const fromPose = clonePose(from.pose);
+        const toPose =
+          from.visible === false && from.atMs === block.startMs
+            ? clonePose(from.pose)
+            : clonePose(to.pose);
+        const draft: ResolvedMotionSegment = {
           key: `${fromRef}->${toRef}`,
           objectId,
           fromRef,
           toRef,
           startMs,
           endMs,
-          durationMs: endMs - startMs,
-          fromPose: clonePose(from.pose),
-          toPose: clonePose(to.pose),
+          durationMs,
+          fromPose,
+          toPose,
           settings: {
             profiles: cloneAxisProfiles(block.profiles),
           },
           configurable: false,
           ownerPresetBlockId: block.id,
-        });
+        };
+        draft.settings = syncSettingsToTravel(draft.settings, draft, undefined);
+        segments.push(draft);
         continue;
       }
 

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-input";
 import { cn } from "@/app/components/ui/utils";
 import {
+  dynamicPresetProfileDurationMs,
   getPresetDefinition,
   presetLabelOf,
   resolvePreset,
@@ -164,6 +165,7 @@ const generatedPosesFor = (
       sourceKind: block.kind,
       sourceBlockId: block.id,
       editable: false,
+      visible: true,
     }));
   } catch {
     return [];
@@ -274,7 +276,7 @@ export const PresetBlockFields = ({
                   ? undefined
                   : getTimelineObject(block.orderedObjectIds[0]),
                 poseTravelOf(poses, block.orderedObjectIds[0]),
-                Math.max(block.endMs - block.startMs, 0),
+                dynamicPresetProfileDurationMs(block),
               )}
             />
           </Field>
