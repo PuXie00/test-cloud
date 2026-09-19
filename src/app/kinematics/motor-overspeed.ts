@@ -69,19 +69,14 @@ const formatMmPerSec = (value: number): string =>
 const formatSec = (ms: number): string => (ms / 1000).toFixed(2);
 
 export const formatMotorOverspeedMessage = (hit: {
-  motorName: string;
   atMs: number;
   peakVelocity: number;
   limitVelocity: number;
   suggestedDurationMs: number;
-}): string => {
-  const overspeedPct = Math.round((hit.peakVelocity / hit.limitVelocity - 1) * 100);
-  return (
-    `吊点电机 [${hit.motorName}] 在 t = ${formatSec(hit.atMs)}s 处叠加线速度达到 ` +
-    `${formatMmPerSec(hit.peakVelocity)} mm/s，超过电机限速 ${formatMmPerSec(hit.limitVelocity)} mm/s` +
-    `（超速 ${overspeedPct}%）。建议将本段时长延长至 ${formatSec(hit.suggestedDurationMs)}s`
-  );
-};
+}): string =>
+  `在 t = ${formatSec(hit.atMs)}s 处线速度达到 ` +
+  `${formatMmPerSec(hit.peakVelocity)} mm/s，超过电机限速 ${formatMmPerSec(hit.limitVelocity)} mm/s。` +
+  `建议将本段时长延长至 ${formatSec(hit.suggestedDurationMs)}s`;
 
 const checkSegmentMotors = (
   object: MotorOverspeedObject,
@@ -131,7 +126,6 @@ const checkSegmentMotors = (
     const overspeedRatio = peak.peakVelocity / limit;
     const suggestedDurationMs = Math.ceil(segment.durationMs * overspeedRatio);
     const draft = {
-      motorName: peak.motor.name,
       atMs: peak.atMs,
       peakVelocity: peak.peakVelocity,
       limitVelocity: limit,
@@ -150,7 +144,8 @@ const checkSegmentMotors = (
       message: formatMotorOverspeedMessage(draft),
     });
   }
-  return hits;
+  if (hits.length === 0) return [];
+  return [hits.reduce((worst, hit) => (hit.peakVelocity > worst.peakVelocity ? hit : worst))];
 };
 
 export const collectMotorOverspeedHits = (

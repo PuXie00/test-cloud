@@ -76,10 +76,40 @@ export const formatPresetRepairMessage = (
   return who ? `${who}${issue.message}`.trim() : issue.message;
 };
 
+export const collectRepairIssuesFor = (
+  issues: readonly SequenceIssue[] | undefined,
+  target: { blockId?: string; segmentKey?: string },
+): SequenceIssue[] =>
+  (issues ?? []).filter((issue) => {
+    if (issue.severity !== "error") return false;
+    if (target.blockId !== undefined && issue.blockId === target.blockId) return true;
+    if (target.segmentKey !== undefined && issue.segmentKey === target.segmentKey) return true;
+    return false;
+  });
+
 export const collectBlockRepairIssues = (
   issues: readonly SequenceIssue[] | undefined,
   blockId: string,
-): SequenceIssue[] => (issues ?? []).filter((issue) => issue.blockId === blockId && issue.severity === "error");
+): SequenceIssue[] => collectRepairIssuesFor(issues, { blockId });
+
+export const formatRepairItems = (
+  issues: readonly SequenceIssue[] | undefined,
+  target: { blockId?: string; segmentKey?: string },
+  options?: {
+    presetId?: string;
+    objectName?: (id: number) => string | undefined;
+  },
+): string[] => {
+  const items: string[] = [];
+  const seen = new Set<string>();
+  for (const issue of collectRepairIssuesFor(issues, target)) {
+    const text = formatPresetRepairMessage(issue, options);
+    if (seen.has(text)) continue;
+    seen.add(text);
+    items.push(text);
+  }
+  return items;
+};
 
 export const formatBlockRepairItems = (
   issues: readonly SequenceIssue[] | undefined,
@@ -88,17 +118,7 @@ export const formatBlockRepairItems = (
     presetId?: string;
     objectName?: (id: number) => string | undefined;
   },
-): string[] => {
-  const items: string[] = [];
-  const seen = new Set<string>();
-  for (const issue of collectBlockRepairIssues(issues, blockId)) {
-    const text = formatPresetRepairMessage(issue, options);
-    if (seen.has(text)) continue;
-    seen.add(text);
-    items.push(text);
-  }
-  return items;
-};
+): string[] => formatRepairItems(issues, { blockId }, options);
 
 export const localPresetParamIssues = (
   presetId: string,

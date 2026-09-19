@@ -128,7 +128,7 @@ describe("editor dock sequence editor", () => {
     expect(screen.queryByLabelText("关闭添加动作")).toBeNull();
   });
 
-  it("shows an angle-protection banner from sequence issues", () => {
+  it("does not show a dock-wide banner for angle-protection or motor-overspeed", () => {
     mockBuilder({
       sequenceIssues: [
         {
@@ -136,11 +136,24 @@ describe("editor dock sequence editor", () => {
           code: "angle-protection",
           message: "当前高度 0 mm 下虚轴2 允许 [0, 0]°，实际 10°",
         },
+        {
+          severity: "error",
+          code: "motor-overspeed",
+          message:
+            "在 t = 1.10s 处线速度达到 558.9 mm/s，超过电机限速 500 mm/s。建议将本段时长延长至 9.17s",
+        },
+        {
+          severity: "error",
+          code: "motor-overspeed",
+          message:
+            "在 t = 2.00s 处线速度达到 600 mm/s，超过电机限速 500 mm/s。建议将本段时长延长至 10.00s",
+        },
       ],
     });
     render(<EditorDock />);
-    expect(screen.getByRole("alert").textContent).toContain("虚轴2 允许");
-    expect(screen.getByRole("alert").textContent).toContain("实际 10°");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(/等 2 处吊点电机超速/)).toBeNull();
+    expect(screen.queryByText(/等 2 处角度保护/)).toBeNull();
   });
 
   it("keeps SequenceEditor toolbar when an unknown preset cannot resolve", () => {

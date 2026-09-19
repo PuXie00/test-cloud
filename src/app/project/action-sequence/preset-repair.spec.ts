@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatBlockRepairItems, formatPresetRepairMessage } from "./preset-repair";
+import { formatBlockRepairItems, formatPresetRepairMessage, formatRepairItems } from "./preset-repair";
 import type { SequenceIssue } from "./validate-sequence";
 
 const issue = (partial: Partial<SequenceIssue> & Pick<SequenceIssue, "code" | "message">): SequenceIssue => ({
@@ -83,5 +83,18 @@ describe("preset repair copy", () => {
       "p1",
     );
     expect(items).toEqual(["模型 7 虚轴1 位姿 1800 超出范围 [0, 1000]"]);
+  });
+
+  it("lists motor-overspeed copy for a matching segment", () => {
+    const overspeed = issue({
+      code: "motor-overspeed",
+      message:
+        "在 t = 1.10s 处线速度达到 558.9 mm/s，超过电机限速 500 mm/s。建议将本段时长延长至 9.17s",
+      segmentKey: "pose->later",
+    });
+    expect(formatBlockRepairItems([overspeed], "pose")).toEqual([]);
+    expect(formatRepairItems([overspeed], { segmentKey: "pose->later" })).toEqual([
+      "在 t = 1.10s 处线速度达到 558.9 mm/s，超过电机限速 500 mm/s。建议将本段时长延长至 9.17s",
+    ]);
   });
 });

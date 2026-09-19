@@ -4,6 +4,7 @@ import { TabBar } from "@/app/components/ics/tab-bar";
 import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-input";
 import { cn } from "@/app/components/ui/utils";
 import { instructionBlockTitle } from "@/app/project/action-sequence/instruction-registry";
+import { formatRepairItems } from "@/app/project/action-sequence/preset-repair";
 import type { ResolvedActionSequence } from "@/app/project/action-sequence/resolve-sequence";
 import type {
   ActionSequenceConfig,
@@ -22,6 +23,7 @@ import {
 } from "../motion-profile/motion-profile-status";
 import { EmptySelectionState } from "./empty-selection-state";
 import { PresetBlockFields, presetBlockTitle } from "./preset-block-panel";
+import { RepairBand } from "./repair-band";
 import { lookupSequenceSelection, type SequenceSelection } from "../sequence-selection";
 import type { PoseAxisWrite } from "../sequence-ops";
 import {
@@ -374,7 +376,7 @@ export const SequencePropertiesPanel = ({
   onUpdateSegment,
   onDeleteBlock,
 }: SequencePropertiesPanelProps) => {
-  const { getTimelineObject } = useActionBuilder();
+  const { getTimelineObject, sequenceIssues } = useActionBuilder();
   if (selection === null) {
     return <EmptyProperties />;
   }
@@ -410,6 +412,11 @@ export const SequencePropertiesPanel = ({
           </p>
         }
       >
+        <RepairBand
+          items={formatRepairItems(sequenceIssues ?? [], { segmentKey: segment.key }, {
+            objectName: (id) => getTimelineObject(id)?.name,
+          })}
+        />
         <MotionProfileEditor
           key={`${segment.fromRef}->${segment.toRef}`}
           value={segment.settings.profiles}
@@ -451,6 +458,11 @@ export const SequencePropertiesPanel = ({
     const poseBlock: PoseBlock = block;
     return (
       <PropertiesShell title="位姿" onDelete={() => onDeleteBlock(poseBlock.id)}>
+        <RepairBand
+          items={formatRepairItems(sequenceIssues ?? [], { blockId: poseBlock.id }, {
+            objectName: (id) => getTimelineObject(id)?.name,
+          })}
+        />
         <PoseAxesEditor
           key={poseBlock.id}
           pose={poseBlock.pose}

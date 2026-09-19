@@ -58,33 +58,28 @@ describe("collectMotorOverspeedHits", () => {
     expect(hits).toEqual([]);
   });
 
-  it("flags superimposed rope speed even when each virtual axis looks moderate", () => {
+  it("keeps only the highest peak-velocity hit for a segment", () => {
     const hits = collectMotorOverspeedHits(
       [objectOf(220)],
       [segmentOf({ v1: 0, v2: 0, v3: 0 }, { v1: 200, v2: 12, v3: 10 }, 1000)],
     );
-    expect(hits.length).toBeGreaterThan(0);
-    const worst = hits.reduce((current, hit) =>
-      hit.peakVelocity > current.peakVelocity ? hit : current,
-    );
-    expect(worst.peakVelocity).toBeGreaterThan(220);
-    expect(worst.suggestedDurationMs).toBeGreaterThan(1000);
-    expect(worst.message).toContain("吊点电机");
-    expect(worst.message).toContain("超过电机限速");
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.peakVelocity).toBeGreaterThan(220);
+    expect(hits[0]?.suggestedDurationMs).toBeGreaterThan(1000);
+    expect(hits[0]?.message).toContain("处线速度达到");
+    expect(hits[0]?.message).toContain("超过电机限速");
   });
 
   it("recommends stretching duration by the overspeed ratio", () => {
     const message = formatMotorOverspeedMessage({
-      motorName: "A",
       atMs: 1240,
       peakVelocity: 560,
       limitVelocity: 500,
       suggestedDurationMs: 3360,
     });
-    expect(message).toContain("t = 1.24s");
-    expect(message).toContain("560 mm/s");
-    expect(message).toContain("超速 12%");
-    expect(message).toContain("3.36s");
+    expect(message).toBe(
+      "在 t = 1.24s 处线速度达到 560 mm/s，超过电机限速 500 mm/s。建议将本段时长延长至 3.36s",
+    );
   });
 });
 

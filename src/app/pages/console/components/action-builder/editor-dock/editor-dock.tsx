@@ -63,10 +63,6 @@ const SequenceEditor = () => {
   } = useActionBuilder();
   const rootRef = useRef<HTMLDivElement>(null);
   const selectedBlockIds = selectionBlockIds(selection);
-  const overspeedIssues = (sequenceIssues ?? []).filter((issue) => issue.code === "motor-overspeed");
-  const angleProtectionIssues = (sequenceIssues ?? []).filter(
-    (issue) => issue.code === "angle-protection",
-  );
   const invalidTargets = useMemo(
     () => invalidTimelineTargets(sequenceIssues),
     [sequenceIssues],
@@ -162,28 +158,6 @@ const SequenceEditor = () => {
       {resolved === null && (
         <div className="shrink-0 bg-warning-surface px-3 py-2 text-body-sm text-warning">
           预设无法解析，可继续编辑块
-        </div>
-      )}
-      {overspeedIssues.length > 0 && (
-        <div
-          role="alert"
-          className="shrink-0 bg-warning-surface px-3 py-2 text-body-sm text-warning"
-        >
-          {overspeedIssues[0]?.message}
-          {overspeedIssues.length > 1
-            ? ` 等 ${overspeedIssues.length} 处吊点电机超速`
-            : null}
-        </div>
-      )}
-      {angleProtectionIssues.length > 0 && (
-        <div
-          role="alert"
-          className="shrink-0 bg-warning-surface px-3 py-2 text-body-sm text-warning"
-        >
-          {angleProtectionIssues[0]?.message}
-          {angleProtectionIssues.length > 1
-            ? ` 等 ${angleProtectionIssues.length} 处角度保护`
-            : null}
         </div>
       )}
       <div className="flex min-h-0 flex-1">

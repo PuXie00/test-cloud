@@ -644,6 +644,70 @@ describe("SequencePropertiesPanel edits", () => {
 
 
 
+  it("shows angle-protection copy on the matching pose", () => {
+
+    builderState.current.sequenceIssues = [
+
+      {
+
+        severity: "error",
+
+        code: "angle-protection",
+
+        message: "当前高度 0 mm 下虚轴2 允许 [0, 0]°，实际 10°",
+
+        objectId: 7,
+
+        blockId: "pose",
+
+      },
+
+    ];
+
+    renderPanel({ selection: { kind: "block", blockId: "pose" } });
+
+    expect(screen.getByLabelText("待修复内容")).not.toBeNull();
+
+    expect(screen.getByText("模型 7 当前高度 0 mm 下虚轴2 允许 [0, 0]°，实际 10°")).not.toBeNull();
+
+  });
+
+
+
+  it("shows motor-overspeed copy on the matching motion segment", () => {
+
+    builderState.current.sequenceIssues = [
+
+      {
+
+        severity: "error",
+
+        code: "motor-overspeed",
+
+        message: "在 t = 1.10s 处线速度达到 558.9 mm/s，超过电机限速 500 mm/s。建议将本段时长延长至 9.17s",
+
+        objectId: 7,
+
+        segmentKey: "pose->later",
+
+      },
+
+    ];
+
+    renderPanel({ selection: { kind: "segment", objectId: 7, fromRef: "pose", toRef: "later" } });
+
+    expect(screen.getByLabelText("待修复内容")).not.toBeNull();
+
+    expect(
+      screen.getByText(
+        "在 t = 1.10s 处线速度达到 558.9 mm/s，超过电机限速 500 mm/s。建议将本段时长延长至 9.17s",
+      ),
+    ).not.toBeNull();
+
+  });
+
+
+
   it("lists only enabledAxes on a single pose", () => {
 
     builderState.current.getTimelineObject = () => ({
