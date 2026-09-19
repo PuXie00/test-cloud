@@ -282,11 +282,7 @@ const installSideEffectMocks = () => {
       scanMock(...args);
       return ok();
     },
-    actionSyncCallPlc: (...args: unknown[]) => {
-      execMock(...args);
-      return ok();
-    },
-    actionPreparePlc: (...args: unknown[]) => {
+    actionGo: (...args: unknown[]) => {
       execMock(...args);
       return ok();
     },

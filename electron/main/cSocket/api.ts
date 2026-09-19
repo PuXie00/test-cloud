@@ -360,7 +360,12 @@ export class CsocketApiService {
     console.log('actionReady', items);
   }
   // 动作执行 Go
-  actionGo(items: unknown[], opts?: CsocketSendOpts) {
+  actionGo(items: {
+    actionId: number,
+    runDirection: number,
+    speedScale: number,
+    loopCount: number,
+  }[], opts?: CsocketSendOpts) {
     return this.sendBuilt('Action|go', '', items, opts)
   }
 

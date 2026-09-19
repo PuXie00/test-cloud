@@ -142,8 +142,6 @@ export type CsocketAPI = {
   allStopPlc: CsocketSendFn
   busResetPlc: CsocketSendFn
   resetPlc: CsocketSendFn
-  actionPreparePlc: CsocketSendFn
-  actionSyncCallPlc: CsocketSendFn
   stopActionPlc: CsocketSendFn
   ruleStartPlc: CsocketSendFn
   ruleDeletePlc: CsocketSendFn
@@ -155,6 +153,7 @@ export type CsocketAPI = {
   downloadPlcInfoPlc: CsocketSendFn
   clearConfigPlc: CsocketSendFn
   actionReady: (items: ActionDataSaveItem[], opts?: CsocketSendOpts) => CsocketSendResult
+  actionGo: CsocketSendFn
   disconnectMotionConfigPlc: CsocketSendFn
 
   // PLC 读取 / 状态查询

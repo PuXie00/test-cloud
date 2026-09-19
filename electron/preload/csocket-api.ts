@@ -83,8 +83,6 @@ export const createCsocketApi = () => ({
   allStopPlc: invokeOptionalSend(CSOCKET_CHANNELS.allStopPlc),
   busResetPlc: invokeSend(CSOCKET_CHANNELS.busResetPlc),
   resetPlc: invokeOptionalSend(CSOCKET_CHANNELS.resetPlc),
-  actionPreparePlc: invokeSend(CSOCKET_CHANNELS.actionPreparePlc),
-  actionSyncCallPlc: invokeSend(CSOCKET_CHANNELS.actionSyncCallPlc),
   stopActionPlc: invokeOptionalSend(CSOCKET_CHANNELS.stopActionPlc),
   ruleStartPlc: invokeSend(CSOCKET_CHANNELS.ruleStartPlc),
   ruleDeletePlc: invokeOptionalSend(CSOCKET_CHANNELS.ruleDeletePlc),
@@ -96,6 +94,7 @@ export const createCsocketApi = () => ({
   downloadPlcInfoPlc: invokeSend(CSOCKET_CHANNELS.downloadPlcInfoPlc),
   clearConfigPlc: invokeOptionalSend(CSOCKET_CHANNELS.clearConfigPlc),
   actionReady: invokeSend(CSOCKET_CHANNELS.actionReady) as ActionDataSaveFn,
+  actionGo: invokeSend(CSOCKET_CHANNELS.actionGo),
   disconnectMotionConfigPlc: invokeSend(CSOCKET_CHANNELS.disconnectMotionConfigPlc),
 
   // PLC 读取 / 状态查询

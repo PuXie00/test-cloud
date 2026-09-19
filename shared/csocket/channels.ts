@@ -10,6 +10,7 @@ export const CSOCKET_CHANNELS = {
   readPlcParamStatus: 'csocket:read-plc-param-status',
   handleDynamicOperation: 'csocket:handle-dynamic-operation',
   actionReady: 'csocket:action-ready',
+  actionGo: 'csocket:action-go',
 
   // Motor
   configureAxisParamMotor: 'csocket:configure-axis-param-motor',
@@ -51,8 +52,6 @@ export const CSOCKET_CHANNELS = {
   allStopPlc: 'csocket:all-stop-plc',
   busResetPlc: 'csocket:bus-reset-plc',
   resetPlc: 'csocket:reset-plc',
-  actionPreparePlc: 'csocket:action-prepare-plc',
-  actionSyncCallPlc: 'csocket:action-sync-call-plc',
   stopActionPlc: 'csocket:stop-action-plc',
   ruleStartPlc: 'csocket:rule-start-plc',
   ruleDeletePlc: 'csocket:rule-delete-plc',

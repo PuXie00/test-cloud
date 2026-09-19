@@ -102,8 +102,7 @@ const createTransport = (): InstrumentedTransport => {
 
 const createMockCsocketApi = (saveResult: unknown) => ({
   actionReady: vi.fn().mockResolvedValue(saveResult),
-  actionPreparePlc: vi.fn().mockResolvedValue({ success: true, data: [] }),
-  actionSyncCallPlc: vi.fn().mockResolvedValue({ success: true, data: [] }),
+  actionGo: vi.fn().mockResolvedValue({ success: true, data: [] }),
   stopActionPlc: vi.fn().mockResolvedValue({ success: true, data: [] }),
 });
 
@@ -237,7 +236,7 @@ describe("readySequence", () => {
       });
       expect(readied.ok).toBe(true);
       expect(api.actionReady).toHaveBeenCalledTimes(1);
-      expect(api.actionSyncCallPlc).not.toHaveBeenCalled();
+      expect(api.actionGo).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }
@@ -297,6 +296,7 @@ describe("goSequence", () => {
     expect(transport.calls).toEqual(["sync"]);
     expect(transport.saveAction).not.toHaveBeenCalled();
     expect(transport.syncCall).toHaveBeenCalledWith({
+      actionId: validSequence.id,
       syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID,
       startTimestamp: expect.any(Number),
       speedScale: 1.5,
@@ -328,7 +328,7 @@ describe("goSequence", () => {
   });
 
   it("simulates GO success when csocket sync fails", async () => {
-    const api = createMockCsocketApi({ success: false, message: "actionSyncCall success=false" });
+    const api = createMockCsocketApi({ success: false, message: "actionGo success=false" });
     vi.stubGlobal("window", { csocketApi: api });
     try {
       const started = await goSequence({
@@ -342,7 +342,7 @@ describe("goSequence", () => {
         speedPercent: 100,
         sequenceHandle: { actionId: validSequence.id, syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID },
       });
-      expect(api.actionSyncCallPlc).toHaveBeenCalledTimes(1);
+      expect(api.actionGo).toHaveBeenCalledTimes(1);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -360,6 +360,7 @@ describe("startLocalAuthoredSequence", () => {
 
     expect(transport.calls).toEqual(["save", "sync"]);
     expect(transport.syncCall).toHaveBeenCalledWith({
+      actionId: validSequence.id,
       syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID,
       startTimestamp: expect.any(Number),
       speedScale: 1,
@@ -420,6 +421,7 @@ describe("createLocalSequenceTransport", () => {
     expect(actionReady).not.toHaveBeenCalled();
     await expect(
       transport.syncCall({
+        actionId: 1,
         syncGroupId: 1,
         startTimestamp: 1,
         speedScale: 1,
@@ -479,26 +481,23 @@ describe("createCsocketSequenceTransport", () => {
     );
   });
 
-  it("maps sync and stop onto existing csocket methods and voids trajectoryMode at the adapter", async () => {
+  it("maps sync and stop onto actionGo/stopActionPlc and voids trajectoryMode at the adapter", async () => {
     const api = createMockCsocketApi({ success: true, data: [{ actionId: 9 }] });
     const transport = createCsocketSequenceTransport(api);
     await transport.syncCall({
+      actionId: 9,
       syncGroupId: 4,
       startTimestamp: 99,
       speedScale: 1.5,
       trajectoryMode: "forced",
     });
-    expect(api.actionPreparePlc).not.toHaveBeenCalled();
-    expect(api.actionSyncCallPlc).toHaveBeenCalled();
-    const wireItem = api.actionSyncCallPlc.mock.calls[0]?.[0]?.[0] as Record<string, unknown>;
+    expect(api.actionGo).toHaveBeenCalled();
+    const wireItem = api.actionGo.mock.calls[0]?.[0]?.[0] as Record<string, unknown>;
     expect(wireItem).toEqual({
-      syncGroupId: 4,
-      startMode: 0,
+      actionId: 9,
       runDirection: 0,
       speedScale: 1.5,
       loopCount: 1,
-      autoPositionCheckFlag: 0,
-      startTimestamp: 99,
     });
     expect(wireItem).not.toHaveProperty("trajectoryMode");
     await transport.stopAction({ actionId: 9, syncGroupId: 4 });

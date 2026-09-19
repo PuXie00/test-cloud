@@ -50,6 +50,7 @@ export type DownloadedSequence =
 export type SequenceExecutionTransport = {
   saveAction: (items: ActionDataSaveItem[]) => Promise<void>;
   syncCall: (input: {
+    actionId: number;
     syncGroupId: number;
     startTimestamp: number;
     speedScale: number;
@@ -60,7 +61,7 @@ export type SequenceExecutionTransport = {
 
 export type SequenceCsocketClient = {
   actionReady: (items: ActionDataSaveItem[], opts?: unknown) => Promise<unknown>;
-  actionSyncCallPlc: (items: unknown[], opts?: unknown) => Promise<unknown>;
+  actionGo: (items: unknown[], opts?: unknown) => Promise<unknown>;
   stopActionPlc: (items: unknown[], opts?: unknown) => Promise<unknown>;
 };
 
@@ -203,14 +204,9 @@ const requireSaveAck = (raw: unknown): void => {
   }
 };
 
-/**
- * Placeholder fields until the protocol gate confirms prepare/sync encoding.
- * Do not change electron/main item shapes.
- */
-const ADAPTER_START_MODE = 0;
+/** Placeholder until firmware confirms run direction encoding. */
 const ADAPTER_RUN_DIRECTION = 0;
 const ADAPTER_LOOP_COUNT = 1;
-const ADAPTER_AUTO_POSITION_CHECK = 0;
 
 export const createCsocketSequenceTransport = (
   api: SequenceCsocketClient,
@@ -222,19 +218,18 @@ export const createCsocketSequenceTransport = (
     // The C++ contract has not assigned a wire field for this semantic mode yet.
     // Keep the mode at the adapter boundary; do not guess a numeric mapping.
     void input.trajectoryMode;
+    void input.syncGroupId;
+    void input.startTimestamp;
     await requireSuccessfulAck(
-      await api.actionSyncCallPlc([
+      await api.actionGo([
         {
-          syncGroupId: input.syncGroupId,
-          startMode: ADAPTER_START_MODE,
+          actionId: input.actionId,
           runDirection: ADAPTER_RUN_DIRECTION,
           speedScale: input.speedScale,
           loopCount: ADAPTER_LOOP_COUNT,
-          autoPositionCheckFlag: ADAPTER_AUTO_POSITION_CHECK,
-          startTimestamp: input.startTimestamp,
         },
       ]),
-      "actionSyncCall",
+      "actionGo",
     );
   },
   stopAction: async (input) => {
@@ -251,7 +246,7 @@ const hasSequenceCsocketApi = (value: unknown): value is SequenceCsocketClient =
   if (!isRecord(value)) return false;
   return (
     typeof value.actionReady === "function" &&
-    typeof value.actionSyncCallPlc === "function" &&
+    typeof value.actionGo === "function" &&
     typeof value.stopActionPlc === "function"
   );
 };
@@ -377,6 +372,7 @@ export const goSequence = async (args: {
 
   try {
     await transport.syncCall({
+      actionId: found.sequence.id,
       syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID,
       startTimestamp: Date.now(),
       speedScale: fromFader ? mapFaderPercentToSpeedScale(speedPercent) : 1,

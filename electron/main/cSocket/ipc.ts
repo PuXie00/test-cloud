@@ -213,18 +213,6 @@ export const registerCppSocketIpc = (api: CsocketApiService): void => {
   handleOptionalItems(CSOCKET_CHANNELS.resetPlc, (items, opts) =>
     api.resetPlc(items as Parameters<CsocketApiService['resetPlc']>[0], opts),
   )
-  handleItems(CSOCKET_CHANNELS.actionPreparePlc, (items, opts) =>
-    api.actionPreparePlc(
-      items as Parameters<CsocketApiService['actionPreparePlc']>[0],
-      opts,
-    ),
-  )
-  handleItems(CSOCKET_CHANNELS.actionSyncCallPlc, (items, opts) =>
-    api.actionSyncCallPlc(
-      items as Parameters<CsocketApiService['actionSyncCallPlc']>[0],
-      opts,
-    ),
-  )
   handleOptionalItems(CSOCKET_CHANNELS.stopActionPlc, (items, opts) =>
     api.stopActionPlc(items as Parameters<CsocketApiService['stopActionPlc']>[0], opts),
   )
@@ -275,6 +263,9 @@ export const registerCppSocketIpc = (api: CsocketApiService): void => {
   )
   handleItems(CSOCKET_CHANNELS.actionReady, (items, opts) =>
     api.actionReady(items as ActionDataSaveItem[], opts),
+  )
+  handleItems(CSOCKET_CHANNELS.actionGo, (items, opts) =>
+    api.actionGo(items as Parameters<CsocketApiService['actionGo']>[0], opts),
   )
   handleItems(CSOCKET_CHANNELS.disconnectMotionConfigPlc, (items, opts) =>
     api.disconnectMotionConfigPlc(items as { motionFlag: number }[], opts),
