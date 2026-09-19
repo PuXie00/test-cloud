@@ -36,6 +36,14 @@ const MOTOR_STATUS_OPTIONS: { value: string; label: string }[] = [
   })),
 ];
 
+const FILTER_SELECT_CLASS =
+  "h-7 rounded-sm border border-border bg-input-background px-2 text-body-sm text-foreground";
+
+const OBJECT_LAYOUT_OPTIONS: { value: ObjectLayout; label: string }[] = [
+  { value: "card", label: "卡片" },
+  { value: "table", label: "表格" },
+];
+
 const SEGMENT_BUTTON_CLASS =
   "h-7 px-2 text-body-sm border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
@@ -101,22 +109,25 @@ export const MonitorGridToolbar = ({
         ariaLabel="监控实体"
       />
       {entity === "object" && (
-        <SegmentedControl
+        <select
           value={objectLayout}
-          options={[
-            { value: "card", label: "卡片" },
-            { value: "table", label: "表格" },
-          ]}
-          onChange={onObjectLayoutChange}
-          ariaLabel="物体布局"
-        />
+          onChange={(event) => onObjectLayoutChange(event.target.value as ObjectLayout)}
+          className={FILTER_SELECT_CLASS}
+          aria-label="物体布局"
+        >
+          {OBJECT_LAYOUT_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
       )}
       {showFilters ? (
         <>
           <select
             value={statusFilter}
             onChange={(event) => onStatusFilterChange(event.target.value)}
-            className="h-7 rounded-sm border border-border bg-input-background px-2 text-body-sm text-foreground"
+            className={FILTER_SELECT_CLASS}
             aria-label="状态筛选"
           >
             {statusOptions.map((option) => (

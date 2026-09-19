@@ -100,13 +100,13 @@ describe("MonitorGrid", () => {
   it("defaults to object card view with object name and layout toggle", () => {
     render(createElement(MonitorGrid));
     expect(screen.getByText("测试物体")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "卡片" })).toBeTruthy();
+    expect((screen.getByLabelText("物体布局") as HTMLSelectElement).value).toBe("card");
     expect(screen.queryByText("负载率")).toBeNull();
   });
 
   it("switches to object table with H/P/Y columns and selects on row click", () => {
     render(createElement(MonitorGrid));
-    fireEvent.click(screen.getByRole("button", { name: "表格" }));
+    fireEvent.change(screen.getByLabelText("物体布局"), { target: { value: "table" } });
     expect(screen.getByText("H")).toBeTruthy();
     expect(screen.getByText("P")).toBeTruthy();
     expect(screen.getByText("Y")).toBeTruthy();
@@ -119,7 +119,7 @@ describe("MonitorGrid", () => {
     fireEvent.click(screen.getByRole("button", { name: "电机" }));
     expect(screen.getByText("负载率")).toBeTruthy();
     expect(screen.getByText("报警码")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "卡片" })).toBeNull();
+    expect(screen.queryByLabelText("物体布局")).toBeNull();
     fireEvent.click(screen.getByText("7"));
     expect(selectMock).not.toHaveBeenCalled();
   });
