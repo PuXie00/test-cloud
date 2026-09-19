@@ -167,19 +167,22 @@ export const fitPresetParams = (
   }
 
   if (presetId === "dynamic-wave") {
-    const durationMs = durationForPhases(minAccelSec, 3);
-    const sampleIntervalMs = snapMs(durationMs / 3);
-    const travelCap = maxTravelFor(sampleIntervalMs, minAccelSec, maxVelocity);
-    const amplitude = Math.min(preferredAmplitude(v1), travelCap / 2);
+    const cycles = 1;
+    const phaseCount = cycles * 2;
+    const motionMs = durationForPhases(minAccelSec, phaseCount);
+    const staggerMs = snapMs(Math.min(500, Math.max(PRESET_TIME_STEP_MS, motionMs / 4)));
+    const durationMs = motionMs + (count - 1) * staggerMs;
+    const phaseMs = motionMs / phaseCount;
+    const travelCap = maxTravelFor(phaseMs, minAccelSec, maxVelocity);
+    const amplitude = Math.min(preferredAmplitude(v1), travelCap);
     return {
       durationMs,
       params: {
         baseV1: midOf(v1),
         amplitude: Math.max(0, amplitude),
-        cycles: 1,
+        staggerMs,
+        cycles,
         direction: 1,
-        intervalDeg: 90,
-        sampleIntervalMs,
       },
     };
   }
