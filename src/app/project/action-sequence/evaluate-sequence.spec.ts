@@ -169,12 +169,19 @@ describe("evaluateResolvedSequence", () => {
     expect(evaluateResolvedSequence(resolved, 900).get(7)?.v1).toBeCloseTo(968.75, 5);
   });
 
-  it("reaches each dynamic-wave sample exactly and restarts the next segment with acceleration", () => {
+  it("holds the pre-block pose during the delayed object's wait, then chases", () => {
     const resolved = resolveActionSequence({
       id: 1,
       name: "Seq",
       trajectoryMode: "non-forced",
       blocks: [
+        {
+          id: "prior",
+          kind: "pose",
+          objectId: 8,
+          atMs: 0,
+          pose: { v1: 200, v2: 10, v3: 5 },
+        },
         {
           id: "wave-1",
           kind: "dynamic-preset",
@@ -187,10 +194,7 @@ describe("evaluateResolvedSequence", () => {
             amplitude: 500,
             cycles: 1,
             direction: 1,
-            intervalDeg: 90,
-            sampleIntervalMs: 500,
-            v2: 0,
-            v3: 0,
+            staggerMs: 500,
           },
           profiles: axisProfiles(100, 100),
         },
@@ -198,11 +202,13 @@ describe("evaluateResolvedSequence", () => {
       segments: [],
     });
 
-    expect(evaluateResolvedSequence(resolved, 1500).get(7)?.v1).toBe(1500);
-
-    const restarted = evaluateResolvedSequence(resolved, 1510).get(7)?.v1;
-    expect(restarted).toBeCloseTo(1499.375, 5);
-    expect(restarted).not.toBeCloseTo(1490, 1);
+    expect(evaluateResolvedSequence(resolved, 1200).get(8)?.v1).toBe(200);
+    expect(evaluateResolvedSequence(resolved, 1500).get(8)?.v1).toBe(1000);
+    expect(evaluateResolvedSequence(resolved, 1750).get(7)?.v1).toBe(1500);
+    const restarted = evaluateResolvedSequence(resolved, 1760).get(7)?.v1;
+    expect(restarted).toBeGreaterThan(1493);
+    expect(restarted).toBeLessThan(1500);
+    expect(evaluateResolvedSequence(resolved, 2700).get(7)?.v1).toBe(1000);
   });
 
   it("interpolates each axis with its own accel profile at the same tNorm", () => {

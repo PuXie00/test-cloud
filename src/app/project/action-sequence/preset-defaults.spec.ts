@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultAxisProfiles } from "./motion-profile";
 import { fitPresetParams, type PresetParticipantLimits } from "./preset-defaults";
-import { countPosesPerObject, resolvePreset } from "./preset-registry";
+import { countPosesPerObject, dynamicPresetProfileDurationMs, resolvePreset } from "./preset-registry";
 import type { DynamicPresetBlock, StaticPresetBlock } from "./types";
 import { validateActionSequence } from "./validate-sequence";
 
@@ -72,6 +72,8 @@ describe("fitPresetParams", () => {
     const fitted = fitPresetParams("dynamic-wave", participants);
     expect(fitted).not.toBeNull();
     expect(fitted!.durationMs).toBeGreaterThanOrEqual(3000);
+    expect(fitted!.params).toMatchObject({ cycles: 1, direction: 1 });
+    expect(fitted!.params.staggerMs).toBeGreaterThan(0);
     const block: DynamicPresetBlock = {
       id: "dw",
       kind: "dynamic-preset",
@@ -80,11 +82,51 @@ describe("fitPresetParams", () => {
       endMs: fitted!.durationMs,
       orderedObjectIds: [7, 8],
       params: fitted!.params,
-      profiles: createDefaultAxisProfiles(fitted!.durationMs, { v1: 1 }),
+      profiles: createDefaultAxisProfiles(
+        dynamicPresetProfileDurationMs({
+          presetId: "dynamic-wave",
+          startMs: 0,
+          endMs: fitted!.durationMs,
+          orderedObjectIds: [7, 8],
+          params: fitted!.params,
+        }),
+        { v1: 1 },
+      ),
     };
     const points = resolvePreset(block);
     expect(countPosesPerObject(points).get(7)).toBeGreaterThanOrEqual(2);
     expect(points.every((point) => point.pose.v1 >= 0 && point.pose.v1 <= 1000)).toBe(true);
+    expect(
+      validateActionSequence(
+        { id: 1, name: "Seq", trajectoryMode: "non-forced", blocks: [block], segments: [] },
+        context,
+      ).filter((issue) => issue.severity === "error"),
+    ).toEqual([]);
+  });
+
+  it("keeps a fitted dynamic-wave valid after stretching duration by 100ms", () => {
+    const fitted = fitPresetParams("dynamic-wave", participants);
+    expect(fitted).not.toBeNull();
+    const originalEndMs = fitted!.durationMs;
+    const block: DynamicPresetBlock = {
+      id: "dw-stretch",
+      kind: "dynamic-preset",
+      presetId: "dynamic-wave",
+      startMs: 0,
+      endMs: originalEndMs + 100,
+      orderedObjectIds: [7, 8],
+      params: fitted!.params,
+      profiles: createDefaultAxisProfiles(
+        dynamicPresetProfileDurationMs({
+          presetId: "dynamic-wave",
+          startMs: 0,
+          endMs: originalEndMs,
+          orderedObjectIds: [7, 8],
+          params: fitted!.params,
+        }),
+        { v1: 1 },
+      ),
+    };
     expect(
       validateActionSequence(
         { id: 1, name: "Seq", trajectoryMode: "non-forced", blocks: [block], segments: [] },
