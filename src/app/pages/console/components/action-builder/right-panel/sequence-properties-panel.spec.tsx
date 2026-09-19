@@ -834,6 +834,18 @@ describe("SequencePropertiesPanel multi-pose", () => {
 
   });
 
+  it("deletes every selected pose from the multi-pose panel", () => {
+    renderPanel({ selection: { kind: "multi-block", blockIds: ["pose", "later"] } });
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    expect(handlers.onDeleteBlock).toHaveBeenCalledWith(["pose", "later"]);
+  });
+
+  it("deletes a mixed multi-selection", () => {
+    renderPanel({ selection: { kind: "multi-block", blockIds: ["pose", "enable"] } });
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    expect(handlers.onDeleteBlock).toHaveBeenCalledWith(["pose", "enable"]);
+  });
+
 });
 
 

@@ -46,7 +46,7 @@ export type SequencePropertiesPanelProps = {
     toRef: string,
     settings: MotionSegmentSettings,
   ) => void;
-  onDeleteBlock: (blockId: string) => void;
+  onDeleteBlock: (blockId: string | string[]) => void;
 };
 
 const PropertiesShell = ({
@@ -437,15 +437,16 @@ export const SequencePropertiesPanel = ({
   if (lookup.kind === "multi-block") {
     const poseBlocks = lookup.blocks.filter((block): block is PoseBlock => block.kind === "pose");
     const allPoses = poseBlocks.length === lookup.blocks.length && poseBlocks.length > 0;
+    const handleDeleteSelected = () => onDeleteBlock(lookup.blocks.map((block) => block.id));
     if (!allPoses) {
       return (
-        <PropertiesShell title="多选">
+        <PropertiesShell title="多选" onDelete={handleDeleteSelected}>
           <p className="text-body-sm text-muted-foreground">已选 {lookup.blocks.length} 项</p>
         </PropertiesShell>
       );
     }
     return (
-      <PropertiesShell title="多选位姿">
+      <PropertiesShell title="多选位姿" onDelete={handleDeleteSelected}>
         <p className="mb-3 text-body-sm text-muted-foreground">已选 {lookup.blocks.length} 项</p>
         <MultiPoseAxesEditor poses={poseBlocks} />
       </PropertiesShell>
