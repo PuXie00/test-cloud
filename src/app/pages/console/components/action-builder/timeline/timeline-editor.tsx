@@ -26,6 +26,7 @@ import { TimelineHScroll } from "./timeline-h-scroll";
 import { collectMarqueeBlockIds } from "./timeline-marquee";
 import { computeNiceTimeTicks } from "./timeline-ticks";
 import { TimelineRuler, TimelineRulerReadout } from "./timeline-ruler";
+import { visibleGeneratedAtMs } from "./preset-ticks";
 import { TimelineTrack } from "./timeline-track";
 import {
   canvasWidthPx,
@@ -190,15 +191,7 @@ export const TimelineEditor = ({
         const dynamicPresets = dynamicPresetsFor(sequence, objectId);
         const generatedTicksByPreset: Record<string, number[]> = {};
         for (const block of dynamicPresets) {
-          generatedTicksByPreset[block.id] = resolved.poses
-            .filter(
-              (point) =>
-                point.objectId === objectId &&
-                point.sourceBlockId === block.id &&
-                point.sourceKind === "dynamic-preset" &&
-                point.atMs !== null,
-            )
-            .map((point) => point.atMs as number);
+          generatedTicksByPreset[block.id] = visibleGeneratedAtMs(resolved.poses, objectId, block.id);
         }
         return {
           objectId,

@@ -157,7 +157,9 @@ const generatedPosesFor = (
   resolved: ResolvedActionSequence,
   block: StaticPresetBlock | DynamicPresetBlock,
 ): ResolvedPosePoint[] => {
-  const fromResolved = resolved.poses.filter((point) => point.sourceBlockId === block.id);
+  const fromResolved = resolved.poses.filter(
+    (point) => point.sourceBlockId === block.id && point.visible,
+  );
   if (fromResolved.length > 0) return fromResolved;
   try {
     return resolvePreset(block).map((point) => ({
