@@ -577,17 +577,26 @@ const collectResolvedIssues = (
       const from = series[index];
       const to = series[index + 1];
       if (from === undefined || to === undefined) continue;
-      if (from.atMs !== to.atMs) continue;
       if (posesEqualOn(from.pose, to.pose, axes)) continue;
       const crossesDynamicBoundary =
+        from.atMs === to.atMs &&
         (from.sourceKind === "dynamic-preset" || to.sourceKind === "dynamic-preset") &&
         from.sourceBlockId !== to.sourceBlockId;
-      if (!crossesDynamicBoundary) continue;
+      const jumpsFromWaveHoldStart =
+        from.visible === false &&
+        to.visible === true &&
+        from.sourceKind === "dynamic-preset" &&
+        to.sourceKind === "dynamic-preset" &&
+        from.sourceBlockId !== null &&
+        from.sourceBlockId === to.sourceBlockId &&
+        from.sourceRef.endsWith(":hold-start");
+      if (!crossesDynamicBoundary && !jumpsFromWaveHoldStart) continue;
       issues.push({
         severity: "warning",
         code: "boundary-discontinuity",
         message: `dynamic preset boundary discontinuity at ${to.atMs}ms`,
         objectId,
+        atMs: to.atMs,
         ...(to.sourceBlockId ? { blockId: to.sourceBlockId } : {}),
       });
     }

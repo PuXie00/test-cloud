@@ -68,7 +68,7 @@ describe("fitPresetParams", () => {
     ).toEqual([]);
   });
 
-  it("fits dynamic-wave duration and samples so generated poses pass validation", () => {
+  it("fits dynamic-wave duration and stagger phases so generated poses pass validation", () => {
     const fitted = fitPresetParams("dynamic-wave", participants);
     expect(fitted).not.toBeNull();
     expect(fitted!.durationMs).toBeGreaterThanOrEqual(3000);

@@ -781,6 +781,40 @@ describe("validateActionSequence", () => {
     );
   });
 
+  it("warns when a wave wait hold jumps to the first visible keyframe", () => {
+    const issues = validateActionSequence(
+      sequenceOf([
+        { id: "prior", kind: "pose", objectId: 8, atMs: 0, pose: { v1: 200, v2: 0, v3: 0 } },
+        {
+          id: "wave-1",
+          kind: "dynamic-preset",
+          presetId: "dynamic-wave",
+          startMs: 1000,
+          endMs: 3000,
+          orderedObjectIds: [7, 8],
+          params: {
+            baseV1: 1000,
+            amplitude: 500,
+            cycles: 1,
+            direction: 1,
+            staggerMs: 500,
+          },
+          profiles: axisProfiles(100, 100),
+        },
+      ]),
+      twoObjects(),
+    );
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        severity: "warning",
+        code: "boundary-discontinuity",
+        objectId: 8,
+        blockId: "wave-1",
+        atMs: 1500,
+      }),
+    );
+  });
+
   it("warns for idle holds at LONG_IDLE_MS and not just below it", () => {
     expect(LONG_IDLE_MS).toBe(10_000);
     const idle = validateActionSequence(

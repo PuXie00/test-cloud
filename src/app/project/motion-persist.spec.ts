@@ -213,7 +213,7 @@ describe("motion-persist authored sequences", () => {
     });
     expect(program?.chapters[0]?.items[0]).toEqual({
       kind: "sequence",
-      sequence: { id: 1, name: "Seq", durationMs: 1000 },
+      sequence: { id: 1, name: "Seq", durationMs: 1000, trajectoryMode: "non-forced" },
     });
   });
 
@@ -254,7 +254,7 @@ describe("motion-persist authored sequences", () => {
     const program = motionProgramToLegacyProgram(motion);
     expect(program?.chapters[0]?.items[0]).toEqual({
       kind: "sequence",
-      sequence: { id: 1, name: "Seq", durationMs: 0 },
+      sequence: { id: 1, name: "Seq", durationMs: 0, trajectoryMode: "non-forced" },
     });
   });
 });

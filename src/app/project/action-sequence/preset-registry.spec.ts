@@ -7,6 +7,7 @@ import {
   resolvePreset,
 } from "./preset-registry";
 import type { DynamicPresetBlock, StaticPresetBlock } from "./types";
+import { validateActionSequence } from "./validate-sequence";
 
 const slopeBlock = (): StaticPresetBlock => ({
   id: "preset-1",
@@ -322,6 +323,38 @@ describe("preset registry", () => {
         v3: 0,
       }),
     ).toEqual([]);
+  });
+
+  it("defaults missing staggerMs to simultaneous chase", () => {
+    const params = { baseV1: 1000, amplitude: 500 };
+    expect(getPresetDefinition("dynamic-wave")?.validateParams(params)).toEqual([]);
+    const points = resolvePreset({ ...waveBlock(), params });
+    expect(points.map((point) => [point.objectId, point.atMs, point.pose.v1])).toEqual([
+      [7, 1000, 1000],
+      [7, 2000, 1500],
+      [7, 3000, 1000],
+      [8, 1000, 1000],
+      [8, 2000, 1500],
+      [8, 3000, 1000],
+    ]);
+    expect(countPosesPerObject(points).get(7)).toBe(3);
+    expect(countPosesPerObject(points).get(8)).toBe(3);
+    const issues = validateActionSequence(
+      {
+        id: 1,
+        name: "Seq",
+        trajectoryMode: "non-forced",
+        blocks: [{ ...waveBlock(), params }],
+        segments: [],
+      },
+      {
+        objects: [
+          { id: 7, enabledVirtualAxes: ["v1"], limits: {} },
+          { id: 8, enabledVirtualAxes: ["v1"], limits: {} },
+        ],
+      },
+    );
+    expect(issues.some((issue) => issue.code === "invalid-preset")).toBe(false);
   });
 
   it("throws from resolvePreset instead of emitting invalid poses", () => {

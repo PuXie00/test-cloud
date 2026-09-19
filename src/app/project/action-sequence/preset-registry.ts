@@ -144,6 +144,29 @@ const DYNAMIC_WAVE_FIELDS: readonly PresetParamField[] = [
   },
 ];
 
+const DYNAMIC_WAVE_PARAM_DEFAULTS = {
+  staggerMs: 0,
+  cycles: 1,
+  direction: 1,
+} as const;
+
+const withDynamicWaveParamDefaults = (
+  params: Record<string, PresetParamValue>,
+): Record<string, PresetParamValue> => ({
+  ...DYNAMIC_WAVE_PARAM_DEFAULTS,
+  ...params,
+});
+
+const dynamicWaveNumericParam = (
+  params: Record<string, PresetParamValue>,
+  key: keyof typeof DYNAMIC_WAVE_PARAM_DEFAULTS,
+): number => {
+  const value = params[key];
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : DYNAMIC_WAVE_PARAM_DEFAULTS[key];
+};
+
 const mapStatic = (
   block: StaticPresetBlock,
   v1At: (participantIndex: number, count: number) => number,
@@ -267,8 +290,8 @@ export const dynamicPresetProfileDurationMs = (
 ): number => {
   const durationMs = Math.max(block.endMs - block.startMs, 0);
   if (block.presetId !== "dynamic-wave") return durationMs;
-  const staggerMs = typeof block.params.staggerMs === "number" ? block.params.staggerMs : 0;
-  const cycles = typeof block.params.cycles === "number" ? block.params.cycles : 1;
+  const staggerMs = dynamicWaveNumericParam(block.params, "staggerMs");
+  const cycles = dynamicWaveNumericParam(block.params, "cycles");
   const phaseMs = dynamicWavePhaseDurationMs(
     block.startMs,
     block.endMs,
@@ -305,7 +328,7 @@ const dynamicWave: PresetDefinition = {
   ownedAxes: OWNED_V1,
   paramFields: DYNAMIC_WAVE_FIELDS,
   validateParams: (params) => {
-    const errors = numericParams(params, fieldKeys(DYNAMIC_WAVE_FIELDS));
+    const errors = numericParams(withDynamicWaveParamDefaults(params), fieldKeys(DYNAMIC_WAVE_FIELDS));
     const staggerMs = params.staggerMs;
     if (typeof staggerMs === "number" && Number.isFinite(staggerMs) && staggerMs < 0) {
       errors.push("parameter staggerMs must be >= 0");
@@ -322,7 +345,9 @@ const dynamicWave: PresetDefinition = {
   },
   resolve: (block) => {
     const dyn = asDynamic(block);
-    const { baseV1, amplitude, cycles, direction, staggerMs } = numbers(dyn.params);
+    const { baseV1, amplitude, cycles, direction, staggerMs } = numbers(
+      withDynamicWaveParamDefaults(dyn.params),
+    );
     const count = dyn.orderedObjectIds.length;
     const phaseMs = dynamicWavePhaseDurationMs(
       dyn.startMs,
