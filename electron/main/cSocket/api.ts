@@ -353,6 +353,22 @@ export class CsocketApiService {
   downloadPlcProject(items: unknown[], opts?: CsocketSendOpts) {
     return this.sendBuilt('CONFIG|Pro|download', '', items, opts)
   }
+
+  // 动作准备Ready
+
+  actionReady(items: ActionDataSaveItem[], opts?: CsocketSendOpts) {
+    console.log('actionReady', items);
+  }
+  // 动作执行 Go
+  actionGo(items: unknown[], opts?: CsocketSendOpts) {
+    return this.sendBuilt('Action|go', '', items, opts)
+  }
+
+  // 动作停止 Stop
+  actionStop(items: unknown[], opts?: CsocketSendOpts) {
+    return this.sendBuilt('Action|stop', '', items, opts)
+  }
+
   /*
   * 电机
   */
@@ -729,6 +745,7 @@ export class CsocketApiService {
     })
     return this.sendBuilt('Config|actionDataSave', '0x1016', paramsMapped, opts)
   }
+  
   // 规则启动
   ruleStartPlc(items: { enableFlag: number }[], opts?: CsocketSendOpts) {
     return this.sendBuilt('Operation|ruleStart', '0x1008', items, opts)

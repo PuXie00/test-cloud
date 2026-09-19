@@ -9,6 +9,7 @@ export const CSOCKET_CHANNELS = {
   modifyPlcParam: 'csocket:modify-plc-param',
   readPlcParamStatus: 'csocket:read-plc-param-status',
   handleDynamicOperation: 'csocket:handle-dynamic-operation',
+  actionReady: 'csocket:action-ready',
 
   // Motor
   configureAxisParamMotor: 'csocket:configure-axis-param-motor',
@@ -62,7 +63,6 @@ export const CSOCKET_CHANNELS = {
   deleteModelPlc: 'csocket:delete-model-plc',
   downloadPlcInfoPlc: 'csocket:download-plc-info-plc',
   clearConfigPlc: 'csocket:clear-config-plc',
-  actionDataSavePlc: 'csocket:action-data-save-plc',
   disconnectMotionConfigPlc: 'csocket:disconnect-motion-config-plc',
 
   // PLC 读取 / 状态查询

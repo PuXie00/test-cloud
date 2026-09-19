@@ -59,7 +59,7 @@ export type SequenceExecutionTransport = {
 };
 
 export type SequenceCsocketClient = {
-  actionDataSavePlc: (items: ActionDataSaveItem[], opts?: unknown) => Promise<unknown>;
+  actionReady: (items: ActionDataSaveItem[], opts?: unknown) => Promise<unknown>;
   actionSyncCallPlc: (items: unknown[], opts?: unknown) => Promise<unknown>;
   stopActionPlc: (items: unknown[], opts?: unknown) => Promise<unknown>;
 };
@@ -216,7 +216,7 @@ export const createCsocketSequenceTransport = (
   api: SequenceCsocketClient,
 ): SequenceExecutionTransport => ({
   saveAction: async (items) => {
-    await requireSaveAck(await api.actionDataSavePlc(items));
+    await requireSaveAck(await api.actionReady(items));
   },
   syncCall: async (input) => {
     // The C++ contract has not assigned a wire field for this semantic mode yet.
@@ -250,7 +250,7 @@ export const createCsocketSequenceTransport = (
 const hasSequenceCsocketApi = (value: unknown): value is SequenceCsocketClient => {
   if (!isRecord(value)) return false;
   return (
-    typeof value.actionDataSavePlc === "function" &&
+    typeof value.actionReady === "function" &&
     typeof value.actionSyncCallPlc === "function" &&
     typeof value.stopActionPlc === "function"
   );

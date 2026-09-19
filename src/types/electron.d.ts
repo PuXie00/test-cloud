@@ -154,7 +154,7 @@ export type CsocketAPI = {
   deleteModelPlc: CsocketSendFn
   downloadPlcInfoPlc: CsocketSendFn
   clearConfigPlc: CsocketSendFn
-  actionDataSavePlc: (items: ActionDataSaveItem[], opts?: CsocketSendOpts) => CsocketSendResult
+  actionReady: (items: ActionDataSaveItem[], opts?: CsocketSendOpts) => CsocketSendResult
   disconnectMotionConfigPlc: CsocketSendFn
 
   // PLC 读取 / 状态查询
