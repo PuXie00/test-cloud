@@ -110,7 +110,10 @@ const uniqueSortedModelIds = (
   [
     ...new Set([
       ...compiled.timelines.map((timeline) => timeline.modelId),
-      ...compiled.events.map((event) => event.modelId),
+      ...compiled.models.map((model) => model.deviceId),
+      ...compiled.ioBlocks.flatMap((block) =>
+        block.params.params.map((item) => item.deviceId),
+      ),
     ]),
   ].sort((left, right) => left - right);
 

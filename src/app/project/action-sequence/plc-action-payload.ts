@@ -14,7 +14,7 @@ export const toActionDataSaveItems = (
       segmentCount: timeline.segments.length,
       segmentList: timeline.segments,
     })),
-    eventCount: compiled.events.length,
-    eventList: compiled.events,
+    modelList: compiled.models,
+    IOBlockList: compiled.ioBlocks,
   },
 ];

@@ -96,9 +96,16 @@ describe("compilePlcAction", () => {
     expect(compiled.timelines[0]?.segments.length).toBeGreaterThan(0);
   });
 
-  it("emits enableFlag events", () => {
+  it("emits enableFlag io blocks", () => {
     const compiled = compilePlcAction(laterInitialSequence, threeAxisContext);
-    expect(compiled.events).toContainEqual({ modelId: 7, atTime: 500, enableFlag: 0 });
+    expect(compiled.ioBlocks).toContainEqual({
+      time: 500,
+      params: {
+        OptCmd: "Operation|enable",
+        addr: "0x0102",
+        params: [{ deviceId: 7, enableFlag: 0 }],
+      },
+    });
   });
 
   it("starts the first moving segment at the first pose time", () => {
@@ -148,7 +155,7 @@ describe("compilePlcAction", () => {
     expect(byAxis[3]).toBe(2);
   });
 
-  it("compiles a command-only sequence with events and no timelines", () => {
+  it("compiles a command-only sequence with io blocks and no timelines or models", () => {
     const compiled = compilePlcAction(
       sequenceOf([{
         id: "enable",
@@ -161,7 +168,15 @@ describe("compilePlcAction", () => {
       threeAxisContext,
     );
     expect(compiled.timelines).toEqual([]);
-    expect(compiled.events).toEqual([{ modelId: 7, atTime: 1000, enableFlag: 1 }]);
+    expect(compiled.models).toEqual([]);
+    expect(compiled.ioBlocks).toEqual([{
+      time: 1000,
+      params: {
+        OptCmd: "Operation|enable",
+        addr: "0x0102",
+        params: [{ deviceId: 7, enableFlag: 1 }],
+      },
+    }]);
   });
 
   it("uses three phase rows whose startTimes match accel/cruise/decel", () => {

@@ -1,10 +1,10 @@
 import type {
+  cCompiledEvent,
   PlcCompiledAction,
-  PlcCompiledEvent,
   PlcCompiledTimeline,
 } from "@shared/csocket/action-data-save";
 import { trapezoidToCurveSegments } from "./curve-segments";
-import { instructionToPlcEvent } from "./instruction-registry";
+import { instructionToCompiledEvent } from "./instruction-registry";
 import { resolveActionSequence } from "./resolve-sequence";
 import type { ActionSequenceConfig } from "./types";
 import {
@@ -43,13 +43,14 @@ const sortTimelines = (timelines: PlcCompiledTimeline[]): PlcCompiledTimeline[] 
     return compareNumber(left.virtualAxisNo, right.virtualAxisNo);
   });
 
-const sortEvents = (events: PlcCompiledEvent[]): PlcCompiledEvent[] =>
-  [...events].sort((left, right) => {
-    const timeDelta = compareNumber(left.atTime, right.atTime);
+const ioBlockDeviceId = (block: cCompiledEvent): number =>
+  block.params.params[0]?.deviceId ?? 0;
+
+const sortIoBlocks = (blocks: cCompiledEvent[]): cCompiledEvent[] =>
+  [...blocks].sort((left, right) => {
+    const timeDelta = compareNumber(left.time, right.time);
     if (timeDelta !== 0) return timeDelta;
-    const modelDelta = compareNumber(left.modelId, right.modelId);
-    if (modelDelta !== 0) return modelDelta;
-    return left.enableFlag - right.enableFlag;
+    return compareNumber(ioBlockDeviceId(left), ioBlockDeviceId(right));
   });
 
 export const compilePlcAction = (
@@ -110,6 +111,7 @@ export const compilePlcAction = (
   return {
     totalDuration: resolved.totalMs,
     timelines,
-    events: sortEvents(resolved.commands.map(instructionToPlcEvent)),
+    models: [],
+    ioBlocks: sortIoBlocks(resolved.commands.map(instructionToCompiledEvent)),
   };
 };

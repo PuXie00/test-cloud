@@ -163,14 +163,14 @@ describe("downloadSequence", () => {
     expect(expected[0]?.actionId).toBe(validSequence.id);
   });
 
-  it("collects command-only model IDs from events and reaches saveAction", async () => {
+  it("collects command-only model IDs from io blocks and reaches saveAction", async () => {
     const transport = createTransport();
     const downloaded = await downloadSequence(commandOnlySequence, context, transport);
     expect(downloaded).toMatchObject({ ok: true, modelIds: [7] });
     expect(transport.saveAction).toHaveBeenCalled();
     const compiled = compilePlcAction(commandOnlySequence, context);
     expect(compiled.timelines).toEqual([]);
-    expect(compiled.events.map((event) => event.modelId)).toEqual([7]);
+    expect(compiled.ioBlocks.map((block) => block.params.params[0]?.deviceId)).toEqual([7]);
   });
 
   it("forwards complete axis limits so a moving sequence can compile", async () => {

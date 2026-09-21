@@ -79,8 +79,17 @@ describe("toActionDataSaveItems", () => {
     expect(item.timelineList[0]?.modelId).toBe(7);
     expect(item.timelineList[0]?.virtualAxisNo).toBe(1);
     expect(item.timelineList[0]?.segmentCount).toBe(item.timelineList[0]?.segmentList.length);
-    expect(item.eventCount).toBe(1);
-    expect(item.eventList).toEqual([{ modelId: 7, atTime: 500, enableFlag: 0 }]);
+    expect(item).not.toHaveProperty("eventCount");
+    expect(item).not.toHaveProperty("eventList");
+    expect(item.modelList).toEqual(compiled.models);
+    expect(item.IOBlockList).toEqual([{
+      time: 500,
+      params: {
+        OptCmd: "Operation|enable",
+        addr: "0x0102",
+        params: [{ deviceId: 7, enableFlag: 0 }],
+      },
+    }]);
   });
 
   it("maps a command-only compile to events and zero timelines", () => {
@@ -99,6 +108,15 @@ describe("toActionDataSaveItems", () => {
     expect(items[0].actionId).toBe(3);
     expect(items[0].timelineCount).toBe(0);
     expect(items[0].timelineList).toEqual([]);
-    expect(items[0].eventList).toEqual([{ modelId: 7, atTime: 1000, enableFlag: 1 }]);
+    expect(items[0].modelList).toEqual([]);
+    expect(items[0].IOBlockList).toEqual([{
+      time: 1000,
+      params: {
+        OptCmd: "Operation|enable",
+        addr: "0x0102",
+        params: [{ deviceId: 7, enableFlag: 1 }],
+      },
+    }]);
+    expect(items[0]).not.toHaveProperty("eventList");
   });
 });
