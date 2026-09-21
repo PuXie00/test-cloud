@@ -40,7 +40,6 @@ export const CSOCKET_CHANNELS = {
   resetModel: 'csocket:reset-model',
   jogModel: 'csocket:jog-model',
   moveTargetModel: 'csocket:move-target-model',
-  syncMoveTargetModel: 'csocket:sync-move-target-model',
   stopModel: 'csocket:stop-model',
   eStopModel: 'csocket:e-stop-model',
   configureModelParamModel: 'csocket:configure-model-param-model',

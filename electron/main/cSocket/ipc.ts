@@ -169,12 +169,6 @@ export const registerCppSocketIpc = (api: CsocketApiService): void => {
       opts,
     ),
   )
-  handleItems(CSOCKET_CHANNELS.syncMoveTargetModel, (items, opts) =>
-    api.syncMoveTargetModel(
-      items as Parameters<CsocketApiService['syncMoveTargetModel']>[0],
-      opts,
-    ),
-  )
   handleItems(CSOCKET_CHANNELS.stopModel, (items, opts) =>
     api.stopModel(items as Parameters<CsocketApiService['stopModel']>[0], opts),
   )

@@ -71,7 +71,6 @@ export const createCsocketApi = () => ({
   resetModel: invokeOptionalSend(CSOCKET_CHANNELS.resetModel),
   jogModel: invokeSend(CSOCKET_CHANNELS.jogModel),
   moveTargetModel: invokeSend(CSOCKET_CHANNELS.moveTargetModel),
-  syncMoveTargetModel: invokeSend(CSOCKET_CHANNELS.syncMoveTargetModel),
   stopModel: invokeSend(CSOCKET_CHANNELS.stopModel),
   eStopModel: invokeSend(CSOCKET_CHANNELS.eStopModel),
   configureModelParamModel: invokeSend(CSOCKET_CHANNELS.configureModelParamModel),

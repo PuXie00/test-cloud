@@ -357,7 +357,25 @@ export class CsocketApiService {
   // 动作准备Ready
 
   actionReady(items: ActionDataSaveItem[], opts?: CsocketSendOpts) {
-    console.log('actionReady', JSON.stringify(items));
+    // 
+    const isTMaped = [];
+    const isNotTMaped: {
+      actionId: number,
+      modelList: unknown[],
+      IOBlockList: unknown[]
+    }[] = [];
+    items.forEach(item => {
+      if(item.trajectoryMode) {
+        isTMaped.push(item)
+      } else {
+        isNotTMaped.push({
+          actionId: item.actionId,
+          modelList: item.modelList,
+          IOBlockList: item.IOBlockList,
+        })
+      }
+    })
+    this.syncMovePrepare(isNotTMaped, opts)
   }
   // 动作执行 Go
   actionGo(items: {
@@ -366,7 +384,11 @@ export class CsocketApiService {
     speedScale: number,
     loopCount: number,
   }[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('Action|go', '', items, opts)
+    const maped = items.map((item) => ({
+      actionId: item.actionId,
+      startFlag: 1,
+    }))
+    return this.syncMovebegin(maped, opts)
   }
 
   // 动作停止 Stop
@@ -598,30 +620,30 @@ export class CsocketApiService {
   ) {
     return this.sendBuilt('Operation|moveTarget', '0x0105', items, opts)
   }
-  // 同步目标位置运动（时间戳对齐）
-  syncMoveTargetModel(
+  //  动作 同步模型目标位置运动预备（仅内部调用，不暴露 IPC）
+  private syncMovePrepare(
     items: {
-      startTimestamp: number
-      hPositionSign: number
-      hTargetPosition: number
-      hVelocity: number
-      hAcceleration: number
-      hDeceleration: number
-      pPositionSign: number
-      pTargetPosition: number
-      pVelocity: number
-      pAcceleration: number
-      pDeceleration: number
-      yPositionSign: number
-      yTargetPosition: number
-      yVelocity: number
-      yAcceleration: number
-      yDeceleration: number
-      moveDirection: number
+      actionId: number
+      modelList: unknown[]
+      IOBlockList: unknown[]
     }[],
     opts?: CsocketSendOpts,
   ) {
-    return this.sendBuilt('Operation|syncMoveTarget', '0x0106', items, opts)
+    return this.sendBuilt('Operation|syncMovePrepare', '0x010A', items, opts)
+  }
+  // 动作 同步模型目标位置运动开始
+  syncMovebegin(
+    items: {
+      actionId: number
+      startFlag: number
+    }[],
+    opts?: CsocketSendOpts,
+  ) {
+    opts = {
+      ...opts,
+      paramHeard: items
+    }
+    return this.sendBuilt('Operation|syncMovebegin', '0x010B', [], opts)
   }
   // 减速停止
   stopModel(items: { deviceId: number, deceleration: number }[], opts?: CsocketSendOpts) {

@@ -130,7 +130,6 @@ export type CsocketAPI = {
   resetModel: CsocketSendFn
   jogModel: CsocketSendFn
   moveTargetModel: CsocketSendFn
-  syncMoveTargetModel: CsocketSendFn
   stopModel: CsocketSendFn
   eStopModel: CsocketSendFn
   configureModelParamModel: CsocketSendFn
