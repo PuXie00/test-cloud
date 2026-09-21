@@ -3,6 +3,7 @@ import path from 'node:path'
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { app } from 'electron'
 import { DEFAULT_KINEMATICS_EXE, KINEMATICS_PORT } from '../../../shared/kinematics/protocol'
+import { resolveKinematicsExePathFrom } from '../../../shared/kinematics/resolve-exe'
 import { parseListeningPids } from './parse-port'
 
 let child: ChildProcess | null = null
@@ -10,14 +11,14 @@ let stopping = false
 
 export const resolveKinematicsCwd = (): string => path.dirname(resolveKinematicsExePath())
 
-export const resolveKinematicsExePath = (): string => {
-  const override = process.env.YZ_KINEMATICS_PATH?.trim()
-  if (override) return path.resolve(override)
-
-  const exeName = process.env.YZ_KINEMATICS_EXE?.trim() || DEFAULT_KINEMATICS_EXE
-  const appDir = path.dirname(app.getPath('exe'))
-  return path.join(appDir, exeName)
-}
+export const resolveKinematicsExePath = (): string =>
+  resolveKinematicsExePathFrom({
+    exeName: process.env.YZ_KINEMATICS_EXE?.trim() || DEFAULT_KINEMATICS_EXE,
+    appDir: path.dirname(app.getPath('exe')),
+    appRoot: process.env.APP_ROOT?.trim(),
+    override: process.env.YZ_KINEMATICS_PATH?.trim(),
+    exists: (filePath) => fs.existsSync(filePath),
+  })
 
 export const isKinematicsRunning = (): boolean =>
   Boolean(child?.pid && !child.killed)

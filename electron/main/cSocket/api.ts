@@ -357,7 +357,7 @@ export class CsocketApiService {
   // 动作准备Ready
 
   actionReady(items: ActionDataSaveItem[], opts?: CsocketSendOpts) {
-    console.log('actionReady', items);
+    console.log('actionReady', JSON.stringify(items));
   }
   // 动作执行 Go
   actionGo(items: {
