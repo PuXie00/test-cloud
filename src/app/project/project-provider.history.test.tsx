@@ -66,7 +66,7 @@ const changeMotion = (document: ProjectDocument): ProjectDocument => ({
       {
         id: 9001,
         name: "边界序列",
-        trajectoryMode: "non-forced",
+        trajectoryMode: false,
         blocks: [],
         segments: [],
       },
@@ -661,7 +661,7 @@ describe("ProjectProvider configuration history", () => {
             {
               id: 9002,
               name: "无效序列",
-              trajectoryMode: "non-forced",
+              trajectoryMode: false,
               blocks: [
                 {
                   id: "ghost",

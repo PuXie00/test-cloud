@@ -97,7 +97,7 @@ const cascadeDocument = (): ProjectDocument => {
   const seqUntouched = {
     id: 11,
     name: "Seq Untouched",
-    trajectoryMode: "non-forced" as const,
+    trajectoryMode: false,
     blocks: [
       {
         id: "b-untouched",
@@ -112,7 +112,7 @@ const cascadeDocument = (): ProjectDocument => {
   const seqEmptyAfter = {
     id: 12,
     name: "Seq Empty After",
-    trajectoryMode: "non-forced" as const,
+    trajectoryMode: false,
     blocks: [
       {
         id: "b-a-1",
@@ -135,7 +135,7 @@ const cascadeDocument = (): ProjectDocument => {
   const seqKeep = {
     id: 13,
     name: "Seq Keep",
-    trajectoryMode: "non-forced" as const,
+    trajectoryMode: false,
     blocks: [
       {
         id: "b-a-3",
@@ -370,7 +370,7 @@ describe("analyzeObjectDeletion / applyObjectDeletion", () => {
       {
         id: 5,
         name: "Only",
-        trajectoryMode: "non-forced",
+        trajectoryMode: false,
         blocks: [
           {
             id: "only-pose",

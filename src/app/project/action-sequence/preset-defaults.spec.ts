@@ -62,7 +62,7 @@ describe("fitPresetParams", () => {
     expect(points.every((point) => point.pose.v1 >= 0 && point.pose.v1 <= 1000)).toBe(true);
     expect(
       validateActionSequence(
-        { id: 1, name: "Seq", trajectoryMode: "non-forced", blocks: [block], segments: [] },
+        { id: 1, name: "Seq", trajectoryMode: false, blocks: [block], segments: [] },
         context,
       ).filter((issue) => issue.severity === "error"),
     ).toEqual([]);
@@ -98,7 +98,7 @@ describe("fitPresetParams", () => {
     expect(points.every((point) => point.pose.v1 >= 0 && point.pose.v1 <= 1000)).toBe(true);
     expect(
       validateActionSequence(
-        { id: 1, name: "Seq", trajectoryMode: "non-forced", blocks: [block], segments: [] },
+        { id: 1, name: "Seq", trajectoryMode: false, blocks: [block], segments: [] },
         context,
       ).filter((issue) => issue.severity === "error"),
     ).toEqual([]);
@@ -129,7 +129,7 @@ describe("fitPresetParams", () => {
     };
     expect(
       validateActionSequence(
-        { id: 1, name: "Seq", trajectoryMode: "non-forced", blocks: [block], segments: [] },
+        { id: 1, name: "Seq", trajectoryMode: false, blocks: [block], segments: [] },
         context,
       ).filter((issue) => issue.severity === "error"),
     ).toEqual([]);
@@ -151,7 +151,7 @@ describe("fitPresetParams", () => {
     expect([...countPosesPerObject(resolvePreset(block)).values()]).toEqual([2, 2]);
     expect(
       validateActionSequence(
-        { id: 1, name: "Seq", trajectoryMode: "non-forced", blocks: [block], segments: [] },
+        { id: 1, name: "Seq", trajectoryMode: false, blocks: [block], segments: [] },
         context,
       ).filter((issue) => issue.severity === "error"),
     ).toEqual([]);
@@ -170,7 +170,7 @@ describe("fitPresetParams", () => {
     };
     expect(
       validateActionSequence(
-        { id: 1, name: "Seq", trajectoryMode: "non-forced", blocks: [block], segments: [] },
+        { id: 1, name: "Seq", trajectoryMode: false, blocks: [block], segments: [] },
         context,
       ).some((issue) => issue.code === "limit-exceeded" && issue.blockId === "sw-bad"),
     ).toBe(true);

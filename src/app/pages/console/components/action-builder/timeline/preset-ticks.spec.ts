@@ -7,7 +7,7 @@ it("omits wave boundary holds from generated ticks", () => {
   const resolved = resolveActionSequence({
     id: 1,
     name: "Seq",
-    trajectoryMode: "non-forced",
+    trajectoryMode: false,
     blocks: [
       {
         id: "wave-1",

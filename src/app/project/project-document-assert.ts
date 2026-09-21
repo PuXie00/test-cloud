@@ -1,4 +1,3 @@
-import { TRAJECTORY_MODES } from "@shared/action-sequence";
 import {
   CONTROL_TYPE_RULES,
   controlTypeHasMultiPointSwingParams,
@@ -652,7 +651,7 @@ const validateSequence = (value: unknown, path: string, a: StructuralAssertions)
   validateSetupEntityId(sequence.id, `${path}.id`, a);
   a.string(sequence.name, `${path}.name`);
   a.optionalString(sequence.note, `${path}.note`);
-  a.enum(sequence.trajectoryMode, TRAJECTORY_MODES, `${path}.trajectoryMode`);
+  a.boolean(sequence.trajectoryMode, `${path}.trajectoryMode`);
   a.optionalBoolean(sequence.loop, `${path}.loop`);
   if (sequence.initialPoses !== undefined) {
     a.fail(`${path}.initialPoses`, "legacy initialPoses are not accepted");

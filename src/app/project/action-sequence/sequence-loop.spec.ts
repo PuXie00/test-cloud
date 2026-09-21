@@ -22,7 +22,7 @@ const poseBlock = (id: string, atMs: number, values: ModelPose, objectId = 7): P
 const sequenceOf = (blocks: PoseBlock[], loop?: boolean): ActionSequenceConfig => ({
   id: 1,
   name: "Seq",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   ...(loop !== undefined ? { loop } : {}),
   blocks,
   segments: [],

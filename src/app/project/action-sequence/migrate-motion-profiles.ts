@@ -130,5 +130,7 @@ export const migrateActionSequenceProfiles = (
   if (sequence.loop !== undefined) {
     next.loop = sequence.loop === true;
   }
+  const rawMode: unknown = sequence.trajectoryMode;
+  next.trajectoryMode = rawMode === true || rawMode === "forced";
   return next;
 };

@@ -343,7 +343,7 @@ describe("preset registry", () => {
       {
         id: 1,
         name: "Seq",
-        trajectoryMode: "non-forced",
+        trajectoryMode: false,
         blocks: [{ ...waveBlock(), params }],
         segments: [],
       },

@@ -30,7 +30,7 @@ const sequenceOf = (
 ): ActionSequenceConfig => ({
   id: 1,
   name: "Seq",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks,
   segments: [],
   ...extra,
@@ -221,7 +221,7 @@ describe("resolveActionSequence", () => {
     const resolved = resolveActionSequence({
       id: 1,
       name: "Seq",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         {
           id: "slope",
@@ -241,7 +241,7 @@ describe("resolveActionSequence", () => {
     const resolved = resolveActionSequence({
       id: 1,
       name: "Seq",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         {
           id: "pose-1",
@@ -487,7 +487,7 @@ describe("resolveActionSequence", () => {
     const authored: ActionSequenceConfig = {
       id: 1,
       name: "Seq",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         {
           id: "pose-1",
@@ -620,7 +620,7 @@ describe("resolveActionSequence", () => {
     const authored: ActionSequenceConfig = {
       id: 1,
       name: "Seq",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks,
       segments,
     };
@@ -885,7 +885,7 @@ describe("reconcileSegmentConfigs", () => {
     const authored: ActionSequenceConfig = {
       id: 1,
       name: "Seq",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         {
           id: "pose-1",
@@ -942,7 +942,7 @@ describe("reconcileSegmentConfigs", () => {
     const authored: ActionSequenceConfig = {
       id: 1,
       name: "Seq",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         { id: "a", kind: "pose", objectId: 7, atMs: 0, pose: { v1: 100, v2: 5, v3: 0 } },
         { id: "b", kind: "pose", objectId: 7, atMs: 5000, pose: { v1: 100, v2: 15, v3: 0 } },

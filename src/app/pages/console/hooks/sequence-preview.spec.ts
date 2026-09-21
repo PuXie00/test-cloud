@@ -12,7 +12,7 @@ import {
 const moving: ActionSequenceConfig = {
   id: 1,
   name: "Seq",
-  trajectoryMode: "forced",
+  trajectoryMode: true,
   blocks: [
     { id: "a", kind: "pose", objectId: 7, atMs: 0, pose: { v1: 0, v2: 0, v3: 0 } },
     { id: "b", kind: "pose", objectId: 7, atMs: 1050, pose: { v1: 100, v2: 0, v3: 0 } },

@@ -174,7 +174,7 @@ export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
           emergencyStopped: false,
           ...(sequenceId !== undefined ? { sequenceId } : {}),
           ...(sequenceHandle ? { sequenceHandle } : {}),
-          ...(trajectoryMode ? { trajectoryMode } : {}),
+          ...(trajectoryMode !== undefined ? { trajectoryMode } : {}),
         },
         ...current,
       ]);

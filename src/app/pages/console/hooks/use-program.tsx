@@ -280,7 +280,7 @@ export const ProgramProvider = ({ children }: ProgramProviderProps) => {
       const createdSequence: ActionSequenceConfig = {
         id,
         name: "新建动作序列",
-        trajectoryMode: "non-forced",
+        trajectoryMode: false,
         loop: false,
         blocks: [],
         segments: [],

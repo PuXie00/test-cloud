@@ -140,7 +140,9 @@ export const downloadSequence = async (
     return { ok: false, reason: "validation", issues: [COMPILE_FAILURE_ISSUE] };
   }
 
-  await transport.saveAction(toActionDataSaveItems(compiled, sequence.id));
+  await transport.saveAction(
+    toActionDataSaveItems(compiled, sequence.id, sequence.trajectoryMode),
+  );
   return {
     ok: true,
     actionId: sequence.id,

@@ -64,7 +64,7 @@ const makeObject = (id: number): ControlledObjectConfig => ({
 const validSequence = (id: number, atMs = 1000): ActionSequenceConfig => ({
   id,
   name: `Seq${id}`,
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks: [
     {
       id: `pose-${id}`,
@@ -80,7 +80,7 @@ const validSequence = (id: number, atMs = 1000): ActionSequenceConfig => ({
 const emptySequence = (id: number): ActionSequenceConfig => ({
   id,
   name: `Empty${id}`,
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks: [],
   segments: [],
 });

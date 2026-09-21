@@ -10,7 +10,7 @@ import { ProgramPanel } from "./program-panel";
 const okSequence: ActionSequenceConfig = {
   id: 15,
   name: "正常序列",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks: [
     {
       id: "pose-1",
@@ -186,7 +186,7 @@ describe("ProgramPanel variants", () => {
             { kind: "sequence", sequence: { id: 1, name: "非强制A", durationMs: 1000 } },
             {
               kind: "sequence",
-              sequence: { id: 2, name: "强制B", durationMs: 1000, trajectoryMode: "forced" },
+              sequence: { id: 2, name: "强制B", durationMs: 1000, trajectoryMode: true },
             },
           ],
         },

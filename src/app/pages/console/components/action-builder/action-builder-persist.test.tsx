@@ -327,7 +327,7 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
               {
                 id: sequenceId,
                 name: "跨域序列",
-                trajectoryMode: "non-forced" as const,
+                trajectoryMode: false,
                 blocks: [
                   {
                     id: "cascade-pose",
@@ -472,7 +472,7 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
     );
     expect(created).toMatchObject({
       name: "新建动作序列",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       loop: false,
       blocks: [],
       segments: [],

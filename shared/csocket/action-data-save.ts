@@ -46,6 +46,7 @@ export type cCompiledModel = {
 export type ActionDataSaveItem = {
   actionId: number
   totalDuration: number
+  trajectoryMode: boolean
   timelineCount: number
   timelineList: Array<{
     modelId: number

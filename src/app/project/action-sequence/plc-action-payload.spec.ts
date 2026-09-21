@@ -11,7 +11,7 @@ const sequenceOf = (
 ): ActionSequenceConfig => ({
   id: 1,
   name: "Seq",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks,
   segments: [],
   ...extra,
@@ -57,7 +57,7 @@ const sequence: ActionSequenceConfig = sequenceOf(
       presetId: "set-enabled", objectId: 7, atMs: 500, instr: { enabled: false } },
   ],
   {
-    trajectoryMode: "forced",
+    trajectoryMode: true,
     segments: [{
       fromRef: "first",
       toRef: "second",
@@ -69,12 +69,12 @@ const sequence: ActionSequenceConfig = sequenceOf(
 describe("toActionDataSaveItems", () => {
   it("fills actionId, counts, curve segments, and enableFlag events", () => {
     const compiled = compilePlcAction(sequence, context);
-    const items = toActionDataSaveItems(compiled, 7);
+    const items = toActionDataSaveItems(compiled, 7, sequence.trajectoryMode);
     const item = items[0];
     expect(item.actionId).toBe(7);
+    expect(item.trajectoryMode).toBe(true);
     expect(item).not.toHaveProperty("actionNo");
     expect(item).not.toHaveProperty("checksum");
-    expect(item).not.toHaveProperty("trajectoryMode");
     expect(item.timelineCount).toBe(compiled.timelines.length);
     expect(item.timelineList[0]?.modelId).toBe(7);
     expect(item.timelineList[0]?.virtualAxisNo).toBe(1);
@@ -104,8 +104,9 @@ describe("toActionDataSaveItems", () => {
       }]),
       context,
     );
-    const items = toActionDataSaveItems(compiled, 3);
+    const items = toActionDataSaveItems(compiled, 3, false);
     expect(items[0].actionId).toBe(3);
+    expect(items[0].trajectoryMode).toBe(false);
     expect(items[0].timelineCount).toBe(0);
     expect(items[0].timelineList).toEqual([]);
     expect(items[0].modelList).toEqual([]);

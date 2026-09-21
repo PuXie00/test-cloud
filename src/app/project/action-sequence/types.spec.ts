@@ -6,7 +6,7 @@ import type { ActionSequenceConfig } from "./types";
 const sequence: ActionSequenceConfig = {
   id: 1,
   name: "测试动作",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks: [
     {
       id: "pose-1",
@@ -40,7 +40,7 @@ describe("action sequence project structure", () => {
       {
         id: 1,
         name: "old",
-        trajectoryMode: "non-forced",
+        trajectoryMode: false,
         blocks: [],
         segments: [],
         totalMs: 1,
@@ -55,7 +55,7 @@ describe("action sequence project structure", () => {
     const sequence: ActionSequenceConfig = {
       id: 1,
       name: "序列",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [],
       segments: [],
     };
@@ -93,7 +93,7 @@ describe("action sequence project structure", () => {
     const sequence: ActionSequenceConfig = {
       id: 1,
       name: "序列",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [],
       segments: [],
     };
@@ -123,7 +123,7 @@ describe("action sequence project structure", () => {
       {
         id: 1,
         name: "序列",
-        trajectoryMode: "non-forced",
+        trajectoryMode: false,
         blocks: [
           {
             id: "dyn",
@@ -154,7 +154,7 @@ describe("action sequence project structure", () => {
       {
         id: 1,
         name: "序列",
-        trajectoryMode: "non-forced",
+        trajectoryMode: false,
         blocks: [],
         segments: [
           {
@@ -184,7 +184,7 @@ describe("action sequence project structure", () => {
       {
         id: 1,
         name: "序列",
-        trajectoryMode: "non-forced",
+        trajectoryMode: false,
         blocks: [],
         segments: [{ fromRef: "a", toRef: "b", settings: { profiles: idleProfiles } }],
       },
@@ -195,7 +195,7 @@ describe("action sequence project structure", () => {
       {
         id: 1,
         name: "序列",
-        trajectoryMode: "non-forced",
+        trajectoryMode: false,
         blocks: [],
         segments: [
           {
@@ -228,7 +228,7 @@ describe("action sequence project structure", () => {
       {
         id: 1,
         name: "序列",
-        trajectoryMode: "non-forced",
+        trajectoryMode: false,
         blocks: [instruction],
         segments: [],
       },
@@ -239,7 +239,7 @@ describe("action sequence project structure", () => {
       {
         id: 1,
         name: "序列",
-        trajectoryMode: "non-forced",
+        trajectoryMode: false,
         blocks: [{ id: "old", kind: "set-enabled", objectId: 7, atMs: 0, enabled: true }],
         segments: [],
       },
@@ -250,7 +250,7 @@ describe("action sequence project structure", () => {
       {
         id: 1,
         name: "序列",
-        trajectoryMode: "non-forced",
+        trajectoryMode: false,
         blocks: [{ ...instruction, enabled: true }],
         segments: [],
       },
@@ -261,7 +261,7 @@ describe("action sequence project structure", () => {
       {
         id: 1,
         name: "序列",
-        trajectoryMode: "non-forced",
+        trajectoryMode: false,
         blocks: [{ ...instruction, instr: { enabled: true, extra: 1 } }],
         segments: [],
       },

@@ -13,7 +13,7 @@ export const nextId = (prefix: string): string =>
 export const createEmptySequence = (id: number, name?: string): ActionSequenceConfig => ({
   id,
   name: name ?? "新建动作序列",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   loop: false,
   blocks: [],
   segments: [],

@@ -4,7 +4,7 @@ import { cn } from "@/app/components/ui/utils";
 export const FORCED_TRAJECTORY_LABEL = "强制";
 
 export const isForcedTrajectory = (mode: TrajectoryMode | undefined): boolean =>
-  mode === "forced";
+  mode === true;
 
 export const ForcedTrajectoryBadge = ({ className }: { className?: string }) => (
   <span

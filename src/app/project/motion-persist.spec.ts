@@ -23,7 +23,7 @@ describe("motion-persist authored sequences", () => {
     const sequence: ActionSequenceConfig = {
       id: 1,
       name: "Seq",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         {
           id: "pose",
@@ -47,7 +47,7 @@ describe("motion-persist authored sequences", () => {
     const dynamicPreset: ActionSequenceConfig = {
       id: 6,
       name: "Wave",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         {
           id: "wave-1",
@@ -85,7 +85,7 @@ describe("motion-persist authored sequences", () => {
     const sequence: ActionSequenceConfig = {
       id: 1,
       name: "Seq",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         {
           id: "pose",
@@ -108,7 +108,7 @@ describe("motion-persist authored sequences", () => {
     const sequence: ActionSequenceConfig = {
       id: 1,
       name: "Seq",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         {
           id: "pose",
@@ -134,7 +134,7 @@ describe("motion-persist authored sequences", () => {
     const sequence: ActionSequenceConfig = {
       id: 1,
       name: "Original",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         {
           id: "pose",
@@ -183,7 +183,7 @@ describe("motion-persist authored sequences", () => {
     const sequence: ActionSequenceConfig = {
       id: 1,
       name: "Seq",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         {
           id: "pose",
@@ -213,7 +213,7 @@ describe("motion-persist authored sequences", () => {
     });
     expect(program?.chapters[0]?.items[0]).toEqual({
       kind: "sequence",
-      sequence: { id: 1, name: "Seq", durationMs: 1000, trajectoryMode: "non-forced" },
+      sequence: { id: 1, name: "Seq", durationMs: 1000, trajectoryMode: false },
     });
   });
 
@@ -221,7 +221,7 @@ describe("motion-persist authored sequences", () => {
     const sequence: ActionSequenceConfig = {
       id: 1,
       name: "Seq",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         {
           id: "p1",
@@ -254,7 +254,7 @@ describe("motion-persist authored sequences", () => {
     const program = motionProgramToLegacyProgram(motion);
     expect(program?.chapters[0]?.items[0]).toEqual({
       kind: "sequence",
-      sequence: { id: 1, name: "Seq", durationMs: 0, trajectoryMode: "non-forced" },
+      sequence: { id: 1, name: "Seq", durationMs: 0, trajectoryMode: false },
     });
   });
 });

@@ -48,7 +48,7 @@ const origin = { v1: 0, v2: 0, v3: 0 };
 const emptySequence = (id = 1): ActionSequenceConfig => ({
   id,
   name: "Empty",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks: [],
   segments: [],
 });
@@ -56,7 +56,7 @@ const emptySequence = (id = 1): ActionSequenceConfig => ({
 const validSequence = (id = 2): ActionSequenceConfig => ({
   id,
   name: "Ok",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks: [
     {
       id: "pose-1",
@@ -102,7 +102,7 @@ describe("validateProjectDocument sequence refs", () => {
           {
             id: 3,
             name: "Bad",
-            trajectoryMode: "non-forced",
+            trajectoryMode: false,
             blocks: [
               {
                 id: "p1",
@@ -130,7 +130,7 @@ describe("validateProjectDocument sequence refs", () => {
           {
             id: 4,
             name: "Refs",
-            trajectoryMode: "non-forced",
+            trajectoryMode: false,
             blocks: [
               { id: "pose", kind: "pose", objectId: 98, atMs: 1000, pose: origin },
               { id: "cmd", kind: "instruction",
@@ -196,7 +196,7 @@ describe("project-motion-readiness sequence gate", () => {
           {
             id: 98,
             name: "Invalid",
-            trajectoryMode: "non-forced",
+            trajectoryMode: false,
             blocks: [
               { id: "pose", kind: "pose", objectId: OBJECT_A, atMs: -1, pose: { v1: 80, v2: 0, v3: 0 } },
             ],

@@ -9,7 +9,7 @@ import { createTimelineProps, installTimelinePaneWidth, TIMELINE_TEST_PANE_PX } 
 const sequence: ActionSequenceConfig = {
   id: 1,
   name: "Seq",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks: [
     {
       id: "first",
@@ -299,7 +299,7 @@ describe("timeline interaction", () => {
     const empty: ActionSequenceConfig = {
       id: 1,
       name: "Empty",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [],
       segments: [],
     };
@@ -321,7 +321,7 @@ describe("timeline interaction", () => {
     const empty: ActionSequenceConfig = {
       id: 1,
       name: "Empty",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [],
       segments: [],
     };

@@ -6,7 +6,7 @@ import type { ActionSequenceConfig } from "./types";
 const sequenceOf = (blocks: ActionSequenceConfig["blocks"]): ActionSequenceConfig => ({
   id: 1,
   name: "Seq",
-  trajectoryMode: "forced",
+  trajectoryMode: true,
   blocks,
   segments: [],
 });

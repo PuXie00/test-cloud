@@ -47,7 +47,7 @@ describe("ExecCardView run status", () => {
   it("shows 强制 only for a forced-trajectory sequence", () => {
     render(
       <ExecCardView
-        card={card({ trajectoryMode: "forced" })}
+        card={card({ trajectoryMode: true })}
         hasNextSequence
         {...handlers}
       />,

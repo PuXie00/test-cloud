@@ -36,7 +36,7 @@ const context = {
 const validSequence: ActionSequenceConfig = {
   id: 1,
   name: "Seq",
-  trajectoryMode: "forced",
+  trajectoryMode: true,
   blocks: [
     {
       id: "pose",
@@ -65,7 +65,7 @@ const invalidSequence: ActionSequenceConfig = {
 const commandOnlySequence: ActionSequenceConfig = {
   id: 3,
   name: "Cmd",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks: [
     {
       id: "enable",
@@ -151,6 +151,7 @@ describe("downloadSequence", () => {
     const expected = toActionDataSaveItems(
       compilePlcAction(validSequence, context),
       validSequence.id,
+      validSequence.trajectoryMode,
     );
     expect(transport.saveAction).toHaveBeenCalledWith(expected);
     expect(downloaded).toEqual({
@@ -161,6 +162,7 @@ describe("downloadSequence", () => {
     });
     expect(expected[0]).not.toHaveProperty("actionNo");
     expect(expected[0]?.actionId).toBe(validSequence.id);
+    expect(expected[0]?.trajectoryMode).toBe(true);
     expect(expected[0]?.modelList.length).toBeGreaterThan(0);
     expect(expected[0]?.IOBlockList).toEqual([]);
   });
@@ -302,7 +304,7 @@ describe("goSequence", () => {
       syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID,
       startTimestamp: expect.any(Number),
       speedScale: 1.5,
-      trajectoryMode: "forced",
+      trajectoryMode: true,
     });
     expect(started).toEqual({
       ok: true,
@@ -366,7 +368,7 @@ describe("startLocalAuthoredSequence", () => {
       syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID,
       startTimestamp: expect.any(Number),
       speedScale: 1,
-      trajectoryMode: "forced",
+      trajectoryMode: true,
     });
     expect(started).toEqual({
       ok: true,
@@ -427,7 +429,7 @@ describe("createLocalSequenceTransport", () => {
         syncGroupId: 1,
         startTimestamp: 1,
         speedScale: 1,
-        trajectoryMode: "non-forced",
+        trajectoryMode: false,
       }),
     ).resolves.toBeUndefined();
     await expect(transport.stopAction({ actionId: 1, syncGroupId: 1 })).resolves.toBeUndefined();
@@ -491,7 +493,7 @@ describe("createCsocketSequenceTransport", () => {
       syncGroupId: 4,
       startTimestamp: 99,
       speedScale: 1.5,
-      trajectoryMode: "forced",
+      trajectoryMode: true,
     });
     expect(api.actionGo).toHaveBeenCalled();
     const wireItem = api.actionGo.mock.calls[0]?.[0]?.[0] as Record<string, unknown>;

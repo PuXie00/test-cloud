@@ -368,7 +368,7 @@ const seedCascadeTarget = (
             {
               id: sequenceId,
               name: "级联序列",
-              trajectoryMode: "non-forced" as const,
+              trajectoryMode: false,
               blocks: [
                 {
                   id: "cascade-pose",

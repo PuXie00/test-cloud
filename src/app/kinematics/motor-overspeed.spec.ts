@@ -93,7 +93,7 @@ describe("validateActionSequence motor-overspeed", () => {
   const sequence: ActionSequenceConfig = {
     id: 1,
     name: "multi",
-    trajectoryMode: "forced",
+    trajectoryMode: true,
     blocks: [
       { id: "p0", kind: "pose", objectId: 7, atMs: 0, pose: { v1: 0, v2: 0, v3: 0 } },
       { id: "p1", kind: "pose", objectId: 7, atMs: 1000, pose: { v1: 200, v2: 12, v3: 10 } },

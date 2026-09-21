@@ -111,14 +111,14 @@ const {
         {
           id: 14,
           name: "空序列",
-          trajectoryMode: "non-forced" as const,
+          trajectoryMode: false,
           blocks: [],
           segments: [],
         },
         {
           id: 15,
           name: "正常序列",
-          trajectoryMode: "non-forced" as const,
+          trajectoryMode: false,
           blocks: [
             {
               id: "tr-1",
@@ -382,14 +382,14 @@ const makeDocument = (): ProjectDocument => ({
       {
         id: 14,
         name: "空序列",
-        trajectoryMode: "non-forced",
+        trajectoryMode: false,
         blocks: [],
         segments: [],
       },
       {
         id: 15,
         name: "正常序列",
-        trajectoryMode: "non-forced",
+        trajectoryMode: false,
         blocks: [
           {
             id: "ok-pose",
@@ -404,7 +404,7 @@ const makeDocument = (): ProjectDocument => ({
       {
         id: 16,
         name: "指令序列",
-        trajectoryMode: "non-forced",
+        trajectoryMode: false,
         blocks: [
           {
             id: "enable-1",
@@ -681,7 +681,7 @@ describe("FaderSlot Ready/GO gate", () => {
         <FaderSlot
           slot={makeFaderSlot({
             index: 0,
-            sequence: { id: 15, name: "开幕A", durationMs: 2000, trajectoryMode: "forced" },
+            sequence: { id: 15, name: "开幕A", durationMs: 2000, trajectoryMode: true },
           })}
           isPreviewing={false}
           onPreviewToggle={vi.fn()}

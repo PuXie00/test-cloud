@@ -45,7 +45,7 @@ const sequenceOf = (
 ): ActionSequenceConfig => ({
   id: 1,
   name: "Seq",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks,
   segments: [],
   ...extra,
@@ -75,7 +75,7 @@ const laterInitialSequence: ActionSequenceConfig = sequenceOf(
       presetId: "set-enabled", objectId: 7, atMs: 500, instr: { enabled: false } },
   ],
   {
-    trajectoryMode: "forced",
+    trajectoryMode: true,
     segments: [{
       fromRef: "first",
       toRef: "second",

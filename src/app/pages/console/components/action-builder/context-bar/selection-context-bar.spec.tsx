@@ -9,7 +9,7 @@ import { SelectionContextBar } from "./selection-context-bar";
 const sequence: ActionSequenceConfig = {
   id: 1,
   name: "Seq",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks: [
     { id: "pose", kind: "pose", objectId: 7, atMs: 1000, pose: { v1: 1, v2: 2, v3: 3 } },
     { id: "enable", kind: "instruction",

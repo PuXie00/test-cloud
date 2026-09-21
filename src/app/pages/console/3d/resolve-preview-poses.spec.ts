@@ -6,7 +6,7 @@ import { resolvePreviewPoses } from "./resolve-preview-poses";
 const sequence: ActionSequenceConfig = {
   id: 1,
   name: "Seq",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks: [
     {
       id: "start",

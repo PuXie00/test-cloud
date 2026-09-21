@@ -149,7 +149,7 @@ describe("validateActionSequence angle-protection", () => {
   const sequenceOf = (pose: { v1: number; v2: number; v3: number }): ActionSequenceConfig => ({
     id: 1,
     name: "angle",
-    trajectoryMode: "forced",
+    trajectoryMode: true,
     blocks: [{ id: "p0", kind: "pose", objectId: 7, atMs: 0, pose }],
     segments: [],
   });

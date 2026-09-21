@@ -7,7 +7,7 @@ import { ActionBuilderRightSidebar } from "./action-builder-right-sidebar";
 const broken: ActionSequenceConfig = {
   id: 97,
   name: "Broken",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks: [
     {
       id: "bad-preset",
@@ -77,7 +77,7 @@ describe("action builder right sidebar", () => {
       sequence: {
         id: 1,
         name: "Seq",
-        trajectoryMode: "non-forced",
+        trajectoryMode: false,
         blocks: [],
         segments: [],
       },

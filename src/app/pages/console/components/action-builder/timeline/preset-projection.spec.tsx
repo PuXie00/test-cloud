@@ -11,7 +11,7 @@ import { createTimelineProps, installTimelinePaneWidth } from "./timeline-test-h
 const sequenceWithSharedSlope: ActionSequenceConfig = {
   id: 1,
   name: "Shared slope",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks: [
     {
       id: "slope-1",
@@ -29,7 +29,7 @@ const sequenceWithSharedSlope: ActionSequenceConfig = {
 const sequenceWithDynamicLevel: ActionSequenceConfig = {
   id: 2,
   name: "Dynamic level",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks: [
     {
       id: "dynamic-1",
@@ -49,7 +49,7 @@ const sequenceWithDynamicLevel: ActionSequenceConfig = {
 const sequenceWithCommands: ActionSequenceConfig = {
   id: 3,
   name: "Commands",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks: [
     {
       id: "enable-1",

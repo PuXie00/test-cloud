@@ -8,7 +8,7 @@ import { ContentLibraryPanel } from "./content-library-panel";
 const sequence: ActionSequenceConfig = {
   id: 1,
   name: "共享斜面",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks: [
     {
       id: "pose-1",
@@ -89,7 +89,7 @@ describe("content library panel", () => {
         {
           id: 1,
           name: "空序列",
-          trajectoryMode: "non-forced",
+          trajectoryMode: false,
           blocks: [],
           segments: [],
         },
@@ -104,7 +104,7 @@ describe("content library panel", () => {
     const invalid: ActionSequenceConfig = {
       id: 98,
       name: "坏序列",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         {
           id: "bad-preset",
@@ -141,7 +141,7 @@ describe("content library panel", () => {
         {
           id: 2,
           name: "第二序列",
-          trajectoryMode: "non-forced",
+          trajectoryMode: false,
           blocks: [],
           segments: [],
         },

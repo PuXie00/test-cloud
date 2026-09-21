@@ -105,7 +105,7 @@ const sequence: ActionSequenceConfig = {
 
   name: "Seq",
 
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
 
   blocks: [
 

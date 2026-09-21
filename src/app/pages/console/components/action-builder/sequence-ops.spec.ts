@@ -35,7 +35,7 @@ const movingV1IdleOthers = (accelMs: number, decelMs: number): AxisMotionProfile
 const sequenceWithStaticPreset: ActionSequenceConfig = {
   id: 1,
   name: "Static",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks: [
     {
       id: "preset-1",
@@ -52,7 +52,7 @@ const sequenceWithStaticPreset: ActionSequenceConfig = {
 const sequenceWithDynamicPreset: ActionSequenceConfig = {
   id: 2,
   name: "Dynamic",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks: [
     {
       id: "dynamic-1",
@@ -79,7 +79,7 @@ describe("sequence-ops", () => {
     const sequence: ActionSequenceConfig = {
       id: 1,
       name: "Snap",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [{ id: "pose-a", kind: "pose", objectId: 7, atMs: 1000, pose: origin }],
       segments: [],
     };
@@ -112,7 +112,7 @@ describe("sequence-ops", () => {
     const authored: ActionSequenceConfig = {
       id: 1,
       name: "Seq",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         {
           id: "pose-0",
@@ -149,7 +149,7 @@ describe("sequence-ops", () => {
     const authored: ActionSequenceConfig = {
       id: 1,
       name: "Seq",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         {
           id: "pose-0",
@@ -187,7 +187,7 @@ describe("sequence-ops", () => {
     const authored: ActionSequenceConfig = {
       id: 1,
       name: "Seq",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         { id: "pose-a", kind: "pose", objectId: 7, atMs: 1000, pose: origin },
         { id: "pose-b", kind: "pose", objectId: 7, atMs: 5000, pose: { v1: 1, v2: 0, v3: 0 } },
@@ -275,7 +275,7 @@ describe("sequence-ops", () => {
     const authored: ActionSequenceConfig = {
       id: 1,
       name: "Seq",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         {
           id: "pose-0",
@@ -326,7 +326,7 @@ describe("sequence-ops", () => {
     const authored: ActionSequenceConfig = {
       id: 1,
       name: "Seq",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         { id: "pose-a", kind: "pose", objectId: 7, atMs: 1000, pose: origin },
         { id: "pose-b", kind: "pose", objectId: 7, atMs: 3000, pose: { v1: 1, v2: 0, v3: 0 } },
@@ -358,7 +358,7 @@ describe("sequence-ops", () => {
     const empty: ActionSequenceConfig = {
       id: 1,
       name: "Seq",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [],
       segments: [],
     };
@@ -378,7 +378,7 @@ describe("sequence-ops", () => {
     const authored: ActionSequenceConfig = {
       id: 99,
       name: "Unknown",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         {
           id: "bad-preset",
@@ -400,7 +400,7 @@ describe("sequence-ops", () => {
 const multiPoseSequence: ActionSequenceConfig = {
   id: 10,
   name: "Multi pose",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks: [
     { id: "pose-a", kind: "pose", objectId: 1, atMs: 100, pose: { v1: 10, v2: 1, v3: 0 } },
     { id: "pose-b", kind: "pose", objectId: 2, atMs: 200, pose: { v1: 20, v2: 5, v3: 2 } },

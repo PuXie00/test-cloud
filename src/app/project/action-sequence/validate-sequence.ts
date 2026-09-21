@@ -235,11 +235,11 @@ const collectAuthoredIssues = (
 ): void => {
   const objectById = objectByIdMap(context);
 
-  if (sequence.trajectoryMode !== "forced" && sequence.trajectoryMode !== "non-forced") {
+  if (typeof sequence.trajectoryMode !== "boolean") {
     issues.push({
       severity: "error",
       code: "invalid-trajectory-mode",
-      message: "trajectoryMode must be forced or non-forced",
+      message: "trajectoryMode must be boolean",
     });
   }
 

@@ -26,7 +26,7 @@ const sequenceOf = (
   ({
     id: 1,
     name: "Seq",
-    trajectoryMode: "non-forced",
+    trajectoryMode: false,
     blocks: [],
     segments: [],
     ...overrides,
@@ -157,5 +157,12 @@ describe("migrateActionSequenceProfiles", () => {
     expect(migrateActionSequenceProfiles(sequenceOf({ loop: true })).loop).toBe(true);
     expect(migrateActionSequenceProfiles(sequenceOf({ loop: false })).loop).toBe(false);
     expect(migrateActionSequenceProfiles(sequenceOf({ loop: "yes" })).loop).toBe(false);
+  });
+
+  it("migrates string trajectoryMode to boolean", () => {
+    expect(migrateActionSequenceProfiles(sequenceOf({ trajectoryMode: "forced" })).trajectoryMode).toBe(true);
+    expect(migrateActionSequenceProfiles(sequenceOf({ trajectoryMode: "non-forced" })).trajectoryMode).toBe(false);
+    expect(migrateActionSequenceProfiles(sequenceOf({ trajectoryMode: true })).trajectoryMode).toBe(true);
+    expect(migrateActionSequenceProfiles(sequenceOf({ trajectoryMode: false })).trajectoryMode).toBe(false);
   });
 });

@@ -43,7 +43,7 @@ it("shows stagger interval in seconds with one decimal", () => {
         resolved={resolveActionSequence({
           id: 1,
           name: "Seq",
-          trajectoryMode: "non-forced",
+          trajectoryMode: false,
           blocks: [block],
           segments: [],
         })}

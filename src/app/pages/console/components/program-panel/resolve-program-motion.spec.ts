@@ -10,7 +10,7 @@ const motion: ProjectMotion = {
     {
       id: 1,
       name: "Seq",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [],
       segments: [],
     },
@@ -47,16 +47,16 @@ describe("resolve-program-motion", () => {
     expect(program?.chapters[0]?.items).toHaveLength(1);
     expect(program?.chapters[0]?.items[0]).toMatchObject({
       kind: "sequence",
-      sequence: { id: 1, name: "Seq", trajectoryMode: "non-forced" },
+      sequence: { id: 1, name: "Seq", trajectoryMode: false },
     });
   });
 
   it("copies forced trajectoryMode onto the control-page sequence summary", () => {
     const forcedMotion: ProjectMotion = {
       ...motion,
-      actionSequences: [{ ...motion.actionSequences[0]!, trajectoryMode: "forced" }],
+      actionSequences: [{ ...motion.actionSequences[0]!, trajectoryMode: true }],
     };
     const program = motionProgramToLegacyProgram(forcedMotion);
-    expect(program?.chapters[0]?.items[0]?.sequence.trajectoryMode).toBe("forced");
+    expect(program?.chapters[0]?.items[0]?.sequence.trajectoryMode).toBe(true);
   });
 });

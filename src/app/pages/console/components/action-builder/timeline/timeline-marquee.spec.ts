@@ -7,7 +7,7 @@ import { collectMarqueeBlockIds } from "./timeline-marquee";
 const sequence: ActionSequenceConfig = {
   id: 1,
   name: "Seq",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks: [
     { id: "first", kind: "pose", objectId: 7, atMs: 2000, pose: { v1: 1, v2: 0, v3: 0 } },
     { id: "later", kind: "pose", objectId: 7, atMs: 4000, pose: { v1: 2, v2: 0, v3: 0 } },

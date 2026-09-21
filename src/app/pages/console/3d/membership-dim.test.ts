@@ -9,7 +9,7 @@ import {
 const sequence: ActionSequenceConfig = {
   id: 1,
   name: "Seq",
-  trajectoryMode: "forced",
+  trajectoryMode: true,
   blocks: [
     { id: "p", kind: "pose", objectId: 1, atMs: 0, pose: { v1: 0, v2: 0, v3: 0 } },
     { id: "s", kind: "static-preset", presetId: "static-flat", orderedObjectIds: [4], params: {}, atMs: 0 },

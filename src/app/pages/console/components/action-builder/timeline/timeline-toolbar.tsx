@@ -92,16 +92,14 @@ export const TimelineToolbar = ({
       />
     ) : null}
 
-    {trajectoryMode && onTrajectoryModeChange ? (
+    {trajectoryMode !== undefined && onTrajectoryModeChange ? (
       <div className="flex items-center gap-3">
         <label className="inline-flex h-7 items-center gap-1.5">
           <span className="text-body-sm text-muted-foreground">强制轨迹</span>
           <Switch
             aria-label="强制轨迹"
-            checked={trajectoryMode === "forced"}
-            onCheckedChange={(checked) =>
-              onTrajectoryModeChange(checked ? "forced" : "non-forced")
-            }
+            checked={trajectoryMode}
+            onCheckedChange={onTrajectoryModeChange}
           />
         </label>
         {onLoopChange ? (

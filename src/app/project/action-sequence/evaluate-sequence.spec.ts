@@ -22,7 +22,7 @@ const previewWindow = globalThis as typeof globalThis & { window?: PreviewWindow
 const sequence: ActionSequenceConfig = {
   id: 1,
   name: "Seq",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks: [
     {
       id: "start",
@@ -53,7 +53,7 @@ const sequence: ActionSequenceConfig = {
 const timedPreviewSequence: ActionSequenceConfig = {
   id: 1,
   name: "Seq",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks: [
     {
       id: "first",
@@ -103,7 +103,7 @@ describe("evaluateResolvedSequence", () => {
     const resolved = resolveActionSequence({
       id: 1,
       name: "Seq",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         {
           id: "first",
@@ -145,7 +145,7 @@ describe("evaluateResolvedSequence", () => {
     const resolved = resolveActionSequence({
       id: "commands",
       name: "Commands",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         { id: "enable", kind: "instruction",
       presetId: "set-enabled", objectId: 7, atMs: 1000, instr: { enabled: true } },
@@ -173,7 +173,7 @@ describe("evaluateResolvedSequence", () => {
     const resolved = resolveActionSequence({
       id: 1,
       name: "Seq",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         {
           id: "prior",
@@ -232,7 +232,7 @@ describe("evaluateResolvedSequence", () => {
     const resolved = resolveActionSequence({
       id: 1,
       name: "Seq",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         { id: "start", kind: "pose", objectId: 7, atMs: 0, pose: from },
         { id: "end", kind: "pose", objectId: 7, atMs: durationMs, pose: to },

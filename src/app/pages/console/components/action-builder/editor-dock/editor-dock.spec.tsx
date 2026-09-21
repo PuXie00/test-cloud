@@ -9,7 +9,7 @@ import { EditorDock } from "./editor-dock";
 const sequence: ActionSequenceConfig = {
   id: 1,
   name: "Seq",
-  trajectoryMode: "non-forced",
+  trajectoryMode: false,
   blocks: [],
   segments: [],
 };
@@ -160,7 +160,7 @@ describe("editor dock sequence editor", () => {
     const broken: ActionSequenceConfig = {
       id: 97,
       name: "Broken",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         {
           id: "bad-preset",
@@ -191,20 +191,20 @@ describe("editor dock sequence editor", () => {
     const toggle = screen.getByRole("switch", { name: "强制轨迹" });
     expect(toggle.getAttribute("aria-checked")).toBe("false");
     fireEvent.click(toggle);
-    expect(handleTrajectoryModeChange).toHaveBeenCalledWith("forced");
+    expect(handleTrajectoryModeChange).toHaveBeenCalledWith(true);
   });
 
   it("toggles trajectory mode from forced to non-forced in the sequence editor header", () => {
     const handleTrajectoryModeChange = vi.fn();
     mockBuilder({
-      sequence: { ...sequence, trajectoryMode: "forced" },
+      sequence: { ...sequence, trajectoryMode: true },
       handleTrajectoryModeChange,
     });
     render(<EditorDock />);
     const toggle = screen.getByRole("switch", { name: "强制轨迹" });
     expect(toggle.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(toggle);
-    expect(handleTrajectoryModeChange).toHaveBeenCalledWith("non-forced");
+    expect(handleTrajectoryModeChange).toHaveBeenCalledWith(false);
   });
 
   it("disables 循环 when the sequence path is not closed", () => {
@@ -223,7 +223,7 @@ describe("editor dock sequence editor", () => {
     const closed: ActionSequenceConfig = {
       id: 1,
       name: "Closed",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       loop: false,
       blocks: [
         {
@@ -314,7 +314,7 @@ describe("editor dock sequence editor", () => {
       sequence: {
         id: 1,
         name: "Closed",
-        trajectoryMode: "non-forced",
+        trajectoryMode: false,
         loop: true,
         blocks: [
           {
@@ -347,7 +347,7 @@ describe("editor dock sequence editor", () => {
     const broken: ActionSequenceConfig = {
       id: 97,
       name: "Broken",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         {
           id: "bad-preset",
@@ -371,7 +371,7 @@ describe("editor dock sequence editor", () => {
     const playable: ActionSequenceConfig = {
       id: 1,
       name: "Seq",
-      trajectoryMode: "non-forced",
+      trajectoryMode: false,
       blocks: [
         {
           id: "a",
