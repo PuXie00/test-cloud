@@ -448,7 +448,7 @@
       {
         "id": 1,
         "name": "新建动作序列",
-        "trajectoryMode": "non-forced",
+        "trajectoryMode": false,
         "blocks": [
           {
             "id": "blk-mu4yja2b-bycf",

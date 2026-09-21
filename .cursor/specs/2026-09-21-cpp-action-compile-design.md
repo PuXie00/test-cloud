@@ -92,6 +92,14 @@ PLC `timelineList` 仍按轴输出三相多项式，未启用轴整轴省略。1
 
 `resolved.commands` 经 `instructionToCompiledEvent` 映射，按 `time` 升序，相同时间再按 `params.params[0].deviceId` 升序。
 
+`cCompiledEvent.params.params` 的类型以 `shared/csocket/action-data-save.ts` 为准：
+
+```ts
+params: ({ deviceId: number } & Record<string, number>)[]
+```
+
+每条指令至少带 `deviceId`；其余字段必须是 `number`（使能用 `0 | 1`，不发 boolean / string / 嵌套对象）。
+
 首版仅 `set-enabled`：
 
 ```ts
