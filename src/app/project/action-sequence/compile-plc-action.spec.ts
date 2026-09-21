@@ -228,7 +228,7 @@ describe("compilePlcAction", () => {
     ).toThrow(/100/);
   });
 
-  it("emits one C++ time block per pose with next-segment absolute kinematics", () => {
+  it("emits one C++ time block per pose with arriving-segment absolute kinematics", () => {
     const sequence = sequenceOf(
       [
         { id: "start", kind: "pose", objectId: 7, atMs: 1000, pose: origin },
@@ -250,8 +250,8 @@ describe("compilePlcAction", () => {
     expect(compiled.models).toEqual([{
       deviceId: 7,
       timeBlockList: [
-        { time: 1000, virtualAxis: [{ pos: 0, ...expected }] },
-        { time: 2000, virtualAxis: [{ pos: 1000, vel: 0, accVel: 0, decVel: 0 }] },
+        { time: 1000, virtualAxis: [{ pos: 0, vel: 0, accVel: 0, decVel: 0 }] },
+        { time: 2000, virtualAxis: [{ pos: 1000, ...expected }] },
       ],
     }]);
   });
@@ -292,7 +292,7 @@ describe("compilePlcAction", () => {
     );
     const model7 = compiled.models.find((model) => model.deviceId === 7);
     expect(model7?.timeBlockList.map((block) => block.time)).toEqual([1000, 1750, 2500, 3000]);
-    expect(model7?.timeBlockList[2]?.virtualAxis).toEqual([
+    expect(model7?.timeBlockList[0]?.virtualAxis).toEqual([
       { pos: 1000, vel: 0, accVel: 0, decVel: 0 },
     ]);
     expect(model7?.timeBlockList[3]?.virtualAxis).toEqual([

@@ -74,10 +74,10 @@ const compileModels = (
       const enabledAxes = AXES.filter((axis) => object.enabledVirtualAxes.includes(axis));
       const objectSegments = resolved.segments.filter((segment) => segment.objectId === deviceId);
       const timeBlockList = poses.map((pose: ResolvedPosePoint, index) => {
-        const next = poses[index + 1];
-        const segment = next
+        const prev = poses[index - 1];
+        const segment = prev
           ? objectSegments.find(
-              (item) => item.fromRef === pose.sourceRef && item.toRef === next.sourceRef,
+              (item) => item.fromRef === prev.sourceRef && item.toRef === pose.sourceRef,
             )
           : undefined;
         return {

@@ -629,7 +629,7 @@ export class CsocketApiService {
     }[],
     opts?: CsocketSendOpts,
   ) {
-    return this.sendBuilt('Operation|syncMovePrepare', '0x010A', items, opts)
+    return this.sendBuilt('Opera|syncMovePrepare', '0x010A', items, opts)
   }
   // 动作 同步模型目标位置运动开始
   syncMovebegin(
