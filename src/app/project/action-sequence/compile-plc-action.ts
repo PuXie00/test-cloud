@@ -1,11 +1,18 @@
 import type {
   cCompiledEvent,
+  cCompiledModel,
   PlcCompiledAction,
   PlcCompiledTimeline,
 } from "@shared/csocket/action-data-save";
+import { roundProjectCoordinate } from "../project-quantity";
+import { axisKinematics, ZERO_AXIS_KINEMATICS } from "./axis-kinematics";
 import { trapezoidToCurveSegments } from "./curve-segments";
 import { instructionToCompiledEvent } from "./instruction-registry";
-import { resolveActionSequence } from "./resolve-sequence";
+import {
+  resolveActionSequence,
+  type ResolvedActionSequence,
+  type ResolvedPosePoint,
+} from "./resolve-sequence";
 import type { ActionSequenceConfig } from "./types";
 import {
   hasBlockingSequenceIssues,
@@ -52,6 +59,42 @@ const sortIoBlocks = (blocks: cCompiledEvent[]): cCompiledEvent[] =>
     if (timeDelta !== 0) return timeDelta;
     return compareNumber(ioBlockDeviceId(left), ioBlockDeviceId(right));
   });
+
+const AXES: VirtualAxisId[] = ["v1", "v2", "v3"];
+
+const compileModels = (
+  resolved: ResolvedActionSequence,
+  objectById: Map<number, PlcCompileObject>,
+): cCompiledModel[] =>
+  [...resolved.posesByObject.entries()]
+    .sort((left, right) => compareNumber(left[0], right[0]))
+    .flatMap(([deviceId, poses]) => {
+      const object = objectById.get(deviceId);
+      if (!object || poses.length === 0) return [];
+      const enabledAxes = AXES.filter((axis) => object.enabledVirtualAxes.includes(axis));
+      const objectSegments = resolved.segments.filter((segment) => segment.objectId === deviceId);
+      const timeBlockList = poses.map((pose: ResolvedPosePoint, index) => {
+        const next = poses[index + 1];
+        const segment = next
+          ? objectSegments.find(
+              (item) => item.fromRef === pose.sourceRef && item.toRef === next.sourceRef,
+            )
+          : undefined;
+        return {
+          time: pose.atMs,
+          virtualAxis: enabledAxes.map((axis) => {
+            const pos = roundProjectCoordinate(pose.pose[axis]);
+            if (!segment) return { pos, ...ZERO_AXIS_KINEMATICS };
+            const travel = segment.toPose[axis] - segment.fromPose[axis];
+            return {
+              pos,
+              ...axisKinematics(segment.settings.profiles[axis], travel, segment.durationMs),
+            };
+          }),
+        };
+      });
+      return [{ deviceId, timeBlockList }];
+    });
 
 export const compilePlcAction = (
   sequence: ActionSequenceConfig,
@@ -111,7 +154,7 @@ export const compilePlcAction = (
   return {
     totalDuration: resolved.totalMs,
     timelines,
-    models: [],
+    models: compileModels(resolved, objectById),
     ioBlocks: sortIoBlocks(resolved.commands.map(instructionToCompiledEvent)),
   };
 };

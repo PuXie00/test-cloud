@@ -161,6 +161,8 @@ describe("downloadSequence", () => {
     });
     expect(expected[0]).not.toHaveProperty("actionNo");
     expect(expected[0]?.actionId).toBe(validSequence.id);
+    expect(expected[0]?.modelList.length).toBeGreaterThan(0);
+    expect(expected[0]?.IOBlockList).toEqual([]);
   });
 
   it("collects command-only model IDs from io blocks and reaches saveAction", async () => {
