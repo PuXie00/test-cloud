@@ -1,5 +1,8 @@
-import type { PlcCompiledEvent } from "@shared/csocket/action-data-save";
+import type { cCompiledEvent } from "@shared/csocket/action-data-save";
 import type { InstructionBlock, SetEnabledInstruction } from "./types";
+
+export const SET_ENABLED_OPT_CMD = "Operation|enable";
+export const SET_ENABLED_ADDR = "0x0102";
 
 export const INSTRUCTION_PRESET_IDS = ["set-enabled"] as const;
 export type InstructionPresetId = (typeof INSTRUCTION_PRESET_IDS)[number];
@@ -52,13 +55,16 @@ export const instructionBlockTitle = (block: InstructionBlock): string => {
   return block.presetId;
 };
 
-export const instructionToPlcEvent = (block: InstructionBlock): PlcCompiledEvent => {
+export const instructionToCompiledEvent = (block: InstructionBlock): cCompiledEvent => {
   if (block.presetId !== "set-enabled") {
     throw new Error(`cannot compile instruction ${block.presetId}`);
   }
   return {
-    modelId: block.objectId,
-    atTime: block.atMs,
-    enableFlag: block.instr.enabled ? 1 : 0,
+    time: block.atMs,
+    params: {
+      OptCmd: SET_ENABLED_OPT_CMD,
+      addr: SET_ENABLED_ADDR,
+      params: [{ deviceId: block.objectId, enableFlag: block.instr.enabled ? 1 : 0 }],
+    },
   };
 };
