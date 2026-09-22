@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultAxisProfiles } from "./motion-profile";
-import { sequenceObjectIds } from "./sequence-object-ids";
+import { hasUncoupledSequenceMember, sequenceObjectIds } from "./sequence-object-ids";
 import type { ActionSequenceConfig } from "./types";
 
 const sequenceOf = (blocks: ActionSequenceConfig["blocks"]): ActionSequenceConfig => ({
@@ -45,5 +45,14 @@ describe("sequenceObjectIds", () => {
 
   it("returns empty set for empty sequence", () => {
     expect(sequenceObjectIds(sequenceOf([])).size).toBe(0);
+  });
+
+  it("reports an uncoupled member and ignores sequences with no members", () => {
+    const sequence = sequenceOf([
+      { id: "p", kind: "pose", objectId: 1, atMs: 0, pose: { v1: 0, v2: 0, v3: 0 } },
+    ]);
+    expect(hasUncoupledSequenceMember(sequence, new Set())).toBe(true);
+    expect(hasUncoupledSequenceMember(sequence, new Set([1]))).toBe(false);
+    expect(hasUncoupledSequenceMember(sequenceOf([]), new Set())).toBe(false);
   });
 });

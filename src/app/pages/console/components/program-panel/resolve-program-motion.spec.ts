@@ -59,4 +59,13 @@ describe("resolve-program-motion", () => {
     const program = motionProgramToLegacyProgram(forcedMotion);
     expect(program?.chapters[0]?.items[0]?.sequence.trajectoryMode).toBe(true);
   });
+
+  it("copies loop onto the control-page sequence summary", () => {
+    const loopingMotion: ProjectMotion = {
+      ...motion,
+      actionSequences: [{ ...motion.actionSequences[0]!, loop: true }],
+    };
+    const program = motionProgramToLegacyProgram(loopingMotion);
+    expect(program?.chapters[0]?.items[0]?.sequence.loop).toBe(true);
+  });
 });

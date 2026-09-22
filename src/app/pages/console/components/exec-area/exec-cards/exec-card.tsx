@@ -77,6 +77,14 @@ export const ExecCardView = ({
         >
           <MoreVertical className="h-3 w-3" />
         </button>
+        <button
+          type="button"
+          aria-label="关闭任务"
+          onClick={onClose}
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <X className="h-3 w-3" aria-hidden />
+        </button>
       </div>
 
       <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">

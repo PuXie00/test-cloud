@@ -17,7 +17,7 @@ export const ExecutorPaginationBar = () => {
   const currentChapter = program.chapters.find((chapter) => chapter.id === currentChapterId);
 
   return (
-    <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-muted/30 px-3">
+    <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-muted/30 pr-2">
       <button
         type="button"
         aria-label="上一页"

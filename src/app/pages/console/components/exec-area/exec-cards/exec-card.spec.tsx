@@ -56,6 +56,13 @@ describe("ExecCardView run status", () => {
     expect(screen.queryByText("Seq")).toBeNull();
   });
 
+  it("closes the active task from the top-right control", () => {
+    handlers.onClose.mockClear();
+    render(<ExecCardView card={card()} hasNextSequence {...handlers} />);
+    fireEvent.click(screen.getByRole("button", { name: "关闭任务" }));
+    expect(handlers.onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("disables restart and skip while running; stop is enabled", () => {
     render(<ExecCardView card={card()} hasNextSequence {...handlers} />);
     expect((screen.getByRole("button", { name: "重新" }) as HTMLButtonElement).disabled).toBe(true);

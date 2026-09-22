@@ -54,6 +54,7 @@ const {
   setSlotBusyMock,
   setSlotRunningMock,
   execCardsRef,
+  coupledObjectIdsRef,
 } = vi.hoisted(() => ({
   toastWarning: vi.fn(),
   toastError: vi.fn(),
@@ -67,20 +68,20 @@ const {
   readySequenceMock: vi.fn(async (args: { sequenceId: number }) => ({
     ok: true as const,
     name: args.sequenceId === 15 ? "正常序列" : String(args.sequenceId),
-    sequenceHandle: { actionId: args.sequenceId, syncGroupId: 1 },
+    sequenceHandle: { actionId: args.sequenceId },
     fingerprint: `fp-${args.sequenceId}`,
   })),
   goSequenceMock: vi.fn(async (args: { sequenceId: number; faderPercent?: number }) => ({
     ok: true as const,
     name: args.sequenceId === 15 ? "正常序列" : String(args.sequenceId),
     speedPercent: args.faderPercent ?? 100,
-    sequenceHandle: { actionId: args.sequenceId, syncGroupId: 1 },
+    sequenceHandle: { actionId: args.sequenceId },
   })),
   startLocalAuthoredSequenceMock: vi.fn(async (args: { sequenceId: number }) => ({
     ok: true as const,
     name: args.sequenceId === 15 ? "正常序列" : args.sequenceId,
     speedPercent: 100,
-    sequenceHandle: { actionNo: 1, syncGroupId: 1 },
+    sequenceHandle: { actionNo: 1 },
   })),
   markSlotReadyMock: vi.fn(),
   clearSlotReadyMock: vi.fn(),
@@ -88,6 +89,9 @@ const {
   setSlotRunningMock: vi.fn(),
   execCardsRef: {
     current: [] as ExecCard[],
+  },
+  coupledObjectIdsRef: {
+    current: new Set<number>([1]),
   },
   faderSlotsRef: {
     current: [] as FaderSlotState[],
@@ -210,6 +214,12 @@ vi.mock("../../hooks/use-executor-slots", async () => {
   };
 });
 
+vi.mock("../build-debug/build-debug-context", () => ({
+  useBuildDebug: () => ({
+    coupledObjectIds: coupledObjectIdsRef.current,
+  }),
+}));
+
 vi.mock("../../hooks/use-program", () => ({
   useProgram: () => ({
     program: programState.current,
@@ -319,7 +329,7 @@ import { ExecArea } from "./exec-area";
 import { ContentLibraryPanel } from "../action-builder/content-library/content-library-panel";
 import { ProgramPanel } from "../program-panel/program-panel";
 import { ExecEmptyState } from "./exec-cards/exec-empty-state";
-import { advanceRunningCards } from "../../hooks/use-exec-cards";
+import { advanceRunningCards } from "../../hooks/advance-running-cards";
 
 const makeFaderSlot = (overrides: Partial<FaderSlotState> & { index: number }): FaderSlotState => ({
   label: `F${overrides.index + 1}`,
@@ -467,6 +477,7 @@ afterEach(() => {
   stopPreviewMock.mockClear();
   previewSequenceIdRef.current = null;
   execCardsRef.current = [];
+  coupledObjectIdsRef.current = new Set([1]);
   capturedTriggers.onTriggerSequence = null;
   documentRef.current = null;
   programState.current = {
@@ -598,6 +609,7 @@ describe("FaderSlot Ready/GO gate", () => {
 
   it("shows GO when the slot is ready", () => {
     const onGo = vi.fn();
+    const onFaderChange = vi.fn();
     render(
       withMode(
         <FaderSlot
@@ -615,13 +627,17 @@ describe("FaderSlot Ready/GO gate", () => {
           onPreviewHoldStart={vi.fn()}
           onPreviewHoldEnd={vi.fn()}
           onGo={onGo}
-          onFaderChange={vi.fn()}
+          onFaderChange={onFaderChange}
           onAssignFromDrag={vi.fn()}
         />,
       ),
     );
     const go = screen.getByRole("button", { name: /GO/i }) as HTMLButtonElement;
     expect(go.disabled).toBe(false);
+    const slider = screen.getByRole("slider", { name: "F1 速度" });
+    expect(slider.getAttribute("aria-disabled")).toBeNull();
+    fireEvent.keyDown(slider, { key: "ArrowUp" });
+    expect(onFaderChange).toHaveBeenCalledWith(101);
     fireEvent.click(go);
     expect(onGo).toHaveBeenCalledTimes(1);
   });
@@ -646,7 +662,7 @@ describe("FaderSlot Ready/GO gate", () => {
     expect(document.querySelector("input[type='range']")).toBeNull();
   });
 
-  it("shows the sequence name, percent, and an enabled slider when filled", () => {
+  it("shows the sequence name and percent, and locks the slider until ready", () => {
     const onFaderChange = vi.fn();
     render(
       withMode(
@@ -669,10 +685,37 @@ describe("FaderSlot Ready/GO gate", () => {
     expect(screen.getByText("开幕A")).toBeTruthy();
     expect(screen.getByText("120%")).toBeTruthy();
     const slider = screen.getByRole("slider", { name: "F3 速度" });
+    expect(slider.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.keyDown(slider, { key: "ArrowUp" });
+    expect(onFaderChange).not.toHaveBeenCalled();
+    expect(screen.queryByText("强制")).toBeNull();
+  });
+
+  it("lets the slider move while the slot is running", () => {
+    const onFaderChange = vi.fn();
+    render(
+      withMode(
+        <FaderSlot
+          slot={makeFaderSlot({
+            index: 0,
+            phase: "running",
+            faderValue: 80,
+            sequence: { id: 15, name: "开幕A", durationMs: 2000 },
+          })}
+          isPreviewing={false}
+          onPreviewToggle={vi.fn()}
+          onPreviewHoldStart={vi.fn()}
+          onPreviewHoldEnd={vi.fn()}
+          onGo={vi.fn()}
+          onFaderChange={onFaderChange}
+          onAssignFromDrag={vi.fn()}
+        />,
+      ),
+    );
+    const slider = screen.getByRole("slider", { name: "F1 速度" });
     expect(slider.getAttribute("aria-disabled")).toBeNull();
     fireEvent.keyDown(slider, { key: "ArrowUp" });
-    expect(onFaderChange).toHaveBeenCalledWith(121);
-    expect(screen.queryByText("强制")).toBeNull();
+    expect(onFaderChange).toHaveBeenCalledWith(81);
   });
 
   it("shows 强制 only for a forced-trajectory sequence", () => {
@@ -694,7 +737,39 @@ describe("FaderSlot Ready/GO gate", () => {
       ),
     );
     expect(screen.getByText("强制")).toBeTruthy();
+    expect(screen.queryByText("F1")).toBeNull();
     expect(screen.getByRole("button", { name: "预览 开幕A，强制轨迹" })).toBeTruthy();
+  });
+
+  it("shows safety in both states, loop only when enabled, and cancels ready from the mark popover", () => {
+    const onCancelReady = vi.fn();
+    render(
+      withMode(
+        <FaderSlot
+          slot={makeFaderSlot({
+            index: 0,
+            phase: "ready",
+            sequence: { id: 15, name: "开幕A", durationMs: 2000, loop: true, trajectoryMode: true },
+          })}
+          isPreviewing={false}
+          onPreviewToggle={vi.fn()}
+          onPreviewHoldStart={vi.fn()}
+          onPreviewHoldEnd={vi.fn()}
+          onGo={vi.fn()}
+          onCancelReady={onCancelReady}
+          onFaderChange={vi.fn()}
+          onAssignFromDrag={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(screen.getByText("安全组开启")).toBeTruthy();
+    expect(screen.getByText("循环")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "开幕A 标记" }));
+    fireEvent.click(screen.getByRole("button", { name: "关闭安全组" }));
+    expect(screen.getByText("安全组关闭")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "取消准备" }));
+    expect(onCancelReady).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -938,6 +1013,27 @@ describe("ExecArea launch guard", () => {
     expect(String(toastWarning.mock.calls[0]?.[0])).toMatch(/待修复|待编排|无目标|无轨道/);
   });
 
+  it("blocks Ready and toasts when a member object is not coupled", () => {
+    coupledObjectIdsRef.current = new Set();
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "F2 Ready" }));
+    expect(toastWarning).toHaveBeenCalledWith("未耦合");
+    expect(readySequenceMock).not.toHaveBeenCalled();
+    expect(markSlotReadyMock).not.toHaveBeenCalled();
+  });
+
+  it("blocks GO and toasts when a member object is not coupled", () => {
+    coupledObjectIdsRef.current = new Set();
+    faderSlotsRef.current = faderSlotsRef.current.map((slot) =>
+      slot.index === 1 ? { ...slot, phase: "ready" } : slot,
+    );
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "F2 GO" }));
+    expect(toastWarning).toHaveBeenCalledWith("未耦合");
+    expect(goSequenceMock).not.toHaveBeenCalled();
+    expect(launchMock).not.toHaveBeenCalled();
+  });
+
   it("Ready failure stays idle and does not launch", async () => {
     readySequenceMock.mockResolvedValueOnce({
       ok: false,
@@ -1165,7 +1261,7 @@ describe("execution cards", () => {
     expect(sequence?.elapsedMs).toBe(authoredSequenceMs + 500);
   });
 
-  it("stop keeps the card locally and skipNext does not call PLC", async () => {
+  it("stop calls action stop and skipNext does not", async () => {
     const { ExecCardsProvider, useExecCards: useRealExecCards } = await vi.importActual<
       typeof import("../../hooks/use-exec-cards")
     >("../../hooks/use-exec-cards");
@@ -1183,7 +1279,8 @@ describe("execution cards", () => {
                 durationMs: null,
                 source: { kind: "program" },
                 sequenceId: 15,
-                sequenceHandle: { actionId: 9, syncGroupId: 3 },
+                sequenceHandle: { actionId: 9 },
+                trajectoryMode: true,
               })
             }
           >
@@ -1218,7 +1315,10 @@ describe("execution cards", () => {
     expect(stopSequenceMock).not.toHaveBeenCalled();
     expect(screen.getByText("running")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "stop" }));
-    expect(stopSequenceMock).not.toHaveBeenCalled();
+    expect(stopSequenceMock).toHaveBeenCalledWith(
+      { actionId: 9, trajectoryMode: true },
+      localSequenceTransport,
+    );
     expect(screen.getByText("stopped")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "restart" }));
     expect(screen.getByText("running")).toBeTruthy();

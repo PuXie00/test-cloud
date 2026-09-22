@@ -141,7 +141,7 @@ export type CsocketAPI = {
   allStopPlc: CsocketSendFn
   busResetPlc: CsocketSendFn
   resetPlc: CsocketSendFn
-  stopActionPlc: CsocketSendFn
+  actionStop: CsocketSendFn
   ruleStartPlc: CsocketSendFn
   ruleDeletePlc: CsocketSendFn
   addMotorPlc: CsocketSendFn

@@ -1,12 +1,14 @@
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { cn } from "@/app/components/ui/utils";
+import { hasUncoupledSequenceMember } from "@/app/project/action-sequence/sequence-object-ids";
 import { resolveMotionLaunchBlock } from "@/app/project/project-motion-readiness";
 import { useProject } from "@/app/project/use-project";
 import { useExecutorSlots } from "../../hooks/use-executor-slots";
 import { useExecCards } from "../../hooks/use-exec-cards";
 import { goSequence, readySequence } from "../../hooks/sequence-execution";
 import { useSequencePreview } from "../../hooks/use-sequence-preview";
+import { useBuildDebug } from "../build-debug/build-debug-context";
 import { ExecCards } from "./exec-cards/exec-cards";
 import { Executors } from "./executors/executors";
 
@@ -22,20 +24,20 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     useExecutorSlots();
   const { cards, launch } = useExecCards();
   const { currentProject } = useProject();
+  const { coupledObjectIds } = useBuildDebug();
   const { stopPreview } = useSequencePreview();
 
   useEffect(() => {
     const runningSlots = new Set(
-      cards
-        .filter(
-          (card) =>
-            card.source.kind === "fader" &&
-            (card.status === "running" ||
-              card.status === "paused" ||
-              card.status === "stopped") &&
-            !card.emergencyStopped,
-        )
-        .map((card) => card.source.slotIndex),
+      cards.flatMap((card) =>
+        card.source.kind === "fader" &&
+        (card.status === "running" ||
+          card.status === "paused" ||
+          card.status === "stopped") &&
+        !card.emergencyStopped
+          ? [card.source.slotIndex]
+          : [],
+      ),
     );
     for (const slot of faderSlots) {
       setSlotRunning(slot.index, runningSlots.has(slot.index));
@@ -44,7 +46,8 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
 
   const handleTriggerSequence = (slotIndex: number, sequenceId: number) => {
     const slot = faderSlots[slotIndex];
-    if (!slot?.sequence || slot.isBusy || slot.phase === "running") return;
+    const sequence = slot?.sequence;
+    if (!slot || !sequence || slot.isBusy || slot.phase === "running") return;
     const document = currentProject?.document;
     const issue = resolveMotionLaunchBlock(document, "sequence", sequenceId);
     if (issue) {
@@ -52,6 +55,12 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       return;
     }
     if (!document) return;
+
+    const authored = document.motion.actionSequences.find((entry) => entry.id === sequenceId);
+    if (authored && hasUncoupledSequenceMember(authored, coupledObjectIds)) {
+      toast.warning("未耦合");
+      return;
+    }
 
     if (slot.phase === "ready") {
       const faderPercent = slot.faderValue;
@@ -77,7 +86,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
             speedPercent: started.speedPercent,
             sequenceId,
             sequenceHandle: started.sequenceHandle,
-            trajectoryMode: slot.sequence.trajectoryMode,
+            trajectoryMode: sequence.trajectoryMode,
           });
           stopPreview();
         } finally {
@@ -105,7 +114,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
 
   return (
     <section className={cn("flex min-h-0 overflow-hidden rounded-lg bg-card", className)}>
-      <div className="flex h-full w-[330px] shrink-0 flex-col border-r border-border/60">
+      <div className="flex h-full w-[330px] shrink-0 flex-col">
         <ExecCards />
       </div>
       <div className="min-w-0 flex-1">

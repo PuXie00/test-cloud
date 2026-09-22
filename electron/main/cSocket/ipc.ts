@@ -207,8 +207,8 @@ export const registerCppSocketIpc = (api: CsocketApiService): void => {
   handleOptionalItems(CSOCKET_CHANNELS.resetPlc, (items, opts) =>
     api.resetPlc(items as Parameters<CsocketApiService['resetPlc']>[0], opts),
   )
-  handleOptionalItems(CSOCKET_CHANNELS.stopActionPlc, (items, opts) =>
-    api.stopActionPlc(items as Parameters<CsocketApiService['stopActionPlc']>[0], opts),
+  handleOptionalItems(CSOCKET_CHANNELS.actionStop, (items, opts) =>
+    api.actionStop(items as Parameters<CsocketApiService['actionStop']>[0], opts),
   )
   handleItems(CSOCKET_CHANNELS.ruleStartPlc, (items, opts) =>
     api.ruleStartPlc(items as Parameters<CsocketApiService['ruleStartPlc']>[0], opts),

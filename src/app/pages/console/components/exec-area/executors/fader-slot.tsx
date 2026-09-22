@@ -1,10 +1,11 @@
-import { useEffect, useRef } from "react";
-import { Loader2, Play, Plus } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Loader2, Play, Plus, Repeat, Shield, Zap } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/app/components/ui/popover";
 import { cn } from "@/app/components/ui/utils";
 import { useConsoleMode } from "../../../hooks/use-console-mode";
 import type { FaderSlotState } from "../../../hooks/use-executor-slots";
 import { VerticalFader } from "./vertical-fader";
-import { ForcedTrajectoryBadge, isForcedTrajectory } from "../../forced-trajectory-badge";
+import { isForcedTrajectory } from "../../forced-trajectory-badge";
 
 const LONG_PRESS_MS = 400;
 const LONG_PRESS_MOVE_PX = 8;
@@ -17,6 +18,7 @@ type FaderSlotProps = {
   onPreviewHoldStart: () => void;
   onPreviewHoldEnd: () => void;
   onGo: () => void;
+  onCancelReady?: () => void;
   onFaderChange: (value: number) => void;
   onAssignFromDrag: (payload: { chapterId: string; index: number; kind: "sequence" }) => void;
 };
@@ -29,10 +31,14 @@ export const FaderSlot = ({
   onPreviewHoldStart,
   onPreviewHoldEnd,
   onGo,
+  onCancelReady,
   onFaderChange,
   onAssignFromDrag,
 }: FaderSlotProps) => {
   const { mode } = useConsoleMode();
+  const [marksOpen, setMarksOpen] = useState(false);
+  const [safetyGroupOn, setSafetyGroupOn] = useState(true);
+  const sequenceId = slot.sequence?.id;
   const isEmpty = !slot.sequence;
   const isForced = isForcedTrajectory(slot.sequence?.trajectoryMode);
   const isRunning = slot.phase === "running";
@@ -55,6 +61,11 @@ export const FaderSlot = ({
   };
 
   useEffect(() => () => clearTimer(), []);
+
+  useEffect(() => {
+    setSafetyGroupOn(true);
+    setMarksOpen(false);
+  }, [sequenceId]);
 
   const cancelHold = () => {
     clearTimer();
@@ -131,11 +142,11 @@ export const FaderSlot = ({
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       className={cn(
-        "relative flex h-full min-h-0 min-w-[72px] w-full flex-col gap-1 rounded-sm border bg-card p-2 transition-colors",
+        "relative flex h-full min-h-0 min-w-[72px] w-full flex-col gap-1 rounded-sm border bg-card px-1 pt-1 transition-colors",
         isRunning
           ? "border-show/60"
           : isEmpty
-            ? cn("border-dashed border-muted-foreground/40", isRehearsal && "hover:border-primary/40")
+            ? cn("border-dashed border-muted-foreground/40", isRehearsal)
             : repairMessage
               ? "border-warning/50"
               : isReady
@@ -163,47 +174,84 @@ export const FaderSlot = ({
           className="absolute inset-0 z-0 rounded-sm disabled:pointer-events-none"
         />
       ) : null}
-      <div className="pointer-events-none relative z-[1] flex items-center gap-1">
-        <span className="font-mono text-label-caps text-muted-foreground">{slot.label}</span>
-        {isForced ? <ForcedTrajectoryBadge /> : null}
-        <span
-          className={cn(
-            "ml-auto h-1.5 w-1.5 rounded-full",
-            isRunning
-              ? "bg-show"
-              : isEmpty
-                ? "bg-muted-foreground/40"
-                : repairMessage
-                  ? "bg-warning"
-                  : isReady
-                    ? "bg-primary"
-                    : "bg-show/70",
-          )}
-        />
-      </div>
-      {!isEmpty ? (
-        <>
-          <span
-            className={cn(
-              "pointer-events-none relative z-[1] line-clamp-1 text-left text-body-sm",
-              isPreviewing ? "text-primary" : "text-foreground",
-              repairMessage && "opacity-60",
-            )}
-          >
-            {slot.sequence?.name}
-          </span>
-          {repairMessage ? (
-            <span id={reasonId} className="pointer-events-none relative z-[1] line-clamp-2 text-body-sm text-warning">
-              {repairMessage}
-            </span>
-          ) : null}
-        </>
+      {isEmpty ? (
+        <div className="h-6 w-full shrink-0 rounded-full bg-input-background" aria-hidden />
+      ) : (
+        <Popover open={marksOpen} onOpenChange={setMarksOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              aria-label={`${slot.sequence?.name} 标记`}
+              className="relative z-10 flex h-6 w-full shrink-0 items-center justify-center gap-1.5 rounded-full bg-input-background text-foreground"
+            >
+              {isForced ? (
+                <span className="inline-flex text-warning" title="强制">
+                  <Zap className="h-3.5 w-3.5" aria-hidden />
+                  <span className="sr-only">强制</span>
+                </span>
+              ) : null}
+              <span
+                className={cn(
+                  "inline-flex",
+                  safetyGroupOn ? "text-show" : "text-muted-foreground",
+                )}
+                title={safetyGroupOn ? "安全组开启" : "安全组关闭"}
+              >
+                <Shield className="h-3.5 w-3.5" aria-hidden />
+                <span className="sr-only">{safetyGroupOn ? "安全组开启" : "安全组关闭"}</span>
+              </span>
+              {slot.sequence?.loop ? (
+                <span className="inline-flex text-secondary" title="循环">
+                  <Repeat className="h-3.5 w-3.5" aria-hidden />
+                  <span className="sr-only">循环</span>
+                </span>
+              ) : null}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent side="top" align="center" className="w-40 bg-card p-2 shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
+            <div className="flex flex-col gap-1">
+              <button
+                type="button"
+                onClick={() => setSafetyGroupOn((current) => !current)}
+                className="inline-flex h-8 items-center justify-center rounded-sm bg-input-background text-body-sm text-foreground hover:bg-accent"
+              >
+                {safetyGroupOn ? "关闭安全组" : "开启安全组"}
+              </button>
+              {isReady ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onCancelReady?.();
+                    setMarksOpen(false);
+                  }}
+                  className="inline-flex h-8 items-center justify-center rounded-sm text-body-sm text-warning hover:bg-accent"
+                >
+                  取消准备
+                </button>
+              ) : null}
+            </div>
+          </PopoverContent>
+        </Popover>
+      )}
+      <span
+        className={cn(
+          "pointer-events-none relative z-[1] line-clamp-2 min-h-8 text-left text-body-sm",
+          isPreviewing ? "text-primary" : "text-foreground",
+          repairMessage && "opacity-60",
+        )}
+      >
+        {slot.sequence?.name}
+      </span>
+      {repairMessage ? (
+        <span id={reasonId} className="pointer-events-none relative z-[1] line-clamp-2 text-body-sm text-warning">
+          {repairMessage}
+        </span>
       ) : null}
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
         <VerticalFader
           value={slot.faderValue}
           onChange={onFaderChange}
-          disabled={isEmpty}
+          disabled={!isReady && !isRunning}
           aria-label={`${slot.label} 速度`}
         />
         {isEmpty ? (

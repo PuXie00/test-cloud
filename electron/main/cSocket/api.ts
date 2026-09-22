@@ -384,17 +384,33 @@ export class CsocketApiService {
     runDirection: number,
     speedScale: number,
     loopCount: number,
+    trajectoryMode: boolean;
   }[], opts?: CsocketSendOpts) {
     const maped = items.map((item) => ({
       actionId: item.actionId,
       startFlag: 1,
+      loopCount: item.loopCount,
     }))
     return this.syncMovebegin(maped, opts)
   }
 
   // 动作停止 Stop
-  actionStop(items: unknown[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('Action|stop', '', items, opts)
+  actionStop(items: {
+    actionId: number,
+    trajectoryMode: boolean;
+  }[], opts?: CsocketSendOpts) {
+    const isTMaped = items.filter(item => item.trajectoryMode)
+    const isNotTMaped = items.filter(item => !item.trajectoryMode)
+    const result = []
+    if(isNotTMaped.length > 0) {
+      result.push(this.sendBuilt('Opera|syncMoveEnd','0x01FF',isNotTMaped.map(item => ({
+        actionId: item.actionId,
+      })), opts))
+    }
+    if(isTMaped.length > 0) {
+      result.push(this.sendBuilt('Action|stop', '', isTMaped, opts))
+    }
+    return Promise.all(result)
   }
 
   /*
@@ -636,6 +652,7 @@ export class CsocketApiService {
   syncMovebegin(
     items: {
       actionId: number
+      loopCount: number //0 为一直循环，1为次数1，2为次数2
       startFlag: number
     }[],
     opts?: CsocketSendOpts,
@@ -741,7 +758,7 @@ export class CsocketApiService {
     return this.sendBuilt('Operation|actionSyncCall', '0x1006', items, opts)
   }
   // 停止动作
-  stopActionPlc(items: { deviceId: number }[], opts?: CsocketSendOpts) {
+  stopActionPlc(items: { actionId: number }[], opts?: CsocketSendOpts) {
     return this.sendBuilt('Operation|stopAction', '0x1007', items ?? [], opts)
   }
   // 动作数据保存

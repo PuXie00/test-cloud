@@ -12,3 +12,14 @@ export const sequenceObjectIds = (sequence: ActionSequenceConfig): Set<number> =
   }
   return ids;
 };
+
+/** 序列成员里是否存在尚未耦合的物体。没有成员时视为已满足。 */
+export const hasUncoupledSequenceMember = (
+  sequence: ActionSequenceConfig,
+  coupledObjectIds: ReadonlySet<number>,
+): boolean => {
+  for (const objectId of sequenceObjectIds(sequence)) {
+    if (!coupledObjectIds.has(objectId)) return true;
+  }
+  return false;
+};

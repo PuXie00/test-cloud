@@ -1,0 +1,71 @@
+{
+  "action_id": 2,
+  "model_count": 4,
+  "models": [
+    {
+      "index": 1,
+      "model_type": 1,
+      "current_HPY": [0, 0, 0],
+      "target_HPY": [1000, 0, 0],
+      "velocity": [200, 0, 0],
+      "acceleration": [100, 0, 0],
+      "deceleration": [100, 0, 0],
+      "max_motor_velocity": 250,
+      "motor_num": 1
+    },
+    {
+      "index": 2,
+      "model_type": 2,
+      "current_HPY": [1000, 0, 0],
+      "target_HPY": [500, 30, 0],
+      "velocity": [200, 5, 0],
+      "acceleration": [100, 2, 0],
+      "deceleration": [100, 2, 0],
+      "max_motor_velocity": 220,
+      "BaseHight1": 100,
+      "BaseHight2": 0,
+      "lLenth_inside": 2000,
+      "maxheight": 8000
+    },
+    {
+      "index": 3,
+      "model_type": 4,
+      "current_HPY": [1000, 0, 0],
+      "target_HPY": [2000, 30, 0],
+      "velocity": [200, 5, 0],
+      "acceleration": [100, 2, 0],
+      "deceleration": [100, 2, 0],
+      "max_motor_velocity": 300,
+      "BaseHight1": 100,
+      "BaseHight2": 0,
+      "lLenth_inside": 2000,
+      "wLenth_inside": 1800,
+      "maxheight": 8000,
+      "moveWhat": 1
+    },
+    {
+      "index": 4,
+      "model_type": 8,
+      "current_HPY": [1000, 0, 0],
+      "target_HPY": [2000, 20, -15],
+      "velocity": [200, 5, 5],
+      "acceleration": [100, 2, 2],
+      "deceleration": [100, 2, 2],
+      "max_motor_velocity": 300,
+      "Baseheight1": 100,
+      "Baseheight2": 0,
+      "maxheight": 8000,
+      "betainit": 0,
+      "point_init_pos": [
+        [2000, 0, 0],
+        [1414.21, 1414.21, 0],
+        [0, 2000, 0],
+        [-1414.21, 1414.21, 0],
+        [-2000, 0, 0],
+        [-1414.21, -1414.21, 0],
+        [0, -2000, 0],
+        [1414.21, -1414.21, 0]
+      ]
+    }
+  ]
+}

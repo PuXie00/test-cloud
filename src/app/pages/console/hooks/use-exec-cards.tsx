@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { advanceRunningCards } from "./advance-running-cards";
 import {
   getSequenceTransport,
   stopSequence,
@@ -68,27 +69,6 @@ type ExecCardsProviderProps = { children: ReactNode };
 
 const hasActiveRunningCard = (cards: ExecCard[]) =>
   cards.some((card) => card.status === "running" && !card.emergencyStopped);
-
-export const advanceRunningCards = (cards: ExecCard[], delta: number): ExecCard[] | null => {
-  let changed = false;
-  const next = cards.map((card) => {
-    if (card.status !== "running" || card.emergencyStopped) return card;
-    if (card.durationMs === null) {
-      const elapsedMs = card.elapsedMs + delta;
-      changed = true;
-      return { ...card, elapsedMs };
-    }
-
-    const advance = delta * (card.speedPercent / 100);
-    const elapsedMs = Math.min(card.durationMs, card.elapsedMs + advance);
-    const status: ExecCardStatus =
-      elapsedMs >= card.durationMs ? "completed" : "running";
-    if (elapsedMs === card.elapsedMs && status === card.status) return card;
-    changed = true;
-    return { ...card, elapsedMs, status };
-  });
-  return changed ? next : null;
-};
 
 export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
   const [cards, setCards] = useState<ExecCard[]>([]);
@@ -200,8 +180,18 @@ export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
   }, []);
 
   const stop = useCallback((id: string) => {
+    const card = cardsRef.current.find((entry) => entry.id === id);
+    if (card?.sequenceHandle) {
+      void stopSequence(
+        {
+          actionId: card.sequenceHandle.actionId,
+          trajectoryMode: card.trajectoryMode === true,
+        },
+        getSequenceTransport(),
+      ).catch(() => undefined);
+    }
     setCards((current) =>
-      current.map((card) => (card.id === id ? { ...card, status: "stopped" as const } : card)),
+      current.map((entry) => (entry.id === id ? { ...entry, status: "stopped" as const } : entry)),
     );
   }, []);
 
@@ -220,9 +210,16 @@ export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
   }, []);
 
   const emergencyStopAll = useCallback(() => {
-    const handles = cardsRef.current
-      .map((card) => card.sequenceHandle)
-      .filter((handle): handle is SequenceRuntimeHandle => handle !== undefined);
+    const handles = cardsRef.current.flatMap((card) =>
+      card.sequenceHandle
+        ? [
+            {
+              actionId: card.sequenceHandle.actionId,
+              trajectoryMode: card.trajectoryMode === true,
+            },
+          ]
+        : [],
+    );
     setCards((current) =>
       current.map((card) => ({ ...card, emergencyStopped: true, status: "error" })),
     );
@@ -233,7 +230,21 @@ export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
   }, []);
 
   const close = useCallback((id: string) => {
-    setCards((current) => current.filter((card) => card.id !== id));
+    const card = cardsRef.current.find((entry) => entry.id === id);
+    if (
+      card?.sequenceHandle &&
+      !card.emergencyStopped &&
+      (card.status === "running" || card.status === "paused" || card.status === "stopped")
+    ) {
+      void stopSequence(
+        {
+          actionId: card.sequenceHandle.actionId,
+          trajectoryMode: card.trajectoryMode === true,
+        },
+        getSequenceTransport(),
+      ).catch(() => undefined);
+    }
+    setCards((current) => current.filter((entry) => entry.id !== id));
   }, []);
 
   const value = useMemo(

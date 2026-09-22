@@ -7,6 +7,7 @@ import {
 } from "@/app/project/action-sequence/compile-plc-action";
 import { toActionDataSaveItems } from "@/app/project/action-sequence/plc-action-payload";
 import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
+import { isSequenceLooping } from "@/app/project/action-sequence/sequence-loop";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
 import {
   hasBlockingSequenceIssues,
@@ -17,9 +18,6 @@ import {
 } from "@/app/project/action-sequence/validate-sequence";
 import type { ProjectDocument } from "@/app/project/project-document-types";
 import { sequenceValidationContextFromSetup } from "@/app/project/project-motion-readiness";
-
-/** Local placeholder until firmware confirms actionId ↔ syncGroupId. */
-export const LOCAL_SEQUENCE_SYNC_GROUP_ID = 1;
 
 export type SequenceExecutionObject = {
   id: number;
@@ -35,7 +33,7 @@ export type SequenceExecutionContext = {
 
 export type SequenceRuntimeHandle = {
   actionId: number;
-  syncGroupId: number;
+  trajectoryMode?: boolean;
 };
 
 export type DownloadedSequence =
@@ -51,18 +49,21 @@ export type SequenceExecutionTransport = {
   saveAction: (items: ActionDataSaveItem[]) => Promise<void>;
   syncCall: (input: {
     actionId: number;
-    syncGroupId: number;
     startTimestamp: number;
     speedScale: number;
     trajectoryMode: TrajectoryMode;
+    loopCount: number;
   }) => Promise<void>;
-  stopAction: (input: { actionId: number; syncGroupId: number }) => Promise<void>;
+  stopAction: (input: {
+    actionId: number;
+    trajectoryMode: boolean;
+  }) => Promise<void>;
 };
 
 export type SequenceCsocketClient = {
   actionReady: (items: ActionDataSaveItem[], opts?: unknown) => Promise<unknown>;
   actionGo: (items: unknown[], opts?: unknown) => Promise<unknown>;
-  stopActionPlc: (items: unknown[], opts?: unknown) => Promise<unknown>;
+  actionStop: (items: unknown[], opts?: unknown) => Promise<unknown>;
 };
 
 const COMPILE_FAILURE_ISSUE: SequenceIssue = {
@@ -152,7 +153,10 @@ export const downloadSequence = async (
 };
 
 export const stopSequence = async (
-  handle: SequenceRuntimeHandle,
+  handle: {
+    actionId: number;
+    trajectoryMode: boolean;
+  },
   transport: SequenceExecutionTransport,
 ): Promise<void> => {
   await transport.stopAction(handle);
@@ -211,7 +215,9 @@ const requireSaveAck = (raw: unknown): void => {
 
 /** Placeholder until firmware confirms run direction encoding. */
 const ADAPTER_RUN_DIRECTION = 0;
-const ADAPTER_LOOP_COUNT = 1;
+
+/** C++: 0 = 一直循环，1 = 播一次。 */
+export const toActionGoLoopCount = (looping: boolean): 0 | 1 => (looping ? 0 : 1);
 
 export const createCsocketSequenceTransport = (
   api: SequenceCsocketClient,
@@ -220,10 +226,6 @@ export const createCsocketSequenceTransport = (
     await requireSaveAck(await api.actionReady(items));
   },
   syncCall: async (input) => {
-    // The C++ contract has not assigned a wire field for this semantic mode yet.
-    // Keep the mode at the adapter boundary; do not guess a numeric mapping.
-    void input.trajectoryMode;
-    void input.syncGroupId;
     void input.startTimestamp;
     await requireSuccessfulAck(
       await api.actionGo([
@@ -231,18 +233,22 @@ export const createCsocketSequenceTransport = (
           actionId: input.actionId,
           runDirection: ADAPTER_RUN_DIRECTION,
           speedScale: input.speedScale,
-          loopCount: ADAPTER_LOOP_COUNT,
+          loopCount: input.loopCount,
+          trajectoryMode: input.trajectoryMode,
         },
       ]),
       "actionGo",
     );
   },
   stopAction: async (input) => {
-    // UNCONFIRMED: stopActionPlc currently takes `{ deviceId }[]`. Map actionId → deviceId
-    // inside this adapter only until firmware confirms the stop payload.
     await requireSuccessfulAck(
-      await api.stopActionPlc([{ deviceId: input.actionId }]),
-      "stopAction",
+      await api.actionStop([
+        {
+          actionId: input.actionId,
+          trajectoryMode: input.trajectoryMode,
+        },
+      ]),
+      "actionStop",
     );
   },
 });
@@ -252,7 +258,7 @@ const hasSequenceCsocketApi = (value: unknown): value is SequenceCsocketClient =
   return (
     typeof value.actionReady === "function" &&
     typeof value.actionGo === "function" &&
-    typeof value.stopActionPlc === "function"
+    typeof value.actionStop === "function"
   );
 };
 
@@ -344,7 +350,6 @@ export const readySequence = async (args: {
       name: found.sequence.name,
       sequenceHandle: {
         actionId: downloaded.actionId,
-        syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID,
       },
       fingerprint: sequenceReadyFingerprint(found.sequence),
     };
@@ -355,7 +360,6 @@ export const readySequence = async (args: {
       name: found.sequence.name,
       sequenceHandle: {
         actionId: found.sequence.id,
-        syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID,
       },
       fingerprint: sequenceReadyFingerprint(found.sequence),
     };
@@ -378,10 +382,10 @@ export const goSequence = async (args: {
   try {
     await transport.syncCall({
       actionId: found.sequence.id,
-      syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID,
       startTimestamp: Date.now(),
       speedScale: fromFader ? mapFaderPercentToSpeedScale(speedPercent) : 1,
       trajectoryMode: found.sequence.trajectoryMode,
+      loopCount: toActionGoLoopCount(isSequenceLooping(found.sequence)),
     });
 
     return {
@@ -390,7 +394,6 @@ export const goSequence = async (args: {
       speedPercent,
       sequenceHandle: {
         actionId: found.sequence.id,
-        syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID,
       },
     };
   } catch {
@@ -401,7 +404,6 @@ export const goSequence = async (args: {
       speedPercent,
       sequenceHandle: {
         actionId: found.sequence.id,
-        syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID,
       },
     };
   }

@@ -38,6 +38,7 @@ const resolvedToChapterItems = (resolved: ResolvedChapterItem[]): ChapterItem[] 
       ...(item.sequence.note ? { note: item.sequence.note } : {}),
       durationMs: sequenceDisplayDurationMs(item.sequence),
       trajectoryMode: item.sequence.trajectoryMode,
+      ...(item.sequence.loop ? { loop: true } : {}),
     },
   }));
 

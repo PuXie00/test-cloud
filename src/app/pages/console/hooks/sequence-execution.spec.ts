@@ -9,7 +9,6 @@ import {
   createCsocketSequenceTransport,
   createLocalSequenceTransport,
   downloadSequence,
-  LOCAL_SEQUENCE_SYNC_GROUP_ID,
   getSequenceTransport,
   goSequence,
   mapFaderPercentToSpeedScale,
@@ -103,7 +102,7 @@ const createTransport = (): InstrumentedTransport => {
 const createMockCsocketApi = (saveResult: unknown) => ({
   actionReady: vi.fn().mockResolvedValue(saveResult),
   actionGo: vi.fn().mockResolvedValue({ success: true, data: [] }),
-  stopActionPlc: vi.fn().mockResolvedValue({ success: true, data: [] }),
+  actionStop: vi.fn().mockResolvedValue({ success: true, data: [] }),
 });
 
 const fixtureObject = (): ControlledObjectConfig => ({
@@ -213,7 +212,7 @@ describe("readySequence", () => {
     expect(readied).toEqual({
       ok: true,
       name: "Seq",
-      sequenceHandle: { actionId: validSequence.id, syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID },
+      sequenceHandle: { actionId: validSequence.id },
       fingerprint: sequenceReadyFingerprint(validSequence),
     });
   });
@@ -257,7 +256,7 @@ describe("readySequence", () => {
     expect(readied).toEqual({
       ok: true,
       name: "Seq",
-      sequenceHandle: { actionId: validSequence.id, syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID },
+      sequenceHandle: { actionId: validSequence.id },
       fingerprint: sequenceReadyFingerprint(validSequence),
     });
   });
@@ -277,7 +276,7 @@ describe("readySequence", () => {
       expect(readied).toEqual({
         ok: true,
         name: "Seq",
-        sequenceHandle: { actionId: validSequence.id, syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID },
+        sequenceHandle: { actionId: validSequence.id },
         fingerprint: sequenceReadyFingerprint(validSequence),
       });
       expect(api.actionReady).toHaveBeenCalledTimes(1);
@@ -301,16 +300,16 @@ describe("goSequence", () => {
     expect(transport.saveAction).not.toHaveBeenCalled();
     expect(transport.syncCall).toHaveBeenCalledWith({
       actionId: validSequence.id,
-      syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID,
       startTimestamp: expect.any(Number),
       speedScale: 1.5,
       trajectoryMode: true,
+      loopCount: 1,
     });
     expect(started).toEqual({
       ok: true,
       name: "Seq",
       speedPercent: 150,
-      sequenceHandle: { actionId: validSequence.id, syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID },
+      sequenceHandle: { actionId: validSequence.id },
     });
   });
 
@@ -327,7 +326,7 @@ describe("goSequence", () => {
       ok: true,
       name: "Seq",
       speedPercent: 80,
-      sequenceHandle: { actionId: validSequence.id, syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID },
+      sequenceHandle: { actionId: validSequence.id },
     });
   });
 
@@ -344,12 +343,25 @@ describe("goSequence", () => {
         ok: true,
         name: "Seq",
         speedPercent: 100,
-        sequenceHandle: { actionId: validSequence.id, syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID },
+        sequenceHandle: { actionId: validSequence.id },
       });
       expect(api.actionGo).toHaveBeenCalledTimes(1);
+      expect(api.actionGo.mock.calls[0]?.[0]?.[0]).toMatchObject({ loopCount: 1 });
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it("sends loopCount 0 when the sequence loops", async () => {
+    const transport = createTransport();
+    await goSequence({
+      document: documentWithSequence({ ...validSequence, loop: true }),
+      sequenceId: validSequence.id,
+      transport,
+    });
+    expect(transport.syncCall).toHaveBeenCalledWith(
+      expect.objectContaining({ loopCount: 0 }),
+    );
   });
 });
 
@@ -365,16 +377,16 @@ describe("startLocalAuthoredSequence", () => {
     expect(transport.calls).toEqual(["save", "sync"]);
     expect(transport.syncCall).toHaveBeenCalledWith({
       actionId: validSequence.id,
-      syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID,
       startTimestamp: expect.any(Number),
       speedScale: 1,
       trajectoryMode: true,
+      loopCount: 1,
     });
     expect(started).toEqual({
       ok: true,
       name: "Seq",
       speedPercent: 100,
-      sequenceHandle: { actionId: validSequence.id, syncGroupId: LOCAL_SEQUENCE_SYNC_GROUP_ID },
+      sequenceHandle: { actionId: validSequence.id },
     });
     expect(started).not.toHaveProperty("durationMs");
   });
@@ -394,10 +406,13 @@ describe("startLocalAuthoredSequence", () => {
 });
 
 describe("stopSequence", () => {
-  it("calls stopAction with actionId and syncGroupId and does not call syncCall", async () => {
+  it("calls stopAction with actionId and trajectoryMode", async () => {
     const transport = createTransport();
-    await stopSequence({ actionId: 12, syncGroupId: 3 }, transport);
-    expect(transport.stopAction).toHaveBeenCalledWith({ actionId: 12, syncGroupId: 3 });
+    await stopSequence({ actionId: 12, trajectoryMode: true }, transport);
+    expect(transport.stopAction).toHaveBeenCalledWith({
+      actionId: 12,
+      trajectoryMode: true,
+    });
     expect(transport.syncCall).not.toHaveBeenCalled();
   });
 });
@@ -426,13 +441,15 @@ describe("createLocalSequenceTransport", () => {
     await expect(
       transport.syncCall({
         actionId: 1,
-        syncGroupId: 1,
         startTimestamp: 1,
         speedScale: 1,
         trajectoryMode: false,
+        loopCount: 1,
       }),
     ).resolves.toBeUndefined();
-    await expect(transport.stopAction({ actionId: 1, syncGroupId: 1 })).resolves.toBeUndefined();
+    await expect(
+      transport.stopAction({ actionId: 1, trajectoryMode: false }),
+    ).resolves.toBeUndefined();
     expect(actionReady).not.toHaveBeenCalled();
   });
 });
@@ -485,15 +502,15 @@ describe("createCsocketSequenceTransport", () => {
     );
   });
 
-  it("maps sync and stop onto actionGo/stopActionPlc and voids trajectoryMode at the adapter", async () => {
+  it("maps sync and stop onto actionGo/actionStop with trajectoryMode", async () => {
     const api = createMockCsocketApi({ success: true, data: [{ actionId: 9 }] });
     const transport = createCsocketSequenceTransport(api);
     await transport.syncCall({
       actionId: 9,
-      syncGroupId: 4,
       startTimestamp: 99,
       speedScale: 1.5,
       trajectoryMode: true,
+      loopCount: 0,
     });
     expect(api.actionGo).toHaveBeenCalled();
     const wireItem = api.actionGo.mock.calls[0]?.[0]?.[0] as Record<string, unknown>;
@@ -501,10 +518,10 @@ describe("createCsocketSequenceTransport", () => {
       actionId: 9,
       runDirection: 0,
       speedScale: 1.5,
-      loopCount: 1,
+      loopCount: 0,
+      trajectoryMode: true,
     });
-    expect(wireItem).not.toHaveProperty("trajectoryMode");
-    await transport.stopAction({ actionId: 9, syncGroupId: 4 });
-    expect(api.stopActionPlc.mock.calls[0]?.[0]).toEqual([{ deviceId: 9 }]);
+    await transport.stopAction({ actionId: 9, trajectoryMode: true });
+    expect(api.actionStop.mock.calls[0]?.[0]).toEqual([{ actionId: 9, trajectoryMode: true }]);
   });
 });

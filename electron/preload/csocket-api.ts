@@ -82,7 +82,7 @@ export const createCsocketApi = () => ({
   allStopPlc: invokeOptionalSend(CSOCKET_CHANNELS.allStopPlc),
   busResetPlc: invokeSend(CSOCKET_CHANNELS.busResetPlc),
   resetPlc: invokeOptionalSend(CSOCKET_CHANNELS.resetPlc),
-  stopActionPlc: invokeOptionalSend(CSOCKET_CHANNELS.stopActionPlc),
+  actionStop: invokeOptionalSend(CSOCKET_CHANNELS.actionStop),
   ruleStartPlc: invokeSend(CSOCKET_CHANNELS.ruleStartPlc),
   ruleDeletePlc: invokeOptionalSend(CSOCKET_CHANNELS.ruleDeletePlc),
   addMotorPlc: invokeSend(CSOCKET_CHANNELS.addMotorPlc),

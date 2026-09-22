@@ -10,6 +10,8 @@ export type ActionSequence = {
   durationMs: number;
   /** Missing or `non-forced` is unmarked on the control page. */
   trajectoryMode?: TrajectoryMode;
+  /** Closed-path repeat. Missing or false stays unmarked on the fader. */
+  loop?: boolean;
 };
 
 export type ChapterItem = {

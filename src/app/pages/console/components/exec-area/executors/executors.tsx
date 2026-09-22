@@ -12,7 +12,7 @@ type ExecutorsProps = {
 };
 
 export const Executors = ({ onTriggerSequence }: ExecutorsProps) => {
-  const { faderSlots, setFaderValue } = useExecutorSlots();
+  const { faderSlots, setFaderValue, clearSlotReady } = useExecutorSlots();
   const { program, reorderItemInChapter, moveItemAcrossChapter, currentChapterId, currentPageIndex } =
     useProgram();
   const { currentProject } = useProject();
@@ -40,10 +40,10 @@ export const Executors = ({ onTriggerSequence }: ExecutorsProps) => {
   return (
     <section className="flex h-full flex-col bg-muted">
       <ExecutorPaginationBar />
-      <div className="min-h-0 flex-1 overflow-y-hidden p-3">
+      <div className="min-h-0 flex-1 overflow-y-hidden py-1 pr-2">
         <div className="h-full min-h-0 min-w-0 overflow-x-auto overflow-y-hidden">
           <div
-            className="grid h-full w-full gap-2"
+            className="grid h-full w-full gap-1"
             style={{ gridTemplateColumns: `repeat(${PROGRAM_SLOTS_PER_PAGE}, minmax(72px, 1fr))` }}
           >
             {faderSlots.map((slot) => {
@@ -71,6 +71,7 @@ export const Executors = ({ onTriggerSequence }: ExecutorsProps) => {
                   }
                   onPreviewHoldEnd={stopPreview}
                   onGo={() => slot.sequence && onTriggerSequence(slot.index, slot.sequence.id)}
+                  onCancelReady={() => clearSlotReady(slot.index)}
                   onFaderChange={(value) => setFaderValue(slot.index, value)}
                   onAssignFromDrag={handleAssignFromDrag(slot.index)}
                 />
