@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { getMotionItemRepairIssue } from "@/app/project/project-motion-readiness";
 import { PROGRAM_SLOTS_PER_PAGE } from "@/app/pages/console/components/program-panel/program-data";
 import { useProject } from "@/app/project/use-project";
@@ -6,6 +7,7 @@ import { useExecCards } from "../../../hooks/use-exec-cards";
 import { useExecutorSlots } from "../../../hooks/use-executor-slots";
 import { useSequencePreview } from "../../../hooks/use-sequence-preview";
 import { ExecutorPaginationBar } from "./executor-pagination-bar";
+import { ExecutorSlotBar } from "./executor-slot-bar";
 import { FaderSlot } from "./fader-slot";
 
 type ExecutorsProps = {
@@ -16,6 +18,7 @@ export const Executors = ({ onTriggerSequence }: ExecutorsProps) => {
   const { faderSlots, setFaderValue, clearSlotReady, setSafetyGroup, setNearestStart } =
     useExecutorSlots();
   const { cards, setSpeed } = useExecCards();
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const { program, reorderItemInChapter, moveItemAcrossChapter, currentChapterId, currentPageIndex } =
     useProgram();
   const { currentProject } = useProject();
@@ -40,9 +43,25 @@ export const Executors = ({ onTriggerSequence }: ExecutorsProps) => {
       }
     };
 
+  const selectedSlot =
+    faderSlots.find((slot) => slot.index === selectedIndex) ??
+    faderSlots.find((slot) => slot.sequence) ??
+    faderSlots[0];
+  const selectedRepair =
+    document && selectedSlot?.sequence
+      ? getMotionItemRepairIssue(document, "sequence", selectedSlot.sequence.id)?.message ?? null
+      : null;
+
   return (
     <section className="flex h-full flex-col bg-muted">
       <ExecutorPaginationBar />
+      <ExecutorSlotBar
+        slot={selectedSlot}
+        repairMessage={selectedRepair}
+        onSafetyGroupChange={(enabled) => selectedSlot && setSafetyGroup(selectedSlot.index, enabled)}
+        onNearestStartChange={(enabled) => selectedSlot && setNearestStart(selectedSlot.index, enabled)}
+        onCancelReady={() => selectedSlot && clearSlotReady(selectedSlot.index)}
+      />
       <div className="min-h-0 flex-1 overflow-y-hidden p-3">
         <div className="h-full min-h-0 min-w-0 overflow-x-auto overflow-y-hidden">
           <div
@@ -60,6 +79,8 @@ export const Executors = ({ onTriggerSequence }: ExecutorsProps) => {
                   key={slot.index}
                   slot={slot}
                   repairMessage={repairMessage}
+                  selected={selectedSlot?.index === slot.index}
+                  onSelect={() => setSelectedIndex(slot.index)}
                   isPreviewing={previewSequenceId === slot.sequence?.id}
                   onPreviewToggle={() =>
                     slot.sequence && togglePreview(slot.sequence.id, { faderPercent: slot.faderValue })
@@ -74,10 +95,8 @@ export const Executors = ({ onTriggerSequence }: ExecutorsProps) => {
                   }
                   onPreviewHoldEnd={stopPreview}
                   onGo={() => slot.sequence && onTriggerSequence(slot.index, slot.sequence.id)}
-                  onCancelReady={() => clearSlotReady(slot.index)}
-                  onSafetyGroupChange={(enabled) => setSafetyGroup(slot.index, enabled)}
-                  onNearestStartChange={(enabled) => setNearestStart(slot.index, enabled)}
                   onFaderChange={(value) => {
+                    setSelectedIndex(slot.index);
                     setFaderValue(slot.index, value);
                     if (slot.phase !== "running") return;
                     const card = cards.find(

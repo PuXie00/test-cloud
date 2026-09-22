@@ -33,6 +33,7 @@ import type { ExecCard } from "../../hooks/use-exec-cards";
 import type { FaderSlotState } from "../../hooks/use-executor-slots";
 import type { ChapterItem, Program } from "../program-panel/program-data";
 import { PageSection } from "../program-panel/page-section";
+import { ExecutorSlotBar } from "./executors/executor-slot-bar";
 import { FaderSlot } from "./executors/fader-slot";
 
 const {
@@ -572,14 +573,9 @@ describe("FaderSlot Ready/GO gate", () => {
 
     fireEvent.click(seqGo);
     expect(onGoSeq).not.toHaveBeenCalled();
-    expect((screen.getByRole("button", { name: "F1 安全组" }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
-    expect((screen.getByRole("button", { name: "F1 就近启动" }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
+    expect(screen.queryByRole("button", { name: "F1 安全组" })).toBeNull();
     expect(screen.getByRole("slider", { name: "F1 速度" }).getAttribute("aria-disabled")).toBe("true");
-    expect(screen.getByText("准备后可调")).toBeTruthy();
+    expect(screen.queryByText("准备后可调")).toBeNull();
   });
 
   it("keeps Ready enabled for healthy filled idle slots", () => {
@@ -641,10 +637,7 @@ describe("FaderSlot Ready/GO gate", () => {
     expect(onGo).toHaveBeenCalledTimes(1);
   });
 
-  it("unlocks speed after Ready, locks nearest start, and can cancel Ready", () => {
-    const onCancelReady = vi.fn();
-    const onSafetyGroupChange = vi.fn();
-    const onNearestStartChange = vi.fn();
+  it("unlocks the fader after Ready without putting switches in the column", () => {
     const onFaderChange = vi.fn();
     render(
       withMode(
@@ -659,40 +652,25 @@ describe("FaderSlot Ready/GO gate", () => {
           onPreviewHoldStart={vi.fn()}
           onPreviewHoldEnd={vi.fn()}
           onGo={vi.fn()}
-          onCancelReady={onCancelReady}
-          onSafetyGroupChange={onSafetyGroupChange}
-          onNearestStartChange={onNearestStartChange}
           onFaderChange={onFaderChange}
           onAssignFromDrag={vi.fn()}
         />,
       ),
     );
 
-    const safety = screen.getByRole("button", { name: "F2 安全组" }) as HTMLButtonElement;
-    const nearest = screen.getByRole("button", { name: "F2 就近启动" }) as HTMLButtonElement;
-    expect(safety.disabled).toBe(false);
-    expect(nearest.disabled).toBe(true);
-    expect(safety.getAttribute("aria-pressed")).toBe("false");
-    fireEvent.click(safety);
-    fireEvent.click(nearest);
-    expect(onSafetyGroupChange).toHaveBeenCalledWith(true);
-    expect(onNearestStartChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "F2 安全组" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "F2 取消准备" })).toBeNull();
     expect(screen.getByText("强制")).toBeTruthy();
     expect(screen.getByText("100%")).toBeTruthy();
     const slider = screen.getByRole("slider", { name: "F2 速度" });
     expect(slider.getAttribute("aria-disabled")).toBeNull();
     fireEvent.keyDown(slider, { key: "ArrowUp" });
     expect(onFaderChange).toHaveBeenCalledWith(101);
-
-    fireEvent.click(screen.getByRole("button", { name: "F2 取消准备" }));
-    expect(onCancelReady).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "F2 GO" })).toBeTruthy();
   });
 
-  it("keeps the speed fader draggable while running and locks nearest start", () => {
+  it("keeps the speed fader draggable while running", () => {
     const onFaderChange = vi.fn();
-    const onNearestStartChange = vi.fn();
-    const onSafetyGroupChange = vi.fn();
     render(
       withMode(
         <FaderSlot
@@ -707,8 +685,6 @@ describe("FaderSlot Ready/GO gate", () => {
           onPreviewHoldStart={vi.fn()}
           onPreviewHoldEnd={vi.fn()}
           onGo={vi.fn()}
-          onSafetyGroupChange={onSafetyGroupChange}
-          onNearestStartChange={onNearestStartChange}
           onFaderChange={onFaderChange}
           onAssignFromDrag={vi.fn()}
         />,
@@ -716,15 +692,7 @@ describe("FaderSlot Ready/GO gate", () => {
     );
 
     expect(screen.queryByRole("button", { name: "F2 取消准备" })).toBeNull();
-    expect((screen.getByRole("button", { name: "F2 安全组" }) as HTMLButtonElement).disabled).toBe(
-      false,
-    );
-    const nearest = screen.getByRole("button", { name: "F2 就近启动" }) as HTMLButtonElement;
-    expect(nearest.disabled).toBe(true);
-    fireEvent.click(nearest);
-    expect(onNearestStartChange).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "F2 安全组" }));
-    expect(onSafetyGroupChange).toHaveBeenCalledWith(true);
+    expect(screen.queryByRole("button", { name: "F2 安全组" })).toBeNull();
     expect(screen.getByText("80%")).toBeTruthy();
     const slider = screen.getByRole("slider", { name: "F2 速度" });
     expect(slider.getAttribute("aria-disabled")).toBeNull();
@@ -774,19 +742,14 @@ describe("FaderSlot Ready/GO gate", () => {
       ),
     );
     expect(screen.getByText("开幕A")).toBeTruthy();
-    expect(screen.getByText("准备后可调")).toBeTruthy();
+    expect(screen.queryByText("准备后可调")).toBeNull();
     expect(screen.queryByText("120%")).toBeNull();
+    expect(screen.queryByRole("button", { name: "F3 安全组" })).toBeNull();
     const slider = screen.getByRole("slider", { name: "F3 速度" });
     expect(slider.getAttribute("aria-disabled")).toBe("true");
     expect(slider.className).toContain("pointer-events-auto");
     fireEvent.keyDown(slider, { key: "ArrowUp" });
     expect(onFaderChange).not.toHaveBeenCalled();
-    expect((screen.getByRole("button", { name: "F3 安全组" }) as HTMLButtonElement).disabled).toBe(
-      false,
-    );
-    expect((screen.getByRole("button", { name: "F3 就近启动" }) as HTMLButtonElement).disabled).toBe(
-      false,
-    );
     expect(screen.queryByText("强制")).toBeNull();
   });
 
@@ -810,6 +773,124 @@ describe("FaderSlot Ready/GO gate", () => {
     );
     expect(screen.getByText("强制")).toBeTruthy();
     expect(screen.getByRole("button", { name: "预览 开幕A，强制轨迹" })).toBeTruthy();
+  });
+});
+
+describe("ExecutorSlotBar", () => {
+  const renderBar = (
+    slot: ReturnType<typeof makeFaderSlot>,
+    handlers?: {
+      onSafetyGroupChange?: (enabled: boolean) => void;
+      onNearestStartChange?: (enabled: boolean) => void;
+      onCancelReady?: () => void;
+      repairMessage?: string | null;
+    },
+  ) => {
+    render(
+      <ExecutorSlotBar
+        slot={slot}
+        repairMessage={handlers?.repairMessage}
+        onSafetyGroupChange={handlers?.onSafetyGroupChange ?? vi.fn()}
+        onNearestStartChange={handlers?.onNearestStartChange ?? vi.fn()}
+        onCancelReady={handlers?.onCancelReady ?? vi.fn()}
+      />,
+    );
+  };
+
+  it("keeps both switches available and explains the locked speed before Ready", () => {
+    const onSafetyGroupChange = vi.fn();
+    const onNearestStartChange = vi.fn();
+    renderBar(
+      makeFaderSlot({
+        index: 2,
+        faderValue: 120,
+        sequence: { id: 15, name: "开幕A", durationMs: 2000 },
+      }),
+      { onSafetyGroupChange, onNearestStartChange },
+    );
+
+    const safety = screen.getByRole("button", { name: "F3 安全组" }) as HTMLButtonElement;
+    const nearest = screen.getByRole("button", { name: "F3 就近启动" }) as HTMLButtonElement;
+    expect(safety.disabled).toBe(false);
+    expect(nearest.disabled).toBe(false);
+    fireEvent.click(safety);
+    fireEvent.click(nearest);
+    expect(onSafetyGroupChange).toHaveBeenCalledWith(true);
+    expect(onNearestStartChange).toHaveBeenCalledWith(true);
+    expect(screen.getByText("准备后可调")).toBeTruthy();
+    expect(screen.queryByText("120%")).toBeNull();
+    expect(screen.queryByRole("button", { name: "F3 取消准备" })).toBeNull();
+  });
+
+  it("unlocks speed after Ready, locks nearest start, and can cancel Ready", () => {
+    const onCancelReady = vi.fn();
+    const onSafetyGroupChange = vi.fn();
+    const onNearestStartChange = vi.fn();
+    renderBar(
+      makeFaderSlot({
+        index: 1,
+        phase: "ready",
+        sequence: { id: 15, name: "正常序列", durationMs: 2000 },
+      }),
+      { onCancelReady, onSafetyGroupChange, onNearestStartChange },
+    );
+
+    const nearest = screen.getByRole("button", { name: "F2 就近启动" }) as HTMLButtonElement;
+    expect(nearest.disabled).toBe(true);
+    fireEvent.click(nearest);
+    expect(onNearestStartChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "F2 安全组" }));
+    expect(onSafetyGroupChange).toHaveBeenCalledWith(true);
+    expect(screen.getByText("100%")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "F2 取消准备" }));
+    expect(onCancelReady).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps nearest start locked while running and hides cancel", () => {
+    const onNearestStartChange = vi.fn();
+    const onSafetyGroupChange = vi.fn();
+    renderBar(
+      makeFaderSlot({
+        index: 1,
+        phase: "running",
+        faderValue: 80,
+        sequence: { id: 15, name: "正常序列", durationMs: 2000 },
+      }),
+      { onNearestStartChange, onSafetyGroupChange },
+    );
+
+    expect(screen.queryByRole("button", { name: "F2 取消准备" })).toBeNull();
+    const nearest = screen.getByRole("button", { name: "F2 就近启动" }) as HTMLButtonElement;
+    expect(nearest.disabled).toBe(true);
+    fireEvent.click(nearest);
+    expect(onNearestStartChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "F2 安全组" }));
+    expect(onSafetyGroupChange).toHaveBeenCalledWith(true);
+    expect(screen.getByText("80%")).toBeTruthy();
+  });
+
+  it("locks both switches when the sequence needs repair", () => {
+    renderBar(
+      makeFaderSlot({
+        index: 0,
+        sequence: { id: 14, name: "空序列", durationMs: 0 },
+      }),
+      { repairMessage: "动作序列无轨道，待修复" },
+    );
+    expect((screen.getByRole("button", { name: "F1 安全组" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect((screen.getByRole("button", { name: "F1 就近启动" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(screen.getByText("准备后可调")).toBeTruthy();
+  });
+
+  it("hides switches on an empty slot", () => {
+    renderBar(makeFaderSlot({ index: 0 }));
+    expect(screen.queryByRole("button", { name: "F1 安全组" })).toBeNull();
+    expect(screen.getByText("空槽")).toBeTruthy();
+    expect(screen.getByText("选择序列后设置")).toBeTruthy();
   });
 });
 

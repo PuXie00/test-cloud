@@ -13,13 +13,12 @@ type FaderSlotProps = {
   slot: FaderSlotState;
   repairMessage?: string | null;
   isPreviewing: boolean;
+  selected?: boolean;
+  onSelect?: () => void;
   onPreviewToggle: () => void;
   onPreviewHoldStart: () => void;
   onPreviewHoldEnd: () => void;
   onGo: () => void;
-  onCancelReady?: () => void;
-  onSafetyGroupChange?: (enabled: boolean) => void;
-  onNearestStartChange?: (enabled: boolean) => void;
   onFaderChange: (value: number) => void;
   onAssignFromDrag: (payload: { chapterId: string; index: number; kind: "sequence" }) => void;
 };
@@ -28,13 +27,12 @@ export const FaderSlot = ({
   slot,
   repairMessage,
   isPreviewing,
+  selected = false,
+  onSelect = () => undefined,
   onPreviewToggle,
   onPreviewHoldStart,
   onPreviewHoldEnd,
   onGo,
-  onCancelReady = () => undefined,
-  onSafetyGroupChange = () => undefined,
-  onNearestStartChange = () => undefined,
   onFaderChange,
   onAssignFromDrag,
 }: FaderSlotProps) => {
@@ -45,9 +43,7 @@ export const FaderSlot = ({
   const isReady = slot.phase === "ready";
   const actionLabel = isReady || isRunning ? "GO" : "Ready";
   const isBlocked = isEmpty || Boolean(repairMessage) || slot.isBusy || isRunning;
-  const switchesLocked = isEmpty || Boolean(repairMessage) || slot.isBusy;
   const speedUnlocked = isReady || isRunning;
-  const nearestLocked = switchesLocked || isReady || isRunning;
   const isRehearsal = mode === "rehearsal";
   const reasonId = `fader-slot-repair-${slot.index}`;
 
@@ -75,6 +71,7 @@ export const FaderSlot = ({
   };
 
   const handlePreviewClick = () => {
+    onSelect();
     if (isEmpty || repairMessage) return;
     if (suppressClickRef.current) {
       suppressClickRef.current = false;
@@ -140,7 +137,7 @@ export const FaderSlot = ({
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       className={cn(
-        "relative flex h-full min-h-0 min-w-[72px] w-full flex-col gap-1 rounded-sm border bg-card p-2 transition-colors",
+        "relative flex h-full min-h-0 min-w-[72px] w-full flex-col gap-1 rounded-sm border bg-card p-1.5 transition-colors",
         isRunning
           ? "border-show/60"
           : isEmpty
@@ -150,6 +147,7 @@ export const FaderSlot = ({
               : isReady
                 ? "border-primary/50"
                 : "border-border",
+        selected && "border-primary",
       )}
     >
       {!isEmpty ? (
@@ -172,8 +170,19 @@ export const FaderSlot = ({
           className="absolute inset-0 z-0 rounded-sm disabled:pointer-events-none"
         />
       ) : null}
-      <div className="pointer-events-none relative z-[1] flex items-center gap-1">
-        <span className="font-mono text-label-caps text-muted-foreground">{slot.label}</span>
+      <div className="relative z-10 flex items-center gap-1">
+        <button
+          type="button"
+          aria-pressed={selected}
+          aria-label={`${slot.label} 选中`}
+          onClick={onSelect}
+          className={cn(
+            "font-mono text-label-caps",
+            selected ? "text-primary" : "text-muted-foreground",
+          )}
+        >
+          {slot.label}
+        </button>
         {isForced ? <ForcedTrajectoryBadge /> : null}
         <span
           className={cn(
@@ -202,31 +211,11 @@ export const FaderSlot = ({
             {slot.sequence?.name}
           </span>
           {repairMessage ? (
-            <span id={reasonId} className="pointer-events-none relative z-[1] line-clamp-2 text-body-sm text-warning">
+            <span id={reasonId} className="pointer-events-none relative z-[1] line-clamp-1 text-body-sm text-warning">
               {repairMessage}
             </span>
           ) : null}
         </>
-      ) : null}
-      {!isEmpty ? (
-        <div className="relative z-10 grid grid-cols-2 gap-1">
-          <SlotOptionToggle
-            label="安全组"
-            accessibleName={`${slot.label} 安全组`}
-            pressed={slot.safetyGroup}
-            disabled={switchesLocked}
-            pressedClassName="bg-show/15 text-show"
-            onPressedChange={onSafetyGroupChange}
-          />
-          <SlotOptionToggle
-            label="就近"
-            accessibleName={`${slot.label} 就近启动`}
-            pressed={slot.nearestStart}
-            disabled={nearestLocked}
-            pressedClassName="bg-secondary/20 text-secondary"
-            onPressedChange={onNearestStartChange}
-          />
-        </div>
       ) : null}
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
         <VerticalFader
@@ -241,35 +230,22 @@ export const FaderSlot = ({
             <Plus className="h-3.5 w-3.5" />
             <span className="mt-0.5 text-body-sm">{isRehearsal ? "拖入序列" : "—"}</span>
           </div>
-        ) : (
-          <span
-            className={cn(
-              "mt-1 text-center font-mono text-mono-sm tabular-nums",
-              speedUnlocked ? "text-primary" : "text-muted-foreground",
-            )}
-          >
-            {speedUnlocked ? `${slot.faderValue}%` : "准备后可调"}
+        ) : speedUnlocked ? (
+          <span className="pointer-events-none absolute inset-x-0 bottom-0.5 text-center font-mono text-mono-sm tabular-nums text-primary">
+            {`${slot.faderValue}%`}
           </span>
-        )}
+        ) : null}
       </div>
-      {isReady ? (
-        <button
-          type="button"
-          disabled={slot.isBusy}
-          aria-label={`${slot.label} 取消准备`}
-          onClick={onCancelReady}
-          className="relative z-10 inline-flex h-8 shrink-0 items-center justify-center rounded-sm border border-border text-body-sm text-foreground hover:bg-accent disabled:opacity-30"
-        >
-          取消准备
-        </button>
-      ) : null}
       <button
         type="button"
         disabled={isBlocked}
         aria-busy={slot.isBusy || undefined}
         aria-label={`${slot.label} ${actionLabel}`}
         aria-describedby={repairMessage ? reasonId : undefined}
-        onClick={onGo}
+        onClick={() => {
+          onSelect();
+          onGo();
+        }}
         className={cn(
           "relative z-10 inline-flex h-9 shrink-0 items-center justify-center gap-1 rounded-sm font-semibold transition-colors disabled:pointer-events-none disabled:opacity-30",
           isRunning
@@ -289,33 +265,3 @@ export const FaderSlot = ({
     </div>
   );
 };
-
-const SlotOptionToggle = ({
-  label,
-  accessibleName,
-  pressed,
-  disabled,
-  pressedClassName,
-  onPressedChange,
-}: {
-  label: string;
-  accessibleName?: string;
-  pressed: boolean;
-  disabled: boolean;
-  pressedClassName: string;
-  onPressedChange: (enabled: boolean) => void;
-}) => (
-  <button
-    type="button"
-    aria-pressed={pressed}
-    aria-label={accessibleName ?? label}
-    disabled={disabled}
-    onClick={() => onPressedChange(!pressed)}
-    className={cn(
-      "inline-flex h-7 items-center justify-center rounded-sm text-label-caps transition-colors disabled:opacity-30",
-      pressed ? pressedClassName : "bg-input-background text-muted-foreground hover:bg-accent",
-    )}
-  >
-    {label}
-  </button>
-);
