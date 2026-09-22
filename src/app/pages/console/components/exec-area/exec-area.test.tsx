@@ -1132,7 +1132,7 @@ describe("ExecArea launch guard", () => {
     render(withMode(<ExecArea />));
     fireEvent.click(screen.getByRole("button", { name: "F2 Ready" }));
 
-    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(await screen.findByRole("alertdialog")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "未在起始位姿" })).toBeTruthy();
     expect(screen.getByTestId("pose-extra-time").textContent).toMatch(/秒/);
     expect(screen.getByTestId("pose-total-time").textContent).toMatch(/秒/);
@@ -1147,7 +1147,7 @@ describe("ExecArea launch guard", () => {
     expect(readySequenceMock).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "立即到起点" }));
-    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
     expect(readySequenceMock).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "确认" }));
@@ -1167,10 +1167,10 @@ describe("ExecArea launch guard", () => {
     snapshotsRef.current = [{ descriptor: { id: 1 }, positions: { h: 0, p: 0, y: 0 } }];
     render(withMode(<ExecArea />));
     fireEvent.click(screen.getByRole("button", { name: "F2 Ready" }));
-    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(await screen.findByRole("alertdialog")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     await waitFor(() => {
-      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.queryByRole("alertdialog")).toBeNull();
     });
     expect(readySequenceMock).not.toHaveBeenCalled();
     expect(markSlotReadyMock).not.toHaveBeenCalled();
@@ -1181,12 +1181,12 @@ describe("ExecArea launch guard", () => {
     documentRef.current!.setup.controlledObjects[0]!.maxAxisVelocity = 0;
     render(withMode(<ExecArea />));
     fireEvent.click(screen.getByRole("button", { name: "F2 Ready" }));
-    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(await screen.findByRole("alertdialog")).toBeTruthy();
     expect(screen.getByText(/max motor velocity/)).toBeTruthy();
     expect((screen.getByRole("button", { name: "确认" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     await waitFor(() => {
-      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.queryByRole("alertdialog")).toBeNull();
     });
     expect(readySequenceMock).not.toHaveBeenCalled();
   });
@@ -1201,7 +1201,7 @@ describe("ExecArea launch guard", () => {
     await waitFor(() => {
       expect(goSequenceMock).toHaveBeenCalledTimes(1);
     });
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(readySequenceMock).not.toHaveBeenCalled();
   });
 });

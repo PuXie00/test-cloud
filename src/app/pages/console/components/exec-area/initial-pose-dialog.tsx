@@ -52,10 +52,7 @@ export const InitialPoseDialog = ({
         if (!next) onCancel();
       }}
     >
-      <AlertDialogContent
-        role="dialog"
-        className="border-0 bg-card shadow-[0_4px_24px_rgba(0,0,0,0.4)]"
-      >
+      <AlertDialogContent className="border-0 bg-card shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
         <AlertDialogHeader>
           <AlertDialogTitle className="text-sm font-semibold leading-5 text-foreground">未在起始位姿</AlertDialogTitle>
           <AlertDialogDescription className="text-body-sm text-muted-foreground">
