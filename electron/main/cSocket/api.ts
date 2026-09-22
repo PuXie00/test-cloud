@@ -375,6 +375,7 @@ export class CsocketApiService {
         })
       }
     })
+    console.log('isNotTMaped', JSON.stringify(isNotTMaped))
     this.syncMovePrepare(isNotTMaped, opts)
   }
   // 动作执行 Go
@@ -643,7 +644,7 @@ export class CsocketApiService {
       ...opts,
       paramHeard: items
     }
-    return this.sendBuilt('Operation|syncMovebegin', '0x010B', [], opts)
+    return this.sendBuilt('Opera|syncMovebegin', '0x010B', [], opts)
   }
   // 减速停止
   stopModel(items: { deviceId: number, deceleration: number }[], opts?: CsocketSendOpts) {

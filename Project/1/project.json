@@ -4,7 +4,7 @@
     "id": "a7ed1569-d3ec-4799-af77-34611c846d3e",
     "name": "1",
     "createdAt": "2026-08-19T05:43:25.491Z",
-    "modifiedAt": "2026-08-25T11:52:32.020Z",
+    "modifiedAt": "2026-09-21T12:42:22.755Z",
     "author": "当前用户",
     "status": "draft",
     "wizard": {
@@ -32,8 +32,8 @@
         "axisType": 0,
         "nodeAddress": null,
         "discoveryId": null,
-        "controlledObjectId": null,
-        "axisKey": null,
+        "controlledObjectId": 6,
+        "axisKey": "0",
         "params": {
           "maxAxisVelocity": 500,
           "workingStroke": 253,
@@ -52,14 +52,281 @@
           "loadLow": 0,
           "loadHigh": 0
         }
+      },
+      {
+        "id": 3,
+        "productModel": "YZ_AXIS_HOIST_500KG",
+        "plcId": 1,
+        "busNo": 0,
+        "axisType": 0,
+        "nodeAddress": null,
+        "discoveryId": null,
+        "controlledObjectId": 6,
+        "axisKey": "1",
+        "params": {
+          "maxAxisVelocity": 500,
+          "workingStroke": 253,
+          "reductionRatio": 15,
+          "axisDirection": 1,
+          "positionError": 100,
+          "defaultVelocity": 50,
+          "defaultAcceleration": 50,
+          "defaultDeceleration": 50,
+          "maximumStroke": 300,
+          "weightLow": 0,
+          "weightHigh": 0,
+          "loadLow": 0,
+          "loadHigh": 0
+        }
+      },
+      {
+        "id": 4,
+        "productModel": "YZ_AXIS_HOIST_500KG",
+        "plcId": 1,
+        "busNo": 0,
+        "axisType": 0,
+        "nodeAddress": null,
+        "discoveryId": null,
+        "controlledObjectId": 6,
+        "axisKey": "2",
+        "params": {
+          "maxAxisVelocity": 500,
+          "workingStroke": 253,
+          "reductionRatio": 15,
+          "axisDirection": 1,
+          "positionError": 100,
+          "defaultVelocity": 50,
+          "defaultAcceleration": 50,
+          "defaultDeceleration": 50,
+          "maximumStroke": 300,
+          "weightLow": 0,
+          "weightHigh": 0,
+          "loadLow": 0,
+          "loadHigh": 0
+        }
+      },
+      {
+        "id": 5,
+        "productModel": "YZ_AXIS_HOIST_500KG",
+        "plcId": 1,
+        "busNo": 0,
+        "axisType": 0,
+        "nodeAddress": null,
+        "discoveryId": null,
+        "controlledObjectId": 6,
+        "axisKey": "3",
+        "params": {
+          "maxAxisVelocity": 500,
+          "workingStroke": 253,
+          "reductionRatio": 15,
+          "axisDirection": 1,
+          "positionError": 100,
+          "defaultVelocity": 50,
+          "defaultAcceleration": 50,
+          "defaultDeceleration": 50,
+          "maximumStroke": 300,
+          "weightLow": 0,
+          "weightHigh": 0,
+          "loadLow": 0,
+          "loadHigh": 0
+        }
       }
     ],
-    "controlledObjects": [],
+    "controlledObjects": [
+      {
+        "id": 6,
+        "name": "立方体-01",
+        "controlType": 7,
+        "enabledVirtualAxes": [
+          "v1",
+          "v2",
+          "v3"
+        ],
+        "shapePreset": "cube",
+        "shapeDimensions": {
+          "width": 2000,
+          "height": 400,
+          "depth": 1500
+        },
+        "dimensions": {
+          "w": 2000,
+          "h": 400,
+          "d": 1500
+        },
+        "position": {
+          "x": -197.9,
+          "y": 200,
+          "z": 1261.7
+        },
+        "centerOffset": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "color": "#869398",
+        "pulleyDistance": 100,
+        "modelRunDirection": 1,
+        "maxAxisVelocity": 200,
+        "pDefaultMaxVelocity": 3,
+        "yDefaultMaxVelocity": 3,
+        "safetyRadius": 1850,
+        "initialTiltDirection": 0,
+        "mountRotation": 0,
+        "driveAxes": [
+          {
+            "key": "0",
+            "mount": {
+              "x": -400,
+              "z": -400
+            }
+          },
+          {
+            "key": "1",
+            "mount": {
+              "x": 400,
+              "z": -400
+            }
+          },
+          {
+            "key": "2",
+            "mount": {
+              "x": 400,
+              "z": 400
+            }
+          },
+          {
+            "key": "3",
+            "mount": {
+              "x": -400,
+              "z": 400
+            }
+          }
+        ],
+        "motionParams": {
+          "move": {
+            "minAngle": 0,
+            "maxAngle": 1000,
+            "speed": 50,
+            "accelTime": 2,
+            "minAccelTime": 1,
+            "emergencyDecelTime": 0.1,
+            "acceleration": 25,
+            "deceleration": 25,
+            "maxAcceleration": 50,
+            "maxDeceleration": 50,
+            "abnormalDeceleration": 500
+          },
+          "swingX": {
+            "minAngle": -20,
+            "maxAngle": 20,
+            "speed": 2,
+            "accelTime": 3,
+            "minAccelTime": 1,
+            "emergencyDecelTime": 0.2,
+            "acceleration": 0.7,
+            "deceleration": 0.7,
+            "maxAcceleration": 2,
+            "maxDeceleration": 2,
+            "abnormalDeceleration": 10
+          },
+          "yawY": {
+            "minAngle": -20,
+            "maxAngle": 20,
+            "speed": 2,
+            "accelTime": 3,
+            "minAccelTime": 1,
+            "emergencyDecelTime": 0.2,
+            "acceleration": 0.7,
+            "deceleration": 0.7,
+            "maxAcceleration": 2,
+            "maxDeceleration": 2,
+            "abnormalDeceleration": 10
+          }
+        },
+        "params": {}
+      }
+    ],
     "alignment": {}
   },
   "motion": {
-    "actionSequences": [],
-    "programs": []
+    "actionSequences": [
+      {
+        "id": 1,
+        "name": "新建动作序列",
+        "trajectoryMode": true,
+        "loop": false,
+        "blocks": [
+          {
+            "id": "blk-mub8gxel-2knm",
+            "kind": "pose",
+            "objectId": 6,
+            "atMs": 0,
+            "pose": {
+              "v1": 0,
+              "v2": 0,
+              "v3": 0
+            }
+          },
+          {
+            "id": "blk-mub8h0fn-i75p",
+            "kind": "pose",
+            "objectId": 6,
+            "atMs": 10000,
+            "pose": {
+              "v1": 1000,
+              "v2": 0,
+              "v3": 0
+            }
+          }
+        ],
+        "segments": [
+          {
+            "fromRef": "blk-mub8gxel-2knm",
+            "toRef": "blk-mub8h0fn-i75p",
+            "settings": {
+              "profiles": {
+                "v1": {
+                  "kind": "trapezoid",
+                  "params": {
+                    "accelMs": 1000,
+                    "decelMs": 1000
+                  }
+                },
+                "v2": {
+                  "kind": "idle"
+                },
+                "v3": {
+                  "kind": "idle"
+                }
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "programs": [
+      {
+        "id": "prog-mub8j354-oq4l",
+        "name": "新节目",
+        "chapters": [
+          {
+            "id": "ch-mub8j354-5hi0",
+            "name": "第 1 章",
+            "items": [
+              {
+                "kind": "sequence",
+                "refId": 1
+              }
+            ]
+          }
+        ]
+      }
+    ]
   },
   "rules": {
     "rules": []
@@ -72,8 +339,8 @@
     ],
     "alpha": -0.7853981633974483,
     "beta": 1.0471975511965976,
-    "zoomRadius": 14,
-    "orthoHalfHeight": 7,
+    "zoomRadius": 11.403087499999996,
+    "orthoHalfHeight": 5.701543749999998,
     "preset": "persp",
     "focalLengthMm": 50,
     "gridSize": 20
