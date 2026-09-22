@@ -150,27 +150,23 @@ const ensureSocket = async (): Promise<KinematicsSolveResult | null> => {
     dropSocket()
     const started = startKinematicsRuntime()
     if (!started.ok) return err(started.code, started.message)
-    try {
-      const opened = await waitForStableConnection(
-        KINEMATICS_HOST,
-        KINEMATICS_PORT,
-        startTimeoutMs(),
-      )
-      attachSocket(opened)
-    } catch {
-      return err(
-        'START_TIMEOUT',
-        `Kinematics exe did not listen on ${KINEMATICS_HOST}:${KINEMATICS_PORT}`,
-      )
-    }
-    return null
   }
 
   if (socket && !socket.destroyed) return null
 
-  const opened = await connectOnce(KINEMATICS_HOST, KINEMATICS_PORT)
-  if (!opened) return err('PROTOCOL_ERROR', 'failed to connect kinematics TCP')
-  attachSocket(opened)
+  try {
+    const opened = await waitForStableConnection(
+      KINEMATICS_HOST,
+      KINEMATICS_PORT,
+      startTimeoutMs(),
+    )
+    attachSocket(opened)
+  } catch {
+    return err(
+      'START_TIMEOUT',
+      `Kinematics exe did not listen on ${KINEMATICS_HOST}:${KINEMATICS_PORT}`,
+    )
+  }
   return null
 }
 
