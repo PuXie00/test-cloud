@@ -81,25 +81,20 @@ export const ExecutorSlotsProvider = ({
         const fingerprint = sequence ? sequenceFingerprints[sequence.id] ?? null : null;
         const ready = readyBySlot[idx] ?? null;
         const isRunning = runningFaders.has(idx);
-        const readyMatches =
-          ready !== null &&
-          sequence !== null &&
-          fingerprint !== null &&
-          ready.sequenceId === sequence.id &&
-          ready.fingerprint === fingerprint;
+        const phase = deriveFaderSlotPhase({
+          sequenceId: sequence?.id ?? null,
+          fingerprint,
+          ready,
+          isRunning,
+        });
         return {
           index: idx,
           label: `F${idx + 1}`,
           sequence,
           faderValue: faderValues[idx] ?? 100,
-          phase: deriveFaderSlotPhase({
-            sequenceId: sequence?.id ?? null,
-            fingerprint,
-            ready,
-            isRunning,
-          }),
+          phase,
           isBusy: sequence !== null && busyBySlot[idx] === sequence.id,
-          initialTransition: readyMatches ? ready.initialTransition : null,
+          initialTransition: phase === "ready" && ready ? ready.initialTransition : null,
         };
       }),
     [pageItems.sequences, sequenceFingerprints, faderValues, runningFaders, busyBySlot, readyBySlot],

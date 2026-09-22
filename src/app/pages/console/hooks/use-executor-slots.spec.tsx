@@ -113,6 +113,18 @@ describe("ExecutorSlotsProvider", () => {
     expect(result.current.faderSlots[1]?.initialTransition).toBeNull();
 
     act(() => {
+      result.current.setSlotRunning(0, true);
+    });
+    expect(result.current.faderSlots[0]?.phase).toBe("running");
+    expect(result.current.faderSlots[0]?.initialTransition).toBeNull();
+
+    act(() => {
+      result.current.setSlotRunning(0, false);
+    });
+    expect(result.current.faderSlots[0]?.phase).toBe("ready");
+    expect(result.current.faderSlots[0]?.initialTransition).toEqual(plan);
+
+    act(() => {
       result.current.clearSlotReady(0);
     });
     expect(result.current.faderSlots[0]?.phase).toBe("idle");
