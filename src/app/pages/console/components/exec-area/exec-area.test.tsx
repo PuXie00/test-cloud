@@ -55,6 +55,7 @@ const {
   setSlotRunningMock,
   execCardsRef,
   coupledObjectIdsRef,
+  snapshotsRef,
 } = vi.hoisted(() => ({
   toastWarning: vi.fn(),
   toastError: vi.fn(),
@@ -98,6 +99,12 @@ const {
   },
   documentRef: {
     current: null as ProjectDocument | null,
+  },
+  snapshotsRef: {
+    current: [{ descriptor: { id: 1 }, positions: { h: 10, p: 0, y: 0 } }] as Array<{
+      descriptor: { id: number };
+      positions: { h?: number; p?: number; y?: number } | null;
+    }>,
   },
   capturedTriggers: {
     onTriggerSequence: null as null | ((slotIndex: number, sequenceId: number) => void),
@@ -325,6 +332,14 @@ vi.mock("../../hooks/use-sequence-preview", () => ({
   }),
 }));
 
+vi.mock("../../hooks/use-controlled-objects", () => ({
+  useControlledObjects: () => ({
+    snapshots: snapshotsRef.current,
+    getById: () => undefined,
+    motorSnapshots: [],
+  }),
+}));
+
 import { ExecArea } from "./exec-area";
 import { ContentLibraryPanel } from "../action-builder/content-library/content-library-panel";
 import { ProgramPanel } from "../program-panel/program-panel";
@@ -481,6 +496,7 @@ afterEach(() => {
   coupledObjectIdsRef.current = new Set([1]);
   capturedTriggers.onTriggerSequence = null;
   documentRef.current = null;
+  snapshotsRef.current = [{ descriptor: { id: 1 }, positions: { h: 10, p: 0, y: 0 } }];
   programState.current = {
     id: "program-a",
     name: "节目 A",
@@ -1002,6 +1018,7 @@ describe("ExecArea launch guard", () => {
     expect(launchMock).not.toHaveBeenCalled();
     expect(goSequenceMock).not.toHaveBeenCalled();
     expect(markSlotReadyMock).toHaveBeenCalledWith(1, 15, "fp-15", null);
+    expect(screen.queryByRole("dialog")).toBeNull();
 
     fireEvent.click(readyButtons[0]!);
     expect(launchMock).not.toHaveBeenCalled();
@@ -1050,6 +1067,7 @@ describe("ExecArea launch guard", () => {
     expect(goSequenceMock).not.toHaveBeenCalled();
     expect(clearSlotReadyMock).toHaveBeenCalledWith(1);
     expect(toastWarning).toHaveBeenCalledWith("动作序列校验失败，无法下载");
+    expect(markSlotReadyMock).not.toHaveBeenCalled();
   });
 
   it("GO uses the current fader value and launches only after Ready", async () => {
@@ -1107,6 +1125,84 @@ describe("ExecArea launch guard", () => {
     ];
     render(withMode(<ExecArea />));
     expect(setSlotRunningMock).toHaveBeenCalledWith(1, true);
+  });
+
+  it("opens the start-pose dialog and waits for confirm before ready", async () => {
+    snapshotsRef.current = [{ descriptor: { id: 1 }, positions: { h: 0, p: 0, y: 0 } }];
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "F2 Ready" }));
+
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "未在起始位姿" })).toBeTruthy();
+    expect(screen.getByTestId("pose-extra-time").textContent).toMatch(/秒/);
+    expect(screen.getByTestId("pose-total-time").textContent).toMatch(/秒/);
+    expect(readySequenceMock).not.toHaveBeenCalled();
+    expect(markSlotReadyMock).not.toHaveBeenCalled();
+
+    const extraBefore = screen.getByTestId("pose-extra-time").textContent;
+    fireEvent.click(screen.getByRole("button", { name: "最快速度" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("pose-extra-time").textContent).not.toBe(extraBefore);
+    });
+    expect(readySequenceMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "立即到起点" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(readySequenceMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "确认" }));
+    await waitFor(() => {
+      expect(readySequenceMock).toHaveBeenCalledTimes(1);
+    });
+    expect(markSlotReadyMock).toHaveBeenCalledTimes(1);
+    const stored = markSlotReadyMock.mock.calls[0];
+    expect(stored?.[0]).toBe(1);
+    expect(stored?.[1]).toBe(15);
+    expect(stored?.[2]).toBe("fp-15");
+    expect(stored?.[3]).toMatchObject({ totalTime: expect.any(Number), models: expect.any(Array) });
+    expect(stored?.[3].totalTime).toBeGreaterThan(0);
+  });
+
+  it("cancel closes the dialog and does not ready", async () => {
+    snapshotsRef.current = [{ descriptor: { id: 1 }, positions: { h: 0, p: 0, y: 0 } }];
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "F2 Ready" }));
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(readySequenceMock).not.toHaveBeenCalled();
+    expect(markSlotReadyMock).not.toHaveBeenCalled();
+  });
+
+  it("shows the planner error and keeps confirm disabled", async () => {
+    snapshotsRef.current = [{ descriptor: { id: 1 }, positions: { h: 0, p: 0, y: 0 } }];
+    documentRef.current!.setup.controlledObjects[0]!.maxAxisVelocity = 0;
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "F2 Ready" }));
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(screen.getByText(/max motor velocity/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "确认" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(readySequenceMock).not.toHaveBeenCalled();
+  });
+
+  it("GO does not open the start-pose dialog", async () => {
+    snapshotsRef.current = [{ descriptor: { id: 1 }, positions: { h: 0, p: 0, y: 0 } }];
+    faderSlotsRef.current = faderSlotsRef.current.map((slot) =>
+      slot.index === 1 ? { ...slot, phase: "ready" } : slot,
+    );
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "F2 GO" }));
+    await waitFor(() => {
+      expect(goSequenceMock).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(readySequenceMock).not.toHaveBeenCalled();
   });
 });
 

@@ -1,9 +1,16 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/app/components/ui/utils";
+import {
+  evaluateInitialPoseGate,
+  hpyFromPositions,
+  type PoseSpeedMode,
+} from "@/app/project/action-sequence/initial-pose-gate";
+import type { HpyPose, InitialTransitionPlan } from "@/app/project/action-sequence/initial-transition-planner";
 import { hasUncoupledSequenceMember } from "@/app/project/action-sequence/sequence-object-ids";
 import { resolveMotionLaunchBlock } from "@/app/project/project-motion-readiness";
 import { useProject } from "@/app/project/use-project";
+import { useControlledObjects } from "../../hooks/use-controlled-objects";
 import { useExecutorSlots } from "../../hooks/use-executor-slots";
 import { useExecCards } from "../../hooks/use-exec-cards";
 import { goSequence, readySequence } from "../../hooks/sequence-execution";
@@ -11,8 +18,15 @@ import { useSequencePreview } from "../../hooks/use-sequence-preview";
 import { useBuildDebug } from "../build-debug/build-debug-context";
 import { ExecCards } from "./exec-cards/exec-cards";
 import { Executors } from "./executors/executors";
+import { InitialPoseDialog } from "./initial-pose-dialog";
 
 type ExecAreaProps = { className?: string };
+
+type PoseDialogState = {
+  slotIndex: number;
+  sequenceId: number;
+  speedMode: PoseSpeedMode;
+};
 
 const reportSequenceResult = (result: { toast: "warning" | "error"; message: string }) => {
   if (result.toast === "warning") toast.warning(result.message);
@@ -25,7 +39,17 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
   const { cards, launch } = useExecCards();
   const { currentProject } = useProject();
   const { coupledObjectIds } = useBuildDebug();
+  const { snapshots } = useControlledObjects();
   const { stopPreview } = useSequencePreview();
+  const [poseDialog, setPoseDialog] = useState<PoseDialogState | null>(null);
+
+  const telemetryByObjectId = useMemo(() => {
+    const map = new Map<number, HpyPose>();
+    for (const snapshot of snapshots) {
+      map.set(snapshot.descriptor.id, hpyFromPositions(snapshot.positions));
+    }
+    return map;
+  }, [snapshots]);
 
   useEffect(() => {
     const runningSlots = new Set(
@@ -43,6 +67,54 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       setSlotRunning(slot.index, runningSlots.has(slot.index));
     }
   }, [cards, faderSlots, setSlotRunning]);
+
+  const dialogGate = useMemo(() => {
+    if (!poseDialog) return null;
+    const document = currentProject?.document;
+    const sequence = faderSlots[poseDialog.slotIndex]?.sequence;
+    if (!document || !sequence || sequence.id !== poseDialog.sequenceId) return null;
+    const authored = document.motion.actionSequences.find((entry) => entry.id === poseDialog.sequenceId);
+    if (!authored) return null;
+    return evaluateInitialPoseGate({
+      sequence: authored,
+      objects: document.setup.controlledObjects,
+      motors: document.setup.motors,
+      telemetryByObjectId,
+      speedMode: poseDialog.speedMode,
+      sequenceDurationMs: sequence.durationMs,
+    });
+  }, [poseDialog, currentProject, faderSlots, telemetryByObjectId]);
+
+  const beginReady = (
+    slotIndex: number,
+    sequenceId: number,
+    initialTransition: InitialTransitionPlan | null,
+  ) => {
+    const document = currentProject?.document;
+    if (!document) return;
+    setSlotBusy(slotIndex, true);
+    void (async () => {
+      try {
+        const readied = await readySequence({ document, sequenceId });
+        if (!readied.ok) {
+          clearSlotReady(slotIndex);
+          reportSequenceResult(readied);
+          return;
+        }
+        markSlotReady(slotIndex, sequenceId, readied.fingerprint, initialTransition);
+      } finally {
+        setSlotBusy(slotIndex, false);
+      }
+    })();
+  };
+
+  const handleConfirmPose = () => {
+    if (!poseDialog || dialogGate?.status !== "transition") return;
+    const { slotIndex, sequenceId } = poseDialog;
+    const plan = dialogGate.plan;
+    setPoseDialog(null);
+    beginReady(slotIndex, sequenceId, plan);
+  };
 
   const handleTriggerSequence = (slotIndex: number, sequenceId: number) => {
     const slot = faderSlots[slotIndex];
@@ -96,20 +168,22 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       return;
     }
 
-    setSlotBusy(slotIndex, true);
-    void (async () => {
-      try {
-        const readied = await readySequence({ document, sequenceId });
-        if (!readied.ok) {
-          clearSlotReady(slotIndex);
-          reportSequenceResult(readied);
-          return;
-        }
-        markSlotReady(slotIndex, sequenceId, readied.fingerprint, null);
-      } finally {
-        setSlotBusy(slotIndex, false);
+    if (poseDialog) return;
+    if (authored) {
+      const gate = evaluateInitialPoseGate({
+        sequence: authored,
+        objects: document.setup.controlledObjects,
+        motors: document.setup.motors,
+        telemetryByObjectId,
+        speedMode: "default",
+        sequenceDurationMs: sequence.durationMs,
+      });
+      if (gate.status === "error" || gate.status === "transition") {
+        setPoseDialog({ slotIndex, sequenceId, speedMode: "default" });
+        return;
       }
-    })();
+    }
+    beginReady(slotIndex, sequenceId, null);
   };
 
   return (
@@ -120,6 +194,18 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       <div className="min-w-0 flex-1">
         <Executors onTriggerSequence={handleTriggerSequence} />
       </div>
+      <InitialPoseDialog
+        open={poseDialog !== null}
+        speedMode={poseDialog?.speedMode ?? "default"}
+        extraSeconds={dialogGate?.status === "transition" ? dialogGate.extraSeconds : null}
+        totalSeconds={dialogGate?.status === "transition" ? dialogGate.totalSeconds : null}
+        errorMessage={dialogGate?.status === "error" ? dialogGate.message : null}
+        onSpeedModeChange={(speedMode) => {
+          setPoseDialog((current) => (current ? { ...current, speedMode } : current));
+        }}
+        onCancel={() => setPoseDialog(null)}
+        onConfirm={handleConfirmPose}
+      />
     </section>
   );
 };
