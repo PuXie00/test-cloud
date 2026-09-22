@@ -53,6 +53,7 @@ const {
   clearSlotReadyMock,
   setSlotBusyMock,
   setSlotRunningMock,
+  setSpeedMock,
   execCardsRef,
 } = vi.hoisted(() => ({
   toastWarning: vi.fn(),
@@ -86,6 +87,7 @@ const {
   clearSlotReadyMock: vi.fn(),
   setSlotBusyMock: vi.fn(),
   setSlotRunningMock: vi.fn(),
+  setSpeedMock: vi.fn(),
   execCardsRef: {
     current: [] as ExecCard[],
   },
@@ -186,7 +188,7 @@ vi.mock("../../hooks/use-exec-cards", async () => {
       resume: vi.fn(),
       stop: vi.fn(),
       skipNext: vi.fn(),
-      setSpeed: vi.fn(),
+      setSpeed: (...args: unknown[]) => setSpeedMock(...args),
       emergencyStopAll: vi.fn(),
       close: vi.fn(),
     }),
@@ -466,6 +468,7 @@ afterEach(() => {
   clearSlotReadyMock.mockClear();
   setSlotBusyMock.mockClear();
   setSlotRunningMock.mockClear();
+  setSpeedMock.mockClear();
   togglePreviewMock.mockClear();
   startPreviewMock.mockClear();
   stopPreviewMock.mockClear();
@@ -569,6 +572,14 @@ describe("FaderSlot Ready/GO gate", () => {
 
     fireEvent.click(seqGo);
     expect(onGoSeq).not.toHaveBeenCalled();
+    expect((screen.getByRole("button", { name: "F1 安全组" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect((screen.getByRole("button", { name: "F1 就近启动" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(screen.getByRole("slider", { name: "F1 速度" }).getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByText("准备后可调")).toBeTruthy();
   });
 
   it("keeps Ready enabled for healthy filled idle slots", () => {
@@ -630,10 +641,11 @@ describe("FaderSlot Ready/GO gate", () => {
     expect(onGo).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps safety group and nearest start available after Ready and can cancel Ready", () => {
+  it("unlocks speed after Ready, locks nearest start, and can cancel Ready", () => {
     const onCancelReady = vi.fn();
     const onSafetyGroupChange = vi.fn();
     const onNearestStartChange = vi.fn();
+    const onFaderChange = vi.fn();
     render(
       withMode(
         <FaderSlot
@@ -650,7 +662,7 @@ describe("FaderSlot Ready/GO gate", () => {
           onCancelReady={onCancelReady}
           onSafetyGroupChange={onSafetyGroupChange}
           onNearestStartChange={onNearestStartChange}
-          onFaderChange={vi.fn()}
+          onFaderChange={onFaderChange}
           onAssignFromDrag={vi.fn()}
         />,
       ),
@@ -659,17 +671,66 @@ describe("FaderSlot Ready/GO gate", () => {
     const safety = screen.getByRole("button", { name: "F2 安全组" }) as HTMLButtonElement;
     const nearest = screen.getByRole("button", { name: "F2 就近启动" }) as HTMLButtonElement;
     expect(safety.disabled).toBe(false);
-    expect(nearest.disabled).toBe(false);
+    expect(nearest.disabled).toBe(true);
     expect(safety.getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(safety);
     fireEvent.click(nearest);
     expect(onSafetyGroupChange).toHaveBeenCalledWith(true);
-    expect(onNearestStartChange).toHaveBeenCalledWith(true);
+    expect(onNearestStartChange).not.toHaveBeenCalled();
     expect(screen.getByText("强制")).toBeTruthy();
+    expect(screen.getByText("100%")).toBeTruthy();
+    const slider = screen.getByRole("slider", { name: "F2 速度" });
+    expect(slider.getAttribute("aria-disabled")).toBeNull();
+    fireEvent.keyDown(slider, { key: "ArrowUp" });
+    expect(onFaderChange).toHaveBeenCalledWith(101);
 
     fireEvent.click(screen.getByRole("button", { name: "F2 取消准备" }));
     expect(onCancelReady).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "F2 GO" })).toBeTruthy();
+  });
+
+  it("keeps the speed fader draggable while running and locks nearest start", () => {
+    const onFaderChange = vi.fn();
+    const onNearestStartChange = vi.fn();
+    const onSafetyGroupChange = vi.fn();
+    render(
+      withMode(
+        <FaderSlot
+          slot={makeFaderSlot({
+            index: 1,
+            phase: "running",
+            faderValue: 80,
+            sequence: { id: 15, name: "正常序列", durationMs: 2000 },
+          })}
+          isPreviewing={false}
+          onPreviewToggle={vi.fn()}
+          onPreviewHoldStart={vi.fn()}
+          onPreviewHoldEnd={vi.fn()}
+          onGo={vi.fn()}
+          onSafetyGroupChange={onSafetyGroupChange}
+          onNearestStartChange={onNearestStartChange}
+          onFaderChange={onFaderChange}
+          onAssignFromDrag={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(screen.queryByRole("button", { name: "F2 取消准备" })).toBeNull();
+    expect((screen.getByRole("button", { name: "F2 安全组" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+    const nearest = screen.getByRole("button", { name: "F2 就近启动" }) as HTMLButtonElement;
+    expect(nearest.disabled).toBe(true);
+    fireEvent.click(nearest);
+    expect(onNearestStartChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "F2 安全组" }));
+    expect(onSafetyGroupChange).toHaveBeenCalledWith(true);
+    expect(screen.getByText("80%")).toBeTruthy();
+    const slider = screen.getByRole("slider", { name: "F2 速度" });
+    expect(slider.getAttribute("aria-disabled")).toBeNull();
+    fireEvent.keyDown(slider, { key: "ArrowDown" });
+    expect(onFaderChange).toHaveBeenCalledWith(79);
+    expect((screen.getByRole("button", { name: "F2 GO" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("hides percent on empty slots and shows a disabled slider", () => {
@@ -692,7 +753,7 @@ describe("FaderSlot Ready/GO gate", () => {
     expect(document.querySelector("input[type='range']")).toBeNull();
   });
 
-  it("shows the sequence name, percent, and an enabled slider when filled", () => {
+  it("locks speed before Ready and keeps both switches available", () => {
     const onFaderChange = vi.fn();
     render(
       withMode(
@@ -713,11 +774,19 @@ describe("FaderSlot Ready/GO gate", () => {
       ),
     );
     expect(screen.getByText("开幕A")).toBeTruthy();
-    expect(screen.getByText("120%")).toBeTruthy();
+    expect(screen.getByText("准备后可调")).toBeTruthy();
+    expect(screen.queryByText("120%")).toBeNull();
     const slider = screen.getByRole("slider", { name: "F3 速度" });
-    expect(slider.getAttribute("aria-disabled")).toBeNull();
+    expect(slider.getAttribute("aria-disabled")).toBe("true");
+    expect(slider.className).toContain("pointer-events-auto");
     fireEvent.keyDown(slider, { key: "ArrowUp" });
-    expect(onFaderChange).toHaveBeenCalledWith(121);
+    expect(onFaderChange).not.toHaveBeenCalled();
+    expect((screen.getByRole("button", { name: "F3 安全组" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+    expect((screen.getByRole("button", { name: "F3 就近启动" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
     expect(screen.queryByText("强制")).toBeNull();
   });
 
@@ -1044,6 +1113,24 @@ describe("ExecArea launch guard", () => {
     expect(launchMock).not.toHaveBeenCalled();
     expect(clearSlotReadyMock).not.toHaveBeenCalled();
     expect(toastError).toHaveBeenCalledWith("动作序列启动失败");
+  });
+
+  it("writes a running fader drag onto the task card speed", () => {
+    faderSlotsRef.current = faderSlotsRef.current.map((slot) =>
+      slot.index === 1 ? { ...slot, phase: "running", faderValue: 100 } : slot,
+    );
+    execCardsRef.current = [
+      runningCard({
+        id: "card-run",
+        source: { kind: "fader", slotIndex: 1 },
+        status: "running",
+      }),
+    ];
+    render(withMode(<ExecArea />));
+    const slider = screen.getByRole("slider", { name: "F2 速度" });
+    expect(slider.getAttribute("aria-disabled")).toBeNull();
+    fireEvent.keyDown(slider, { key: "ArrowUp" });
+    expect(setSpeedMock).toHaveBeenCalledWith("card-run", 101);
   });
 
   it("marks the fader slot running while its card is locally stopped", () => {

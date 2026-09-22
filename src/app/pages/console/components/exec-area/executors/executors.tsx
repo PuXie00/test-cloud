@@ -2,6 +2,7 @@ import { getMotionItemRepairIssue } from "@/app/project/project-motion-readiness
 import { PROGRAM_SLOTS_PER_PAGE } from "@/app/pages/console/components/program-panel/program-data";
 import { useProject } from "@/app/project/use-project";
 import { useProgram } from "../../../hooks/use-program";
+import { useExecCards } from "../../../hooks/use-exec-cards";
 import { useExecutorSlots } from "../../../hooks/use-executor-slots";
 import { useSequencePreview } from "../../../hooks/use-sequence-preview";
 import { ExecutorPaginationBar } from "./executor-pagination-bar";
@@ -14,6 +15,7 @@ type ExecutorsProps = {
 export const Executors = ({ onTriggerSequence }: ExecutorsProps) => {
   const { faderSlots, setFaderValue, clearSlotReady, setSafetyGroup, setNearestStart } =
     useExecutorSlots();
+  const { cards, setSpeed } = useExecCards();
   const { program, reorderItemInChapter, moveItemAcrossChapter, currentChapterId, currentPageIndex } =
     useProgram();
   const { currentProject } = useProject();
@@ -75,7 +77,15 @@ export const Executors = ({ onTriggerSequence }: ExecutorsProps) => {
                   onCancelReady={() => clearSlotReady(slot.index)}
                   onSafetyGroupChange={(enabled) => setSafetyGroup(slot.index, enabled)}
                   onNearestStartChange={(enabled) => setNearestStart(slot.index, enabled)}
-                  onFaderChange={(value) => setFaderValue(slot.index, value)}
+                  onFaderChange={(value) => {
+                    setFaderValue(slot.index, value);
+                    if (slot.phase !== "running") return;
+                    const card = cards.find(
+                      (entry) =>
+                        entry.source.kind === "fader" && entry.source.slotIndex === slot.index,
+                    );
+                    if (card) setSpeed(card.id, value);
+                  }}
                   onAssignFromDrag={handleAssignFromDrag(slot.index)}
                 />
               );

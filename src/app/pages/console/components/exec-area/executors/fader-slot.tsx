@@ -46,6 +46,8 @@ export const FaderSlot = ({
   const actionLabel = isReady || isRunning ? "GO" : "Ready";
   const isBlocked = isEmpty || Boolean(repairMessage) || slot.isBusy || isRunning;
   const switchesLocked = isEmpty || Boolean(repairMessage) || slot.isBusy;
+  const speedUnlocked = isReady || isRunning;
+  const nearestLocked = switchesLocked || isReady || isRunning;
   const isRehearsal = mode === "rehearsal";
   const reasonId = `fader-slot-repair-${slot.index}`;
 
@@ -207,7 +209,7 @@ export const FaderSlot = ({
         </>
       ) : null}
       {!isEmpty ? (
-        <div className="relative z-10 flex flex-col gap-1">
+        <div className="relative z-10 grid grid-cols-2 gap-1">
           <SlotOptionToggle
             label="安全组"
             accessibleName={`${slot.label} 安全组`}
@@ -220,7 +222,7 @@ export const FaderSlot = ({
             label="就近"
             accessibleName={`${slot.label} 就近启动`}
             pressed={slot.nearestStart}
-            disabled={switchesLocked}
+            disabled={nearestLocked}
             pressedClassName="bg-secondary/20 text-secondary"
             onPressedChange={onNearestStartChange}
           />
@@ -230,8 +232,9 @@ export const FaderSlot = ({
         <VerticalFader
           value={slot.faderValue}
           onChange={onFaderChange}
-          disabled={isEmpty}
+          disabled={!speedUnlocked}
           aria-label={`${slot.label} 速度`}
+          className={speedUnlocked ? undefined : "pointer-events-auto"}
         />
         {isEmpty ? (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-muted-foreground/60">
@@ -239,8 +242,13 @@ export const FaderSlot = ({
             <span className="mt-0.5 text-body-sm">{isRehearsal ? "拖入序列" : "—"}</span>
           </div>
         ) : (
-          <span className="mt-1 text-center font-mono text-mono-sm tabular-nums text-foreground">
-            {slot.faderValue}%
+          <span
+            className={cn(
+              "mt-1 text-center font-mono text-mono-sm tabular-nums",
+              speedUnlocked ? "text-primary" : "text-muted-foreground",
+            )}
+          >
+            {speedUnlocked ? `${slot.faderValue}%` : "准备后可调"}
           </span>
         )}
       </div>
