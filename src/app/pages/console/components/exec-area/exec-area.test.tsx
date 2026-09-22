@@ -1163,6 +1163,20 @@ describe("ExecArea launch guard", () => {
     expect(stored?.[3].totalTime).toBeGreaterThan(0);
   });
 
+  it("ignores a second confirm click before the dialog closes", async () => {
+    snapshotsRef.current = [{ descriptor: { id: 1 }, positions: { h: 0, p: 0, y: 0 } }];
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "F2 Ready" }));
+    expect(await screen.findByRole("alertdialog")).toBeTruthy();
+    const confirm = screen.getByRole("button", { name: "确认" });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    await waitFor(() => {
+      expect(readySequenceMock).toHaveBeenCalledTimes(1);
+    });
+    expect(markSlotReadyMock).toHaveBeenCalledTimes(1);
+  });
+
   it("cancel closes the dialog and does not ready", async () => {
     snapshotsRef.current = [{ descriptor: { id: 1 }, positions: { h: 0, p: 0, y: 0 } }];
     render(withMode(<ExecArea />));

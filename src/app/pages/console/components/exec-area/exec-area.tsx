@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/app/components/ui/utils";
 import {
@@ -26,6 +26,7 @@ type PoseDialogState = {
   slotIndex: number;
   sequenceId: number;
   speedMode: PoseSpeedMode;
+  telemetryByObjectId: Map<number, HpyPose>;
 };
 
 const reportSequenceResult = (result: { toast: "warning" | "error"; message: string }) => {
@@ -42,6 +43,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
   const { snapshots } = useControlledObjects();
   const { stopPreview } = useSequencePreview();
   const [poseDialog, setPoseDialog] = useState<PoseDialogState | null>(null);
+  const poseConfirmLockRef = useRef(false);
 
   const telemetryByObjectId = useMemo(() => {
     const map = new Map<number, HpyPose>();
@@ -50,6 +52,10 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     }
     return map;
   }, [snapshots]);
+
+  useEffect(() => {
+    if (!poseDialog) poseConfirmLockRef.current = false;
+  }, [poseDialog]);
 
   useEffect(() => {
     const runningSlots = new Set(
@@ -79,11 +85,11 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       sequence: authored,
       objects: document.setup.controlledObjects,
       motors: document.setup.motors,
-      telemetryByObjectId,
+      telemetryByObjectId: poseDialog.telemetryByObjectId,
       speedMode: poseDialog.speedMode,
       sequenceDurationMs: sequence.durationMs,
     });
-  }, [poseDialog, currentProject, faderSlots, telemetryByObjectId]);
+  }, [poseDialog, currentProject, faderSlots]);
 
   const beginReady = (
     slotIndex: number,
@@ -110,6 +116,10 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
 
   const handleConfirmPose = () => {
     if (!poseDialog || dialogGate?.status !== "transition") return;
+    if (poseConfirmLockRef.current) return;
+    const slot = faderSlots[poseDialog.slotIndex];
+    if (slot?.isBusy) return;
+    poseConfirmLockRef.current = true;
     const { slotIndex, sequenceId } = poseDialog;
     const plan = dialogGate.plan;
     setPoseDialog(null);
@@ -179,7 +189,12 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
         sequenceDurationMs: sequence.durationMs,
       });
       if (gate.status === "error" || gate.status === "transition") {
-        setPoseDialog({ slotIndex, sequenceId, speedMode: "default" });
+        setPoseDialog({
+          slotIndex,
+          sequenceId,
+          speedMode: "default",
+          telemetryByObjectId: new Map(telemetryByObjectId),
+        });
         return;
       }
     }
