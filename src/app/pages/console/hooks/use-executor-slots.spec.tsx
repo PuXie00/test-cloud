@@ -15,7 +15,7 @@ describe("deriveFaderSlotPhase", () => {
       deriveFaderSlotPhase({
         sequenceId: 15,
         fingerprint: "fp-15",
-        ready: { sequenceId: 15, fingerprint: "fp-15" },
+        ready: { sequenceId: 15, fingerprint: "fp-15", initialTransition: null },
         isRunning: false,
       }),
     ).toBe("ready");
@@ -26,7 +26,7 @@ describe("deriveFaderSlotPhase", () => {
       deriveFaderSlotPhase({
         sequenceId: 16,
         fingerprint: "fp-16",
-        ready: { sequenceId: 15, fingerprint: "fp-15" },
+        ready: { sequenceId: 15, fingerprint: "fp-15", initialTransition: null },
         isRunning: false,
       }),
     ).toBe("idle");
@@ -37,7 +37,7 @@ describe("deriveFaderSlotPhase", () => {
       deriveFaderSlotPhase({
         sequenceId: 15,
         fingerprint: "fp-15-b",
-        ready: { sequenceId: 15, fingerprint: "fp-15-a" },
+        ready: { sequenceId: 15, fingerprint: "fp-15-a", initialTransition: null },
         isRunning: false,
       }),
     ).toBe("idle");
@@ -48,7 +48,7 @@ describe("deriveFaderSlotPhase", () => {
       deriveFaderSlotPhase({
         sequenceId: 15,
         fingerprint: "fp-15",
-        ready: { sequenceId: 15, fingerprint: "fp-15" },
+        ready: { sequenceId: 15, fingerprint: "fp-15", initialTransition: null },
         isRunning: true,
       }),
     ).toBe("running");
@@ -74,8 +74,8 @@ describe("ExecutorSlotsProvider", () => {
     const { result, rerender } = renderHook(() => useExecutorSlots(), { wrapper });
 
     act(() => {
-      result.current.markSlotReady(0, 15, "fp-15");
-      result.current.markSlotReady(1, 16, "fp-16");
+      result.current.markSlotReady(0, 15, "fp-15", null);
+      result.current.markSlotReady(1, 16, "fp-16", null);
       result.current.setFaderValue(0, 150);
     });
     expect(result.current.faderSlots[0]?.phase).toBe("ready");
@@ -92,6 +92,38 @@ describe("ExecutorSlotsProvider", () => {
     rerender();
     expect(result.current.faderSlots[0]?.phase).toBe("idle");
     expect(result.current.faderSlots[1]?.phase).toBe("ready");
+  });
+
+  it("stores the transition while ready and drops it when ready is cleared or the fingerprint changes", () => {
+    const plan = { totalTime: 3, models: [] };
+    let fingerprints: Record<number, string> = { 15: "fp-15", 16: "fp-16" };
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(
+        ExecutorSlotsProvider,
+        { pageItems: pageItemsFor([15, 16]), sequenceFingerprints: fingerprints },
+        children,
+      );
+    const { result, rerender } = renderHook(() => useExecutorSlots(), { wrapper });
+
+    act(() => {
+      result.current.markSlotReady(0, 15, "fp-15", plan);
+    });
+    expect(result.current.faderSlots[0]?.phase).toBe("ready");
+    expect(result.current.faderSlots[0]?.initialTransition).toEqual(plan);
+    expect(result.current.faderSlots[1]?.initialTransition).toBeNull();
+
+    act(() => {
+      result.current.clearSlotReady(0);
+    });
+    expect(result.current.faderSlots[0]?.phase).toBe("idle");
+    expect(result.current.faderSlots[0]?.initialTransition).toBeNull();
+
+    act(() => {
+      result.current.markSlotReady(0, 15, "fp-15", plan);
+    });
+    fingerprints = { 15: "fp-15-next", 16: "fp-16" };
+    rerender();
+    expect(result.current.faderSlots[0]?.initialTransition).toBeNull();
   });
 
   it("always exposes twelve F1–F12 slots", () => {

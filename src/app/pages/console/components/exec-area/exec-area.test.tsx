@@ -337,6 +337,7 @@ const makeFaderSlot = (overrides: Partial<FaderSlotState> & { index: number }): 
   faderValue: 100,
   phase: "idle",
   isBusy: false,
+  initialTransition: null,
   ...overrides,
 });
 
