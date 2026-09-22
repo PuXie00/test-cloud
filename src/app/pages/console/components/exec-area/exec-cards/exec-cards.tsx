@@ -1,4 +1,5 @@
-import { useExecCards } from "../../../hooks/use-exec-cards";
+import { useExecCards, type ExecCard } from "../../../hooks/use-exec-cards";
+import { getSequenceTransport, stopSequence } from "../../../hooks/sequence-execution";
 import { useProgram } from "../../../hooks/use-program";
 import { hasNextChapterSequence } from "../../../hooks/sequence-run-status";
 import { ExecCardView } from "./exec-card";
@@ -31,9 +32,16 @@ export const ExecCards = () => {
           onRestart={() => restart(card.id)}
           onSkipNext={() => skipNext(card.id)}
           onSetSpeed={(percent) => setSpeed(card.id, percent)}
-          onClose={() => close(card.id)}
+          onClose={() => dismissExecCard(card, close)}
         />
       ))}
     </div>
   );
+};
+
+export const dismissExecCard = (card: ExecCard, close: (id: string) => void): void => {
+  if (card.sequenceHandle && card.status !== "completed") {
+    void stopSequence(card.sequenceHandle, getSequenceTransport()).catch(() => undefined);
+  }
+  close(card.id);
 };

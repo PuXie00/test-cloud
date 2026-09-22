@@ -17,6 +17,9 @@ type FaderSlotProps = {
   onPreviewHoldStart: () => void;
   onPreviewHoldEnd: () => void;
   onGo: () => void;
+  onCancelReady?: () => void;
+  onSafetyGroupChange?: (enabled: boolean) => void;
+  onNearestStartChange?: (enabled: boolean) => void;
   onFaderChange: (value: number) => void;
   onAssignFromDrag: (payload: { chapterId: string; index: number; kind: "sequence" }) => void;
 };
@@ -29,6 +32,9 @@ export const FaderSlot = ({
   onPreviewHoldStart,
   onPreviewHoldEnd,
   onGo,
+  onCancelReady = () => undefined,
+  onSafetyGroupChange = () => undefined,
+  onNearestStartChange = () => undefined,
   onFaderChange,
   onAssignFromDrag,
 }: FaderSlotProps) => {
@@ -39,6 +45,7 @@ export const FaderSlot = ({
   const isReady = slot.phase === "ready";
   const actionLabel = isReady || isRunning ? "GO" : "Ready";
   const isBlocked = isEmpty || Boolean(repairMessage) || slot.isBusy || isRunning;
+  const switchesLocked = isEmpty || Boolean(repairMessage) || slot.isBusy;
   const isRehearsal = mode === "rehearsal";
   const reasonId = `fader-slot-repair-${slot.index}`;
 
@@ -199,6 +206,26 @@ export const FaderSlot = ({
           ) : null}
         </>
       ) : null}
+      {!isEmpty ? (
+        <div className="relative z-10 flex flex-col gap-1">
+          <SlotOptionToggle
+            label="安全组"
+            accessibleName={`${slot.label} 安全组`}
+            pressed={slot.safetyGroup}
+            disabled={switchesLocked}
+            pressedClassName="bg-show/15 text-show"
+            onPressedChange={onSafetyGroupChange}
+          />
+          <SlotOptionToggle
+            label="就近"
+            accessibleName={`${slot.label} 就近启动`}
+            pressed={slot.nearestStart}
+            disabled={switchesLocked}
+            pressedClassName="bg-secondary/20 text-secondary"
+            onPressedChange={onNearestStartChange}
+          />
+        </div>
+      ) : null}
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
         <VerticalFader
           value={slot.faderValue}
@@ -217,6 +244,17 @@ export const FaderSlot = ({
           </span>
         )}
       </div>
+      {isReady ? (
+        <button
+          type="button"
+          disabled={slot.isBusy}
+          aria-label={`${slot.label} 取消准备`}
+          onClick={onCancelReady}
+          className="relative z-10 inline-flex h-8 shrink-0 items-center justify-center rounded-sm border border-border text-body-sm text-foreground hover:bg-accent disabled:opacity-30"
+        >
+          取消准备
+        </button>
+      ) : null}
       <button
         type="button"
         disabled={isBlocked}
@@ -243,3 +281,33 @@ export const FaderSlot = ({
     </div>
   );
 };
+
+const SlotOptionToggle = ({
+  label,
+  accessibleName,
+  pressed,
+  disabled,
+  pressedClassName,
+  onPressedChange,
+}: {
+  label: string;
+  accessibleName?: string;
+  pressed: boolean;
+  disabled: boolean;
+  pressedClassName: string;
+  onPressedChange: (enabled: boolean) => void;
+}) => (
+  <button
+    type="button"
+    aria-pressed={pressed}
+    aria-label={accessibleName ?? label}
+    disabled={disabled}
+    onClick={() => onPressedChange(!pressed)}
+    className={cn(
+      "inline-flex h-7 items-center justify-center rounded-sm text-label-caps transition-colors disabled:opacity-30",
+      pressed ? pressedClassName : "bg-input-background text-muted-foreground hover:bg-accent",
+    )}
+  >
+    {label}
+  </button>
+);

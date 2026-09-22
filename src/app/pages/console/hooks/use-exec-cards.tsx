@@ -38,6 +38,8 @@ export type ExecCard = {
   sequenceId?: number;
   sequenceHandle?: SequenceRuntimeHandle;
   trajectoryMode?: TrajectoryMode;
+  safetyGroup?: boolean;
+  nearestStart?: boolean;
 };
 
 type ExecCardsContextValue = {
@@ -51,6 +53,8 @@ type ExecCardsContextValue = {
     sequenceId?: number;
     sequenceHandle?: SequenceRuntimeHandle;
     trajectoryMode?: TrajectoryMode;
+    safetyGroup?: boolean;
+    nearestStart?: boolean;
   }) => string;
   pause: (id: string) => void;
   resume: (id: string) => void;
@@ -158,7 +162,18 @@ export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
   }, [cards]);
 
   const launch = useCallback<ExecCardsContextValue["launch"]>(
-    ({ kind, name, durationMs, source, speedPercent = 100, sequenceId, sequenceHandle, trajectoryMode }) => {
+    ({
+      kind,
+      name,
+      durationMs,
+      source,
+      speedPercent = 100,
+      sequenceId,
+      sequenceHandle,
+      trajectoryMode,
+      safetyGroup,
+      nearestStart,
+    }) => {
       const id = `card-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
       setCards((current) => [
         {
@@ -175,6 +190,8 @@ export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
           ...(sequenceId !== undefined ? { sequenceId } : {}),
           ...(sequenceHandle ? { sequenceHandle } : {}),
           ...(trajectoryMode !== undefined ? { trajectoryMode } : {}),
+          ...(safetyGroup ? { safetyGroup: true } : {}),
+          ...(nearestStart ? { nearestStart: true } : {}),
         },
         ...current,
       ]);

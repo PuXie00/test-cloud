@@ -12,6 +12,8 @@ export type FaderSlotState = {
   faderValue: number;
   phase: FaderSlotPhase;
   isBusy: boolean;
+  safetyGroup: boolean;
+  nearestStart: boolean;
 };
 
 type SlotReadyRecord = {
@@ -26,6 +28,8 @@ type ExecutorSlotsValue = {
   setSlotBusy: (index: number, busy: boolean) => void;
   markSlotReady: (index: number, sequenceId: number, fingerprint: string) => void;
   clearSlotReady: (index: number) => void;
+  setSafetyGroup: (index: number, enabled: boolean) => void;
+  setNearestStart: (index: number, enabled: boolean) => void;
 };
 
 const ExecutorSlotsContext = createContext<ExecutorSlotsValue | null>(null);
@@ -64,6 +68,8 @@ export const ExecutorSlotsProvider = ({
   const [runningFaders, setRunningFaders] = useState<Set<number>>(new Set());
   const [busyBySlot, setBusyBySlot] = useState<Record<number, number>>({});
   const [readyBySlot, setReadyBySlot] = useState<Record<number, SlotReadyRecord>>({});
+  const [safetyGroupBySlot, setSafetyGroupBySlot] = useState<Record<number, boolean>>({});
+  const [nearestStartBySlot, setNearestStartBySlot] = useState<Record<number, boolean>>({});
 
   const faderSlots = useMemo<FaderSlotState[]>(
     () =>
@@ -85,9 +91,20 @@ export const ExecutorSlotsProvider = ({
             isRunning,
           }),
           isBusy: sequence !== null && busyBySlot[idx] === sequence.id,
+          safetyGroup: safetyGroupBySlot[idx] === true,
+          nearestStart: nearestStartBySlot[idx] === true,
         };
       }),
-    [pageItems.sequences, sequenceFingerprints, faderValues, runningFaders, busyBySlot, readyBySlot],
+    [
+      pageItems.sequences,
+      sequenceFingerprints,
+      faderValues,
+      runningFaders,
+      busyBySlot,
+      readyBySlot,
+      safetyGroupBySlot,
+      nearestStartBySlot,
+    ],
   );
 
   const setFaderValue = useCallback((index: number, value: number) => {
@@ -134,6 +151,20 @@ export const ExecutorSlotsProvider = ({
     });
   }, []);
 
+  const setSafetyGroup = useCallback((index: number, enabled: boolean) => {
+    setSafetyGroupBySlot((current) => {
+      if ((current[index] === true) === enabled) return current;
+      return { ...current, [index]: enabled };
+    });
+  }, []);
+
+  const setNearestStart = useCallback((index: number, enabled: boolean) => {
+    setNearestStartBySlot((current) => {
+      if ((current[index] === true) === enabled) return current;
+      return { ...current, [index]: enabled };
+    });
+  }, []);
+
   const value = useMemo(
     () => ({
       faderSlots,
@@ -142,8 +173,19 @@ export const ExecutorSlotsProvider = ({
       setSlotBusy,
       markSlotReady,
       clearSlotReady,
+      setSafetyGroup,
+      setNearestStart,
     }),
-    [faderSlots, setFaderValue, setSlotRunning, setSlotBusy, markSlotReady, clearSlotReady],
+    [
+      faderSlots,
+      setFaderValue,
+      setSlotRunning,
+      setSlotBusy,
+      markSlotReady,
+      clearSlotReady,
+      setSafetyGroup,
+      setNearestStart,
+    ],
   );
 
   return <ExecutorSlotsContext.Provider value={value}>{children}</ExecutorSlotsContext.Provider>;

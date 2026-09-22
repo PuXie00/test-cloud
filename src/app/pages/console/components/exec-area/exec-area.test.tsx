@@ -206,6 +206,8 @@ vi.mock("../../hooks/use-executor-slots", async () => {
       setSlotBusy: (...args: unknown[]) => setSlotBusyMock(...args),
       markSlotReady: (...args: unknown[]) => markSlotReadyMock(...args),
       clearSlotReady: (...args: unknown[]) => clearSlotReadyMock(...args),
+      setSafetyGroup: vi.fn(),
+      setNearestStart: vi.fn(),
     }),
   };
 });
@@ -327,6 +329,8 @@ const makeFaderSlot = (overrides: Partial<FaderSlotState> & { index: number }): 
   faderValue: 100,
   phase: "idle",
   isBusy: false,
+  safetyGroup: false,
+  nearestStart: false,
   ...overrides,
 });
 
@@ -624,6 +628,48 @@ describe("FaderSlot Ready/GO gate", () => {
     expect(go.disabled).toBe(false);
     fireEvent.click(go);
     expect(onGo).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps safety group and nearest start available after Ready and can cancel Ready", () => {
+    const onCancelReady = vi.fn();
+    const onSafetyGroupChange = vi.fn();
+    const onNearestStartChange = vi.fn();
+    render(
+      withMode(
+        <FaderSlot
+          slot={makeFaderSlot({
+            index: 1,
+            phase: "ready",
+            sequence: { id: 15, name: "正常序列", durationMs: 2000, trajectoryMode: true },
+          })}
+          isPreviewing={false}
+          onPreviewToggle={vi.fn()}
+          onPreviewHoldStart={vi.fn()}
+          onPreviewHoldEnd={vi.fn()}
+          onGo={vi.fn()}
+          onCancelReady={onCancelReady}
+          onSafetyGroupChange={onSafetyGroupChange}
+          onNearestStartChange={onNearestStartChange}
+          onFaderChange={vi.fn()}
+          onAssignFromDrag={vi.fn()}
+        />,
+      ),
+    );
+
+    const safety = screen.getByRole("button", { name: "F2 安全组" }) as HTMLButtonElement;
+    const nearest = screen.getByRole("button", { name: "F2 就近启动" }) as HTMLButtonElement;
+    expect(safety.disabled).toBe(false);
+    expect(nearest.disabled).toBe(false);
+    expect(safety.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(safety);
+    fireEvent.click(nearest);
+    expect(onSafetyGroupChange).toHaveBeenCalledWith(true);
+    expect(onNearestStartChange).toHaveBeenCalledWith(true);
+    expect(screen.getByText("强制")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "F2 取消准备" }));
+    expect(onCancelReady).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "F2 GO" })).toBeTruthy();
   });
 
   it("hides percent on empty slots and shows a disabled slider", () => {

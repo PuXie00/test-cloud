@@ -78,6 +78,8 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
             sequenceId,
             sequenceHandle: started.sequenceHandle,
             trajectoryMode: slot.sequence.trajectoryMode,
+            safetyGroup: slot.safetyGroup,
+            nearestStart: slot.nearestStart,
           });
           stopPreview();
         } finally {

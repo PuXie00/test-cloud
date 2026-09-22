@@ -118,6 +118,35 @@ describe("ExecutorSlotsProvider", () => {
       "F12",
     ]);
     expect(result.current.faderSlots[0]?.sequence?.id).toBe(15);
+    expect(result.current.faderSlots[0]?.safetyGroup).toBe(false);
+    expect(result.current.faderSlots[0]?.nearestStart).toBe(false);
+  });
+
+  it("keeps safety group and nearest start settable after the slot is ready", () => {
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(
+        ExecutorSlotsProvider,
+        { pageItems: pageItemsFor([15]), sequenceFingerprints: { 15: "fp-15" } },
+        children,
+      );
+    const { result } = renderHook(() => useExecutorSlots(), { wrapper });
+
+    act(() => {
+      result.current.markSlotReady(0, 15, "fp-15");
+      result.current.setSafetyGroup(0, true);
+      result.current.setNearestStart(0, true);
+    });
+
+    expect(result.current.faderSlots[0]?.phase).toBe("ready");
+    expect(result.current.faderSlots[0]?.safetyGroup).toBe(true);
+    expect(result.current.faderSlots[0]?.nearestStart).toBe(true);
+
+    act(() => {
+      result.current.clearSlotReady(0);
+    });
+    expect(result.current.faderSlots[0]?.phase).toBe("idle");
+    expect(result.current.faderSlots[0]?.safetyGroup).toBe(true);
+    expect(result.current.faderSlots[0]?.nearestStart).toBe(true);
     expect(result.current.faderSlots[1]?.sequence).toBeNull();
   });
 });

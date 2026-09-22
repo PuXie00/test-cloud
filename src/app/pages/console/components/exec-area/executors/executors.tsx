@@ -12,7 +12,8 @@ type ExecutorsProps = {
 };
 
 export const Executors = ({ onTriggerSequence }: ExecutorsProps) => {
-  const { faderSlots, setFaderValue } = useExecutorSlots();
+  const { faderSlots, setFaderValue, clearSlotReady, setSafetyGroup, setNearestStart } =
+    useExecutorSlots();
   const { program, reorderItemInChapter, moveItemAcrossChapter, currentChapterId, currentPageIndex } =
     useProgram();
   const { currentProject } = useProject();
@@ -71,6 +72,9 @@ export const Executors = ({ onTriggerSequence }: ExecutorsProps) => {
                   }
                   onPreviewHoldEnd={stopPreview}
                   onGo={() => slot.sequence && onTriggerSequence(slot.index, slot.sequence.id)}
+                  onCancelReady={() => clearSlotReady(slot.index)}
+                  onSafetyGroupChange={(enabled) => setSafetyGroup(slot.index, enabled)}
+                  onNearestStartChange={(enabled) => setNearestStart(slot.index, enabled)}
                   onFaderChange={(value) => setFaderValue(slot.index, value)}
                   onAssignFromDrag={handleAssignFromDrag(slot.index)}
                 />

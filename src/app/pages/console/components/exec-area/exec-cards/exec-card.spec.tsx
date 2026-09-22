@@ -44,6 +44,25 @@ describe("ExecCardView run status", () => {
     expect(screen.queryByText("强制")).toBeNull();
   });
 
+  it("closes a running task from the header", () => {
+    render(<ExecCardView card={card()} hasNextSequence {...handlers} />);
+    fireEvent.click(screen.getByRole("button", { name: "关闭 开幕升降" }));
+    expect(handlers.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows 安全组 together with 强制 when both are on", () => {
+    render(
+      <ExecCardView
+        card={card({ trajectoryMode: true, safetyGroup: true, nearestStart: true })}
+        hasNextSequence
+        {...handlers}
+      />,
+    );
+    expect(screen.getByText("安全组")).toBeTruthy();
+    expect(screen.getByText("就近")).toBeTruthy();
+    expect(screen.getByText("强制")).toBeTruthy();
+  });
+
   it("shows 强制 only for a forced-trajectory sequence", () => {
     render(
       <ExecCardView

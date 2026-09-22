@@ -1,4 +1,4 @@
-import { MoreVertical, Play, SkipForward, Square, Minus, Plus, X, RotateCcw } from "lucide-react";
+import { Play, SkipForward, Square, Minus, Plus, X, RotateCcw } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
 import type { ExecCard, ExecCardSource } from "../../../hooks/use-exec-cards";
 import { EXAMPLE_SEQUENCE_RUNTIME, formatExecTime } from "../../../hooks/sequence-run-status";
@@ -64,6 +64,16 @@ export const ExecCardView = ({
         <span className="min-w-0 flex-1 truncate text-body-sm font-semibold text-foreground">
           {card.name}
         </span>
+        {card.safetyGroup ? (
+          <span className="shrink-0 rounded-sm bg-show/15 px-1.5 py-0.5 text-label-caps text-show">
+            安全组
+          </span>
+        ) : null}
+        {card.nearestStart ? (
+          <span className="shrink-0 rounded-sm bg-secondary/20 px-1.5 py-0.5 text-label-caps text-secondary">
+            就近
+          </span>
+        ) : null}
         {isForcedTrajectory(card.trajectoryMode) ? (
           <ForcedTrajectoryBadge className="px-1.5 text-muted-foreground" />
         ) : null}
@@ -72,10 +82,11 @@ export const ExecCardView = ({
         </span>
         <button
           type="button"
-          aria-label="更多操作"
+          aria-label={`关闭 ${card.name}`}
+          onClick={onClose}
           className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
         >
-          <MoreVertical className="h-3 w-3" />
+          <X className="h-3 w-3" />
         </button>
       </div>
 
