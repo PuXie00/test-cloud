@@ -105,7 +105,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
           reportSequenceResult(readied);
           return;
         }
-        markSlotReady(slotIndex, sequenceId, readied.fingerprint);
+        markSlotReady(slotIndex, sequenceId, readied.fingerprint, null);
       } finally {
         setSlotBusy(slotIndex, false);
       }

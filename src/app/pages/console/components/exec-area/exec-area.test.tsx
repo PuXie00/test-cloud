@@ -1001,7 +1001,7 @@ describe("ExecArea launch guard", () => {
     });
     expect(launchMock).not.toHaveBeenCalled();
     expect(goSequenceMock).not.toHaveBeenCalled();
-    expect(markSlotReadyMock).toHaveBeenCalledWith(1, 15, "fp-15");
+    expect(markSlotReadyMock).toHaveBeenCalledWith(1, 15, "fp-15", null);
 
     fireEvent.click(readyButtons[0]!);
     expect(launchMock).not.toHaveBeenCalled();
