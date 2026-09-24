@@ -45,7 +45,7 @@ export const ExecCardView = ({
   const isStopped = card.status === "stopped" || card.status === "paused";
   const isCompleted = card.status === "completed";
   const isError = card.status === "error" || card.emergencyStopped;
-  const skipDisabled = !isStopped || !hasNextSequence || isError;
+  const skipDisabled = card.status !== "stopped" || !hasNextSequence || isError;
   const maxSpeed = 200;
 
   return (
@@ -181,7 +181,7 @@ export const ExecCardView = ({
             )}
             <button
               type="button"
-              aria-label="跳过"
+              aria-label="下一条"
               disabled={skipDisabled}
               onClick={onSkipNext}
               className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-muted/50 text-foreground hover:bg-muted disabled:opacity-40"

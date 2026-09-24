@@ -4,6 +4,8 @@ import {
   EXAMPLE_SEQUENCE_RUNTIME,
   formatExecTime,
   hasNextChapterSequence,
+  nextChapterSequence,
+  nextSequenceIsFree,
 } from "./sequence-run-status";
 
 const item = (id: number): ChapterItem => ({
@@ -39,5 +41,19 @@ describe("hasNextChapterSequence", () => {
     expect(hasNextChapterSequence([item(7), item(8)], 8)).toBe(false);
     expect(hasNextChapterSequence([item(7)], 99)).toBe(false);
     expect(hasNextChapterSequence([], 7)).toBe(false);
+  });
+});
+
+describe("nextChapterSequence", () => {
+  it("returns the following sequence", () => {
+    expect(nextChapterSequence([item(7), item(8), item(9)], 8)?.sequence.id).toBe(9);
+  });
+});
+
+describe("nextSequenceIsFree", () => {
+  it("is false when the following sequence is already a task", () => {
+    expect(nextSequenceIsFree([item(7), item(8)], 7, [8])).toBe(false);
+    expect(nextSequenceIsFree([item(7), item(8)], 7, [])).toBe(true);
+    expect(nextSequenceIsFree([item(7)], 7, [])).toBe(false);
   });
 });

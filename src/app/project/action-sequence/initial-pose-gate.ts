@@ -31,6 +31,43 @@ export const hpyFromPositions = (
   y: positions?.y ?? 0,
 });
 
+export type PreparedPoses = Record<number, HpyPose>;
+
+export const capturePreparedPoses = (
+  objectIds: Iterable<number>,
+  telemetryByObjectId: ReadonlyMap<number, HpyPose>,
+): PreparedPoses => {
+  const poses: PreparedPoses = {};
+  for (const objectId of objectIds) {
+    const pose = telemetryByObjectId.get(objectId) ?? { h: 0, p: 0, y: 0 };
+    poses[objectId] = { h: pose.h, p: pose.p, y: pose.y };
+  }
+  return poses;
+};
+
+export const preparedPosesMatchTelemetry = (
+  prepared: PreparedPoses,
+  objects: readonly { id: number; enabledVirtualAxes: readonly VirtualAxisId[] }[],
+  telemetryByObjectId: ReadonlyMap<number, HpyPose>,
+): boolean => {
+  for (const [idText, preparedPose] of Object.entries(prepared)) {
+    const objectId = Number(idText);
+    const object = objects.find((item) => item.id === objectId);
+    const current = telemetryByObjectId.get(objectId) ?? { h: 0, p: 0, y: 0 };
+    const enabled = object?.enabledVirtualAxes ?? (["v1", "v2", "v3"] as const);
+    if (
+      !enabledAxesMatchStart(enabled, current, {
+        v1: preparedPose.h,
+        v2: preparedPose.p,
+        v3: preparedPose.y,
+      })
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
 export const enabledAxesMatchStart = (
   enabledAxes: readonly VirtualAxisId[],
   current: HpyPose,

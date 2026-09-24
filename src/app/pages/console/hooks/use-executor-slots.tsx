@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { PROGRAM_SLOTS_PER_PAGE } from "../components/program-panel/program-data";
 import type { PageItems } from "./program-context";
+import type { PreparedPoses } from "@/app/project/action-sequence/initial-pose-gate";
 import type { InitialTransitionPlan } from "@/app/project/action-sequence/initial-transition-planner";
 import type { ActionSequence } from "../components/program-panel/program-data";
 
@@ -14,12 +15,14 @@ export type FaderSlotState = {
   phase: FaderSlotPhase;
   isBusy: boolean;
   initialTransition: InitialTransitionPlan | null;
+  preparedPoses: PreparedPoses | null;
 };
 
 type SlotReadyRecord = {
   sequenceId: number;
   fingerprint: string;
   initialTransition: InitialTransitionPlan | null;
+  preparedPoses: PreparedPoses;
 };
 
 type ExecutorSlotsValue = {
@@ -32,6 +35,7 @@ type ExecutorSlotsValue = {
     sequenceId: number,
     fingerprint: string,
     initialTransition: InitialTransitionPlan | null,
+    preparedPoses: PreparedPoses,
   ) => void;
   clearSlotReady: (index: number) => void;
 };
@@ -95,6 +99,7 @@ export const ExecutorSlotsProvider = ({
           phase,
           isBusy: sequence !== null && busyBySlot[idx] === sequence.id,
           initialTransition: phase === "ready" && ready ? ready.initialTransition : null,
+          preparedPoses: phase === "ready" && ready ? ready.preparedPoses : null,
         };
       }),
     [pageItems.sequences, sequenceFingerprints, faderValues, runningFaders, busyBySlot, readyBySlot],
@@ -137,10 +142,11 @@ export const ExecutorSlotsProvider = ({
       sequenceId: number,
       fingerprint: string,
       initialTransition: InitialTransitionPlan | null,
+      preparedPoses: PreparedPoses,
     ) => {
       setReadyBySlot((current) => ({
         ...current,
-        [index]: { sequenceId, fingerprint, initialTransition },
+        [index]: { sequenceId, fingerprint, initialTransition, preparedPoses },
       }));
     },
     [],

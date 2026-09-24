@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Play, Plus, Repeat, Shield, Zap } from "lucide-react";
+import { ArrowLeftRight, Loader2, Locate, Play, Plus, Repeat, Shield, Zap } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/app/components/ui/popover";
 import { cn } from "@/app/components/ui/utils";
 import { useConsoleMode } from "../../../hooks/use-console-mode";
@@ -38,11 +38,14 @@ export const FaderSlot = ({
   const { mode } = useConsoleMode();
   const [marksOpen, setMarksOpen] = useState(false);
   const [safetyGroupOn, setSafetyGroupOn] = useState(true);
+  const [nearestOn, setNearestOn] = useState(false);
+  const [reverseOn, setReverseOn] = useState(false);
   const sequenceId = slot.sequence?.id;
   const isEmpty = !slot.sequence;
   const isForced = isForcedTrajectory(slot.sequence?.trajectoryMode);
   const isRunning = slot.phase === "running";
   const isReady = slot.phase === "ready";
+  const canSetRunOptions = !isReady && !isRunning && !slot.isBusy;
   const actionLabel = isReady || isRunning ? "GO" : "Ready";
   const isBlocked = isEmpty || Boolean(repairMessage) || slot.isBusy || isRunning;
   const isRehearsal = mode === "rehearsal";
@@ -64,6 +67,8 @@ export const FaderSlot = ({
 
   useEffect(() => {
     setSafetyGroupOn(true);
+    setNearestOn(false);
+    setReverseOn(false);
     setMarksOpen(false);
   }, [sequenceId]);
 
@@ -200,6 +205,18 @@ export const FaderSlot = ({
                 <Shield className="h-3.5 w-3.5" aria-hidden />
                 <span className="sr-only">{safetyGroupOn ? "安全组开启" : "安全组关闭"}</span>
               </span>
+              {nearestOn ? (
+                <span className="inline-flex text-foreground" title="就近">
+                  <Locate className="h-3.5 w-3.5" aria-hidden />
+                  <span className="sr-only">就近</span>
+                </span>
+              ) : null}
+              {reverseOn ? (
+                <span className="inline-flex text-foreground" title="反向">
+                  <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden />
+                  <span className="sr-only">反向</span>
+                </span>
+              ) : null}
               {slot.sequence?.loop ? (
                 <span className="inline-flex text-secondary" title="循环">
                   <Repeat className="h-3.5 w-3.5" aria-hidden />
@@ -216,6 +233,22 @@ export const FaderSlot = ({
                 className="inline-flex h-8 items-center justify-center rounded-sm bg-input-background text-body-sm text-foreground hover:bg-accent"
               >
                 {safetyGroupOn ? "关闭安全组" : "开启安全组"}
+              </button>
+              <button
+                type="button"
+                disabled={!canSetRunOptions}
+                onClick={() => setNearestOn((current) => !current)}
+                className="inline-flex h-8 items-center justify-center rounded-sm bg-input-background text-body-sm text-foreground hover:bg-accent disabled:opacity-40"
+              >
+                {nearestOn ? "关闭就近" : "开启就近"}
+              </button>
+              <button
+                type="button"
+                disabled={!canSetRunOptions}
+                onClick={() => setReverseOn((current) => !current)}
+                className="inline-flex h-8 items-center justify-center rounded-sm bg-input-background text-body-sm text-foreground hover:bg-accent disabled:opacity-40"
+              >
+                {reverseOn ? "关闭反向" : "开启反向"}
               </button>
               {isReady ? (
                 <button

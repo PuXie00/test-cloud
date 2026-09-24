@@ -29,11 +29,28 @@ export const formatExecTime = (ms: number): string => {
   return `${m}:${s}`;
 };
 
+export const nextChapterSequence = (
+  items: readonly ChapterItem[],
+  sequenceId: number,
+): ChapterItem | null => {
+  const index = items.findIndex((entry) => entry.sequence.id === sequenceId);
+  if (index < 0) return null;
+  return items.slice(index + 1).find((entry) => entry.kind === "sequence") ?? null;
+};
+
 export const hasNextChapterSequence = (
   items: readonly ChapterItem[],
   sequenceId: number,
+): boolean => nextChapterSequence(items, sequenceId) !== null;
+
+/** 下一条存在，且任务列表里还没有这条序列。 */
+export const nextSequenceIsFree = (
+  items: readonly ChapterItem[],
+  sequenceId: number | undefined,
+  taskSequenceIds: readonly number[],
 ): boolean => {
-  const index = items.findIndex((entry) => entry.sequence.id === sequenceId);
-  if (index < 0) return false;
-  return items.slice(index + 1).some((entry) => entry.kind === "sequence");
+  if (sequenceId === undefined) return false;
+  const next = nextChapterSequence(items, sequenceId);
+  if (!next) return false;
+  return !taskSequenceIds.includes(next.sequence.id);
 };

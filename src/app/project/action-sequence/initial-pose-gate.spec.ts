@@ -7,8 +7,10 @@ import type {
 import type { ActionSequenceConfig, ModelPose } from "./types";
 import * as initialTransitionPlanner from "./initial-transition-planner";
 import {
+  capturePreparedPoses,
   enabledAxesMatchStart,
   evaluateInitialPoseGate,
+  preparedPosesMatchTelemetry,
   type PoseSpeedMode,
 } from "./initial-pose-gate";
 
@@ -86,6 +88,27 @@ describe("enabledAxesMatchStart", () => {
     ).toBe(false);
     expect(
       enabledAxesMatchStart(["v2"], { h: 0, p: 0.2, y: 0 }, { v1: 0, v2: 0, v3: 0 }),
+    ).toBe(false);
+  });
+});
+
+describe("preparedPosesMatchTelemetry", () => {
+  const object = singlePointObject();
+
+  it("records member telemetry and accepts the same enabled axes", () => {
+    const telemetry = new Map([[1, { h: 10, p: 40, y: 50 }]]);
+    const prepared = capturePreparedPoses([1], telemetry);
+    expect(prepared).toEqual({ 1: { h: 10, p: 40, y: 50 } });
+    expect(preparedPosesMatchTelemetry(prepared, [object], telemetry)).toBe(true);
+    expect(
+      preparedPosesMatchTelemetry(prepared, [object], new Map([[1, { h: 11, p: 0, y: 0 }]])),
+    ).toBe(true);
+  });
+
+  it("rejects an enabled axis that left the prepared pose", () => {
+    const prepared = { 1: { h: 10, p: 0, y: 0 } };
+    expect(
+      preparedPosesMatchTelemetry(prepared, [object], new Map([[1, { h: 12, p: 0, y: 0 }]])),
     ).toBe(false);
   });
 });

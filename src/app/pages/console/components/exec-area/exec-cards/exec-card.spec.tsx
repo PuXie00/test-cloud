@@ -66,8 +66,8 @@ describe("ExecCardView run status", () => {
   it("disables restart and skip while running; stop is enabled", () => {
     render(<ExecCardView card={card()} hasNextSequence {...handlers} />);
     expect((screen.getByRole("button", { name: "重新" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "跳过" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByRole("button", { name: "跳过" }).textContent?.trim() ?? "").toMatch(/^\s*$/);
+    expect((screen.getByRole("button", { name: "下一条" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "下一条" }).textContent?.trim() ?? "").toMatch(/^\s*$/);
     expect((screen.getByRole("button", { name: "停止" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
@@ -75,13 +75,18 @@ describe("ExecCardView run status", () => {
     render(<ExecCardView card={card({ status: "stopped" })} hasNextSequence {...handlers} />);
     expect((screen.getByRole("button", { name: "重新" }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole("button", { name: "继续" }) as HTMLButtonElement).disabled).toBe(false);
-    expect((screen.getByRole("button", { name: "跳过" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "下一条" }) as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
     expect(handlers.onResume).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps next disabled while paused", () => {
+    render(<ExecCardView card={card({ status: "paused" })} hasNextSequence {...handlers} />);
+    expect((screen.getByRole("button", { name: "下一条" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("keeps skip disabled when stopped with no next sequence", () => {
     render(<ExecCardView card={card({ status: "stopped" })} hasNextSequence={false} {...handlers} />);
-    expect((screen.getByRole("button", { name: "跳过" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "下一条" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

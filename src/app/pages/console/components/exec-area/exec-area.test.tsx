@@ -54,6 +54,7 @@ const {
   setSlotBusyMock,
   setSlotRunningMock,
   execCardsRef,
+  closeMock,
   coupledObjectIdsRef,
   snapshotsRef,
 } = vi.hoisted(() => ({
@@ -91,6 +92,7 @@ const {
   execCardsRef: {
     current: [] as ExecCard[],
   },
+  closeMock: vi.fn(),
   coupledObjectIdsRef: {
     current: new Set<number>([1]),
   },
@@ -199,7 +201,7 @@ vi.mock("../../hooks/use-exec-cards", async () => {
       skipNext: vi.fn(),
       setSpeed: vi.fn(),
       emergencyStopAll: vi.fn(),
-      close: vi.fn(),
+      close: (...args: unknown[]) => closeMock(...args),
     }),
   };
 });
@@ -248,7 +250,13 @@ vi.mock("../../hooks/use-selection", () => ({
 }));
 
 vi.mock("./exec-cards/exec-cards", () => ({
-  ExecCards: () => <div data-testid="exec-cards" />,
+  ExecCards: ({ onNextSequence }: { onNextSequence?: (cardId: string) => void }) => (
+    <div data-testid="exec-cards">
+      <button type="button" onClick={() => onNextSequence?.("card-stopped")}>
+        下一条
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock("./executors/executor-pagination-bar", () => ({
@@ -353,6 +361,7 @@ const makeFaderSlot = (overrides: Partial<FaderSlotState> & { index: number }): 
   phase: "idle",
   isBusy: false,
   initialTransition: null,
+  preparedPoses: null,
   ...overrides,
 });
 
@@ -493,6 +502,7 @@ afterEach(() => {
   stopPreviewMock.mockClear();
   previewSequenceIdRef.current = null;
   execCardsRef.current = [];
+  closeMock.mockClear();
   coupledObjectIdsRef.current = new Set([1]);
   capturedTriggers.onTriggerSequence = null;
   documentRef.current = null;
@@ -783,10 +793,65 @@ describe("FaderSlot Ready/GO gate", () => {
     expect(screen.getByText("安全组开启")).toBeTruthy();
     expect(screen.getByText("循环")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "开幕A 标记" }));
+    expect((screen.getByRole("button", { name: "开启就近" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "开启反向" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "关闭安全组" }));
     expect(screen.getByText("安全组关闭")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "取消准备" }));
     expect(onCancelReady).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows nearest and reverse only after they are turned on, and only before ready", () => {
+    const { rerender } = render(
+      withMode(
+        <FaderSlot
+          slot={makeFaderSlot({
+            index: 0,
+            phase: "idle",
+            sequence: { id: 15, name: "开幕A", durationMs: 2000 },
+          })}
+          isPreviewing={false}
+          onPreviewToggle={vi.fn()}
+          onPreviewHoldStart={vi.fn()}
+          onPreviewHoldEnd={vi.fn()}
+          onGo={vi.fn()}
+          onFaderChange={vi.fn()}
+          onAssignFromDrag={vi.fn()}
+        />,
+      ),
+    );
+    expect(screen.queryByText("就近")).toBeNull();
+    expect(screen.queryByText("反向")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "开幕A 标记" }));
+    fireEvent.click(screen.getByRole("button", { name: "开启就近" }));
+    fireEvent.click(screen.getByRole("button", { name: "开启反向" }));
+    expect(screen.getByText("就近")).toBeTruthy();
+    expect(screen.getByText("反向")).toBeTruthy();
+
+    rerender(
+      withMode(
+        <FaderSlot
+          slot={makeFaderSlot({
+            index: 0,
+            phase: "ready",
+            sequence: { id: 15, name: "开幕A", durationMs: 2000 },
+          })}
+          isPreviewing={false}
+          onPreviewToggle={vi.fn()}
+          onPreviewHoldStart={vi.fn()}
+          onPreviewHoldEnd={vi.fn()}
+          onGo={vi.fn()}
+          onFaderChange={vi.fn()}
+          onAssignFromDrag={vi.fn()}
+        />,
+      ),
+    );
+    expect((screen.getByRole("button", { name: "关闭就近" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "关闭反向" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "关闭就近" }));
+    fireEvent.click(screen.getByRole("button", { name: "关闭反向" }));
+    expect(screen.getByText("就近")).toBeTruthy();
+    expect(screen.getByText("反向")).toBeTruthy();
   });
 });
 
@@ -1017,7 +1082,9 @@ describe("ExecArea launch guard", () => {
     });
     expect(launchMock).not.toHaveBeenCalled();
     expect(goSequenceMock).not.toHaveBeenCalled();
-    expect(markSlotReadyMock).toHaveBeenCalledWith(1, 15, "fp-15", null);
+    expect(markSlotReadyMock).toHaveBeenCalledWith(1, 15, "fp-15", null, {
+      1: { h: 10, p: 0, y: 0 },
+    });
     expect(screen.queryByRole("alertdialog")).toBeNull();
 
     fireEvent.click(readyButtons[0]!);
@@ -1072,7 +1139,9 @@ describe("ExecArea launch guard", () => {
 
   it("GO uses the current fader value and launches only after Ready", async () => {
     faderSlotsRef.current = faderSlotsRef.current.map((slot) =>
-      slot.index === 1 ? { ...slot, phase: "ready", faderValue: 150 } : slot,
+      slot.index === 1
+        ? { ...slot, phase: "ready", faderValue: 150, preparedPoses: { 1: { h: 10, p: 0, y: 0 } } }
+        : slot,
     );
     render(withMode(<ExecArea />));
 
@@ -1103,7 +1172,9 @@ describe("ExecArea launch guard", () => {
       message: "动作序列启动失败",
     });
     faderSlotsRef.current = faderSlotsRef.current.map((slot) =>
-      slot.index === 1 ? { ...slot, phase: "ready" } : slot,
+      slot.index === 1
+        ? { ...slot, phase: "ready", preparedPoses: { 1: { h: 10, p: 0, y: 0 } } }
+        : slot,
     );
     render(withMode(<ExecArea />));
     fireEvent.click(screen.getByRole("button", { name: "F2 GO" }));
@@ -1161,6 +1232,7 @@ describe("ExecArea launch guard", () => {
     expect(stored?.[2]).toBe("fp-15");
     expect(stored?.[3]).toMatchObject({ totalTime: expect.any(Number), models: expect.any(Array) });
     expect(stored?.[3].totalTime).toBeGreaterThan(0);
+    expect(stored?.[4]).toEqual({ 1: { h: 0, p: 0, y: 0 } });
   });
 
   it("ignores a second confirm click before the dialog closes", async () => {
@@ -1205,10 +1277,32 @@ describe("ExecArea launch guard", () => {
     expect(readySequenceMock).not.toHaveBeenCalled();
   });
 
+  it("blocks GO when the member left the prepared pose", async () => {
+    snapshotsRef.current = [{ descriptor: { id: 1 }, positions: { h: 0, p: 0, y: 0 } }];
+    faderSlotsRef.current = faderSlotsRef.current.map((slot) =>
+      slot.index === 1
+        ? { ...slot, phase: "ready", preparedPoses: { 1: { h: 10, p: 0, y: 0 } } }
+        : slot,
+    );
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "F2 GO" }));
+    expect(await screen.findByRole("heading", { name: "当前未在准备位姿，请重新准备" })).toBeTruthy();
+    expect(goSequenceMock).not.toHaveBeenCalled();
+    expect(launchMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "确认" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+    });
+    expect(clearSlotReadyMock).toHaveBeenCalledWith(1);
+    expect(goSequenceMock).not.toHaveBeenCalled();
+  });
+
   it("GO does not open the start-pose dialog", async () => {
     snapshotsRef.current = [{ descriptor: { id: 1 }, positions: { h: 0, p: 0, y: 0 } }];
     faderSlotsRef.current = faderSlotsRef.current.map((slot) =>
-      slot.index === 1 ? { ...slot, phase: "ready" } : slot,
+      slot.index === 1
+        ? { ...slot, phase: "ready", preparedPoses: { 1: { h: 0, p: 0, y: 0 } } }
+        : slot,
     );
     render(withMode(<ExecArea />));
     fireEvent.click(screen.getByRole("button", { name: "F2 GO" }));
@@ -1216,6 +1310,168 @@ describe("ExecArea launch guard", () => {
       expect(goSequenceMock).toHaveBeenCalledTimes(1);
     });
     expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(readySequenceMock).not.toHaveBeenCalled();
+  });
+
+  const armStoppedChapter = (status: "stopped" | "paused" = "stopped") => {
+    execCardsRef.current = [
+      {
+        id: "card-stopped",
+        kind: "sequence",
+        name: "空序列",
+        source: { kind: "fader", slotIndex: 0 },
+        durationMs: null,
+        elapsedMs: 0,
+        speedPercent: 80,
+        status,
+        startedAt: 0,
+        emergencyStopped: false,
+        sequenceId: 14,
+        sequenceHandle: { actionId: 14 },
+        trajectoryMode: false,
+      },
+    ];
+    programState.current = {
+      id: "program-a",
+      name: "节目 A",
+      chapters: [
+        {
+          id: "ch-1",
+          name: "章节 1",
+          items: [
+            { kind: "sequence", sequence: { id: 14, name: "空序列", durationMs: 0 } },
+            { kind: "sequence", sequence: { id: 15, name: "正常序列", durationMs: 2000 } },
+          ],
+        },
+      ],
+    };
+  };
+
+  it("prepares the next sequence and then goes without another pose check", async () => {
+    armStoppedChapter();
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "下一条" }));
+    await waitFor(() => {
+      expect(goSequenceMock).toHaveBeenCalledTimes(1);
+    });
+    expect(readySequenceMock).toHaveBeenCalledTimes(1);
+    expect(readySequenceMock.mock.calls[0]?.[0]).toMatchObject({ sequenceId: 15 });
+    expect(closeMock).toHaveBeenCalledWith("card-stopped");
+    expect(goSequenceMock.mock.calls[0]?.[0]).toMatchObject({ sequenceId: 15, faderPercent: 100 });
+    expect(readySequenceMock.mock.invocationCallOrder[0]).toBeLessThan(closeMock.mock.invocationCallOrder[0]!);
+    expect(closeMock.mock.invocationCallOrder[0]).toBeLessThan(goSequenceMock.mock.invocationCallOrder[0]!);
+    expect(launchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: { kind: "program" },
+        sequenceId: 15,
+        speedPercent: 100,
+      }),
+    );
+    expect(screen.queryByRole("heading", { name: "当前未在准备位姿，请重新准备" })).toBeNull();
+    expect(markSlotReadyMock).not.toHaveBeenCalled();
+  });
+
+  it("asks for the start pose before preparing the next sequence", async () => {
+    armStoppedChapter();
+    snapshotsRef.current = [{ descriptor: { id: 1 }, positions: { h: 0, p: 0, y: 0 } }];
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "下一条" }));
+    expect(await screen.findByRole("heading", { name: "未在起始位姿" })).toBeTruthy();
+    expect(readySequenceMock).not.toHaveBeenCalled();
+    expect(closeMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "确认" }));
+    await waitFor(() => {
+      expect(goSequenceMock).toHaveBeenCalledTimes(1);
+    });
+    expect(readySequenceMock).toHaveBeenCalledTimes(1);
+    expect(closeMock).toHaveBeenCalledWith("card-stopped");
+  });
+
+  it("leaves the stopped card when the start-pose dialog is cancelled", async () => {
+    armStoppedChapter();
+    snapshotsRef.current = [{ descriptor: { id: 1 }, positions: { h: 0, p: 0, y: 0 } }];
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "下一条" }));
+    expect(await screen.findByRole("heading", { name: "未在起始位姿" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+    });
+    expect(readySequenceMock).not.toHaveBeenCalled();
+    expect(closeMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the stopped card when the next sequence is not coupled", () => {
+    armStoppedChapter();
+    coupledObjectIdsRef.current = new Set();
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "下一条" }));
+    expect(toastWarning).toHaveBeenCalledWith("未耦合");
+    expect(readySequenceMock).not.toHaveBeenCalled();
+    expect(closeMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the stopped card when preparing the next sequence fails", async () => {
+    armStoppedChapter();
+    readySequenceMock.mockResolvedValueOnce({
+      ok: false,
+      toast: "warning",
+      message: "动作序列校验失败，无法下载",
+    });
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "下一条" }));
+    await waitFor(() => {
+      expect(readySequenceMock).toHaveBeenCalled();
+    });
+    expect(closeMock).not.toHaveBeenCalled();
+    expect(goSequenceMock).not.toHaveBeenCalled();
+    expect(toastWarning).toHaveBeenCalledWith("动作序列校验失败，无法下载");
+  });
+
+  it("closes the current card when the following go fails", async () => {
+    armStoppedChapter();
+    goSequenceMock.mockResolvedValueOnce({
+      ok: false,
+      toast: "error",
+      message: "动作序列启动失败",
+    });
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "下一条" }));
+    await waitFor(() => {
+      expect(goSequenceMock).toHaveBeenCalled();
+    });
+    expect(closeMock).toHaveBeenCalledWith("card-stopped");
+    expect(launchMock).not.toHaveBeenCalled();
+    expect(toastError).toHaveBeenCalledWith("动作序列启动失败");
+  });
+
+  it("does not prepare the next sequence while the card is paused", () => {
+    armStoppedChapter("paused");
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "下一条" }));
+    expect(readySequenceMock).not.toHaveBeenCalled();
+  });
+
+  it("does not prepare the next sequence when it is already a task", () => {
+    armStoppedChapter();
+    execCardsRef.current = [
+      ...execCardsRef.current,
+      {
+        id: "card-next",
+        kind: "sequence",
+        name: "正常序列",
+        source: { kind: "program" },
+        durationMs: null,
+        elapsedMs: 0,
+        speedPercent: 100,
+        status: "running",
+        startedAt: 0,
+        emergencyStopped: false,
+        sequenceId: 15,
+      },
+    ];
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "下一条" }));
     expect(readySequenceMock).not.toHaveBeenCalled();
   });
 });
