@@ -8,7 +8,7 @@ import {
   type DragMoveEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { Box, Cpu, Link2, Plus, ScanLine, Zap } from "lucide-react";
+import { Box, Cpu, Link2, Loader2, Plus, ScanLine, Zap } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -179,6 +179,7 @@ export const ProjectStructurePanel = () => {
   } = useSelection();
   const [structureView, setStructureView] = useState<StructureViewId>("all");
   const [plcScanOpen, setPlcScanOpen] = useState(false);
+  const [scanningMasters, setScanningMasters] = useState(false);
   const [scanResults, setScanResults] = useState<PlcScanResult[]>([]);
   const [plcAddOpen, setPlcAddOpen] = useState(false);
   const [motorAddPlcId, setMotorAddPlcId] = useState<number | null>(null);
@@ -974,17 +975,25 @@ export const ProjectStructurePanel = () => {
   };
 
   const handleScanAllMaster = () => {
+    if (scanningMasters) return;
+    setScanningMasters(true);
     void (async () => {
-      const masters = await scanAll();
-      const next = masters
-        .filter((m) => !plcs.some((plc) => plc.ip === m.ip))
-        .map((m) => ({ id: m.ip, ip: m.ip, plcModel: m.plcModel, axis: m.axis }));
-      if (next.length === 0) {
-        toast.success("未发现新主控");
-        return;
+      try {
+        const masters = await scanAll();
+        const next = masters
+          .filter((m) => !plcs.some((plc) => plc.ip === m.ip))
+          .map((m) => ({ id: m.ip, ip: m.ip, plcModel: m.plcModel, axis: m.axis }));
+        if (next.length === 0) {
+          toast.success("未发现新主控");
+          return;
+        }
+        setScanResults(next);
+        setPlcScanOpen(true);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "扫描失败");
+      } finally {
+        setScanningMasters(false);
       }
-      setScanResults(next);
-      setPlcScanOpen(true);
     })();
   };
 
@@ -1068,11 +1077,20 @@ export const ProjectStructurePanel = () => {
                     <button
                       type="button"
                       aria-label="扫描添加主控"
-                      className={cn(iconBtn, "bg-primary text-primary-foreground hover:text-primary-foreground hover:bg-primary/90")}
+                      aria-busy={scanningMasters}
+                      disabled={scanningMasters}
+                      className={cn(
+                        iconBtn,
+                        "bg-primary text-primary-foreground hover:text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-40",
+                      )}
                       title="扫描"
                       onClick={handleScanAllMaster}
                     >
-                      <ScanLine className="h-3.5 w-3.5" aria-hidden />
+                      {scanningMasters ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                      ) : (
+                        <ScanLine className="h-3.5 w-3.5" aria-hidden />
+                      )}
                     </button>
                     <button
                       type="button"

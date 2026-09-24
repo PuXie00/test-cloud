@@ -54,24 +54,24 @@ export const PlcScanDialog = ({ open, onOpenChange, results }: PlcScanDialogProp
     }
   };
 
-  const hasSelection = useMemo(
+  const pickedResults = useMemo(
     () =>
-      results.some(
-        (r) =>
-          selectedMasters.has(r.id) &&
-          r.axis.some((a) => selectedAxes.has(axisKey(r.ip, a.slaveNo))),
-      ),
+      results.flatMap((r) => {
+        if (!selectedMasters.has(r.id)) return [];
+        return [
+          {
+            ...r,
+            axis: r.axis.filter((a) => selectedAxes.has(axisKey(r.ip, a.slaveNo))),
+          },
+        ];
+      }),
     [results, selectedMasters, selectedAxes],
   );
 
+  const hasSelection = pickedResults.length > 0;
+
   const handleAdd = async () => {
-    const picked = results
-      .filter((r) => selectedMasters.has(r.id))
-      .map((r) => ({
-        ...r,
-        axis: r.axis.filter((a) => selectedAxes.has(axisKey(r.ip, a.slaveNo))),
-      }))
-      .filter((r) => r.axis.length > 0);
+    const picked = pickedResults;
     if (picked.length === 0) return;
     await addPlcsFromScan(picked);
     toast.success(`已添加 ${picked.length} 个主控`);

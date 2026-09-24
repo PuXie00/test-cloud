@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { toast } from "sonner";
+import { isCppAckFailed } from "@shared/csocket/ack";
 import { useControlledObjects } from "@/app/pages/console/hooks/use-controlled-objects";
 import { useProjectStore } from "@/app/pages/console/hooks/use-project-store";
+import { isCoupledModelStatus, isIdleModelStatus } from "../monitor-grid/monitor-status";
 import { BuildDebugContext, type BuildDebugContextValue } from "./build-debug-context";
 import { imbalancedTorqueMotorIds, telemetryFromSnapshot } from "./build-debug-logic";
 import type { JogStep } from "./build-debug-types";
@@ -9,15 +12,28 @@ export { useBuildDebug, useBuildDebugOptional } from "./build-debug-context";
 
 export const BuildDebugProvider = ({ children }: { children: ReactNode }) => {
   const { motors, getObjectMotors, objects, findMotor } = useProjectStore();
-  const { motorSnapshots } = useControlledObjects();
+  const { snapshots, motorSnapshots, getById } = useControlledObjects();
 
   const [armed, setArmed] = useState(false);
   const [primaryMotorId, setPrimaryMotorId] = useState<number | null>(null);
   const [selectedMotorIds, setSelectedMotorIds] = useState<Set<number>>(() => new Set());
   const [pinnedMotorIds, setPinnedMotorIds] = useState<Set<number>>(() => new Set());
-  /** 空集 = 默认全部解耦 */
-  const [coupledObjectIds, setCoupledObjectIds] = useState<Set<number>>(() => new Set());
   const [stepMm, setStepMm] = useState<JogStep>(10);
+
+  const coupledKey = useMemo(() => {
+    const ids: number[] = [];
+    for (const snapshot of snapshots) {
+      if (!snapshot.live) continue;
+      if (isCoupledModelStatus(snapshot.modelStatus)) ids.push(snapshot.descriptor.id);
+    }
+    ids.sort((left, right) => left - right);
+    return ids.join(",");
+  }, [snapshots]);
+
+  const coupledObjectIds = useMemo(
+    () => new Set(coupledKey.length === 0 ? [] : coupledKey.split(",").map(Number)),
+    [coupledKey],
+  );
 
   const snapshotById = useMemo(
     () => new Map(motorSnapshots.map((snapshot) => [snapshot.id, snapshot])),
@@ -89,8 +105,8 @@ export const BuildDebugProvider = ({ children }: { children: ReactNode }) => {
   );
 
   const canToggleObjectCoupling = useCallback(
-    (objectId: number) => getObjectMotors(objectId).some((motor) => isMotorOnline(motor.id)),
-    [getObjectMotors, isMotorOnline],
+    (objectId: number) => coupledObjectIds.has(objectId),
+    [coupledObjectIds],
   );
 
   const clearMotorsOfObjects = useCallback((objectIds: ReadonlySet<number> | number[]) => {
@@ -114,43 +130,43 @@ export const BuildDebugProvider = ({ children }: { children: ReactNode }) => {
     [coupledObjectIds],
   );
 
+  const decoupleObjects = useCallback(async (objectIds: readonly number[]) => {
+    const ids = objectIds.filter((id) => coupledObjectIds.has(id));
+    if (ids.length === 0) return;
+    const notIdle = ids.filter((id) => !isIdleModelStatus(getById(id)?.modelStatus));
+    if (notIdle.length > 0) {
+      const names = notIdle
+        .map((id) => getById(id)?.descriptor.name ?? objects.find((object) => object.id === id)?.name ?? `模型 ${id}`)
+        .join("、");
+      toast.error(`${names} 未静止，无法解耦`);
+      return;
+    }
+    const api = window.csocketApi;
+    if (!api?.coupleModel) return;
+    try {
+      const result = await api.coupleModel(
+        ids.map((deviceId) => ({ deviceId, coupleFlag: 0 as const })),
+      );
+      if (isCppAckFailed(result)) toast.error(String(result.message || "解耦失败"));
+    } catch {
+      toast.error("解耦失败");
+    }
+  }, [coupledObjectIds, getById, objects]);
+
   const setObjectDecoupled = useCallback(
     (objectId: number, decoupled: boolean) => {
-      if (!canToggleObjectCoupling(objectId)) return;
-      setCoupledObjectIds((prev) => {
-        const next = new Set(prev);
-        if (decoupled) next.delete(objectId);
-        else next.add(objectId);
-        return next.size === prev.size && [...next].every((id) => prev.has(id)) ? prev : next;
-      });
-      if (!decoupled) clearMotorsOfObjects([objectId]);
+      if (!decoupled) return;
+      void decoupleObjects([objectId]);
     },
-    [canToggleObjectCoupling, clearMotorsOfObjects],
+    [decoupleObjects],
   );
 
   const setAllObjectsDecoupled = useCallback(
     (decoupled: boolean) => {
-      const eligibleIds = objects
-        .filter((object) => canToggleObjectCoupling(object.id))
-        .map((object) => object.id);
-      if (eligibleIds.length === 0) return;
-
-      if (decoupled) {
-        setCoupledObjectIds((prev) => {
-          const next = new Set(prev);
-          for (const id of eligibleIds) next.delete(id);
-          return next.size === prev.size ? prev : next;
-        });
-        return;
-      }
-      setCoupledObjectIds((prev) => {
-        const next = new Set(prev);
-        for (const id of eligibleIds) next.add(id);
-        return next;
-      });
-      clearMotorsOfObjects(eligibleIds);
+      if (!decoupled) return;
+      void decoupleObjects(objects.map((object) => object.id));
     },
-    [objects, canToggleObjectCoupling, clearMotorsOfObjects],
+    [objects, decoupleObjects],
   );
 
   const telemetryOf = useCallback(
@@ -194,7 +210,10 @@ export const BuildDebugProvider = ({ children }: { children: ReactNode }) => {
   const moveTo = useCallback((_position: number) => {}, []);
   const stepPrimary = useCallback((_dir: 1 | -1) => {}, []);
 
-  // 物体列表变化时清理无效选中 / 耦合记录
+  useEffect(() => {
+    clearMotorsOfObjects(coupledObjectIds);
+  }, [coupledObjectIds, clearMotorsOfObjects]);
+
   useEffect(() => {
     const ids = new Set(motors.map((m) => m.id));
     setSelectedMotorIds((prev) => {
@@ -202,12 +221,7 @@ export const BuildDebugProvider = ({ children }: { children: ReactNode }) => {
       return next.size === prev.size ? prev : next;
     });
     setPrimaryMotorId((prev) => (prev && ids.has(prev) ? prev : null));
-    const objectIds = new Set(objects.map((object) => object.id));
-    setCoupledObjectIds((prev) => {
-      const next = new Set([...prev].filter((id) => objectIds.has(id)));
-      return next.size === prev.size ? prev : next;
-    });
-  }, [motors, objects]);
+  }, [motors]);
 
   const value = useMemo(
     (): BuildDebugContextValue => ({

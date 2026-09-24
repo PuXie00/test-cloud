@@ -39,6 +39,15 @@ export type MoveTargetItem = {
 
 const AXES = ["v1", "v2", "v3"] as const;
 
+export type AxisRange = { min: number; max: number };
+
+export const clampToAxisRange = (value: number, range: AxisRange | undefined): number => {
+  if (!range || !Number.isFinite(range.min) || !Number.isFinite(range.max) || range.min > range.max) {
+    return value;
+  }
+  return Math.min(range.max, Math.max(range.min, value));
+};
+
 export const ARRIVAL_TOLERANCE: Record<VirtualAxisId, number> = {
   v1: 1,
   v2: 0.5,
@@ -72,12 +81,14 @@ export const resolveGoTargets = (
   drafts: Record<string, number>,
   mode: "abs" | "rel",
   armedTargetsByObjectId: Record<string, VirtualAxisValues> = {},
+  rangesByObjectId: Record<string, Partial<Record<VirtualAxisId, AxisRange>>> = {},
 ): GoReadyEntry[] => {
   const entries: GoReadyEntry[] = [];
   for (const snapshot of snapshots) {
     const objectId = String(snapshot.descriptor.id);
     const current = positionsToAxisValues(snapshot.positions);
     const armedTarget = armedTargetsByObjectId[objectId] ?? {};
+    const ranges = rangesByObjectId[objectId];
     const target: VirtualAxisValues = {};
     for (const [dimKey, draftValue] of Object.entries(drafts)) {
       const axis = DIMENSION_KEY_TO_VIRTUAL_AXIS[dimKey];
@@ -85,9 +96,9 @@ export const resolveGoTargets = (
       if (mode === "rel") {
         const base = resolveRelativeBase(axis, armedTarget, current);
         if (base === undefined) continue;
-        target[axis] = base + draftValue;
+        target[axis] = clampToAxisRange(base + draftValue, ranges?.[axis]);
       } else {
-        target[axis] = draftValue;
+        target[axis] = clampToAxisRange(draftValue, ranges?.[axis]);
       }
     }
     if (Object.keys(target).length === 0) continue;

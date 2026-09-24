@@ -14,6 +14,12 @@ import {
 import { useGoReady } from "../../../hooks/go-ready-provider";
 import { DIMENSION_KEY_TO_VIRTUAL_AXIS } from "@/app/project/manual-jog";
 import type { VirtualAxisValues } from "@/app/project/project-document-types";
+import { useProjectStore } from "../../../hooks/use-project-store";
+import {
+  axisRangesByObjectId,
+  clampDraftToCommandRange,
+  dimensionCommandRange,
+} from "./dimension-axis-range";
 
 type DimensionMode = "abs" | "rel";
 
@@ -43,6 +49,7 @@ const draftsFromTargets = (
 export const DimensionControl = ({ dimensions }: DimensionControlProps) => {
   const { selectedId, multiSelectedIds } = useSelection();
   const { getById } = useControlledObjects();
+  const { objects } = useProjectStore();
   const { state, arm, go, cancel } = useGoReady();
 
   const [mode, setMode] = useState<DimensionMode>("abs");
@@ -87,13 +94,27 @@ export const DimensionControl = ({ dimensions }: DimensionControlProps) => {
     setDrafts(draftsFromTargets(dimensionsRef.current, targetsRef.current, mode));
   }, [mode, dimensionKey, primaryObjectId, targetSig]);
 
+  const selectedObjects = selectedIds
+    .map((id) => objects.find((item) => item.id === id))
+    .filter((item): item is NonNullable<typeof item> => item != null);
+  const armedTargetsByObjectId = Object.fromEntries(
+    state.entries.map((entry) => [entry.objectId, entry.target]),
+  );
+
   const handleCommit = (dim: DimensionDescriptor, canonical: number) => {
-    const next = { ...draftsRef.current, [dim.key]: canonical };
+    const commandRange = dim.mixed
+      ? undefined
+      : dimensionCommandRange(dim.key, mode, snapshots, selectedObjects, armedTargetsByObjectId);
+    const clamped = clampDraftToCommandRange(canonical, commandRange);
+    const next = { ...draftsRef.current, [dim.key]: clamped };
     setDrafts(next);
-    const armedTargetsByObjectId = Object.fromEntries(
-      state.entries.map((entry) => [entry.objectId, entry.target]),
+    const entries = resolveGoTargets(
+      snapshots,
+      next,
+      mode,
+      armedTargetsByObjectId,
+      axisRangesByObjectId(selectedObjects),
     );
-    const entries = resolveGoTargets(snapshots, next, mode, armedTargetsByObjectId);
     if (entries.length === 0) {
       toast.error("所选物体无虚轴位置数据，无法进入 GO 准备");
       return;
@@ -147,8 +168,15 @@ export const DimensionControl = ({ dimensions }: DimensionControlProps) => {
                   <span className="w-12 shrink-0 text-body-sm text-foreground">虚轴{index + 1}</span>
                   <UnitAwareNumericInput
                     unit={dim.mixed ? "--" : dim.unit}
-                    min={-1000}
-                    max={100000}
+                    {...(dim.mixed
+                      ? {}
+                      : dimensionCommandRange(
+                          dim.key,
+                          mode,
+                          snapshots,
+                          selectedObjects,
+                          armedTargetsByObjectId,
+                        ))}
                     step={index === 0 ? 1 : 0.1}
                     precision={1}
                     value={drafts[dim.key] ?? 0}

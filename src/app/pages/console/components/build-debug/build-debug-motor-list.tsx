@@ -83,7 +83,6 @@ export const BuildDebugMotorList = () => {
     isObjectDecoupled,
     setObjectDecoupled,
     setAllObjectsDecoupled,
-    canToggleObjectCoupling,
   } = useBuildDebug();
 
   // 进入调试 tab 即启用；离开 tab 自动关闭
@@ -214,12 +213,7 @@ export const BuildDebugMotorList = () => {
   const allSelectableSelected =
     selectableIds.length > 0 && selectableIds.every((id) => selectedMotorIds.has(id));
 
-  const couplableObjects = useMemo(
-    () => objects.filter((object) => canToggleObjectCoupling(object.id)),
-    [objects, canToggleObjectCoupling],
-  );
-  const anyObjectCoupled = couplableObjects.some((object) => coupledObjectIds.has(object.id));
-  const hasCouplableObjects = couplableObjects.length > 0;
+  const anyObjectCoupled = objects.some((object) => coupledObjectIds.has(object.id));
 
   const handleToggleSelectAll = () => {
     if (selectableIds.length === 0) return;
@@ -271,10 +265,10 @@ export const BuildDebugMotorList = () => {
         <button
           type="button"
           className={toolbarBtn}
-          disabled={!hasCouplableObjects}
-          onClick={() => setAllObjectsDecoupled(anyObjectCoupled)}
+          disabled={!anyObjectCoupled}
+          onClick={() => setAllObjectsDecoupled(true)}
         >
-          {anyObjectCoupled ? "解耦" : "耦合"}
+          解耦
         </button>
       </div>
 
@@ -286,7 +280,6 @@ export const BuildDebugMotorList = () => {
         {groups.map(({ id, title, objectId, rows }) => {
           const decoupled = objectId ? isObjectDecoupled(objectId) : true;
           const groupSelectable = rows.some((row) => row.selectable);
-          const canToggleCoupling = objectId ? canToggleObjectCoupling(objectId) : false;
 
           return (
             <section key={id} className="overflow-hidden rounded-md bg-background">
@@ -303,14 +296,13 @@ export const BuildDebugMotorList = () => {
                   )}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  {objectId && (
+                  {objectId && !decoupled && (
                     <button
                       type="button"
-                      className="text-body-sm text-primary hover:underline disabled:pointer-events-none disabled:opacity-40"
-                      disabled={!canToggleCoupling}
-                      onClick={() => setObjectDecoupled(objectId, !decoupled)}
+                      className="text-body-sm text-primary hover:underline"
+                      onClick={() => setObjectDecoupled(objectId, true)}
                     >
-                      {decoupled ? "耦合" : "解耦"}
+                      解耦
                     </button>
                   )}
                   <button

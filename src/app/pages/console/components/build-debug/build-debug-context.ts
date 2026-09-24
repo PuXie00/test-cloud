@@ -6,7 +6,7 @@ export type BuildDebugContextValue = {
   primaryMotorId: number | null;
   selectedMotorIds: ReadonlySet<number>;
   pinnedMotorIds: ReadonlySet<number>;
-  /** 耦合中的受控物体；默认空 = 全部解耦 */
+  /** 遥测判定为耦合中的物体；无遥测不在此集合 */
   coupledObjectIds: ReadonlySet<number>;
   stepMm: JogStep;
   arm: () => void;
@@ -18,9 +18,11 @@ export type BuildDebugContextValue = {
   togglePin: (motorId: number) => void;
   setStep: (step: JogStep) => void;
   isObjectDecoupled: (objectId: number) => boolean;
-  /** 物体下至少有一台已连接电机时可切换耦合 */
+  /** 当前遥测显示该物体处于耦合，可以下发解耦 */
   canToggleObjectCoupling: (objectId: number) => boolean;
+  /** decoupled 为 false 时不动作；搭建页不能耦合 */
   setObjectDecoupled: (objectId: number, decoupled: boolean) => void;
+  /** decoupled 为 false 时不动作 */
   setAllObjectsDecoupled: (decoupled: boolean) => void;
   /** 在线且所属物体已解耦（未绑定电机视为可解耦） */
   isMotorSelectable: (motorId: number) => boolean;

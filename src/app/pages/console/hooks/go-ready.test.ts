@@ -87,6 +87,33 @@ describe("resolveGoTargets", () => {
     );
     expect(entries[0].target).toEqual({ v1: 120 });
   });
+
+  it("绝对模式：目标不超过虚轴范围", () => {
+    const entries = resolveGoTargets(
+      [snapshot(1, { h: 100 })],
+      { height: 1800 },
+      "abs",
+      {},
+      { "1": { v1: { min: 0, max: 1000 } } },
+    );
+    expect(entries[0]?.target).toEqual({ v1: 1000 });
+  });
+
+  it("相对模式：当前加增量不超过虚轴范围", () => {
+    const entries = resolveGoTargets(
+      [snapshot(1, { h: 900, p: 10 })],
+      { height: 200, pitch: -40 },
+      "rel",
+      {},
+      {
+        "1": {
+          v1: { min: 0, max: 1000 },
+          v2: { min: -20, max: 20 },
+        },
+      },
+    );
+    expect(entries[0]?.target).toEqual({ v1: 1000, v2: -20 });
+  });
 });
 
 describe("positionsToAxisValues", () => {

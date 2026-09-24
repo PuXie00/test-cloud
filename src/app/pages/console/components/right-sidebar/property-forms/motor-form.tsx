@@ -159,6 +159,7 @@ export const MotorForm = ({ motorId }: MotorFormProps) => {
       return;
     }
     if ("busNo" in changed) {
+      if (boundObject) return;
       const next = Number(changed.busNo);
       if (!isBusNo(next)) return;
       const ok = updateMotor(motorId, { busNo: next as BusNo });
@@ -326,8 +327,16 @@ export const MotorForm = ({ motorId }: MotorFormProps) => {
                 aria-label="所属主控"
               />
             </Form.Item>
-            <Form.Item label="从站口" name="busNo">
-              <Select options={busSelectOptions} aria-label="从站口" />
+            <Form.Item
+              label="从站口"
+              name="busNo"
+              labelTitle={boundObject ? "已绑定物体，不可切换从站口" : undefined}
+            >
+              <Select
+                disabled={Boolean(boundObject)}
+                options={busSelectOptions}
+                aria-label="从站口"
+              />
             </Form.Item>
             <Form.Item
               name="axisType"

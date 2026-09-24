@@ -4,6 +4,8 @@ import {
   classifyAxisStatus,
   classifyModelStatus,
   formatMotorAxisStatus,
+  isCoupledModelStatus,
+  isIdleModelStatus,
   modelStatusLabel,
   motorRuntimeStatusFromAxisCode,
 } from "./monitor-status";
@@ -62,6 +64,34 @@ describe("status labels", () => {
   it("returns 未知 for unknown", () => {
     expect(axisStatusLabel(9)).toBe("未知");
     expect(modelStatusLabel(99)).toBe("未知");
+  });
+});
+
+describe("isCoupledModelStatus", () => {
+  it("treats missing telemetry and explicit decoupled codes as decoupled", () => {
+    expect(isCoupledModelStatus(null)).toBe(false);
+    expect(isCoupledModelStatus(undefined)).toBe(false);
+    expect(isCoupledModelStatus(0)).toBe(false);
+    expect(isCoupledModelStatus(1)).toBe(false);
+    expect(isCoupledModelStatus(2)).toBe(false);
+    expect(isCoupledModelStatus(170)).toBe(false);
+    expect(isCoupledModelStatus(255)).toBe(false);
+  });
+
+  it("treats coupling and running codes as coupled", () => {
+    expect(isCoupledModelStatus(3)).toBe(true);
+    expect(isCoupledModelStatus(16)).toBe(true);
+    expect(isCoupledModelStatus(17)).toBe(true);
+    expect(isCoupledModelStatus(163)).toBe(true);
+  });
+});
+
+describe("isIdleModelStatus", () => {
+  it("only accepts modelStatus 16", () => {
+    expect(isIdleModelStatus(16)).toBe(true);
+    expect(isIdleModelStatus(17)).toBe(false);
+    expect(isIdleModelStatus(3)).toBe(false);
+    expect(isIdleModelStatus(null)).toBe(false);
   });
 });
 

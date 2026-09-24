@@ -358,6 +358,7 @@ export const TopBar = ({
       />
       <ProjectMismatchDialog
         open={shouldShowMismatchDialog}
+        onCancel={markMismatchDialogConsumed}
         onCloseProject={() => void handleCloseProject()}
         onDownload={() => void handleDownloadPlcProject()}
       />

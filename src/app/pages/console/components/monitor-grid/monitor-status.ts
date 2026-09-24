@@ -91,6 +91,19 @@ export const classifyModelStatus = (code: number): ControlledObjectStatus => {
 export const axisStatusLabel = (code: number): string => AXIS_STATUS[code]?.label ?? "未知";
 export const modelStatusLabel = (code: number): string => MODEL_STATUS[code]?.label ?? "未知";
 
+/** 明确表示未耦合的 modelStatus。无遥测（null）由调用方视为解耦。 */
+const DECOUPLED_MODEL_STATUS = new Set([0, 1, 2, 170, 255]);
+
+/** 有遥测码时，除未初始化 / 未耦合 / 超速解耦 / 禁用外都视为仍处于耦合。 */
+export const isCoupledModelStatus = (modelStatus: number | null | undefined): boolean =>
+  modelStatus != null && !DECOUPLED_MODEL_STATUS.has(modelStatus);
+
+/** 物体静止，允许从调试栏下发解耦 */
+export const IDLE_MODEL_STATUS = 16;
+
+export const isIdleModelStatus = (modelStatus: number | null | undefined): boolean =>
+  modelStatus === IDLE_MODEL_STATUS;
+
 export const formatMotorAxisStatus = (params: {
   live: boolean;
   axisStatus: number | null;

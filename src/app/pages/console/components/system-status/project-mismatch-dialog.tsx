@@ -2,12 +2,14 @@ import { cn } from "@/app/components/ui/utils";
 
 type ProjectMismatchDialogProps = {
   open: boolean;
+  onCancel: () => void;
   onCloseProject: () => void;
   onDownload: () => void;
 };
 
 export const ProjectMismatchDialog = ({
   open,
+  onCancel,
   onCloseProject,
   onDownload,
 }: ProjectMismatchDialogProps) => {
@@ -24,6 +26,14 @@ export const ProjectMismatchDialog = ({
           主控的工程与当前工程不匹配，是否下载当前工程到主控？
         </p>
         <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            aria-label="取消"
+            onClick={onCancel}
+            className="h-10 rounded-sm border border-border bg-background px-4 text-body-md text-foreground hover:bg-muted"
+          >
+            取消
+          </button>
           <button
             type="button"
             onClick={onCloseProject}

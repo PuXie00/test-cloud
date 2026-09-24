@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
 import { usePlcRuntime } from "@/app/pages/console/hooks/plc-runtime-provider";
@@ -53,6 +54,7 @@ export const MasterConnectionSummary = ({
 }: MasterConnectionSummaryProps) => {
   const { findPlc, getPlcMotors, plcs } = useProjectStore();
   const { getPlcRuntime, scanAll } = usePlcRuntime();
+  const [scanning, setScanning] = useState(false);
   const plc = findPlc(plcId);
   const runtime = getPlcRuntime(plcId);
 
@@ -79,7 +81,9 @@ export const MasterConnectionSummary = ({
     reconciliation.discoveredOnly.length > 0;
 
   const handleScan = () => {
-    void scanAll();
+    if (scanning) return;
+    setScanning(true);
+    void scanAll().finally(() => setScanning(false));
   };
 
   const handlePlcReset = () => {
@@ -128,8 +132,11 @@ export const MasterConnectionSummary = ({
           <button
             type="button"
             onClick={handleScan}
-            className="inline-flex h-9 items-center rounded-md border border-border bg-background px-3 text-body-sm hover:bg-accent"
+            aria-busy={scanning}
+            disabled={scanning}
+            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-background px-3 text-body-sm hover:bg-accent disabled:pointer-events-none disabled:opacity-40"
           >
+            {scanning ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
             重新扫描
           </button>
         ) : null}

@@ -1057,6 +1057,7 @@ export const ProjectStoreProvider = ({ children }: { children: ReactNode }) => {
       const busNoChanging =
         patch.busNo !== undefined && isBusNo(patch.busNo) && patch.busNo !== current.busNo;
       if (busNoChanging) {
+        if (current.controlledObjectId != null) return false;
         const limits = getPlcBusLimitsForPlc(current.plcId, setupRef.current.plcs);
         if (
           !canPlaceMotorsOnBus(setupRef.current.motors, current.plcId, patch.busNo!, limits, {
