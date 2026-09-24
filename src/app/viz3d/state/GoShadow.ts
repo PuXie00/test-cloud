@@ -12,6 +12,7 @@ import {
 } from "../babylon/utils";
 import { resolveVirtualAxisTransform } from "../telemetry/virtual-axis-mapper";
 import { createPbrStandardMaterial } from "../materials/pbr-material";
+import { applyRuntimePivot } from "../objects/runtime-pivot";
 import type { SceneObjectHandle } from "../objects/SceneObjectRegistry";
 import type { VirtualAxisValues, Viz3DColorMap } from "../types";
 
@@ -46,7 +47,7 @@ export class GoShadow {
 
     this.pivot = new TransformNode(`viz3d-go-shadow-${handle.id}-pivot`, scene);
     this.pivot.parent = this.root;
-    this.pivot.rotation.set(transform.rotation.x, transform.rotation.y, transform.rotation.z);
+    applyRuntimePivot(this.pivot, transform);
 
     this.visual = cloneHierarchy(handle.getVisualRoot(), scene, `viz3d-go-shadow-${handle.id}-visual`);
     this.visual.parent = this.pivot;
