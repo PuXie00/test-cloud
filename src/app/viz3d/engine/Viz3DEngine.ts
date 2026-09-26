@@ -996,7 +996,7 @@ export class Viz3DEngine implements Disposable {
     const handle = this.objectRegistry?.get(objectId);
     if (!handle) return;
     const config = handle.getConfig();
-    if (!config.virtualAxes?.length) return;
+    if (!config.kinematics) return;
     handle.applyRuntimeTransform(resolveVirtualAxisTransform(config, values));
   }
 

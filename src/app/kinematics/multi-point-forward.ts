@@ -77,6 +77,23 @@ const findDistanceFixed = (points: readonly Vec3[], betaDeg: number): number => 
   return Number.isFinite(minDistance) ? minDistance : 0;
 };
 
+/** 倾斜时吊点平面沿 (sinβ, cosβ) 的经验横向滑移量（与 initPos 同单位） */
+export const multiPointPlanarOffset = (
+  initPos: readonly Vec3[],
+  betaDeg: number,
+  angleDeg: number,
+  heightTerm: number,
+): number => {
+  const offset = findDistanceFixed(initPos, betaDeg);
+  if (offset === 0) return 0;
+  let powVal = 1.73 + 0.52 * (heightTerm / offset);
+  if (powVal > 100) powVal = 100;
+  const scale = offset / Math.pow(HALF_PI_POW_BASE, powVal);
+  let offsetT = scale * Math.pow(Math.abs(angleDeg * DEG_TO_RAD), powVal);
+  if (offsetT > offset) offsetT = offset;
+  return offsetT * (angleDeg < 0 ? -1 : 1);
+};
+
 const applyPlanarOffset = (
   moved: Vec3[],
   initPos: readonly Vec3[],
@@ -84,15 +101,7 @@ const applyPlanarOffset = (
   angleDeg: number,
   heightTerm: number,
 ): void => {
-  let offset = findDistanceFixed(initPos, betaDeg);
-  if (offset !== 0) {
-    let powVal = 1.73 + 0.52 * (heightTerm / offset);
-    if (powVal > 100) powVal = 100;
-    const scale = offset / Math.pow(HALF_PI_POW_BASE, powVal);
-    let offsetT = scale * Math.pow(Math.abs(angleDeg * DEG_TO_RAD), powVal);
-    if (offsetT > offset) offsetT = offset;
-    offset = offsetT * (angleDeg < 0 ? -1 : 1);
-  }
+  const offset = multiPointPlanarOffset(initPos, betaDeg, angleDeg, heightTerm);
   const sinB = Math.sin(toRad(betaDeg));
   const cosB = Math.cos(toRad(betaDeg));
   for (const point of moved) {

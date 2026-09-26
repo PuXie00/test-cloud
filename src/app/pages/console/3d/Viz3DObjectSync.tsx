@@ -14,12 +14,8 @@ import {
 import { getMotorIdForAxis } from "../hooks/binding-utils";
 import { getMotorDisplayIndex } from "@/app/pages/console/hooks/motor-mid";
 import { hoistAxesEqual } from "@/app/viz3d/hoist-axis-config";
-import {
-  CONTROL_TYPE_RULES,
-  ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE,
-} from "@/app/project/configuration-rules";
-import { virtualAxisMotionKinds } from "@/app/project/virtual-axis-mapping";
 import { useProjectStore } from "../hooks/use-project-store";
+import { sceneKinematicsEqual, sceneKinematicsForObject } from "./scene-kinematics";
 import { useConsoleNav } from "../hooks/use-console-nav";
 import { useSelection } from "../hooks/use-selection";
 import { useViz3DContext } from "./Viz3DProvider";
@@ -47,9 +43,7 @@ const sceneConfigsEqual = (a: SceneObjectConfig, b: SceneObjectConfig): boolean 
   a.selectedMotorId === b.selectedMotorId &&
   (a.selectedMotorIds?.join(",") ?? "") === (b.selectedMotorIds?.join(",") ?? "") &&
   hoistAxesEqual(a.hoistAxes, b.hoistAxes) &&
-  (a.virtualAxes?.map((v) => `${v.axis}:${v.kind}`).join(",") ?? "") ===
-    (b.virtualAxes?.map((v) => `${v.axis}:${v.kind}`).join(",") ?? "") &&
-  (a.modelRunDirection ?? 1) === (b.modelRunDirection ?? 1);
+  sceneKinematicsEqual(a.kinematics, b.kinematics);
 
 export const Viz3DObjectSync = () => {
   const engine = useViz3DContext();
@@ -102,11 +96,7 @@ export const Viz3DObjectSync = () => {
       selectedMotorId: selectedMotorId == null ? null : String(selectedMotorId),
       selectedMotorIds: selectedMotorIds?.map(String),
       showHoistPoints,
-      virtualAxes: virtualAxisMotionKinds(
-        CONTROL_TYPE_RULES[object.controlType].motionAxes,
-        ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE[object.controlType],
-      ),
-      modelRunDirection: object.modelRunDirection,
+      kinematics: sceneKinematicsForObject(object),
     };
     });
 

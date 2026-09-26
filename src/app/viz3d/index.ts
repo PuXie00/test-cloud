@@ -62,8 +62,7 @@ export type {
   RecordingState,
   RecordingStatePayload,
   VirtualAxisId,
-  VirtualAxisKind,
-  VirtualAxisMotion,
+  VirtualAxisKinematics,
   VirtualAxisValues,
 } from "./types";
 

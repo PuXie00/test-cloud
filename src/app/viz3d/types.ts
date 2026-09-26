@@ -1,4 +1,4 @@
-import type { MotionAxisKind } from "@/app/project/configuration-types";
+import type { ControlType } from "@/app/project/configuration-types";
 import type { VirtualAxisId, VirtualAxisValues } from "@/app/project/project-document-types";
 
 export type Vec3 = { x: number; y: number; z: number };
@@ -92,10 +92,21 @@ export type SceneObjectConfig = {
   /** 多选高亮（含主选）；未提供时回退 selectedMotorId */
   selectedMotorIds?: string[];
   showHoistPoints?: boolean;
-  /** 虚轴运动映射（由控制类型 motionAxes 派生）；缺省表示无虚轴，走遥测 deviceType 映射 */
-  virtualAxes?: readonly VirtualAxisMotion[];
-  /** 模型运行方向：1 正向，2 反向 */
-  modelRunDirection?: 1 | 2;
+  /** 虚轴 → 3D 姿态的 PLC 运动学参数；缺省表示无虚轴，走遥测 deviceType 映射 */
+  kinematics?: VirtualAxisKinematics;
+};
+
+/** 与汇川 PLC 正解一致的虚轴解释参数；吊点坐标取自 hoistAxes */
+export type VirtualAxisKinematics = {
+  controlType: ControlType;
+  /** 模型运行方向：1 正向（v1 增大下降），2 反向（v1 增大上升）；只影响 v1 */
+  runDirection: 1 | 2;
+  /** 原点到滑轮距离（mm），PLC BaseHeight */
+  pulleyDistance: number;
+  /** 升降上限（mm），PLC maxheight */
+  maxHeight: number;
+  /** 多点摆初始倾斜方向（deg），PLC betainit */
+  betaInit: number;
 };
 
 export type SelectionMode = "single" | "toggle";
@@ -180,15 +191,20 @@ export type TelemetrySnapshotInput = {
   virtualAxisValues?: VirtualAxisValues;
 };
 
+export type Quat = { x: number; y: number; z: number; w: number };
+
 export type RuntimeTransform = {
+  /** 物体根世界位置（米） */
   position: Vec3;
+  /** 运动枢轴欧拉角（弧度）；存在 rotationQuaternion 时忽略 */
   rotation: Vec3;
+  rotationQuaternion?: Quat;
+  /** 运动枢轴相对物体根的局部位置（米）：非中心旋转补偿 + PLC 横向滑移 */
+  pivotPosition?: Vec3;
   velocity?: Vec3;
 };
 
 export type { VirtualAxisId, VirtualAxisValues };
-export type VirtualAxisKind = MotionAxisKind;
-export type VirtualAxisMotion = { axis: VirtualAxisId; kind: VirtualAxisKind };
 
 export type TrajectoryPoint = Vec3;
 

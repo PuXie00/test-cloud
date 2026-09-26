@@ -41,6 +41,7 @@ import {
   type HoistLabelMode,
 } from "../hoist-label-mode";
 import { applyVisibility, DIMMED_VISIBILITY } from "./scene-object-dim";
+import { applyRuntimePivot, resetRuntimePivot } from "./runtime-pivot";
 
 export type ModelTemplateProvider = (id: string) => TransformNode | undefined;
 
@@ -166,7 +167,7 @@ export class SceneObject implements Disposable {
 
   applyRuntimeTransform(transform: RuntimeTransform): void {
     this.root.position.set(transform.position.x, transform.position.y, transform.position.z);
-    this.runtimePivot.rotation.set(transform.rotation.x, transform.rotation.y, transform.rotation.z);
+    applyRuntimePivot(this.runtimePivot, transform);
   }
 
   getWorldBounds(): WorldBounds {
@@ -359,7 +360,7 @@ export class SceneObject implements Disposable {
     this.visual.position.set(0, 0, 0);
     this.root.position.set(config.position.x, config.position.y, config.position.z);
     this.root.rotation.set(config.rotation.x, config.rotation.y, config.rotation.z);
-    this.runtimePivot.rotation.set(0, 0, 0);
+    resetRuntimePivot(this.runtimePivot);
   }
 
   private forEachStandardMaterial(fn: (material: StandardMaterial) => void): void {
