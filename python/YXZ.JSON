@@ -1,0 +1,729 @@
+{
+  "current_model_positions": [
+    {
+      "model_id": 1,
+      "current_HPY": [120,0,0]
+    },
+    {
+      "model_id": 2,
+      "current_HPY": [1100,2,0]
+    },
+    {
+      "model_id": 3,
+      "current_HPY": [1050,1,0]
+    },
+    {
+      "model_id": 4,
+      "current_HPY": [1080,1,-1]
+    }
+  ],
+  "cal_start_time_config": {
+    "time_unit": "ms",
+    "coarse_step_ms": 100,
+    "fine_step_ms": 10,
+    "models": [
+      {
+        "model_id": 1,
+        "active_axes": ["H"],
+        "default_velocity_HPY": [200,0,0],
+        "default_acceleration_HPY": [100,0,0],
+        "default_deceleration_HPY": [100,0,0],
+        "max_velocity_HPY": [300,0,0],
+        "max_acceleration_HPY": [150,0,0],
+        "max_deceleration_HPY": [150,0,0]
+      },
+      {
+        "model_id": 2,
+        "active_axes": ["H","P"],
+        "default_velocity_HPY": [200,5,0],
+        "default_acceleration_HPY": [100,2,0],
+        "default_deceleration_HPY": [100,2,0],
+        "max_velocity_HPY": [300,8,0],
+        "max_acceleration_HPY": [150,3,0],
+        "max_deceleration_HPY": [150,3,0]
+      },
+      {
+        "model_id": 3,
+        "active_axes": ["H","P","Y"],
+        "default_velocity_HPY": [200,5,5],
+        "default_acceleration_HPY": [100,2,2],
+        "default_deceleration_HPY": [100,2,2],
+        "max_velocity_HPY": [300,8,8],
+        "max_acceleration_HPY": [150,3,3],
+        "max_deceleration_HPY": [150,3,3]
+      },
+      {
+        "model_id": 4,
+        "active_axes": ["H","P","Y"],
+        "default_velocity_HPY": [200,5,5],
+        "default_acceleration_HPY": [100,2,2],
+        "default_deceleration_HPY": [100,2,2],
+        "max_velocity_HPY": [300,8,8],
+        "max_acceleration_HPY": [150,3,3],
+        "max_deceleration_HPY": [150,3,3]
+      }
+    ]
+  },
+  "base_action": {
+    "action_id": 1,
+    "model_count": 4,
+    "models": [
+      {
+        "index": 1,
+        "model_type": 1,
+        "loop": true,
+        "segment_count": 4,
+        "total_frames": 16000,
+        "loop_start_frame": 0,
+        "loop_end_frame": 16000,
+        "max_motor_velocity": 500,
+        "velocity": [200,0,0],
+        "acceleration": [100,0,0],
+        "deceleration": [100,0,0],
+        "motor_num": 1,
+        "current_frame": 0,
+        "current_segment_id": 0,
+        "segments": [
+          {
+            "segment_id": 0,
+            "start_frame": 0,
+            "end_frame": 4000,
+            "start_HPY": [0,0,0],
+            "target_HPY": [500,0,0],
+            "a": [0,0,0],
+            "b": [0,0,0],
+            "c": [0.9375,0,0],
+            "d": [-0.015625,0,0],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 1,
+            "start_frame": 4000,
+            "end_frame": 7500,
+            "start_HPY": [500,0,0],
+            "target_HPY": [1000,0,0],
+            "a": [500,0,0],
+            "b": [0,0,0],
+            "c": [1.224489795918,0,0],
+            "d": [-0.02332361516,0,0],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 2,
+            "start_frame": 7500,
+            "end_frame": 12000,
+            "start_HPY": [1000,0,0],
+            "target_HPY": [500,0,0],
+            "a": [1000,0,0],
+            "b": [0,0,0],
+            "c": [-0.740740740741,0,0],
+            "d": [0.0109739369,0,0],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 3,
+            "start_frame": 12000,
+            "end_frame": 16000,
+            "start_HPY": [500,0,0],
+            "target_HPY": [0,0,0],
+            "a": [500,0,0],
+            "b": [0,0,0],
+            "c": [-0.9375,0,0],
+            "d": [0.015625,0,0],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          }
+        ]
+      },
+      {
+        "index": 2,
+        "model_type": 2,
+        "loop": true,
+        "segment_count": 4,
+        "total_frames": 23000,
+        "loop_start_frame": 0,
+        "loop_end_frame": 23000,
+        "max_motor_velocity": 500,
+        "velocity": [200,5,0],
+        "acceleration": [100,2,0],
+        "deceleration": [100,2,0],
+        "motor_num": 2,
+        "BaseHight1": 100,
+        "BaseHight2": 0,
+        "lLenth_inside": 2000,
+        "maxheight": 8000,
+        "current_frame": 0,
+        "current_segment_id": 0,
+        "segments": [
+          {
+            "segment_id": 0,
+            "start_frame": 0,
+            "end_frame": 6000,
+            "start_HPY": [1000,0,0],
+            "target_HPY": [1800,20,0],
+            "a": [1000,0,0],
+            "b": [0,0,0],
+            "c": [0.666666666667,0.016666666667,0],
+            "d": [-0.007407407407,-0.000185185185,0],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 1,
+            "start_frame": 6000,
+            "end_frame": 11000,
+            "start_HPY": [1800,20,0],
+            "target_HPY": [2200,-10,0],
+            "a": [1800,20,0],
+            "b": [0,0,0],
+            "c": [0.48,-0.036,0],
+            "d": [-0.0064,0.00048,0],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 2,
+            "start_frame": 11000,
+            "end_frame": 17500,
+            "start_HPY": [2200,-10,0],
+            "target_HPY": [1500,15,0],
+            "a": [2200,-10,0],
+            "b": [0,0,0],
+            "c": [-0.497041420118,0.01775147929,0],
+            "d": [0.005097860719,-0.000182066454,0],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 3,
+            "start_frame": 17500,
+            "end_frame": 23000,
+            "start_HPY": [1500,15,0],
+            "target_HPY": [1000,0,0],
+            "a": [1500,15,0],
+            "b": [0,0,0],
+            "c": [-0.495867768595,-0.014876033058,0],
+            "d": [0.006010518407,0.000180315552,0],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          }
+        ]
+      },
+      {
+        "index": 3,
+        "model_type": 4,
+        "loop": true,
+        "segment_count": 4,
+        "total_frames": 23000,
+        "loop_start_frame": 0,
+        "loop_end_frame": 23000,
+        "max_motor_velocity": 500,
+        "velocity": [200,5,5],
+        "acceleration": [100,2,2],
+        "deceleration": [100,2,2],
+        "motor_num": 4,
+        "BaseHight1": 100,
+        "BaseHight2": 0,
+        "lLenth_inside": 2000,
+        "wLenth_inside": 1800,
+        "maxheight": 8000,
+        "current_frame": 0,
+        "current_segment_id": 0,
+        "segments": [
+          {
+            "segment_id": 0,
+            "start_frame": 0,
+            "end_frame": 6000,
+            "start_HPY": [1000,0,0],
+            "target_HPY": [1800,20,0],
+            "a": [1000,0,0],
+            "b": [0,0,0],
+            "c": [0.666666666667,0.016666666667,0],
+            "d": [-0.007407407407,-0.000185185185,0],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 1,
+            "start_frame": 6000,
+            "end_frame": 11500,
+            "start_HPY": [1800,20,0],
+            "target_HPY": [2200,20,15],
+            "a": [1800,20,0],
+            "b": [0,0,0],
+            "c": [0.396694214876,0,0.014876033058],
+            "d": [-0.004808414726,0,-0.000180315552],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 2,
+            "start_frame": 11500,
+            "end_frame": 17500,
+            "start_HPY": [2200,20,15],
+            "target_HPY": [1600,0,15],
+            "a": [2200,20,15],
+            "b": [0,0,0],
+            "c": [-0.5,-0.016666666667,0],
+            "d": [0.005555555556,0.000185185185,0],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 3,
+            "start_frame": 17500,
+            "end_frame": 23000,
+            "start_HPY": [1600,0,15],
+            "target_HPY": [1000,0,0],
+            "a": [1600,0,15],
+            "b": [0,0,0],
+            "c": [-0.595041322314,0,-0.014876033058],
+            "d": [0.007212622089,0,0.000180315552],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          }
+        ]
+      },
+      {
+        "index": 4,
+        "model_type": 8,
+        "loop": true,
+        "segment_count": 4,
+        "total_frames": 30000,
+        "loop_start_frame": 0,
+        "loop_end_frame": 30000,
+        "max_motor_velocity": 500,
+        "velocity": [200,5,5],
+        "acceleration": [100,2,2],
+        "deceleration": [100,2,2],
+        "motor_num": 8,
+        "Baseheight1": 100,
+        "Baseheight2": 0,
+        "maxheight": 8000,
+        "betainit": 0,
+        "point_init_pos": [
+          [2000,0,0],
+          [1414.21,1414.21,0],
+          [0,2000,0],
+          [-1414.21,1414.21,0],
+          [-2000,0,0],
+          [-1414.21,-1414.21,0],
+          [0,-2000,0],
+          [1414.21,-1414.21,0]
+        ],
+        "current_frame": 0,
+        "current_segment_id": 0,
+        "segments": [
+          {
+            "segment_id": 0,
+            "start_frame": 0,
+            "end_frame": 7000,
+            "start_HPY": [1000,0,0],
+            "target_HPY": [1800,15,-10],
+            "a": [1000,0,0],
+            "b": [0,0,0],
+            "c": [0.489795918367,0.009183673469,-0.00612244898],
+            "d": [-0.004664723032,-0.000087463557,0.000058309038],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 1,
+            "start_frame": 7000,
+            "end_frame": 15000,
+            "start_HPY": [1800,15,-10],
+            "target_HPY": [2300,-20,15],
+            "a": [1800,15,-10],
+            "b": [0,0,0],
+            "c": [0.234375,-0.01640625,0.01171875],
+            "d": [-0.001953125,0.00013671875,-0.00009765625],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 2,
+            "start_frame": 15000,
+            "end_frame": 23000,
+            "start_HPY": [2300,-20,15],
+            "target_HPY": [1600,10,20],
+            "a": [2300,-20,15],
+            "b": [0,0,0],
+            "c": [-0.328125,0.0140625,0.00234375],
+            "d": [0.002734375,-0.0001171875,-0.00001953125],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 3,
+            "start_frame": 23000,
+            "end_frame": 30000,
+            "start_HPY": [1600,10,20],
+            "target_HPY": [1000,0,0],
+            "a": [1600,10,20],
+            "b": [0,0,0],
+            "c": [-0.367346938776,-0.00612244898,-0.012244897959],
+            "d": [0.003498542274,0.000058309038,0.000116618076],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          }
+        ]
+      }
+    ]
+  },
+  "online_action": {
+    "action_id": 1,
+    "uses_base_motion_defaults": true,
+    "model_count": 4,
+    "models": [
+      {
+        "index": 1,
+        "model_type": 1,
+        "loop": true,
+        "segment_count": 4,
+        "total_frames": 16000,
+        "loop_start_frame": 0,
+        "loop_end_frame": 16000,
+        "max_motor_velocity": 500,
+        "motor_num": 1,
+        "current_frame": 0,
+        "current_segment_id": 0,
+        "segments": [
+          {
+            "segment_id": 0,
+            "start_frame": 0,
+            "end_frame": 4000,
+            "start_HPY": [0,0,0],
+            "target_HPY": [500,0,0],
+            "a": [0,0,0],
+            "b": [0,0,0],
+            "c": [0.9375,0,0],
+            "d": [-0.015625,0,0],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 1,
+            "start_frame": 4000,
+            "end_frame": 7500,
+            "start_HPY": [500,0,0],
+            "target_HPY": [1000,0,0],
+            "a": [500,0,0],
+            "b": [0,0,0],
+            "c": [1.224489795918,0,0],
+            "d": [-0.02332361516,0,0],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 2,
+            "start_frame": 7500,
+            "end_frame": 12000,
+            "start_HPY": [1000,0,0],
+            "target_HPY": [500,0,0],
+            "a": [1000,0,0],
+            "b": [0,0,0],
+            "c": [-0.740740740741,0,0],
+            "d": [0.0109739369,0,0],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 3,
+            "start_frame": 12000,
+            "end_frame": 16000,
+            "start_HPY": [500,0,0],
+            "target_HPY": [0,0,0],
+            "a": [500,0,0],
+            "b": [0,0,0],
+            "c": [-0.9375,0,0],
+            "d": [0.015625,0,0],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          }
+        ]
+      },
+      {
+        "index": 2,
+        "model_type": 2,
+        "loop": true,
+        "segment_count": 4,
+        "total_frames": 23000,
+        "loop_start_frame": 0,
+        "loop_end_frame": 23000,
+        "max_motor_velocity": 500,
+        "motor_num": 2,
+        "BaseHight1": 100,
+        "BaseHight2": 0,
+        "lLenth_inside": 2000,
+        "maxheight": 8000,
+        "current_frame": 0,
+        "current_segment_id": 0,
+        "segments": [
+          {
+            "segment_id": 0,
+            "start_frame": 0,
+            "end_frame": 6000,
+            "start_HPY": [1000,0,0],
+            "target_HPY": [1800,20,0],
+            "a": [1000,0,0],
+            "b": [0,0,0],
+            "c": [0.666666666667,0.016666666667,0],
+            "d": [-0.007407407407,-0.000185185185,0],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 1,
+            "start_frame": 6000,
+            "end_frame": 11000,
+            "start_HPY": [1800,20,0],
+            "target_HPY": [2200,-10,0],
+            "a": [1800,20,0],
+            "b": [0,0,0],
+            "c": [0.48,-0.036,0],
+            "d": [-0.0064,0.00048,0],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 2,
+            "start_frame": 11000,
+            "end_frame": 17500,
+            "start_HPY": [2200,-10,0],
+            "target_HPY": [1500,15,0],
+            "a": [2200,-10,0],
+            "b": [0,0,0],
+            "c": [-0.497041420118,0.01775147929,0],
+            "d": [0.005097860719,-0.000182066454,0],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 3,
+            "start_frame": 17500,
+            "end_frame": 23000,
+            "start_HPY": [1500,15,0],
+            "target_HPY": [1000,0,0],
+            "a": [1500,15,0],
+            "b": [0,0,0],
+            "c": [-0.495867768595,-0.014876033058,0],
+            "d": [0.006010518407,0.000180315552,0],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          }
+        ]
+      },
+      {
+        "index": 3,
+        "model_type": 4,
+        "loop": true,
+        "segment_count": 4,
+        "total_frames": 23000,
+        "loop_start_frame": 0,
+        "loop_end_frame": 23000,
+        "max_motor_velocity": 500,
+        "motor_num": 4,
+        "BaseHight1": 100,
+        "BaseHight2": 0,
+        "lLenth_inside": 2000,
+        "wLenth_inside": 1800,
+        "maxheight": 8000,
+        "current_frame": 0,
+        "current_segment_id": 0,
+        "segments": [
+          {
+            "segment_id": 0,
+            "start_frame": 0,
+            "end_frame": 6000,
+            "start_HPY": [1000,0,0],
+            "target_HPY": [1800,20,0],
+            "a": [1000,0,0],
+            "b": [0,0,0],
+            "c": [0.666666666667,0.016666666667,0],
+            "d": [-0.007407407407,-0.000185185185,0],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 1,
+            "start_frame": 6000,
+            "end_frame": 11500,
+            "start_HPY": [1800,20,0],
+            "target_HPY": [2200,20,15],
+            "a": [1800,20,0],
+            "b": [0,0,0],
+            "c": [0.396694214876,0,0.014876033058],
+            "d": [-0.004808414726,0,-0.000180315552],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 2,
+            "start_frame": 11500,
+            "end_frame": 17500,
+            "start_HPY": [2200,20,15],
+            "target_HPY": [1600,0,15],
+            "a": [2200,20,15],
+            "b": [0,0,0],
+            "c": [-0.5,-0.016666666667,0],
+            "d": [0.005555555556,0.000185185185,0],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 3,
+            "start_frame": 17500,
+            "end_frame": 23000,
+            "start_HPY": [1600,0,15],
+            "target_HPY": [1000,0,0],
+            "a": [1600,0,15],
+            "b": [0,0,0],
+            "c": [-0.595041322314,0,-0.014876033058],
+            "d": [0.007212622089,0,0.000180315552],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          }
+        ]
+      },
+      {
+        "index": 4,
+        "model_type": 8,
+        "loop": true,
+        "segment_count": 4,
+        "total_frames": 30000,
+        "loop_start_frame": 0,
+        "loop_end_frame": 30000,
+        "max_motor_velocity": 500,
+        "motor_num": 8,
+        "Baseheight1": 100,
+        "Baseheight2": 0,
+        "maxheight": 8000,
+        "betainit": 0,
+        "point_init_pos": [
+          [2000,0,0],
+          [1414.21,1414.21,0],
+          [0,2000,0],
+          [-1414.21,1414.21,0],
+          [-2000,0,0],
+          [-1414.21,-1414.21,0],
+          [0,-2000,0],
+          [1414.21,-1414.21,0]
+        ],
+        "current_frame": 0,
+        "current_segment_id": 0,
+        "segments": [
+          {
+            "segment_id": 0,
+            "start_frame": 0,
+            "end_frame": 7000,
+            "start_HPY": [1000,0,0],
+            "target_HPY": [1800,15,-10],
+            "a": [1000,0,0],
+            "b": [0,0,0],
+            "c": [0.489795918367,0.009183673469,-0.00612244898],
+            "d": [-0.004664723032,-0.000087463557,0.000058309038],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 1,
+            "start_frame": 7000,
+            "end_frame": 15000,
+            "start_HPY": [1800,15,-10],
+            "target_HPY": [2300,-20,15],
+            "a": [1800,15,-10],
+            "b": [0,0,0],
+            "c": [0.234375,-0.01640625,0.01171875],
+            "d": [-0.001953125,0.00013671875,-0.00009765625],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 2,
+            "start_frame": 15000,
+            "end_frame": 23000,
+            "start_HPY": [2300,-20,15],
+            "target_HPY": [1600,10,20],
+            "a": [2300,-20,15],
+            "b": [0,0,0],
+            "c": [-0.328125,0.0140625,0.00234375],
+            "d": [0.002734375,-0.0001171875,-0.00001953125],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          },
+          {
+            "segment_id": 3,
+            "start_frame": 23000,
+            "end_frame": 30000,
+            "start_HPY": [1600,10,20],
+            "target_HPY": [1000,0,0],
+            "a": [1600,10,20],
+            "b": [0,0,0],
+            "c": [-0.367346938776,-0.00612244898,-0.012244897959],
+            "d": [0.003498542274,0.000058309038,0.000116618076],
+            "e": [0,0,0],
+            "f": [0,0,0]
+          }
+        ]
+      }
+    ]
+  },
+  "command": {
+    "request_factor": 1,
+    "action_name": "base_action",
+    "reverse": false,
+    "loop_once": true,
+    "trajectory_run": false,
+    "nearest_start": true,
+    "use_specified_time": false,
+    "specified_time_ms": 0,
+    "stopped_time_ms": 300
+  },
+  "non_forced_speed_adjustment": {
+    "enabled": true,
+    "current_factor": 1.0,
+    "requested_factor": 1.2,
+    "click_base_frame_ms": 300,
+    "click_online_frame_ms": 300,
+    "current_cycle_elapsed_s": 0.3,
+    "loop_enabled": true,
+    "frame_rounding_ms": 1,
+    "model_states": [
+      {
+        "model_id": 1,
+        "current_segment_id": 0,
+        "current_position_HPY": [8.015625, 0.0, 0.0],
+        "current_velocity_HPY": [52.03125, 0.0, 0.0]
+      },
+      {
+        "model_id": 2,
+        "current_segment_id": 0,
+        "current_position_HPY": [1005.800000000014, 0.145000000008, 0.0],
+        "current_velocity_HPY": [38.00000000013, 0.95000000007, 0.0]
+      },
+      {
+        "model_id": 3,
+        "current_segment_id": 0,
+        "current_position_HPY": [1005.800000000014, 0.145000000008, 0.0],
+        "current_velocity_HPY": [38.00000000013, 0.95000000007, 0.0]
+      },
+      {
+        "model_id": 4,
+        "current_segment_id": 0,
+        "current_position_HPY": [1004.282215743439, 0.080291545182, -0.053527696794],
+        "current_velocity_HPY": [28.12827988338, 0.52740524775, -0.35160349854]
+      }
+    ]
+  },
+  "forced_speed_adjustment": {
+    "current_frame_ms": 300,
+    "state": {
+      "current_master_velocity_ms_per_s": null,
+      "master_acceleration_ms_per_s2": null,
+      "master_deceleration_ms_per_s2": null
+    }
+  }
+}
