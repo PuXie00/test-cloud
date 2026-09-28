@@ -9,6 +9,7 @@ describe("toSyncMoveStartPlan", () => {
       nearest: false,
       direction: 1,
       targetFrameMs: 0,
+      transitionSec: 1.632993162,
       members: [
         {
           objectId: 2,
@@ -40,6 +41,7 @@ describe("toSyncMoveStartPlan", () => {
       direction: true,
       nearest: false,
       targetFrameMs: 0,
+      transitionSec: 1632.993162,
       modelList: [
         {
           deviceId: 2,
@@ -58,6 +60,7 @@ describe("toSyncMoveStartPlan", () => {
       nearest: true,
       direction: -1,
       targetFrameMs: 4000,
+      transitionSec: 2.5,
       members: [
         { objectId: 7, axes: [] },
         {
@@ -80,6 +83,7 @@ describe("toSyncMoveStartPlan", () => {
     expect(plan.direction).toBe(false);
     expect(plan.nearest).toBe(true);
     expect(plan.targetFrameMs).toBe(4000);
+    expect(plan.transitionSec).toBe(2500);
     expect(plan.modelList).toEqual([
       { deviceId: 7, virtualAxis: [zeroAxis, zeroAxis, zeroAxis] },
       {
@@ -107,6 +111,7 @@ describe("toSyncMovePrepareItems", () => {
           nearest: true,
           direction: 1,
           targetFrameMs: 1040,
+          transitionSec: 4.4,
           members: [
             {
               objectId: 1,
@@ -136,6 +141,7 @@ describe("toSyncMovePrepareItems", () => {
         direction: true,
         nearest: true,
         targetFrameMs: 1040,
+        transitionSec: 4400,
         modelList: [
           {
             deviceId: 1,
