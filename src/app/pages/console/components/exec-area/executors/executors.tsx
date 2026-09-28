@@ -12,7 +12,7 @@ type ExecutorsProps = {
 };
 
 export const Executors = ({ onTriggerSequence }: ExecutorsProps) => {
-  const { faderSlots, setFaderValue, clearSlotReady } = useExecutorSlots();
+  const { faderSlots, setFaderValue, clearSlotReady, setSlotRunOptions } = useExecutorSlots();
   const { program, reorderItemInChapter, moveItemAcrossChapter, currentChapterId, currentPageIndex } =
     useProgram();
   const { currentProject } = useProject();
@@ -59,7 +59,11 @@ export const Executors = ({ onTriggerSequence }: ExecutorsProps) => {
                   repairMessage={repairMessage}
                   isPreviewing={previewSequenceId === slot.sequence?.id}
                   onPreviewToggle={() =>
-                    slot.sequence && togglePreview(slot.sequence.id, { faderPercent: slot.faderValue })
+                    slot.sequence &&
+                    togglePreview(slot.sequence.id, {
+                      faderPercent: slot.faderValue,
+                      ...slot.runOptions,
+                    })
                   }
                   onPreviewHoldStart={() =>
                     slot.sequence &&
@@ -67,11 +71,13 @@ export const Executors = ({ onTriggerSequence }: ExecutorsProps) => {
                       faderPercent: slot.faderValue,
                       autoplay: true,
                       holdMode: true,
+                      ...slot.runOptions,
                     })
                   }
                   onPreviewHoldEnd={stopPreview}
                   onGo={() => slot.sequence && onTriggerSequence(slot.index, slot.sequence.id)}
                   onCancelReady={() => clearSlotReady(slot.index)}
+                  onRunOptionsChange={(patch) => setSlotRunOptions(slot.index, patch)}
                   onFaderChange={(value) => setFaderValue(slot.index, value)}
                   onAssignFromDrag={handleAssignFromDrag(slot.index)}
                 />

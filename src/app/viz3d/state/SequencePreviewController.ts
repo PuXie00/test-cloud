@@ -8,7 +8,14 @@ import type { SceneObjectHandle } from "../objects/SceneObjectRegistry";
 import type { VirtualAxisValues, Viz3DColorMap } from "../types";
 import { previewPathPoints } from "./preview-path-points";
 
-export type SequencePreviewPath = { objectId: string; poses: VirtualAxisValues[] };
+export type SequencePreviewPath = {
+  objectId: string;
+  poses: VirtualAxisValues[];
+  /** 同一物体多条路径时区分；缺省用 objectId */
+  key?: string;
+  /** transition：就近/回起点的过渡段，与编程轨迹分色 */
+  tone?: "program" | "transition";
+};
 export type SequencePreviewEntries = { paths: SequencePreviewPath[] };
 
 /** Screen-space px. Thicker and opaque vs CreateLines (1px, looks washed-out). */
@@ -37,7 +44,8 @@ export class SequencePreviewController {
   }
 
   private syncPaths(paths: SequencePreviewPath[]): void {
-    const nextIds = new Set(paths.map((path) => path.objectId));
+    const keyOf = (path: SequencePreviewPath) => path.key ?? path.objectId;
+    const nextIds = new Set(paths.map(keyOf));
     for (const id of [...this.paths.keys()]) {
       if (nextIds.has(id)) continue;
       this.paths.get(id)?.dispose(false, true);
@@ -50,19 +58,21 @@ export class SequencePreviewController {
         (point) => new Vector3(point.x, point.y, point.z),
       );
       if (points.length < 2) continue;
-      const name = `viz3d-seq-preview-path-${path.objectId}`;
-      const existing = this.paths.get(path.objectId);
+      const key = keyOf(path);
+      const name = `viz3d-seq-preview-path-${key}`;
+      const existing = this.paths.get(key);
       if (existing) {
         existing.setPoints([points]);
         continue;
       }
+      const tone = path.tone === "transition" ? this.colors.secondary : this.colors.primary;
       const line = CreateGreasedLine(
         name,
         { points: [points], updatable: true },
         {
           width: PREVIEW_PATH_LINE_WIDTH,
           sizeAttenuation: true,
-          color: hexToColor3(this.colors.primary),
+          color: hexToColor3(tone),
           materialType: GreasedLineMeshMaterialType.MATERIAL_TYPE_SIMPLE,
           createAndAssignMaterial: true,
         },
@@ -70,7 +80,7 @@ export class SequencePreviewController {
       ) as GreasedLineMesh;
       line.isPickable = false;
       line.renderingGroupId = 1;
-      this.paths.set(path.objectId, line);
+      this.paths.set(key, line);
     }
   }
 }

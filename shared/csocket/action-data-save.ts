@@ -56,4 +56,6 @@ export type ActionDataSaveItem = {
   }>//plc需要的
   modelList:cCompiledModel[] // C++ 需要的
   IOBlockList: cCompiledEvent[]
+  /** 上位机算出的就近/回起点接入计划；主进程暂只打印，不进入下发报文 */
+  startPlan?: unknown
 }

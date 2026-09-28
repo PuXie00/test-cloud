@@ -6,7 +6,7 @@ import { formatVirtualAxesCompact } from "../components/action-builder/virtual-a
 import { useActionBuilder } from "../components/action-builder/use-action-builder";
 import { useConsoleNav } from "../hooks/use-console-nav";
 import { useSequencePreview } from "../hooks/use-sequence-preview";
-import { previewPosesAt } from "../hooks/sequence-preview";
+import { previewPosesAtCursor } from "../hooks/sequence-preview-timeline";
 import { useControlledObjects } from "../hooks/use-controlled-objects";
 import { useProjectStore } from "../hooks/use-project-store";
 import { collectActionPageDriveUnitLabels } from "./action-page-drive-unit-labels";
@@ -23,15 +23,18 @@ export const Viz3DVirtualAxisLabelSync = () => {
   const { objects } = useProjectStore();
   const display = useSessionDisplayLengthUnit();
   const poses = useActionPreviewPoses();
-  const { sequenceId, cursorMs, resolved } = useSequencePreview();
+  const { sequenceId, cursorMs, resolved, timeline } = useSequencePreview();
   const labelledIdsRef = useRef(new Set<string>());
 
   const controlPreviewPoses = useMemo(
     () =>
-      (activeNav === "control" || activeNav === "sequences") && sequenceId !== null && resolved
-        ? previewPosesAt(resolved, cursorMs)
+      (activeNav === "control" || activeNav === "sequences") &&
+      sequenceId !== null &&
+      resolved &&
+      timeline
+        ? previewPosesAtCursor(resolved, timeline, cursorMs)
         : null,
-    [activeNav, sequenceId, resolved, cursorMs],
+    [activeNav, sequenceId, resolved, timeline, cursorMs],
   );
 
   const memberIds = useMemo(

@@ -3,7 +3,7 @@ import { ArrowLeftRight, Loader2, Locate, Play, Plus, Shield } from "lucide-reac
 import { Popover, PopoverContent, PopoverTrigger } from "@/app/components/ui/popover";
 import { cn } from "@/app/components/ui/utils";
 import { useConsoleMode } from "../../../hooks/use-console-mode";
-import type { FaderSlotState } from "../../../hooks/use-executor-slots";
+import type { FaderSlotState, SlotRunOptions } from "../../../hooks/use-executor-slots";
 import { VerticalFader } from "./vertical-fader";
 import { ForcedTrajectoryBadge, isForcedTrajectory } from "../../forced-trajectory-badge";
 import { LoopBadge } from "../../loop-badge";
@@ -20,6 +20,7 @@ type FaderSlotProps = {
   onPreviewHoldEnd: () => void;
   onGo: () => void;
   onCancelReady?: () => void;
+  onRunOptionsChange?: (patch: Partial<SlotRunOptions>) => void;
   onFaderChange: (value: number) => void;
   onAssignFromDrag: (payload: { chapterId: string; index: number; kind: "sequence" }) => void;
 };
@@ -33,14 +34,14 @@ export const FaderSlot = ({
   onPreviewHoldEnd,
   onGo,
   onCancelReady,
+  onRunOptionsChange,
   onFaderChange,
   onAssignFromDrag,
 }: FaderSlotProps) => {
   const { mode } = useConsoleMode();
   const [marksOpen, setMarksOpen] = useState(false);
   const [safetyGroupOn, setSafetyGroupOn] = useState(true);
-  const [nearestOn, setNearestOn] = useState(false);
-  const [reverseOn, setReverseOn] = useState(false);
+  const { nearest: nearestOn, reverse: reverseOn } = slot.runOptions;
   const sequenceId = slot.sequence?.id;
   const isEmpty = !slot.sequence;
   const isForced = isForcedTrajectory(slot.sequence?.trajectoryMode);
@@ -68,8 +69,6 @@ export const FaderSlot = ({
 
   useEffect(() => {
     setSafetyGroupOn(true);
-    setNearestOn(false);
-    setReverseOn(false);
     setMarksOpen(false);
   }, [sequenceId]);
 
@@ -228,7 +227,7 @@ export const FaderSlot = ({
               <button
                 type="button"
                 disabled={!canSetRunOptions}
-                onClick={() => setNearestOn((current) => !current)}
+                onClick={() => onRunOptionsChange?.({ nearest: !nearestOn })}
                 className="inline-flex h-8 items-center justify-center rounded-sm bg-input-background text-body-sm text-foreground hover:bg-accent disabled:opacity-40"
               >
                 {nearestOn ? "关闭就近" : "开启就近"}
@@ -236,7 +235,7 @@ export const FaderSlot = ({
               <button
                 type="button"
                 disabled={!canSetRunOptions}
-                onClick={() => setReverseOn((current) => !current)}
+                onClick={() => onRunOptionsChange?.({ reverse: !reverseOn })}
                 className="inline-flex h-8 items-center justify-center rounded-sm bg-input-background text-body-sm text-foreground hover:bg-accent disabled:opacity-40"
               >
                 {reverseOn ? "关闭反向" : "开启反向"}

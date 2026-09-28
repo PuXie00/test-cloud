@@ -5,6 +5,7 @@ import {
   compilePlcAction,
   type PlcCompileContext,
 } from "@/app/project/action-sequence/compile-plc-action";
+import type { NearestStartPlan } from "@/app/project/action-sequence/nearest-start";
 import { toActionDataSaveItems } from "@/app/project/action-sequence/plc-action-payload";
 import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
 import { isSequenceLooping } from "@/app/project/action-sequence/sequence-loop";
@@ -127,6 +128,7 @@ export const downloadSequence = async (
   sequence: ActionSequenceConfig,
   context: SequenceExecutionContext,
   transport: SequenceExecutionTransport,
+  startPlan?: NearestStartPlan | null,
 ): Promise<DownloadedSequence> => {
   const issues = validateActionSequence(sequence, toValidationContext(context));
   if (hasBlockingSequenceIssues(issues)) {
@@ -141,9 +143,8 @@ export const downloadSequence = async (
     return { ok: false, reason: "validation", issues: [COMPILE_FAILURE_ISSUE] };
   }
 
-  await transport.saveAction(
-    toActionDataSaveItems(compiled, sequence.id, sequence.trajectoryMode),
-  );
+  const items = toActionDataSaveItems(compiled, sequence.id, sequence.trajectoryMode);
+  await transport.saveAction(startPlan ? items.map((item) => ({ ...item, startPlan })) : items);
   return {
     ok: true,
     actionId: sequence.id,
@@ -329,6 +330,7 @@ const lookupAuthoredSequence = (
 export const readySequence = async (args: {
   document: ProjectDocument;
   sequenceId: number;
+  startPlan?: NearestStartPlan | null;
   transport?: SequenceExecutionTransport;
 }): Promise<LocalSequenceReadyResult> => {
   const found = lookupAuthoredSequence(args.document, args.sequenceId);
@@ -340,6 +342,7 @@ export const readySequence = async (args: {
       found.sequence,
       sequenceExecutionContextFromDocument(args.document),
       transport,
+      args.startPlan,
     );
     if (!downloaded.ok) {
       return { ok: false, toast: "warning", message: "动作序列校验失败，无法下载" };
