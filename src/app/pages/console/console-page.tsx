@@ -206,10 +206,10 @@ const ConsoleInner = () => {
               <Viz3DMotorSelectionSync />
               <Viz3DConsoleNavSync />
               <Viz3DTelemetrySync />
+              <Viz3DSequencePreviewSync />
               <Viz3DActionPreviewSync />
               <Viz3DVirtualAxisLabelSync />
               <Viz3DGoShadowSync />
-              <Viz3DSequencePreviewSync />
               <Viz3DMembershipDimSync />
               <Viz3DTransformSync />
               <Viz3DSelectionSync />

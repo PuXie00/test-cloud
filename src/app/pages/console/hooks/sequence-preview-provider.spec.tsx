@@ -239,7 +239,7 @@ describe("SequencePreviewProvider", () => {
     expect(result.current.sequenceId).toBeNull();
   });
 
-  it("stops preview when nav leaves control", () => {
+  it("keeps preview on the sequences page and stops when leaving both pages", () => {
     const { result, rerender } = renderHook(() => useSequencePreview(), {
       wrapper: SequencePreviewProvider,
     });
@@ -251,7 +251,10 @@ describe("SequencePreviewProvider", () => {
 
     navState.current.activeNav = "sequences";
     rerender();
+    expect(result.current.sequenceId).toBe(1);
 
+    navState.current.activeNav = "devices";
+    rerender();
     expect(result.current.sequenceId).toBeNull();
   });
 });

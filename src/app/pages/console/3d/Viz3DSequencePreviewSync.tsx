@@ -34,7 +34,12 @@ export const Viz3DSequencePreviewSync = () => {
   );
 
   useEffect(() => {
-    if (activeNav !== "control" || sequenceId === null || !resolved || !paths) {
+    const previewing =
+      (activeNav === "control" || activeNav === "sequences") &&
+      sequenceId !== null &&
+      resolved !== null &&
+      paths !== null;
+    if (!previewing || !resolved || !paths) {
       engine.clearSequencePreview();
       restoreLivePoses(previewedIdsRef.current);
       previewedIdsRef.current = [];

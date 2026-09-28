@@ -30,7 +30,8 @@ const ControlProgramPanel = ({ className }: { className?: string }) => {
   } = useProgram();
   const { clearSelection } = useSelection();
   const { currentProject } = useProject();
-  const { sequenceId: previewSequenceId, togglePreview } = useSequencePreview();
+  const { sequenceId: previewSequenceId, togglePreview, startPreview, stopPreview } =
+    useSequencePreview();
   const document = currentProject?.document;
   const programRepairIssues = document ? getProgramRepairIssues(document, program.id) : [];
   const programRepairWarning =
@@ -81,6 +82,10 @@ const ControlProgramPanel = ({ className }: { className?: string }) => {
               onSelectPage={(pageIndex) => handleSelectPage(chapter.id, pageIndex)}
               onItemDragStart={handleItemDragStart}
               onClickItem={(item) => togglePreview(item.sequence.id)}
+              onPreviewHoldStart={(item) =>
+                startPreview(item.sequence.id, { autoplay: true, holdMode: true })
+              }
+              onPreviewHoldEnd={stopPreview}
               activeSequenceId={previewSequenceId}
             />
           ))

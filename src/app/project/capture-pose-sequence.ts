@@ -1,10 +1,9 @@
 import { nextId } from "@/app/pages/console/components/action-builder/action-builder-ops";
 import type { ActionSequenceConfig, ModelPose, TimelineBlock } from "./action-sequence/types";
 
-export const CAPTURED_SEQUENCE_NAME = "新建动作序列";
-
 export const buildCapturedPoseSequence = (args: {
   id: number;
+  name: string;
   objectIds: readonly number[];
   poseForObject: (objectId: number) => ModelPose | null;
 }): ActionSequenceConfig | null => {
@@ -23,7 +22,7 @@ export const buildCapturedPoseSequence = (args: {
   if (blocks.length === 0) return null;
   return {
     id: args.id,
-    name: CAPTURED_SEQUENCE_NAME,
+    name: args.name,
     trajectoryMode: false,
     loop: false,
     blocks,

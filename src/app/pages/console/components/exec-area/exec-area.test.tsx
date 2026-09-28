@@ -1562,22 +1562,17 @@ describe("program panel launch guards", () => {
     expect(togglePreviewMock).toHaveBeenCalledWith(15);
   });
 
-  it("action-builder ProgramPanel blocks handleLaunch for unrepaired items", async () => {
+  it("action-builder ProgramPanel previews instead of launching a task", () => {
     render(withMode(<ProgramPanel variant="authoring" />));
     expect(
       screen.getByLabelText(/节目引用空动作序列「14」，待修复/),
     ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /运行 / })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "运行 空序列" }));
+    fireEvent.click(screen.getByText("正常序列"));
+    expect(togglePreviewMock).toHaveBeenCalledWith(15);
     expect(launchMock).not.toHaveBeenCalled();
-    expect(toastWarning).toHaveBeenCalled();
-
-    toastWarning.mockClear();
-    fireEvent.click(screen.getByRole("button", { name: "运行 正常序列" }));
-    await waitFor(() => {
-      expect(launchMock).toHaveBeenCalledTimes(1);
-    });
-    expect(toastWarning).not.toHaveBeenCalled();
+    expect(startLocalAuthoredSequenceMock).not.toHaveBeenCalled();
   });
 });
 

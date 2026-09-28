@@ -18,6 +18,8 @@ type ChapterSectionProps = {
   ) => (event: React.DragEvent) => void;
   onDoubleClickItem?: (item: ChapterItem) => void;
   onClickItem?: (item: ChapterItem) => void;
+  onPreviewHoldStart?: (item: ChapterItem) => void;
+  onPreviewHoldEnd?: () => void;
   activeSequenceId?: number | null;
 };
 
@@ -30,6 +32,8 @@ export const ChapterSection = ({
   onItemDragStart,
   onDoubleClickItem,
   onClickItem,
+  onPreviewHoldStart,
+  onPreviewHoldEnd,
   activeSequenceId,
 }: ChapterSectionProps) => {
   const [expanded, setExpanded] = useState(isCurrent);
@@ -95,6 +99,8 @@ export const ChapterSection = ({
               onItemDragStart={onItemDragStart}
               onDoubleClickItem={onDoubleClickItem}
               onClickItem={onClickItem}
+              onPreviewHoldStart={onPreviewHoldStart}
+              onPreviewHoldEnd={onPreviewHoldEnd}
               activeSequenceId={activeSequenceId}
               itemIndexOffset={pageIndex * PROGRAM_SLOTS_PER_PAGE}
             />

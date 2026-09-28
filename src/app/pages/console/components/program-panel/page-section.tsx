@@ -20,6 +20,8 @@ type PageSectionProps = {
   ) => (event: React.DragEvent) => void;
   onDoubleClickItem?: (item: ChapterItem) => void;
   onClickItem?: (item: ChapterItem) => void;
+  onPreviewHoldStart?: (item: ChapterItem) => void;
+  onPreviewHoldEnd?: () => void;
   activeSequenceId?: number | null;
   itemIndexOffset: number;
 };
@@ -34,6 +36,8 @@ export const PageSection = ({
   onItemDragStart,
   onDoubleClickItem,
   onClickItem,
+  onPreviewHoldStart,
+  onPreviewHoldEnd,
   activeSequenceId,
   itemIndexOffset,
 }: PageSectionProps) => {
@@ -74,7 +78,6 @@ export const PageSection = ({
               <ChapterItemRow
                 key={item.sequence.id}
                 item={item}
-                slotLabel={`F${idx + 1}`}
                 isActive={item.sequence.id === activeSequenceId}
                 hasWarning={Boolean(issue)}
                 warningMessage={issue?.message}
@@ -83,6 +86,10 @@ export const PageSection = ({
                 onDragStart={onItemDragStart(chapterId, item, itemIndexOffset + idx)}
                 onClick={() => onClickItem?.(item)}
                 onDoubleClick={() => onDoubleClickItem?.(item)}
+                onPreviewHoldStart={
+                  onPreviewHoldStart ? () => onPreviewHoldStart(item) : undefined
+                }
+                onPreviewHoldEnd={onPreviewHoldEnd}
               />
             );
           })}

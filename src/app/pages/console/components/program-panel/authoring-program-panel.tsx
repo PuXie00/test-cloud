@@ -1,16 +1,11 @@
 import { useMemo, useState, type Dispatch, type DragEvent, type SetStateAction } from "react";
 import { ChevronDown, ChevronRight, Plus } from "lucide-react";
-import { toast } from "sonner";
 import { PanelHeader } from "@/app/components/ics/panel-header";
 import { cn } from "@/app/components/ui/utils";
 import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
-import {
-  getProgramRepairIssues,
-  resolveMotionLaunchBlock,
-} from "@/app/project/project-motion-readiness";
+import { getProgramRepairIssues } from "@/app/project/project-motion-readiness";
 import { useProject } from "@/app/project/use-project";
-import { useExecCards } from "../../hooks/use-exec-cards";
-import { startLocalAuthoredSequence } from "../../hooks/sequence-execution";
+import { useSequencePreview } from "../../hooks/use-sequence-preview";
 import type { ProgramItemInput } from "../action-builder/action-builder-context-types";
 import {
   isLibraryDrag,
@@ -27,7 +22,13 @@ import { ProgramPageHeader } from "./program-page-header";
 import { ProgramSequenceRow } from "./program-sequence-row";
 import { programPageCount } from "./program-utils";
 
-type ItemMeta = { kind: "sequence"; refId: number; name: string; durationMs: number | null };
+type ItemMeta = {
+  kind: "sequence";
+  refId: number;
+  name: string;
+  durationMs: number | null;
+  loop: boolean;
+};
 
 type AuthoredChapterSectionProps = {
   chapter: ProgramNode;
@@ -35,7 +36,10 @@ type AuthoredChapterSectionProps = {
   onInsert: (chapterId: string, item: ProgramItemInput, index?: number) => void;
   onRemove: (chapterId: string, index: number) => void;
   onMove: (chapterId: string, fromIndex: number, toIndex: number) => void;
-  onLaunch: (meta: ItemMeta) => void;
+  previewSequenceId: number | null;
+  onPreview: (sequenceId: number) => void;
+  onPreviewHoldStart: (sequenceId: number) => void;
+  onPreviewHoldEnd: () => void;
 };
 
 const AuthoredPageSection = ({
@@ -49,7 +53,10 @@ const AuthoredPageSection = ({
   acceptDrag,
   setDragOverIndex,
   handleDropAt,
-  onLaunch,
+  previewSequenceId,
+  onPreview,
+  onPreviewHoldStart,
+  onPreviewHoldEnd,
   onRemove,
 }: {
   chapterId: string;
@@ -62,7 +69,10 @@ const AuthoredPageSection = ({
   acceptDrag: (event: DragEvent) => boolean;
   setDragOverIndex: Dispatch<SetStateAction<number | null>>;
   handleDropAt: (index: number) => (event: DragEvent) => void;
-  onLaunch: (meta: ItemMeta) => void;
+  previewSequenceId: number | null;
+  onPreview: (sequenceId: number) => void;
+  onPreviewHoldStart: (sequenceId: number) => void;
+  onPreviewHoldEnd: () => void;
   onRemove: (chapterId: string, index: number) => void;
 }) => {
   const [expanded, setExpanded] = useState(true);
@@ -93,9 +103,11 @@ const AuthoredPageSection = ({
               durationLabel={
                 meta && meta.durationMs !== null ? formatTime(meta.durationMs) : null
               }
+              loop={meta?.loop === true}
               draggable
               dropActive={dragOverIndex === index}
               striped={pageItemIndex % 2 !== 0}
+              ariaSelected={meta?.refId === previewSequenceId}
               onDragStart={(event) =>
                 writeProgramItemDrag(event.dataTransfer, { chapterId, index })
               }
@@ -106,10 +118,11 @@ const AuthoredPageSection = ({
                 setDragOverIndex((current) => (current === index ? null : current))
               }
               onDrop={handleDropAt(index)}
-              onLaunch={() => {
-                if (meta) onLaunch(meta);
+              onClick={() => {
+                if (meta) onPreview(meta.refId);
               }}
-              launchDisabled={!meta}
+              onPreviewHoldStart={meta ? () => onPreviewHoldStart(meta.refId) : undefined}
+              onPreviewHoldEnd={onPreviewHoldEnd}
               onRemove={() => onRemove(chapterId, index)}
             />
           );
@@ -124,7 +137,10 @@ const AuthoredChapterSection = ({
   onInsert,
   onRemove,
   onMove,
-  onLaunch,
+  previewSequenceId,
+  onPreview,
+  onPreviewHoldStart,
+  onPreviewHoldEnd,
 }: AuthoredChapterSectionProps) => {
   const [expanded, setExpanded] = useState(true);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -201,7 +217,10 @@ const AuthoredChapterSection = ({
               acceptDrag={acceptDrag}
               setDragOverIndex={setDragOverIndex}
               handleDropAt={handleDropAt}
-              onLaunch={onLaunch}
+              previewSequenceId={previewSequenceId}
+              onPreview={onPreview}
+              onPreviewHoldStart={onPreviewHoldStart}
+              onPreviewHoldEnd={onPreviewHoldEnd}
               onRemove={onRemove}
             />
           ))}
@@ -240,7 +259,8 @@ export const AuthoringProgramPanel = ({ className }: AuthoringProgramPanelProps)
     handleProgramItemRemove,
     handleProgramItemMove,
   } = useActionBuilder();
-  const { launch } = useExecCards();
+  const { sequenceId: previewSequenceId, togglePreview, startPreview, stopPreview } =
+    useSequencePreview();
   const { currentProject } = useProject();
   const document = currentProject?.document;
 
@@ -258,39 +278,11 @@ export const AuthoringProgramPanel = ({ className }: AuthoringProgramPanelProps)
         refId: sequence.id,
         name: sequence.name,
         durationMs,
+        loop: sequence.loop === true,
       });
     }
     return map;
   }, [sequences]);
-
-  const handleLaunch = (meta: ItemMeta) => {
-    const issue = resolveMotionLaunchBlock(document, meta.kind, meta.refId);
-    if (issue) {
-      toast.warning(issue.message);
-      return;
-    }
-    if (!document) return;
-    void (async () => {
-      const started = await startLocalAuthoredSequence({
-        document,
-        sequenceId: meta.refId,
-      });
-      if (!started.ok) {
-        if (started.toast === "warning") toast.warning(started.message);
-        else toast.error(started.message);
-        return;
-      }
-      launch({
-        kind: "sequence",
-        name: started.name,
-        durationMs: null,
-        source: { kind: "program" },
-        speedPercent: started.speedPercent,
-        sequenceId: meta.refId,
-        sequenceHandle: started.sequenceHandle,
-      });
-    })();
-  };
 
   return (
     <div className={cn("flex min-h-0 flex-1 flex-col", className)}>
@@ -351,7 +343,12 @@ export const AuthoringProgramPanel = ({ className }: AuthoringProgramPanelProps)
                     onInsert={handleProgramItemInsert}
                     onRemove={handleProgramItemRemove}
                     onMove={handleProgramItemMove}
-                    onLaunch={handleLaunch}
+                    previewSequenceId={previewSequenceId}
+                    onPreview={togglePreview}
+                    onPreviewHoldStart={(sequenceId) =>
+                      startPreview(sequenceId, { autoplay: true, holdMode: true })
+                    }
+                    onPreviewHoldEnd={stopPreview}
                   />
                 ))}
             </div>

@@ -28,7 +28,7 @@ export const Viz3DVirtualAxisLabelSync = () => {
 
   const controlPreviewPoses = useMemo(
     () =>
-      activeNav === "control" && sequenceId !== null && resolved
+      (activeNav === "control" || activeNav === "sequences") && sequenceId !== null && resolved
         ? previewPosesAt(resolved, cursorMs)
         : null,
     [activeNav, sequenceId, resolved, cursorMs],
@@ -59,12 +59,12 @@ export const Viz3DVirtualAxisLabelSync = () => {
       labelledIdsRef.current = nextIds;
     };
 
-    if (activeNav === "sequences") {
+    if (activeNav === "sequences" && !controlPreviewPoses) {
       applyLabels(collectActionPageDriveUnitLabels(poses, objects, display, memberIds));
       return;
     }
 
-    if (activeNav !== "control") {
+    if (activeNav !== "control" && !(activeNav === "sequences" && controlPreviewPoses)) {
       for (const id of labelledIdsRef.current) engine.showDriveUnitLabel(id, null);
       labelledIdsRef.current.clear();
       return;

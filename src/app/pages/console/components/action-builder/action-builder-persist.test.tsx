@@ -7,6 +7,7 @@ import {
   installMemoryProjectAPI,
   uninstallMemoryProjectAPI,
 } from "@/app/project/install-memory-project-api";
+import { nextNewSequenceName } from "@/app/project/action-sequence/sequence-name";
 import { GZ_2025_RECORD } from "@/app/project/test-fixtures";
 import { ActionBuilderProvider } from "./action-builder-context";
 import { useActionBuilder } from "./use-action-builder";
@@ -470,8 +471,13 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
     const created = document.motion.actionSequences.find(
       (sequence) => !beforeIds.has(sequence.id),
     );
+    const expectedName = nextNewSequenceName(
+      document.motion.actionSequences
+        .filter((sequence) => beforeIds.has(sequence.id))
+        .map((sequence) => sequence.name),
+    );
     expect(created).toMatchObject({
-      name: "新建动作序列",
+      name: expectedName,
       trajectoryMode: false,
       loop: false,
       blocks: [],
@@ -486,7 +492,7 @@ describe("ActionBuilderProvider / ProgramProvider document persist", () => {
       );
     expect(programItem).toMatchObject({
       kind: "sequence",
-      sequence: { id: created!.id, name: "新建动作序列" },
+      sequence: { id: created!.id, name: expectedName },
     });
     expect(
       document.motion.programs.some((program) =>

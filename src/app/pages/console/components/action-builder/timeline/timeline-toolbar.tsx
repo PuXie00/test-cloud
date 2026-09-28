@@ -1,11 +1,12 @@
 import type { ButtonHTMLAttributes, ElementType } from "react";
-import { Minus, Pause, Play, Plus, RotateCcw, Save, Trash2 } from "lucide-react";
+import { Minus, Pause, Play, Plus, Repeat, RotateCcw, Route, Save, Trash2 } from "lucide-react";
 import { Switch } from "@/app/components/ui/switch";
 import { cn } from "@/app/components/ui/utils";
 import type { TrajectoryMode } from "@shared/action-sequence";
 
 type TimelineToolbarProps = {
   sequenceName?: string;
+  onRename?: () => void;
   trajectoryMode?: TrajectoryMode;
   onTrajectoryModeChange?: (mode: TrajectoryMode) => void;
   loop?: boolean;
@@ -52,6 +53,7 @@ const ToolbarIcon = ({
 
 export const TimelineToolbar = ({
   sequenceName,
+  onRename,
   trajectoryMode,
   onTrajectoryModeChange,
   loop = false,
@@ -77,9 +79,15 @@ export const TimelineToolbar = ({
   return (
     <div className="flex h-9 shrink-0 items-center gap-2 bg-muted px-2">
     {sequenceName ? (
-      <span className="max-w-45 truncate text-body-sm font-medium text-foreground">
+      <button
+        type="button"
+        aria-label="修改序列名"
+        title="修改序列名"
+        onClick={onRename}
+        className="max-w-45 truncate rounded-sm px-1 text-body-sm font-medium text-foreground hover:bg-accent"
+      >
         {sequenceName}
-      </span>
+      </button>
     ) : null}
 
     {onPlayToggle ? (
@@ -95,6 +103,7 @@ export const TimelineToolbar = ({
     {trajectoryMode !== undefined && onTrajectoryModeChange ? (
       <div className="flex items-center gap-3">
         <label className="inline-flex h-7 items-center gap-1.5">
+          <Route className="h-3.5 w-3.5 text-foreground" aria-hidden />
           <span className="text-body-sm text-muted-foreground">强制轨迹</span>
           <Switch
             aria-label="强制轨迹"
@@ -107,6 +116,13 @@ export const TimelineToolbar = ({
             className="inline-flex h-7 items-center gap-1.5"
             title={!canLoop ? loopDisabledHint : undefined}
           >
+            <Repeat
+              className={cn(
+                "h-3.5 w-3.5",
+                canLoop ? "text-secondary" : "text-muted-foreground",
+              )}
+              aria-hidden
+            />
             <span className="text-body-sm text-muted-foreground">循环</span>
             <Switch
               aria-label="循环"

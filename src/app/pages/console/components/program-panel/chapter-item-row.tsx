@@ -4,7 +4,6 @@ import { isForcedTrajectory } from "../forced-trajectory-badge";
 
 type ChapterItemRowProps = {
   item: ChapterItem;
-  slotLabel: string;
   isActive?: boolean;
   hasWarning?: boolean;
   warningMessage?: string;
@@ -12,12 +11,13 @@ type ChapterItemRowProps = {
   striped?: boolean;
   onClick?: () => void;
   onDoubleClick?: () => void;
+  onPreviewHoldStart?: () => void;
+  onPreviewHoldEnd?: () => void;
   onDragStart?: (event: React.DragEvent) => void;
 };
 
 export const ChapterItemRow = ({
   item,
-  slotLabel,
   isActive,
   hasWarning,
   warningMessage,
@@ -25,6 +25,8 @@ export const ChapterItemRow = ({
   striped = false,
   onClick,
   onDoubleClick,
+  onPreviewHoldStart,
+  onPreviewHoldEnd,
   onDragStart,
 }: ChapterItemRowProps) => {
   const name = item.sequence.name;
@@ -35,16 +37,18 @@ export const ChapterItemRow = ({
     <ProgramSequenceRow
       role="treeitem"
       name={name}
-      indexLabel={slotLabel}
       durationLabel={(durationMs / 1000).toFixed(1)}
       repairMessage={repairMessage}
       forced={isForcedTrajectory(item.sequence.trajectoryMode)}
+      loop={item.sequence.loop === true}
       draggable={draggable}
       striped={striped}
       ariaSelected={isActive}
       onDragStart={onDragStart}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
+      onPreviewHoldStart={onPreviewHoldStart}
+      onPreviewHoldEnd={onPreviewHoldEnd}
     />
   );
 };
