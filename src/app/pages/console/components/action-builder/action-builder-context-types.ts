@@ -69,6 +69,8 @@ export type ActionBuilderContextValue = {
   handleCreatePose: (objectIds: number[]) => void;
   handleCreateSetEnabled: (objectIds: number[], enabled: boolean) => void;
   handleCreateSequence: (objectIds: number[]) => void;
+  /** 返回错误文案；成功或名称未变化时返回 null */
+  handleRenameSequence: (name: string) => string | null;
   handleDeleteSequence: () => void;
   handleApplyStaticPreset: (presetId: string, objectIds: number[]) => void;
   handleApplyDynamicPreset: (presetId: string, objectIds: number[]) => void;

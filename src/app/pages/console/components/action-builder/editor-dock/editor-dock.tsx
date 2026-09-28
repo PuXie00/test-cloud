@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { MousePointerClick } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
@@ -17,6 +17,7 @@ import {
 import { pickNiceMajorStepSec } from "../timeline/timeline-ticks";
 import { TimelineEditor } from "../timeline/timeline-editor";
 import { TimelineToolbar } from "../timeline/timeline-toolbar";
+import { SequenceRenameDialog } from "./sequence-rename-dialog";
 import { useTimelinePlayback } from "../timeline/use-timeline-playback";
 
 const isEditableTarget = (target: EventTarget | null): boolean => {
@@ -62,6 +63,7 @@ const SequenceEditor = () => {
     sequenceIssues,
   } = useActionBuilder();
   const rootRef = useRef<HTMLDivElement>(null);
+  const [renameOpen, setRenameOpen] = useState(false);
   const selectedBlockIds = selectionBlockIds(selection);
   const invalidTargets = useMemo(
     () => invalidTimelineTargets(sequenceIssues),
@@ -136,6 +138,7 @@ const SequenceEditor = () => {
     >
       <TimelineToolbar
         sequenceName={sequence.name}
+        onRename={() => setRenameOpen(true)}
         trajectoryMode={sequence.trajectoryMode}
         onTrajectoryModeChange={handleTrajectoryModeChange}
         loop={sequence.loop === true}
@@ -155,6 +158,7 @@ const SequenceEditor = () => {
         onZoomIn={handleTimelineZoomIn}
         onZoomOut={handleTimelineZoomOut}
       />
+      <SequenceRenameDialog open={renameOpen} onOpenChange={setRenameOpen} />
       {resolved === null && (
         <div className="shrink-0 bg-warning-surface px-3 py-2 text-body-sm text-warning">
           预设无法解析，可继续编辑块

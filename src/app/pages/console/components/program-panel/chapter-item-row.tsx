@@ -12,6 +12,8 @@ type ChapterItemRowProps = {
   striped?: boolean;
   onClick?: () => void;
   onDoubleClick?: () => void;
+  onPreviewHoldStart?: () => void;
+  onPreviewHoldEnd?: () => void;
   onDragStart?: (event: React.DragEvent) => void;
 };
 
@@ -25,6 +27,8 @@ export const ChapterItemRow = ({
   striped = false,
   onClick,
   onDoubleClick,
+  onPreviewHoldStart,
+  onPreviewHoldEnd,
   onDragStart,
 }: ChapterItemRowProps) => {
   const name = item.sequence.name;
@@ -45,6 +49,8 @@ export const ChapterItemRow = ({
       onDragStart={onDragStart}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
+      onPreviewHoldStart={onPreviewHoldStart}
+      onPreviewHoldEnd={onPreviewHoldEnd}
     />
   );
 };

@@ -6,6 +6,7 @@ import type { TrajectoryMode } from "@shared/action-sequence";
 
 type TimelineToolbarProps = {
   sequenceName?: string;
+  onRename?: () => void;
   trajectoryMode?: TrajectoryMode;
   onTrajectoryModeChange?: (mode: TrajectoryMode) => void;
   loop?: boolean;
@@ -52,6 +53,7 @@ const ToolbarIcon = ({
 
 export const TimelineToolbar = ({
   sequenceName,
+  onRename,
   trajectoryMode,
   onTrajectoryModeChange,
   loop = false,
@@ -77,9 +79,15 @@ export const TimelineToolbar = ({
   return (
     <div className="flex h-9 shrink-0 items-center gap-2 bg-muted px-2">
     {sequenceName ? (
-      <span className="max-w-45 truncate text-body-sm font-medium text-foreground">
+      <button
+        type="button"
+        aria-label="修改序列名"
+        title="修改序列名"
+        onClick={onRename}
+        className="max-w-45 truncate rounded-sm px-1 text-body-sm font-medium text-foreground hover:bg-accent"
+      >
         {sequenceName}
-      </span>
+      </button>
     ) : null}
 
     {onPlayToggle ? (

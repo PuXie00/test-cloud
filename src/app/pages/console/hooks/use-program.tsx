@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { nextNewSequenceName } from "@/app/project/action-sequence/sequence-name";
 import { allocateSequenceIdsInProject } from "@/app/project/action-sequence/sequence-id";
 import type { ActionSequenceConfig, ModelPose } from "@/app/project/action-sequence/types";
 import { buildCapturedPoseSequence } from "@/app/project/capture-pose-sequence";
@@ -261,6 +262,9 @@ export const ProgramProvider = ({ children }: ProgramProviderProps) => {
         setLastPersistError(error instanceof Error ? error.message : "动作序列 id 已满（1~65535）");
         return;
       }
+      const name = nextNewSequenceName(
+        currentProject.document.motion.actionSequences.map((sequence) => sequence.name),
+      );
       let found = false;
       const nextProgram: Program = {
         ...current,
@@ -271,7 +275,7 @@ export const ProgramProvider = ({ children }: ProgramProviderProps) => {
             ...chapter,
             items: [
               ...chapter.items,
-              { kind: "sequence", sequence: { id, name: "新建动作序列", durationMs: 5000 } },
+              { kind: "sequence", sequence: { id, name, durationMs: 5000 } },
             ],
           };
         }),
@@ -279,7 +283,7 @@ export const ProgramProvider = ({ children }: ProgramProviderProps) => {
       if (!found) return;
       const createdSequence: ActionSequenceConfig = {
         id,
-        name: "新建动作序列",
+        name,
         trajectoryMode: false,
         loop: false,
         blocks: [],
@@ -331,6 +335,9 @@ export const ProgramProvider = ({ children }: ProgramProviderProps) => {
       }
       const createdSequence = buildCapturedPoseSequence({
         id,
+        name: nextNewSequenceName(
+          currentProject.document.motion.actionSequences.map((sequence) => sequence.name),
+        ),
         objectIds: args.objectIds,
         poseForObject: args.poseForObject,
       });

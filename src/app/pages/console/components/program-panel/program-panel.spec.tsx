@@ -232,6 +232,31 @@ describe("ProgramPanel variants", () => {
     expect(screen.queryByText("当前页")).toBeNull();
     expect(screen.getByText("页 1/2")).toBeTruthy();
     expect(screen.getByText("2页·13项")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "运行 S1" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /运行 / })).toBeNull();
+    expect(screen.getByRole("button", { name: "拖动 S1" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "拖动 S1" }).getAttribute("draggable")).toBe("true");
+  });
+
+  it("long press starts a hold preview and does not toggle on release", () => {
+    programState.current = {
+      id: "program-a",
+      name: "节目 A",
+      chapters: [{ id: "ch-1", name: "章节 1", items: makeChapterItems(1) }],
+    };
+    render(
+      <ConsoleModeProvider>
+        <ProgramPanel variant="control" />
+      </ConsoleModeProvider>,
+    );
+    const row = screen.getByRole("treeitem", { name: "S1" });
+    vi.useFakeTimers();
+    fireEvent.pointerDown(row, { button: 0, clientX: 4, clientY: 4 });
+    vi.advanceTimersByTime(400);
+    expect(startPreviewMock).toHaveBeenCalledWith(1, { autoplay: true, holdMode: true });
+    fireEvent.pointerUp(row);
+    expect(stopPreviewMock).toHaveBeenCalled();
+    fireEvent.click(row);
+    expect(togglePreviewMock).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 });
