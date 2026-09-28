@@ -21,6 +21,7 @@ const { preview, play, pause, stopPreview, setCursorMs, setMultiplier } = vi.hoi
       multiplier: 1,
       totalMs: 12300,
       resolved: null,
+      timeline: null,
       startPreview: vi.fn(),
       togglePreview: vi.fn(),
       stopPreview,
@@ -48,6 +49,7 @@ const resetPreview = () => {
     multiplier: 1,
     totalMs: 12300,
     resolved: null,
+    timeline: null,
     play,
     pause,
     stopPreview,
@@ -96,6 +98,28 @@ describe("SequencePreviewBar", () => {
     render(<SequencePreviewBar />);
     fireEvent.keyDown(window, { key: "Escape" });
     expect(stopPreview).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks the transition segment and switches to program time after it", () => {
+    const timeline = {
+      plan: null,
+      transitionMs: 3000,
+      direction: 1 as const,
+      programStartMs: 4000,
+      programTotalMs: 12000,
+      totalMs: 11000,
+    };
+    preview.current = { ...preview.current, timeline, totalMs: 11000, cursorMs: 1200 };
+    const { rerender } = render(<SequencePreviewBar />);
+    expect(screen.getByText("过渡")).toBeTruthy();
+    expect(screen.getByText(/00:01\.2 \/ 00:03\.0/)).toBeTruthy();
+    const segment = screen.getByTestId("preview-transition-segment") as HTMLElement;
+    expect(segment.style.width).toBe(`${(3000 / 11000) * 100}%`);
+
+    preview.current = { ...preview.current, cursorMs: 3500 };
+    rerender(<SequencePreviewBar />);
+    expect(screen.queryByText("过渡")).toBeNull();
+    expect(screen.getByText("00:04.5 / 00:12.0")).toBeTruthy();
   });
 
   it("clicking 4× calls setMultiplier(4)", () => {

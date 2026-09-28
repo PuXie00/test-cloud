@@ -2,6 +2,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { describe, expect, it } from "vitest";
+import type { NearestStartPlan } from "@/app/project/action-sequence/nearest-start";
 import type { PageItems } from "./program-context";
 import {
   deriveFaderSlotPhase,
@@ -15,7 +16,7 @@ describe("deriveFaderSlotPhase", () => {
       deriveFaderSlotPhase({
         sequenceId: 15,
         fingerprint: "fp-15",
-        ready: { sequenceId: 15, fingerprint: "fp-15", initialTransition: null, preparedPoses: {} },
+        ready: { sequenceId: 15, fingerprint: "fp-15", startPlan: null, preparedPoses: {} },
         isRunning: false,
       }),
     ).toBe("ready");
@@ -26,7 +27,7 @@ describe("deriveFaderSlotPhase", () => {
       deriveFaderSlotPhase({
         sequenceId: 16,
         fingerprint: "fp-16",
-        ready: { sequenceId: 15, fingerprint: "fp-15", initialTransition: null, preparedPoses: {} },
+        ready: { sequenceId: 15, fingerprint: "fp-15", startPlan: null, preparedPoses: {} },
         isRunning: false,
       }),
     ).toBe("idle");
@@ -37,7 +38,7 @@ describe("deriveFaderSlotPhase", () => {
       deriveFaderSlotPhase({
         sequenceId: 15,
         fingerprint: "fp-15-b",
-        ready: { sequenceId: 15, fingerprint: "fp-15-a", initialTransition: null, preparedPoses: {} },
+        ready: { sequenceId: 15, fingerprint: "fp-15-a", startPlan: null, preparedPoses: {} },
         isRunning: false,
       }),
     ).toBe("idle");
@@ -48,7 +49,7 @@ describe("deriveFaderSlotPhase", () => {
       deriveFaderSlotPhase({
         sequenceId: 15,
         fingerprint: "fp-15",
-        ready: { sequenceId: 15, fingerprint: "fp-15", initialTransition: null, preparedPoses: {} },
+        ready: { sequenceId: 15, fingerprint: "fp-15", startPlan: null, preparedPoses: {} },
         isRunning: true,
       }),
     ).toBe("running");
@@ -95,7 +96,17 @@ describe("ExecutorSlotsProvider", () => {
   });
 
   it("stores the transition while ready and drops it when ready is cleared or the fingerprint changes", () => {
-    const plan = { totalTime: 3, models: [] };
+    const plan: NearestStartPlan = {
+      forced: false,
+      nearest: false,
+      direction: 1,
+      startMode: "boundary",
+      targetFrameMs: 0,
+      transitionSec: 3,
+      xSafe: null,
+      motorLimitScale: 1,
+      members: [],
+    };
     const poses = { 1: { h: 10, p: 0, y: 0 } };
     let fingerprints: Record<number, string> = { 15: "fp-15", 16: "fp-16" };
     const wrapper = ({ children }: { children: ReactNode }) =>
@@ -110,30 +121,30 @@ describe("ExecutorSlotsProvider", () => {
       result.current.markSlotReady(0, 15, "fp-15", plan, poses);
     });
     expect(result.current.faderSlots[0]?.phase).toBe("ready");
-    expect(result.current.faderSlots[0]?.initialTransition).toEqual(plan);
+    expect(result.current.faderSlots[0]?.startPlan).toEqual(plan);
     expect(result.current.faderSlots[0]?.preparedPoses).toEqual(poses);
-    expect(result.current.faderSlots[1]?.initialTransition).toBeNull();
+    expect(result.current.faderSlots[1]?.startPlan).toBeNull();
     expect(result.current.faderSlots[1]?.preparedPoses).toBeNull();
 
     act(() => {
       result.current.setSlotRunning(0, true);
     });
     expect(result.current.faderSlots[0]?.phase).toBe("running");
-    expect(result.current.faderSlots[0]?.initialTransition).toBeNull();
+    expect(result.current.faderSlots[0]?.startPlan).toBeNull();
     expect(result.current.faderSlots[0]?.preparedPoses).toBeNull();
 
     act(() => {
       result.current.setSlotRunning(0, false);
     });
     expect(result.current.faderSlots[0]?.phase).toBe("ready");
-    expect(result.current.faderSlots[0]?.initialTransition).toEqual(plan);
+    expect(result.current.faderSlots[0]?.startPlan).toEqual(plan);
     expect(result.current.faderSlots[0]?.preparedPoses).toEqual(poses);
 
     act(() => {
       result.current.clearSlotReady(0);
     });
     expect(result.current.faderSlots[0]?.phase).toBe("idle");
-    expect(result.current.faderSlots[0]?.initialTransition).toBeNull();
+    expect(result.current.faderSlots[0]?.startPlan).toBeNull();
     expect(result.current.faderSlots[0]?.preparedPoses).toBeNull();
 
     act(() => {
@@ -141,8 +152,33 @@ describe("ExecutorSlotsProvider", () => {
     });
     fingerprints = { 15: "fp-15-next", 16: "fp-16" };
     rerender();
-    expect(result.current.faderSlots[0]?.initialTransition).toBeNull();
+    expect(result.current.faderSlots[0]?.startPlan).toBeNull();
     expect(result.current.faderSlots[0]?.preparedPoses).toBeNull();
+  });
+
+  it("keeps nearest and reverse per slot sequence and resets them when the sequence changes", () => {
+    let pageItems = pageItemsFor([15, 16]);
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(
+        ExecutorSlotsProvider,
+        { pageItems, sequenceFingerprints: { 15: "fp-15", 16: "fp-16", 99: "fp-99" } },
+        children,
+      );
+    const { result, rerender } = renderHook(() => useExecutorSlots(), { wrapper });
+    expect(result.current.faderSlots[0]?.runOptions).toEqual({ nearest: false, reverse: false });
+
+    act(() => {
+      result.current.setSlotRunOptions(0, { nearest: true });
+    });
+    act(() => {
+      result.current.setSlotRunOptions(0, { reverse: true });
+    });
+    expect(result.current.faderSlots[0]?.runOptions).toEqual({ nearest: true, reverse: true });
+    expect(result.current.faderSlots[1]?.runOptions).toEqual({ nearest: false, reverse: false });
+
+    pageItems = pageItemsFor([99, 16]);
+    rerender();
+    expect(result.current.faderSlots[0]?.runOptions).toEqual({ nearest: false, reverse: false });
   });
 
   it("always exposes twelve F1–F12 slots", () => {

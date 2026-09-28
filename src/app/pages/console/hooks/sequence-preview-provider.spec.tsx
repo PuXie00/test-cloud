@@ -3,6 +3,10 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MOTION_DEFAULTS } from "@/app/project/configuration-rules";
+import {
+  reconcileSegmentConfigs,
+  resolveActionSequence,
+} from "@/app/project/action-sequence/resolve-sequence";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
 import type { ControlledObjectConfig, ProjectDocument } from "@/app/project/project-document-types";
 import { createEmptyDocument } from "@/app/project/project-document-empty";
@@ -61,7 +65,7 @@ const makeObject = (id: number): ControlledObjectConfig => ({
   params: {},
 });
 
-const validSequence = (id: number, atMs = 1000): ActionSequenceConfig => ({
+const validSequence = (id: number, atMs = 1000, startV1 = 0): ActionSequenceConfig => ({
   id,
   name: `Seq${id}`,
   trajectoryMode: false,
@@ -71,11 +75,30 @@ const validSequence = (id: number, atMs = 1000): ActionSequenceConfig => ({
       kind: "pose",
       objectId: OBJECT_ID,
       atMs,
-      pose: { v1: 80, v2: 0, v3: 0 },
+      pose: { v1: startV1, v2: 0, v3: 0 },
     },
   ],
   segments: [],
 });
+
+const movingSequence = (id: number): ActionSequenceConfig => {
+  const sequence: ActionSequenceConfig = {
+    id,
+    name: `Move${id}`,
+    trajectoryMode: false,
+    blocks: [
+      { id: `a-${id}`, kind: "pose", objectId: OBJECT_ID, atMs: 0, pose: { v1: 80, v2: 0, v3: 0 } },
+      { id: `b-${id}`, kind: "pose", objectId: OBJECT_ID, atMs: 4000, pose: { v1: 160, v2: 0, v3: 0 } },
+    ],
+    segments: [],
+  };
+  return {
+    ...sequence,
+    segments: reconcileSegmentConfigs(resolveActionSequence(sequence).segments, [], {
+      minAccelTimeByObject: () => ({ v1: MOTION_DEFAULTS.move.minAccelTime }),
+    }),
+  };
+};
 
 const emptySequence = (id: number): ActionSequenceConfig => ({
   id,
@@ -88,7 +111,12 @@ const emptySequence = (id: number): ActionSequenceConfig => ({
 const makeProject = () => {
   const document = createEmptyDocument({ id: "p", name: "P", author: "tester" });
   document.setup.controlledObjects = [makeObject(OBJECT_ID)];
-  document.motion.actionSequences = [validSequence(1), emptySequence(2), validSequence(3, 2000)];
+  document.motion.actionSequences = [
+    validSequence(1),
+    emptySequence(2),
+    validSequence(3, 2000),
+    movingSequence(4),
+  ];
   return { id: document.meta.id, document };
 };
 
@@ -237,6 +265,33 @@ describe("SequencePreviewProvider", () => {
 
     expect(toastWarning).toHaveBeenCalled();
     expect(result.current.sequenceId).toBeNull();
+  });
+
+  it("prepends a return-to-start transition when the member is off the start pose", () => {
+    const { result } = renderHook(() => useSequencePreview(), { wrapper: SequencePreviewProvider });
+
+    act(() => {
+      result.current.startPreview(4);
+    });
+
+    expect(toastWarning).not.toHaveBeenCalled();
+    const timeline = result.current.timeline!;
+    expect(timeline.transitionMs).toBeGreaterThan(0);
+    expect(timeline.programStartMs).toBe(0);
+    expect(result.current.totalMs).toBeCloseTo(timeline.transitionMs + 4000, 6);
+  });
+
+  it("follows the reverse option and resumes from the last frame", () => {
+    const { result } = renderHook(() => useSequencePreview(), { wrapper: SequencePreviewProvider });
+
+    act(() => {
+      result.current.startPreview(4, { reverse: true });
+    });
+
+    const timeline = result.current.timeline!;
+    expect(timeline.direction).toBe(-1);
+    expect(timeline.programStartMs).toBe(4000);
+    expect(result.current.totalMs).toBeCloseTo(timeline.transitionMs + 4000, 6);
   });
 
   it("keeps preview on the sequences page and stops when leaving both pages", () => {

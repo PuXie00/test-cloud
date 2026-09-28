@@ -3,12 +3,14 @@ import { toast } from "sonner";
 import { cn } from "@/app/components/ui/utils";
 import {
   capturePreparedPoses,
-  evaluateInitialPoseGate,
+  evaluateStartGate,
   hpyFromPositions,
   preparedPosesMatchTelemetry,
-  type PoseSpeedMode,
+  type HpyPose,
+  type StartGateOptions,
+  type StartGateResult,
 } from "@/app/project/action-sequence/initial-pose-gate";
-import type { HpyPose, InitialTransitionPlan } from "@/app/project/action-sequence/initial-transition-planner";
+import type { NearestStartPlan } from "@/app/project/action-sequence/nearest-start";
 import { hasUncoupledSequenceMember, sequenceObjectIds } from "@/app/project/action-sequence/sequence-object-ids";
 import { resolveMotionLaunchBlock } from "@/app/project/project-motion-readiness";
 import { useProject } from "@/app/project/use-project";
@@ -22,19 +24,37 @@ import { useSequencePreview } from "../../hooks/use-sequence-preview";
 import { useBuildDebug } from "../build-debug/build-debug-context";
 import { ExecCards } from "./exec-cards/exec-cards";
 import { Executors } from "./executors/executors";
-import { InitialPoseDialog } from "./initial-pose-dialog";
+import { InitialPoseDialog, type StartTransitionSummary } from "./initial-pose-dialog";
 import { PreparedPoseDialog } from "./prepared-pose-dialog";
 
 type ExecAreaProps = { className?: string };
 
-type PoseDialogState = {
+type PoseDialogState = StartGateOptions & {
   intent: "fader" | "next";
   slotIndex: number | null;
   cardId: string | null;
   sequenceId: number;
-  durationMs: number;
-  speedMode: PoseSpeedMode;
   telemetryByObjectId: Map<number, HpyPose>;
+};
+
+const NEXT_SEQUENCE_OPTIONS: StartGateOptions = { nearest: false, reverse: false };
+
+const needsPoseDialog = (gate: StartGateResult): boolean => gate.status !== "at-start";
+
+const summaryOf = (
+  gate: StartGateResult | null,
+  options: StartGateOptions,
+): StartTransitionSummary | null => {
+  if (!gate || (gate.status !== "transition" && gate.status !== "blocked")) return null;
+  return {
+    forced: gate.plan.forced,
+    nearest: options.nearest,
+    reverse: options.reverse,
+    targetFrameMs: gate.plan.targetFrameMs,
+    transitionSeconds: gate.transitionSeconds,
+    programSeconds: gate.programSeconds,
+    totalSeconds: gate.totalSeconds,
+  };
 };
 
 const reportSequenceResult = (result: { toast: "warning" | "error"; message: string }) => {
@@ -96,20 +116,20 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     }
     const authored = document.motion.actionSequences.find((entry) => entry.id === poseDialog.sequenceId);
     if (!authored) return null;
-    return evaluateInitialPoseGate({
+    return evaluateStartGate({
       sequence: authored,
       objects: document.setup.controlledObjects,
       motors: document.setup.motors,
       telemetryByObjectId: poseDialog.telemetryByObjectId,
-      speedMode: poseDialog.speedMode,
-      sequenceDurationMs: poseDialog.durationMs,
+      nearest: poseDialog.nearest,
+      reverse: poseDialog.reverse,
     });
   }, [poseDialog, currentProject, faderSlots]);
 
   const beginReady = (
     slotIndex: number,
     sequenceId: number,
-    initialTransition: InitialTransitionPlan | null,
+    startPlan: NearestStartPlan | null,
   ) => {
     const document = currentProject?.document;
     if (!document) return;
@@ -127,7 +147,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
           slotIndex,
           sequenceId,
           readied.fingerprint,
-          initialTransition,
+          startPlan,
           capturePreparedPoses(authored ? sequenceObjectIds(authored) : [], telemetryRef.current),
         );
       } finally {
@@ -210,22 +230,20 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       return;
     }
     if (authored) {
-      const gate = evaluateInitialPoseGate({
+      const gate = evaluateStartGate({
         sequence: authored,
         objects: document.setup.controlledObjects,
         motors: document.setup.motors,
         telemetryByObjectId,
-        speedMode: "default",
-        sequenceDurationMs: next.sequence.durationMs,
+        ...NEXT_SEQUENCE_OPTIONS,
       });
-      if (gate.status === "error" || gate.status === "transition") {
+      if (needsPoseDialog(gate)) {
         setPoseDialog({
           intent: "next",
           slotIndex: null,
           cardId,
           sequenceId,
-          durationMs: next.sequence.durationMs,
-          speedMode: "default",
+          ...NEXT_SEQUENCE_OPTIONS,
           telemetryByObjectId: new Map(telemetryByObjectId),
         });
         return;
@@ -300,22 +318,20 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
 
     if (poseDialog) return;
     if (authored) {
-      const gate = evaluateInitialPoseGate({
+      const gate = evaluateStartGate({
         sequence: authored,
         objects: document.setup.controlledObjects,
         motors: document.setup.motors,
         telemetryByObjectId,
-        speedMode: "default",
-        sequenceDurationMs: sequence.durationMs,
+        ...slot.runOptions,
       });
-      if (gate.status === "error" || gate.status === "transition") {
+      if (needsPoseDialog(gate)) {
         setPoseDialog({
           intent: "fader",
           slotIndex,
           cardId: null,
           sequenceId,
-          durationMs: sequence.durationMs,
-          speedMode: "default",
+          ...slot.runOptions,
           telemetryByObjectId: new Map(telemetryByObjectId),
         });
         return;
@@ -334,13 +350,9 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       </div>
       <InitialPoseDialog
         open={poseDialog !== null}
-        speedMode={poseDialog?.speedMode ?? "default"}
-        extraSeconds={dialogGate?.status === "transition" ? dialogGate.extraSeconds : null}
-        totalSeconds={dialogGate?.status === "transition" ? dialogGate.totalSeconds : null}
+        summary={poseDialog ? summaryOf(dialogGate, poseDialog) : null}
+        blockedMessage={dialogGate?.status === "blocked" ? dialogGate.message : null}
         errorMessage={dialogGate?.status === "error" ? dialogGate.message : null}
-        onSpeedModeChange={(speedMode) => {
-          setPoseDialog((current) => (current ? { ...current, speedMode } : current));
-        }}
         onCancel={() => setPoseDialog(null)}
         onConfirm={handleConfirmPose}
       />

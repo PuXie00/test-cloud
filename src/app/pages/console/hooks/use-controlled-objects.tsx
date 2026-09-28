@@ -107,6 +107,9 @@ export const ControlledObjectsProvider = ({ children }: ControlledObjectsProvide
   );
 };
 
+export const useOptionalControlledObjects = (): ControlledObjectsContextValue | null =>
+  useContext(ControlledObjectsContext);
+
 export const useControlledObjects = (): ControlledObjectsContextValue => {
   const value = useContext(ControlledObjectsContext);
   if (!value) throw new Error("useControlledObjects must be used inside ControlledObjectsProvider");

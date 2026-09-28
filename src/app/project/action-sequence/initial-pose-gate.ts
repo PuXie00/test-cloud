@@ -4,16 +4,14 @@ import type {
   VirtualAxisId,
 } from "@/app/project/project-document-types";
 import type { ActionSequenceConfig, ModelPose } from "./types";
-import type { HpyPose, InitialTransitionPlan } from "./initial-transition-planner";
-import * as initialTransitionPlanner from "./initial-transition-planner";
-import { resolveActionSequence } from "./resolve-sequence";
-import {
-  buildInitialTransitionModels,
-  type PoseSpeedMode,
-  type TransitionMember,
-} from "./initial-pose-model";
+import { isSequenceLooping } from "./sequence-loop";
+import { planNearestStart, type NearestStartMember, type NearestStartPlan } from "./nearest-start";
+import { memberTimeline } from "./nearest-start-frames";
+import { buildNearestStartMember } from "./nearest-start-model";
+import type { HpyPose } from "./nearest-start-motion";
+import { resolveActionSequence, type ResolvedActionSequence } from "./resolve-sequence";
 
-export type { PoseSpeedMode };
+export type { HpyPose } from "./nearest-start-motion";
 
 const AXIS_EPSILON: Record<VirtualAxisId, number> = {
   v1: 1,
@@ -23,6 +21,12 @@ const AXIS_EPSILON: Record<VirtualAxisId, number> = {
 
 const CLOSED_POSE_SLACK = 1e-9;
 
+/** 强制轨迹 xSafe=false 时禁止准备；接入规则待定时只需改这一处。 */
+export const BLOCK_READY_WHEN_FORCED_UNSAFE = true;
+
+export const FORCED_UNSAFE_MESSAGE =
+  "强制轨迹接入校验未通过：当前位置与目标帧偏差超出曲线可吸收范围，禁止准备";
+
 export const hpyFromPositions = (
   positions: { h?: number; p?: number; y?: number } | null | undefined,
 ): HpyPose => ({
@@ -30,6 +34,8 @@ export const hpyFromPositions = (
   p: positions?.p ?? 0,
   y: positions?.y ?? 0,
 });
+
+const poseFromHpy = (pose: HpyPose): ModelPose => ({ v1: pose.h, v2: pose.p, v3: pose.y });
 
 export type PreparedPoses = Record<number, HpyPose>;
 
@@ -55,15 +61,7 @@ export const preparedPosesMatchTelemetry = (
     const object = objects.find((item) => item.id === objectId);
     const current = telemetryByObjectId.get(objectId) ?? { h: 0, p: 0, y: 0 };
     const enabled = object?.enabledVirtualAxes ?? (["v1", "v2", "v3"] as const);
-    if (
-      !enabledAxesMatchStart(enabled, current, {
-        v1: preparedPose.h,
-        v2: preparedPose.p,
-        v3: preparedPose.y,
-      })
-    ) {
-      return false;
-    }
+    if (!enabledAxesMatchStart(enabled, current, poseFromHpy(preparedPose))) return false;
   }
   return true;
 };
@@ -73,79 +71,110 @@ export const enabledAxesMatchStart = (
   current: HpyPose,
   target: ModelPose,
 ): boolean => {
-  const currentByAxis: Record<VirtualAxisId, number> = {
-    v1: current.h,
-    v2: current.p,
-    v3: current.y,
-  };
-  const targetByAxis: Record<VirtualAxisId, number> = {
-    v1: target.v1,
-    v2: target.v2,
-    v3: target.v3,
-  };
-  for (const axis of enabledAxes) {
-    if (Math.abs(currentByAxis[axis] - targetByAxis[axis]) > AXIS_EPSILON[axis] + CLOSED_POSE_SLACK) {
-      return false;
-    }
-  }
-  return true;
+  const currentPose = poseFromHpy(current);
+  return enabledAxes.every(
+    (axis) =>
+      Math.abs(currentPose[axis] - target[axis]) <= AXIS_EPSILON[axis] + CLOSED_POSE_SLACK,
+  );
 };
 
-export type InitialPoseGateInput = {
+export type StartGateOptions = { nearest: boolean; reverse: boolean };
+
+export type StartGateInput = StartGateOptions & {
   sequence: ActionSequenceConfig;
   objects: readonly ControlledObjectConfig[];
   motors: readonly MotorConfig[];
   telemetryByObjectId: ReadonlyMap<number, HpyPose>;
-  speedMode: PoseSpeedMode;
-  sequenceDurationMs: number;
 };
 
-export type InitialPoseGateResult =
+export type StartGateTiming = {
+  plan: NearestStartPlan;
+  transitionSeconds: number;
+  programSeconds: number;
+  totalSeconds: number;
+};
+
+export type StartGateResult =
   | { status: "at-start" }
-  | {
-      status: "transition";
-      plan: InitialTransitionPlan;
-      extraSeconds: number;
-      totalSeconds: number;
-    }
+  | ({ status: "transition" } & StartGateTiming)
+  | ({ status: "blocked"; message: string } & StartGateTiming)
   | { status: "error"; message: string };
 
 const errorMessage = (error: unknown, fallback: string): string =>
   error instanceof Error ? error.message : fallback;
 
-export const evaluateInitialPoseGate = (input: InitialPoseGateInput): InitialPoseGateResult => {
-  let resolved;
+/** 反向运行时序列从末帧开始，“起点”取各成员在公共末帧的位姿。 */
+const boundaryPoseAt = (
+  resolved: ResolvedActionSequence,
+  objectId: number,
+  reverse: boolean,
+): ModelPose | null => {
+  const timeline = memberTimeline(resolved, objectId);
+  if (!timeline) return null;
+  return reverse ? timeline.endPose : timeline.startPose;
+};
+
+/** 过渡结束后剩余的编程时长：正向从目标帧走到末尾，反向从目标帧倒回 0。 */
+export const remainingProgramMs = (plan: NearestStartPlan, totalMs: number): number =>
+  plan.direction > 0 ? Math.max(0, totalMs - plan.targetFrameMs) : Math.max(0, plan.targetFrameMs);
+
+export const planStartTransition = (input: {
+  resolved: ResolvedActionSequence;
+  sequence: ActionSequenceConfig;
+  objects: readonly ControlledObjectConfig[];
+  motors: readonly MotorConfig[];
+  telemetryByObjectId: ReadonlyMap<number, HpyPose>;
+  nearest: boolean;
+  reverse: boolean;
+}): NearestStartPlan | null => {
+  const members: NearestStartMember[] = [];
+  let offStart = false;
+  for (const objectId of input.resolved.posesByObject.keys()) {
+    const object = input.objects.find((item) => item.id === objectId);
+    if (!object) throw new Error(`缺少受控物体 ${objectId}`);
+    if (object.enabledVirtualAxes.length === 0) continue;
+    const current = input.telemetryByObjectId.get(objectId) ?? { h: 0, p: 0, y: 0 };
+    const boundary = boundaryPoseAt(input.resolved, objectId, input.reverse);
+    if (boundary && !enabledAxesMatchStart(object.enabledVirtualAxes, current, boundary)) {
+      offStart = true;
+    }
+    members.push(buildNearestStartMember(object, input.motors, poseFromHpy(current)));
+  }
+  if (!offStart) return null;
+  return planNearestStart({
+    resolved: input.resolved,
+    members,
+    forced: input.sequence.trajectoryMode === true,
+    nearest: input.nearest,
+    reverse: input.reverse,
+    loopOnce: !isSequenceLooping(input.sequence),
+  });
+};
+
+export const evaluateStartGate = (input: StartGateInput): StartGateResult => {
+  let resolved: ResolvedActionSequence;
   try {
     resolved = resolveActionSequence(input.sequence);
   } catch (error) {
     return { status: "error", message: errorMessage(error, "动作序列无法解析") };
   }
 
-  const offStart: TransitionMember[] = [];
-  for (const [objectId, point] of resolved.initialPoseByObject) {
-    const object = input.objects.find((item) => item.id === objectId);
-    if (!object) return { status: "error", message: `缺少受控物体 ${objectId}` };
-    const current = input.telemetryByObjectId.get(objectId) ?? { h: 0, p: 0, y: 0 };
-    if (enabledAxesMatchStart(object.enabledVirtualAxes, current, point.pose)) continue;
-    offStart.push({ object, current, target: point.pose });
-  }
-  if (offStart.length === 0) return { status: "at-start" };
-
+  let plan: NearestStartPlan | null;
   try {
-    const plan = initialTransitionPlanner.planInitialTransition(
-      buildInitialTransitionModels({
-        members: offStart,
-        motors: input.motors,
-        speedMode: input.speedMode,
-      }),
-    );
-    return {
-      status: "transition",
-      plan,
-      extraSeconds: plan.totalTime,
-      totalSeconds: plan.totalTime + input.sequenceDurationMs / 1000,
-    };
+    plan = planStartTransition({ ...input, resolved });
   } catch (error) {
     return { status: "error", message: errorMessage(error, "起始位姿过渡计算失败") };
   }
+  if (!plan) return { status: "at-start" };
+
+  const timing: StartGateTiming = {
+    plan,
+    transitionSeconds: plan.transitionSec,
+    programSeconds: resolved.totalMs / 1000,
+    totalSeconds: plan.transitionSec + remainingProgramMs(plan, resolved.totalMs) / 1000,
+  };
+  if (BLOCK_READY_WHEN_FORCED_UNSAFE && plan.forced && plan.xSafe === false) {
+    return { status: "blocked", message: FORCED_UNSAFE_MESSAGE, ...timing };
+  }
+  return { status: "transition", ...timing };
 };

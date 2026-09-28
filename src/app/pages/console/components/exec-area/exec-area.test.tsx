@@ -53,6 +53,7 @@ const {
   clearSlotReadyMock,
   setSlotBusyMock,
   setSlotRunningMock,
+  setSlotRunOptionsMock,
   execCardsRef,
   closeMock,
   coupledObjectIdsRef,
@@ -89,6 +90,7 @@ const {
   clearSlotReadyMock: vi.fn(),
   setSlotBusyMock: vi.fn(),
   setSlotRunningMock: vi.fn(),
+  setSlotRunOptionsMock: vi.fn(),
   execCardsRef: {
     current: [] as ExecCard[],
   },
@@ -217,6 +219,7 @@ vi.mock("../../hooks/use-executor-slots", async () => {
       setFaderValue: vi.fn(),
       setSlotRunning: (...args: unknown[]) => setSlotRunningMock(...args),
       setSlotBusy: (...args: unknown[]) => setSlotBusyMock(...args),
+      setSlotRunOptions: (...args: unknown[]) => setSlotRunOptionsMock(...args),
       markSlotReady: (...args: unknown[]) => markSlotReadyMock(...args),
       clearSlotReady: (...args: unknown[]) => clearSlotReadyMock(...args),
     }),
@@ -360,7 +363,8 @@ const makeFaderSlot = (overrides: Partial<FaderSlotState> & { index: number }): 
   faderValue: 100,
   phase: "idle",
   isBusy: false,
-  initialTransition: null,
+  runOptions: { nearest: false, reverse: false },
+  startPlan: null,
   preparedPoses: null,
   ...overrides,
 });
@@ -497,6 +501,7 @@ afterEach(() => {
   clearSlotReadyMock.mockClear();
   setSlotBusyMock.mockClear();
   setSlotRunningMock.mockClear();
+  setSlotRunOptionsMock.mockClear();
   togglePreviewMock.mockClear();
   startPreviewMock.mockClear();
   stopPreviewMock.mockClear();
@@ -801,57 +806,43 @@ describe("FaderSlot Ready/GO gate", () => {
     expect(onCancelReady).toHaveBeenCalledTimes(1);
   });
 
-  it("shows nearest and reverse only after they are turned on, and only before ready", () => {
-    const { rerender } = render(
+  it("shows nearest and reverse from the slot options and only lets them change before ready", () => {
+    const onRunOptionsChange = vi.fn();
+    const renderSlot = (overrides: Partial<FaderSlotState>) =>
       withMode(
         <FaderSlot
           slot={makeFaderSlot({
             index: 0,
             phase: "idle",
             sequence: { id: 15, name: "开幕A", durationMs: 2000 },
+            ...overrides,
           })}
           isPreviewing={false}
           onPreviewToggle={vi.fn()}
           onPreviewHoldStart={vi.fn()}
           onPreviewHoldEnd={vi.fn()}
           onGo={vi.fn()}
+          onRunOptionsChange={onRunOptionsChange}
           onFaderChange={vi.fn()}
           onAssignFromDrag={vi.fn()}
         />,
-      ),
-    );
+      );
+    const { rerender } = render(renderSlot({}));
     expect(screen.queryByText("就近")).toBeNull();
     expect(screen.queryByText("反向")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "开幕A 标记" }));
     fireEvent.click(screen.getByRole("button", { name: "开启就近" }));
     fireEvent.click(screen.getByRole("button", { name: "开启反向" }));
+    expect(onRunOptionsChange).toHaveBeenNthCalledWith(1, { nearest: true });
+    expect(onRunOptionsChange).toHaveBeenNthCalledWith(2, { reverse: true });
+
+    rerender(renderSlot({ runOptions: { nearest: true, reverse: true } }));
     expect(screen.getByText("就近")).toBeTruthy();
     expect(screen.getByText("反向")).toBeTruthy();
 
-    rerender(
-      withMode(
-        <FaderSlot
-          slot={makeFaderSlot({
-            index: 0,
-            phase: "ready",
-            sequence: { id: 15, name: "开幕A", durationMs: 2000 },
-          })}
-          isPreviewing={false}
-          onPreviewToggle={vi.fn()}
-          onPreviewHoldStart={vi.fn()}
-          onPreviewHoldEnd={vi.fn()}
-          onGo={vi.fn()}
-          onFaderChange={vi.fn()}
-          onAssignFromDrag={vi.fn()}
-        />,
-      ),
-    );
+    rerender(renderSlot({ phase: "ready", runOptions: { nearest: true, reverse: true } }));
     expect((screen.getByRole("button", { name: "关闭就近" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "关闭反向" }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "关闭就近" }));
-    fireEvent.click(screen.getByRole("button", { name: "关闭反向" }));
-    expect(screen.getByText("就近")).toBeTruthy();
-    expect(screen.getByText("反向")).toBeTruthy();
   });
 });
 
@@ -1205,21 +1196,16 @@ describe("ExecArea launch guard", () => {
 
     expect(await screen.findByRole("alertdialog")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "未在起始位姿" })).toBeTruthy();
-    expect(screen.getByTestId("pose-extra-time").textContent).toMatch(/秒/);
-    expect(screen.getByTestId("pose-total-time").textContent).toMatch(/秒/);
+    expect(screen.getByText("回到起点 · 正向")).toBeTruthy();
+    expect(screen.getByText("非强制")).toBeTruthy();
+    expect(screen.getByTestId("pose-target-frame").textContent).toBe("编程 2.0 秒");
+    expect(screen.getByTestId("pose-transition-time").textContent).toMatch(/^\d+\.\d 秒$/);
+    expect(screen.getByTestId("pose-total-time").textContent).toMatch(/^\d+\.\d 秒$/);
+    expect(screen.getByTestId("pose-delta-time").textContent).toMatch(/编程 2\.0 秒/);
+    expect(screen.queryByRole("button", { name: "最快速度" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "立即到起点" })).toBeNull();
     expect(readySequenceMock).not.toHaveBeenCalled();
     expect(markSlotReadyMock).not.toHaveBeenCalled();
-
-    const extraBefore = screen.getByTestId("pose-extra-time").textContent;
-    fireEvent.click(screen.getByRole("button", { name: "最快速度" }));
-    await waitFor(() => {
-      expect(screen.getByTestId("pose-extra-time").textContent).not.toBe(extraBefore);
-    });
-    expect(readySequenceMock).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("button", { name: "立即到起点" }));
-    expect(screen.getByRole("alertdialog")).toBeTruthy();
-    expect(readySequenceMock).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "确认" }));
     await waitFor(() => {
@@ -1230,9 +1216,39 @@ describe("ExecArea launch guard", () => {
     expect(stored?.[0]).toBe(1);
     expect(stored?.[1]).toBe(15);
     expect(stored?.[2]).toBe("fp-15");
-    expect(stored?.[3]).toMatchObject({ totalTime: expect.any(Number), models: expect.any(Array) });
-    expect(stored?.[3].totalTime).toBeGreaterThan(0);
+    expect(stored?.[3]).toMatchObject({
+      forced: false,
+      targetFrameMs: 2000,
+      members: expect.any(Array),
+    });
+    expect(stored?.[3].transitionSec).toBeGreaterThan(0);
     expect(stored?.[4]).toEqual({ 1: { h: 0, p: 0, y: 0 } });
+  });
+
+  it("uses the slot nearest and reverse options in the start dialog", async () => {
+    snapshotsRef.current = [{ descriptor: { id: 1 }, positions: { h: 0, p: 0, y: 0 } }];
+    faderSlotsRef.current = faderSlotsRef.current.map((slot) =>
+      slot.index === 1 ? { ...slot, runOptions: { nearest: true, reverse: true } } : slot,
+    );
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "F2 Ready" }));
+    expect(await screen.findByRole("alertdialog")).toBeTruthy();
+    expect(screen.getByText("就近接入 · 反向")).toBeTruthy();
+  });
+
+  it("blocks ready for a forced trajectory that fails the xSafe check", async () => {
+    snapshotsRef.current = [{ descriptor: { id: 1 }, positions: { h: 0, p: 0, y: 0 } }];
+    documentRef.current!.motion.actionSequences[1]!.trajectoryMode = true;
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "F2 Ready" }));
+    expect(await screen.findByRole("alertdialog")).toBeTruthy();
+    expect(screen.getByText("强制")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toMatch(/禁止准备/);
+    expect(screen.getByTestId("pose-transition-time").textContent).toMatch(/秒/);
+    const confirm = screen.getByRole("button", { name: "确认" }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    fireEvent.click(confirm);
+    expect(readySequenceMock).not.toHaveBeenCalled();
   });
 
   it("ignores a second confirm click before the dialog closes", async () => {
@@ -1268,7 +1284,7 @@ describe("ExecArea launch guard", () => {
     render(withMode(<ExecArea />));
     fireEvent.click(screen.getByRole("button", { name: "F2 Ready" }));
     expect(await screen.findByRole("alertdialog")).toBeTruthy();
-    expect(screen.getByText(/max motor velocity/)).toBeTruthy();
+    expect(screen.getByText(/最大电机速度必须为有限正数/)).toBeTruthy();
     expect((screen.getByRole("button", { name: "确认" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     await waitFor(() => {

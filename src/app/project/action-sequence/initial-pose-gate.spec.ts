@@ -1,18 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { MOTION_DEFAULTS } from "@/app/project/configuration-rules";
-import type {
-  ControlledObjectConfig,
-  MotorConfig,
-} from "@/app/project/project-document-types";
+import type { ControlledObjectConfig } from "@/app/project/project-document-types";
 import type { ActionSequenceConfig, ModelPose } from "./types";
-import * as initialTransitionPlanner from "./initial-transition-planner";
 import {
   capturePreparedPoses,
   enabledAxesMatchStart,
-  evaluateInitialPoseGate,
+  evaluateStartGate,
+  FORCED_UNSAFE_MESSAGE,
   preparedPosesMatchTelemetry,
-  type PoseSpeedMode,
+  remainingProgramMs,
 } from "./initial-pose-gate";
+import { fixtureObjects, fixtureSequence } from "./nearest-start.fixture";
 
 const singlePointObject = (
   overrides: Partial<ControlledObjectConfig> = {},
@@ -37,11 +35,18 @@ const singlePointObject = (
   ...overrides,
 });
 
-const poseSequence = (pose: ModelPose): ActionSequenceConfig => ({
+const twoPoseSequence = (
+  from: ModelPose,
+  to: ModelPose,
+  trajectoryMode = false,
+): ActionSequenceConfig => ({
   id: 1,
   name: "s",
-  trajectoryMode: false,
-  blocks: [{ id: "p", kind: "pose", objectId: 1, atMs: 2000, pose }],
+  trajectoryMode,
+  blocks: [
+    { id: "a", kind: "pose", objectId: 1, atMs: 0, pose: from },
+    { id: "b", kind: "pose", objectId: 1, atMs: 4000, pose: to },
+  ],
   segments: [],
 });
 
@@ -62,20 +67,18 @@ const instructionSequence = (): ActionSequenceConfig => ({
   segments: [],
 });
 
-const evaluate = (
-  pose: ModelPose,
+const gate = (
+  sequence: ActionSequenceConfig,
   currentH: number,
-  speedMode: PoseSpeedMode = "default",
-  object: ControlledObjectConfig = singlePointObject(),
-  motors: MotorConfig[] = [],
+  options: { nearest?: boolean; reverse?: boolean; object?: ControlledObjectConfig } = {},
 ) =>
-  evaluateInitialPoseGate({
-    sequence: poseSequence(pose),
-    objects: [object],
-    motors,
+  evaluateStartGate({
+    sequence,
+    objects: [options.object ?? singlePointObject()],
+    motors: [],
     telemetryByObjectId: new Map([[1, { h: currentH, p: 40, y: 50 }]]),
-    speedMode,
-    sequenceDurationMs: 2000,
+    nearest: options.nearest ?? false,
+    reverse: options.reverse ?? false,
   });
 
 describe("enabledAxesMatchStart", () => {
@@ -83,12 +86,8 @@ describe("enabledAxesMatchStart", () => {
     expect(
       enabledAxesMatchStart(["v1", "v2", "v3"], { h: 11, p: 0.1, y: -0.1 }, { v1: 10, v2: 0, v3: 0 }),
     ).toBe(true);
-    expect(
-      enabledAxesMatchStart(["v1"], { h: 11.2, p: 0, y: 0 }, { v1: 10, v2: 0, v3: 0 }),
-    ).toBe(false);
-    expect(
-      enabledAxesMatchStart(["v2"], { h: 0, p: 0.2, y: 0 }, { v1: 0, v2: 0, v3: 0 }),
-    ).toBe(false);
+    expect(enabledAxesMatchStart(["v1"], { h: 11.2, p: 0, y: 0 }, { v1: 10, v2: 0, v3: 0 })).toBe(false);
+    expect(enabledAxesMatchStart(["v2"], { h: 0, p: 0.2, y: 0 }, { v1: 0, v2: 0, v3: 0 })).toBe(false);
   });
 });
 
@@ -113,113 +112,79 @@ describe("preparedPosesMatchTelemetry", () => {
   });
 });
 
-describe("evaluateInitialPoseGate", () => {
-  it("treats an in-tolerance enabled axis as at-start and does not plan", () => {
-    const spy = vi.spyOn(initialTransitionPlanner, "planInitialTransition");
-    expect(evaluate({ v1: 10, v2: 0, v3: 0 }, 10.5)).toEqual({ status: "at-start" });
-    expect(spy).not.toHaveBeenCalled();
-    spy.mockRestore();
+describe("evaluateStartGate", () => {
+  const sequence = twoPoseSequence({ v1: 10, v2: 0, v3: 0 }, { v1: 400, v2: 0, v3: 0 });
+
+  it("treats an in-tolerance enabled axis as at-start even with nearest on", () => {
+    expect(gate(sequence, 10.5)).toEqual({ status: "at-start" });
+    expect(gate(sequence, 10.5, { nearest: true })).toEqual({ status: "at-start" });
   });
 
-  it("ignores a disabled axis that is far from the start pose", () => {
-    const spy = vi.spyOn(initialTransitionPlanner, "planInitialTransition");
-    expect(evaluate({ v1: 10, v2: 0, v3: 0 }, 10)).toEqual({ status: "at-start" });
-    expect(spy).not.toHaveBeenCalled();
-    spy.mockRestore();
+  it("uses the last frame as the start when reversed", () => {
+    expect(gate(sequence, 400, { reverse: true })).toEqual({ status: "at-start" });
+    expect(gate(sequence, 10, { reverse: true }).status).toBe("transition");
   });
 
-  it("skips a member that has no start pose", () => {
-    const spy = vi.spyOn(initialTransitionPlanner, "planInitialTransition");
-    expect(
-      evaluateInitialPoseGate({
-        sequence: instructionSequence(),
-        objects: [singlePointObject()],
-        motors: [],
-        telemetryByObjectId: new Map([[1, { h: 0, p: 0, y: 0 }]]),
-        speedMode: "default",
-        sequenceDurationMs: 2000,
-      }),
-    ).toEqual({ status: "at-start" });
-    expect(spy).not.toHaveBeenCalled();
-    spy.mockRestore();
+  it("skips a member that has no pose", () => {
+    expect(gate(instructionSequence(), 0)).toEqual({ status: "at-start" });
   });
 
-  it("plans with default motion params when the enabled axis is outside tolerance", () => {
-    const spy = vi.spyOn(initialTransitionPlanner, "planInitialTransition");
-    const result = evaluate({ v1: 100, v2: 0, v3: 0 }, 0, "default");
+  it("returns to the start and adds the transition to the programmed time", () => {
+    const result = gate(sequence, 100);
     expect(result.status).toBe("transition");
-    const model = spy.mock.calls[0]?.[0][0];
-    expect(model).toMatchObject({
-      type: 1,
-      id: 1,
-      current: { h: 0 },
-      target: { h: 100 },
-      h: { velocity: 50, acceleration: 25, deceleration: 25 },
-      maxMotorVelocity: 200,
-    });
-    if (result.status === "transition") {
-      expect(result.extraSeconds).toBe(result.plan.totalTime);
-      expect(result.totalSeconds).toBe(result.plan.totalTime + 2);
-      expect(result.plan.totalTime).toBeGreaterThan(0);
-    }
-    spy.mockRestore();
+    if (result.status !== "transition") return;
+    expect(result.plan.targetFrameMs).toBe(0);
+    expect(result.plan.forced).toBe(false);
+    expect(result.programSeconds).toBe(4);
+    expect(result.transitionSeconds).toBeGreaterThan(0);
+    expect(result.totalSeconds).toBeCloseTo(result.transitionSeconds + 4, 9);
   });
 
-  it("uses axis max velocity and min accel time for the fastest mode", () => {
-    const spy = vi.spyOn(initialTransitionPlanner, "planInitialTransition");
-    evaluate({ v1: 100, v2: 0, v3: 0 }, 0, "fastest");
-    expect(spy.mock.calls[0]?.[0][0]).toMatchObject({
-      h: { velocity: 500, acceleration: 500, deceleration: 500 },
-    });
-    spy.mockRestore();
+  it("joins at a later keyframe with nearest on, so the total can be shorter", () => {
+    const result = gate(sequence, 390, { nearest: true });
+    expect(result.status).toBe("transition");
+    if (result.status !== "transition") return;
+    expect(result.plan.targetFrameMs).toBe(4000);
+    expect(result.totalSeconds).toBeCloseTo(result.transitionSeconds, 9);
+    expect(result.totalSeconds).toBeLessThan(result.programSeconds);
   });
 
-  it("returns the planner error and no plan when motor velocity is not positive", () => {
-    const result = evaluate(
-      { v1: 100, v2: 0, v3: 0 },
-      0,
-      "default",
-      singlePointObject({ maxAxisVelocity: 0 }),
-    );
+  it("blocks ready for a forced trajectory whose xSafe check fails", () => {
+    const forced = twoPoseSequence({ v1: 10, v2: 0, v3: 0 }, { v1: 400, v2: 0, v3: 0 }, true);
+    const result = gate(forced, 100);
+    expect(result.status).toBe("blocked");
+    if (result.status !== "blocked") return;
+    expect(result.message).toBe(FORCED_UNSAFE_MESSAGE);
+    expect(result.plan.xSafe).toBe(false);
+    expect(result.transitionSeconds).toBeGreaterThan(0);
+  });
+
+  it("returns the algorithm error when a member cannot move", () => {
+    const result = gate(sequence, 100, { object: singlePointObject({ maxAxisVelocity: 0 }) });
     expect(result.status).toBe("error");
-    if (result.status === "error") {
-      expect(result.message).toMatch(/max motor velocity/);
-      expect(result).not.toHaveProperty("plan");
-    }
+    if (result.status === "error") expect(result.message).toMatch(/最大电机速度必须为有限正数/);
   });
 
-  it("builds a two-point model from mounts and pulley distance", () => {
-    const spy = vi.spyOn(initialTransitionPlanner, "planInitialTransition");
-    const object = singlePointObject({
-      controlType: 6,
-      enabledVirtualAxes: ["v1", "v2"],
-      pulleyDistance: 100,
-      modelRunDirection: 1,
-      pDefaultMaxVelocity: 3,
-      driveAxes: [
-        { key: "0", mount: { x: 0, z: 0 } },
-        { key: "1", mount: { x: 2000, z: 0 } },
-      ],
-      motionParams: {
-        move: { ...MOTION_DEFAULTS.move },
-        swingX: { ...MOTION_DEFAULTS.swingX },
-      },
-    });
-    evaluateInitialPoseGate({
-      sequence: poseSequence({ v1: 500, v2: 10, v3: 0 }),
-      objects: [object],
+  it("plans the mixed hoist fixture with every member", () => {
+    const result = evaluateStartGate({
+      sequence: fixtureSequence(false),
+      objects: fixtureObjects(),
       motors: [],
-      telemetryByObjectId: new Map([[1, { h: 1000, p: 0, y: 0 }]]),
-      speedMode: "default",
-      sequenceDurationMs: 0,
+      telemetryByObjectId: new Map([[1, { h: 120, p: 0, y: 0 }]]),
+      nearest: false,
+      reverse: false,
     });
-    expect(spy.mock.calls[0]?.[0][0]).toMatchObject({
-      type: 2,
-      baseHeight1: 100,
-      baseHeight2: 0,
-      lengthInside: 2000,
-      maxHeight: 1000,
-    });
-    spy.mockRestore();
+    expect(result.status).toBe("transition");
+    if (result.status === "transition") {
+      expect(result.plan.members.map((member) => member.objectId)).toEqual([1, 2, 3, 4]);
+    }
+  });
+});
+
+describe("remainingProgramMs", () => {
+  it("counts forward to the end and backward to zero", () => {
+    const base = { direction: 1 as const, targetFrameMs: 3000 };
+    expect(remainingProgramMs({ ...base } as never, 10000)).toBe(7000);
+    expect(remainingProgramMs({ ...base, direction: -1 } as never, 10000)).toBe(3000);
   });
 });

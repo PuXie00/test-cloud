@@ -8,11 +8,21 @@ import {
   type ReactNode,
 } from "react";
 import { toast } from "sonner";
-import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
+import {
+  hpyFromPositions,
+  planStartTransition,
+  type HpyPose,
+} from "@/app/project/action-sequence/initial-pose-gate";
+import type { NearestStartPlan } from "@/app/project/action-sequence/nearest-start";
+import {
+  resolveActionSequence,
+  type ResolvedActionSequence,
+} from "@/app/project/action-sequence/resolve-sequence";
 import { getMotionItemRepairIssue } from "@/app/project/project-motion-readiness";
 import { useProject } from "@/app/project/use-project";
 import { useConsoleNav } from "./use-console-nav";
-import { advancePreviewCursor } from "./sequence-preview";
+import { useOptionalControlledObjects } from "./use-controlled-objects";
+import { advancePreviewTimeline, buildPreviewTimeline } from "./sequence-preview-timeline";
 import {
   SequencePreviewContext,
   type SequencePreviewMultiplier,
@@ -32,11 +42,13 @@ const IDLE_STATE: SequencePreviewState = {
   multiplier: 1,
   totalMs: 0,
   resolved: null,
+  timeline: null,
 };
 
 export const SequencePreviewProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const { currentProject } = useProject();
   const { activeNav } = useConsoleNav();
+  const snapshots = useOptionalControlledObjects()?.snapshots;
   const [state, setState] = useState<SequencePreviewState>(IDLE_STATE);
 
   const stateRef = useRef(state);
@@ -45,23 +57,26 @@ export const SequencePreviewProvider: FC<{ children: ReactNode }> = ({ children 
   const projectRef = useRef(currentProject);
   projectRef.current = currentProject;
 
+  const snapshotsRef = useRef(snapshots);
+  snapshotsRef.current = snapshots;
+
   const cursorMsRef = useRef(state.cursorMs);
   const faderPercentRef = useRef(state.faderPercent);
   const multiplierRef = useRef(state.multiplier);
   const holdModeRef = useRef(state.holdMode);
-  const totalMsRef = useRef(state.totalMs);
+  const timelineRef = useRef(state.timeline);
   cursorMsRef.current = state.cursorMs;
   faderPercentRef.current = state.faderPercent;
   multiplierRef.current = state.multiplier;
   holdModeRef.current = state.holdMode;
-  totalMsRef.current = state.totalMs;
+  timelineRef.current = state.timeline;
 
   const stopPreview = useCallback(() => {
     cursorMsRef.current = IDLE_STATE.cursorMs;
     faderPercentRef.current = IDLE_STATE.faderPercent;
     multiplierRef.current = IDLE_STATE.multiplier;
     holdModeRef.current = IDLE_STATE.holdMode;
-    totalMsRef.current = IDLE_STATE.totalMs;
+    timelineRef.current = IDLE_STATE.timeline;
     setState(IDLE_STATE);
   }, []);
 
@@ -69,7 +84,7 @@ export const SequencePreviewProvider: FC<{ children: ReactNode }> = ({ children 
     const document = projectRef.current?.document;
     const sequence = document?.motion.actionSequences.find((entry) => entry.id === sequenceId);
     const issue = document ? getMotionItemRepairIssue(document, "sequence", sequenceId) : null;
-    if (!sequence || issue) {
+    if (!document || !sequence || issue) {
       toast.warning(issue?.message ?? PREVIEW_UNAVAILABLE);
       return;
     }
@@ -78,9 +93,30 @@ export const SequencePreviewProvider: FC<{ children: ReactNode }> = ({ children 
     try {
       resolved = resolveActionSequence(sequence);
     } catch {
-      toast.warning(issue?.message ?? PREVIEW_UNAVAILABLE);
+      toast.warning(PREVIEW_UNAVAILABLE);
       return;
     }
+
+    const reverse = !!options?.reverse;
+    const telemetryByObjectId = new Map<number, HpyPose>();
+    for (const snapshot of snapshotsRef.current ?? []) {
+      telemetryByObjectId.set(snapshot.descriptor.id, hpyFromPositions(snapshot.positions));
+    }
+    let plan: NearestStartPlan | null = null;
+    try {
+      plan = planStartTransition({
+        resolved,
+        sequence,
+        objects: document.setup.controlledObjects,
+        motors: document.setup.motors,
+        telemetryByObjectId,
+        nearest: !!options?.nearest,
+        reverse,
+      });
+    } catch (error) {
+      toast.warning(`过渡段无法预览：${error instanceof Error ? error.message : String(error)}`);
+    }
+    const timeline = buildPreviewTimeline(resolved.totalMs, plan, reverse);
 
     const next: SequencePreviewState = {
       sequenceId,
@@ -89,14 +125,15 @@ export const SequencePreviewProvider: FC<{ children: ReactNode }> = ({ children 
       holdMode: !!options?.holdMode,
       faderPercent: options?.faderPercent ?? 100,
       multiplier: 1,
-      totalMs: resolved.totalMs,
+      totalMs: timeline.totalMs,
       resolved,
+      timeline,
     };
     cursorMsRef.current = next.cursorMs;
     faderPercentRef.current = next.faderPercent;
     multiplierRef.current = next.multiplier;
     holdModeRef.current = next.holdMode;
-    totalMsRef.current = next.totalMs;
+    timelineRef.current = next.timeline;
     setState(next);
   }, []);
 
@@ -148,20 +185,28 @@ export const SequencePreviewProvider: FC<{ children: ReactNode }> = ({ children 
     const tick = (now: number) => {
       const dtMs = now - last;
       last = now;
-      const advanced = advancePreviewCursor({
+      const timeline = timelineRef.current;
+      if (!timeline) return;
+      const advanced = advancePreviewTimeline({
+        timeline,
         cursorMs: cursorMsRef.current,
         dtMs,
         faderPercent: faderPercentRef.current,
         multiplier: multiplierRef.current,
-        totalMs: totalMsRef.current,
         loop: holdModeRef.current,
       });
       cursorMsRef.current = advanced.cursorMs;
+      timelineRef.current = advanced.timeline;
+      const patch = {
+        cursorMs: advanced.cursorMs,
+        timeline: advanced.timeline,
+        totalMs: advanced.timeline.totalMs,
+      };
       if (advanced.ended) {
-        setState((current) => ({ ...current, cursorMs: advanced.cursorMs, isPlaying: false }));
+        setState((current) => ({ ...current, ...patch, isPlaying: false }));
         return;
       }
-      setState((current) => ({ ...current, cursorMs: advanced.cursorMs }));
+      setState((current) => ({ ...current, ...patch }));
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
