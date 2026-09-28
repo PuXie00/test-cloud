@@ -9,11 +9,12 @@ export type SyncMoveVirtualAxis = {
   decVel: number
 }
 
-/** syncMovePrepare 下发的接入计划。direction：true 正向，false 反向。 */
+/** syncMovePrepare 下发的接入计划。direction：true 正向，false 反向。transitionSec 单位是毫秒。 */
 export type SyncMoveStartPlan = {
   direction: boolean
   nearest: boolean
   targetFrameMs: number
+  transitionSec: number
   modelList: {
     deviceId: number
     virtualAxis: SyncMoveVirtualAxis[]
@@ -36,6 +37,7 @@ export const toSyncMoveStartPlan = (plan: ActionStartPlan): SyncMoveStartPlan =>
   direction: plan.direction === 1,
   nearest: plan.nearest,
   targetFrameMs: plan.targetFrameMs,
+  transitionSec: plan.transitionSec * 1000,
   modelList: plan.members.map((member) => {
     const moves = new Map(member.axes.map((axis) => [axis.axis, axis]))
     return {
