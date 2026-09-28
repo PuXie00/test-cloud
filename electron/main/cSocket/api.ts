@@ -1,4 +1,5 @@
 import type { ActionDataSaveItem } from '../../../shared/csocket/action-data-save'
+import { toSyncMovePrepareItems, type SyncMovePrepareSource } from '../../../shared/csocket/sync-move-start-plan'
 import type {
   CsocketConfigureContext,
   CsocketConnectionState,
@@ -362,25 +363,18 @@ export class CsocketApiService {
         console.log('actionReady startPlan', item.actionId, JSON.stringify(item.startPlan))
       }
     }
-    const isTMaped = [];
-    const isNotTMaped: {
-      actionId: number,
-      modelList: unknown[],
-      IOBlockList: unknown[]
-    }[] = [];
+    const isNotTMaped: SyncMovePrepareSource[] = []
     items.forEach(item => {
-      if(item.trajectoryMode) {
-        isTMaped.push(item)
-      } else {
-        isNotTMaped.push({
-          actionId: item.actionId,
-          modelList: item.modelList,
-          IOBlockList: item.IOBlockList,
-        })
-      }
+      if (item.trajectoryMode) return
+      isNotTMaped.push({
+        actionId: item.actionId,
+        modelList: item.modelList,
+        IOBlockList: item.IOBlockList,
+        ...(item.startPlan ? { startPlan: item.startPlan } : {}),
+      })
     })
     console.log('isNotTMaped', JSON.stringify(isNotTMaped))
-    this.syncMovePrepare(isNotTMaped, opts)
+    return this.syncMovePrepare(isNotTMaped, opts)
   }
   // 动作执行 Go
   actionGo(items: {
@@ -643,14 +637,10 @@ export class CsocketApiService {
   }
   //  动作 同步模型目标位置运动预备（仅内部调用，不暴露 IPC）
   private syncMovePrepare(
-    items: {
-      actionId: number
-      modelList: unknown[]
-      IOBlockList: unknown[]
-    }[],
+    items: SyncMovePrepareSource[],
     opts?: CsocketSendOpts,
   ) {
-    return this.sendBuilt('Opera|syncMovePrepare', '0x010A', items, opts)
+    return this.sendBuilt('Opera|syncMovePrepare', '0x010A', toSyncMovePrepareItems(items), opts)
   }
   // 动作 同步模型目标位置运动开始
   syncMovebegin(

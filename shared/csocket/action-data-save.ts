@@ -43,6 +43,23 @@ export type cCompiledModel = {
   }[] // 时间块列表，如：[ { time:0, virtualAxis:[ { pos:0, vel:0, accVel:0, decVel:0 } ] } ]
 }
 
+/** 上位机算出的就近/回起点接入计划。非强制由 syncMovePrepare 转成 PLC 报文。 */
+export type ActionStartPlan = {
+  nearest: boolean
+  direction: 1 | -1
+  targetFrameMs: number
+  members: readonly {
+    objectId: number
+    axes: readonly {
+      axis: 'v1' | 'v2' | 'v3'
+      to: number
+      velocity: number
+      acceleration: number
+      deceleration: number
+    }[]
+  }[]
+}
+
 export type ActionDataSaveItem = {
   actionId: number
   totalDuration: number
@@ -56,6 +73,6 @@ export type ActionDataSaveItem = {
   }>//plc需要的
   modelList:cCompiledModel[] // C++ 需要的
   IOBlockList: cCompiledEvent[]
-  /** 上位机算出的就近/回起点接入计划；主进程暂只打印，不进入下发报文 */
-  startPlan?: unknown
+  /** 上位机算出的就近/回起点接入计划。非强制准备转入 syncMovePrepare，强制轨迹只打印。 */
+  startPlan?: ActionStartPlan
 }
