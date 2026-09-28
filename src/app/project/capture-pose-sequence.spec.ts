@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ModelPose } from "./action-sequence/types";
-import {
-  CAPTURED_SEQUENCE_NAME,
-  buildCapturedPoseSequence,
-} from "./capture-pose-sequence";
+import { buildCapturedPoseSequence } from "./capture-pose-sequence";
 
 const pose = (v1: number): ModelPose => ({ v1, v2: 0, v3: 0 });
 
@@ -12,6 +9,7 @@ describe("buildCapturedPoseSequence", () => {
     expect(
       buildCapturedPoseSequence({
         id: 9,
+        name: "新序列",
         objectIds: [1, 2],
         poseForObject: () => null,
       }),
@@ -19,6 +17,7 @@ describe("buildCapturedPoseSequence", () => {
     expect(
       buildCapturedPoseSequence({
         id: 9,
+        name: "新序列",
         objectIds: [],
         poseForObject: () => pose(1),
       }),
@@ -28,13 +27,13 @@ describe("buildCapturedPoseSequence", () => {
   it("builds one t=0 pose block per object that has a pose", () => {
     const sequence = buildCapturedPoseSequence({
       id: 12,
+      name: "新序列 (2)",
       objectIds: [7, 8, 9],
       poseForObject: (id) => (id === 8 ? null : pose(id * 10)),
     });
     expect(sequence).not.toBeNull();
     expect(sequence!.id).toBe(12);
-    expect(sequence!.name).toBe(CAPTURED_SEQUENCE_NAME);
-    expect(CAPTURED_SEQUENCE_NAME).toBe("新建动作序列");
+    expect(sequence!.name).toBe("新序列 (2)");
     expect(sequence!.trajectoryMode).toBe(false);
     expect(sequence!.loop).toBe(false);
     expect(sequence!.segments).toEqual([]);

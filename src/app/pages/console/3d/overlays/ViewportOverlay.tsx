@@ -246,7 +246,9 @@ export const ViewportOverlay = () => {
           </div>
         ) : null}
       </div>
-      {isControl && preview.sequenceId !== null && !preview.holdMode ? <SequencePreviewBar /> : null}
+      {(isControl || isSequences) && preview.sequenceId !== null && !preview.holdMode ? (
+        <SequencePreviewBar />
+      ) : null}
     </div>
   );
 };

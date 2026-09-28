@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeftRight, Loader2, Locate, Play, Plus, Repeat, Shield, Zap } from "lucide-react";
+import { ArrowLeftRight, Loader2, Locate, Play, Plus, Shield } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/app/components/ui/popover";
 import { cn } from "@/app/components/ui/utils";
 import { useConsoleMode } from "../../../hooks/use-console-mode";
 import type { FaderSlotState } from "../../../hooks/use-executor-slots";
 import { VerticalFader } from "./vertical-fader";
-import { isForcedTrajectory } from "../../forced-trajectory-badge";
+import { ForcedTrajectoryBadge, isForcedTrajectory } from "../../forced-trajectory-badge";
+import { LoopBadge } from "../../loop-badge";
 
 const LONG_PRESS_MS = 400;
 const LONG_PRESS_MOVE_PX = 8;
@@ -189,12 +190,7 @@ export const FaderSlot = ({
               aria-label={`${slot.sequence?.name} 标记`}
               className="relative z-10 flex h-6 w-full shrink-0 items-center justify-center gap-1.5 rounded-full bg-input-background text-foreground"
             >
-              {isForced ? (
-                <span className="inline-flex text-warning" title="强制">
-                  <Zap className="h-3.5 w-3.5" aria-hidden />
-                  <span className="sr-only">强制</span>
-                </span>
-              ) : null}
+              {isForced ? <ForcedTrajectoryBadge /> : null}
               <span
                 className={cn(
                   "inline-flex",
@@ -217,12 +213,7 @@ export const FaderSlot = ({
                   <span className="sr-only">反向</span>
                 </span>
               ) : null}
-              {slot.sequence?.loop ? (
-                <span className="inline-flex text-secondary" title="循环">
-                  <Repeat className="h-3.5 w-3.5" aria-hidden />
-                  <span className="sr-only">循环</span>
-                </span>
-              ) : null}
+              {slot.sequence?.loop ? <LoopBadge /> : null}
             </button>
           </PopoverTrigger>
           <PopoverContent side="top" align="center" className="w-40 bg-card p-2 shadow-[0_4px_24px_rgba(0,0,0,0.4)]">

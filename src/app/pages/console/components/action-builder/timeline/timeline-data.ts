@@ -113,3 +113,24 @@ export const stripSequenceFromProgramTree = (
   };
   return strip(programs);
 };
+
+/** 节目树里引用该序列的节点改名，与动作序列库保持一致 */
+export const renameSequenceInProgramTree = (
+  programs: ProgramNode[],
+  sequenceId: number,
+  name: string,
+): ProgramNode[] => {
+  const targetId = String(sequenceId);
+  const rename = (nodes: ProgramNode[]): ProgramNode[] => {
+    let changed = false;
+    const next = nodes.map((node) => {
+      const children = node.children ? rename(node.children) : node.children;
+      const renamed = node.type === "sequence" && node.id === targetId && node.name !== name;
+      if (!renamed && children === node.children) return node;
+      changed = true;
+      return { ...node, ...(renamed ? { name } : {}), ...(children ? { children } : {}) };
+    });
+    return changed ? next : nodes;
+  };
+  return rename(programs);
+};

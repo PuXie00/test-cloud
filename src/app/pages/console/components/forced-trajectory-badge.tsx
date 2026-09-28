@@ -1,4 +1,5 @@
 import type { TrajectoryMode } from "@shared/action-sequence";
+import { Route } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
 
 export const FORCED_TRAJECTORY_LABEL = "强制";
@@ -8,11 +9,10 @@ export const isForcedTrajectory = (mode: TrajectoryMode | undefined): boolean =>
 
 export const ForcedTrajectoryBadge = ({ className }: { className?: string }) => (
   <span
-    className={cn(
-      "shrink-0 rounded-sm bg-muted px-1 py-0.5 text-label-caps text-foreground",
-      className,
-    )}
+    className={cn("inline-flex shrink-0 text-foreground", className)}
+    title="强制轨迹"
   >
-    {FORCED_TRAJECTORY_LABEL}
+    <Route className="h-3.5 w-3.5" aria-hidden />
+    <span className="sr-only">{FORCED_TRAJECTORY_LABEL}</span>
   </span>
 );

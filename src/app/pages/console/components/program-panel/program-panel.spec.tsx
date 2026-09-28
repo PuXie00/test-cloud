@@ -200,6 +200,33 @@ describe("ProgramPanel variants", () => {
     expect(screen.getByRole("treeitem", { name: "非强制A" })).toBeTruthy();
     expect(screen.getByRole("treeitem", { name: "强制B，强制轨迹" })).toBeTruthy();
     expect(screen.getByText("强制")).toBeTruthy();
+    expect(screen.queryByText("循环")).toBeNull();
+  });
+
+  it("control variant marks a looping sequence with 循环", () => {
+    programState.current = {
+      id: "program-a",
+      name: "节目 A",
+      chapters: [
+        {
+          id: "ch-1",
+          name: "章节 1",
+          items: [
+            {
+              kind: "sequence",
+              sequence: { id: 1, name: "循环A", durationMs: 1000, loop: true },
+            },
+          ],
+        },
+      ],
+    };
+    render(
+      <ConsoleModeProvider>
+        <ProgramPanel variant="control" />
+      </ConsoleModeProvider>,
+    );
+    expect(screen.getByRole("treeitem", { name: "循环A，循环" })).toBeTruthy();
+    expect(screen.getByText("循环")).toBeTruthy();
   });
 
   it("authoring variant shows pages without current chapter or page", () => {
@@ -232,6 +259,31 @@ describe("ProgramPanel variants", () => {
     expect(screen.queryByText("当前页")).toBeNull();
     expect(screen.getByText("页 1/2")).toBeTruthy();
     expect(screen.getByText("2页·13项")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "运行 S1" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /运行 / })).toBeNull();
+    expect(screen.getByRole("button", { name: "拖动 S1" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "拖动 S1" }).getAttribute("draggable")).toBe("true");
+  });
+
+  it("long press starts a hold preview and does not toggle on release", () => {
+    programState.current = {
+      id: "program-a",
+      name: "节目 A",
+      chapters: [{ id: "ch-1", name: "章节 1", items: makeChapterItems(1) }],
+    };
+    render(
+      <ConsoleModeProvider>
+        <ProgramPanel variant="control" />
+      </ConsoleModeProvider>,
+    );
+    const row = screen.getByRole("treeitem", { name: "S1" });
+    vi.useFakeTimers();
+    fireEvent.pointerDown(row, { button: 0, clientX: 4, clientY: 4 });
+    vi.advanceTimersByTime(400);
+    expect(startPreviewMock).toHaveBeenCalledWith(1, { autoplay: true, holdMode: true });
+    fireEvent.pointerUp(row);
+    expect(stopPreviewMock).toHaveBeenCalled();
+    fireEvent.click(row);
+    expect(togglePreviewMock).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 });

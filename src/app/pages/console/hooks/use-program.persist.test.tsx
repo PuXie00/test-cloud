@@ -7,6 +7,7 @@ import {
   installMemoryProjectAPI,
   uninstallMemoryProjectAPI,
 } from "@/app/project/install-memory-project-api";
+import { nextNewSequenceName } from "@/app/project/action-sequence/sequence-name";
 import { GZ_2025_RECORD } from "@/app/project/test-fixtures";
 import { ProgramProvider, useProgram } from "./use-program";
 import { useProject } from "@/app/project/use-project";
@@ -100,7 +101,9 @@ describe("ProgramProvider document persist", () => {
     const sequences = result.current.project.currentProject!.document!.motion.actionSequences;
     expect(sequences).toHaveLength(seqBefore + 1);
     const created = sequences[sequences.length - 1]!;
-    expect(created.name).toBe("新建动作序列");
+    expect(created.name).toBe(
+      nextNewSequenceName(sequences.slice(0, -1).map((sequence) => sequence.name)),
+    );
     expect(created.blocks).toEqual([
       expect.objectContaining({ kind: "pose", atMs: 0, pose: { v1: 42, v2: 0, v3: 0 } }),
     ]);

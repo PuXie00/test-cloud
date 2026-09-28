@@ -21,6 +21,11 @@ import { validateActionSequence } from "@/app/project/action-sequence/validate-s
 import type { SequenceIssue } from "@/app/project/action-sequence/validate-sequence";
 import { sequenceValidationContextFromSetup } from "@/app/project/project-motion-readiness";
 import { allocateSequenceIdsInProject } from "@/app/project/action-sequence/sequence-id";
+import {
+  nextNewSequenceName,
+  normalizeSequenceName,
+  sequenceNameError,
+} from "@/app/project/action-sequence/sequence-name";
 import type { ActionSequenceConfig, ModelPose, MotionSegmentSettings, TimelineBlock } from "@/app/project/action-sequence/types";
 import {
   actionSequencePathIsClosed,
@@ -57,6 +62,7 @@ import {
 import { clampCursorMs } from "./timeline/timeline-view-extent";
 import {
   clampTimelinePxPerSecond,
+  renameSequenceInProgramTree,
   stripSequenceFromProgramTree,
   TIMELINE_PX_PER_SECOND_DEFAULT,
   TIMELINE_ZOOM_FACTOR,
@@ -527,12 +533,37 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         setLastPersistError(error instanceof Error ? error.message : "动作序列 id 已满（1~65535）");
         return;
       }
-      const next = createEmptySequence(id);
+      const next = createEmptySequence(
+        id,
+        nextNewSequenceName(motionRef.current.sequences.map((sequence) => sequence.name)),
+      );
       const nextSequences = [...motionRef.current.sequences, next];
       if (!commitMotionProjection({ ...motionRef.current, sequences: nextSequences })) return;
       handleSequenceSelect(next.id);
     },
     [commitMotionProjection, handleSequenceSelect],
+  );
+
+  const handleRenameSequence = useCallback(
+    (raw: string): string | null => {
+      if (selectedSequenceId === null) return "未选择序列";
+      const current = motionRef.current.sequences.find((item) => item.id === selectedSequenceId);
+      if (!current) return "未选择序列";
+      const others = motionRef.current.sequences
+        .filter((item) => item.id !== current.id)
+        .map((item) => item.name);
+      const error = sequenceNameError(raw, others);
+      if (error) return error;
+      const name = normalizeSequenceName(raw);
+      if (name === current.name) return null;
+      const sequences = motionRef.current.sequences.map((item) =>
+        item.id === current.id ? { ...item, name } : item,
+      );
+      const programs = renameSequenceInProgramTree(motionRef.current.programs, current.id, name);
+      if (!commitMotionProjection({ sequences, programs })) return "重命名失败";
+      return null;
+    },
+    [selectedSequenceId, commitMotionProjection],
   );
 
   const handleDeleteSequence = useCallback(() => {
@@ -804,6 +835,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleCreatePose,
       handleCreateSetEnabled,
       handleCreateSequence,
+      handleRenameSequence,
       handleDeleteSequence,
       handleApplyStaticPreset,
       handleApplyDynamicPreset,
@@ -861,6 +893,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleCreatePose,
       handleCreateSetEnabled,
       handleCreateSequence,
+      handleRenameSequence,
       handleDeleteSequence,
       handleApplyStaticPreset,
       handleApplyDynamicPreset,

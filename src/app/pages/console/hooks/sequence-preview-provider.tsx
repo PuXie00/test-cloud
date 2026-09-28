@@ -171,7 +171,7 @@ export const SequencePreviewProvider: FC<{ children: ReactNode }> = ({ children 
   }, [state.isPlaying]);
 
   useEffect(() => {
-    if (activeNav !== "control") stopPreview();
+    if (activeNav !== "control" && activeNav !== "sequences") stopPreview();
   }, [activeNav, stopPreview]);
 
   const prevProjectIdRef = useRef<string | undefined>(undefined);
