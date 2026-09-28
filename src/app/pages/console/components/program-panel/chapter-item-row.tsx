@@ -4,7 +4,6 @@ import { isForcedTrajectory } from "../forced-trajectory-badge";
 
 type ChapterItemRowProps = {
   item: ChapterItem;
-  slotLabel: string;
   isActive?: boolean;
   hasWarning?: boolean;
   warningMessage?: string;
@@ -19,7 +18,6 @@ type ChapterItemRowProps = {
 
 export const ChapterItemRow = ({
   item,
-  slotLabel,
   isActive,
   hasWarning,
   warningMessage,
@@ -39,7 +37,6 @@ export const ChapterItemRow = ({
     <ProgramSequenceRow
       role="treeitem"
       name={name}
-      indexLabel={slotLabel}
       durationLabel={(durationMs / 1000).toFixed(1)}
       repairMessage={repairMessage}
       forced={isForcedTrajectory(item.sequence.trajectoryMode)}

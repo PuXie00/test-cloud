@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, ElementType } from "react";
-import { Minus, Pause, Play, Plus, RotateCcw, Save, Trash2 } from "lucide-react";
+import { Minus, Pause, Play, Plus, RotateCcw, Route, Save, Trash2 } from "lucide-react";
 import { Switch } from "@/app/components/ui/switch";
 import { cn } from "@/app/components/ui/utils";
 import type { TrajectoryMode } from "@shared/action-sequence";
@@ -103,6 +103,7 @@ export const TimelineToolbar = ({
     {trajectoryMode !== undefined && onTrajectoryModeChange ? (
       <div className="flex items-center gap-3">
         <label className="inline-flex h-7 items-center gap-1.5">
+          <Route className="h-3.5 w-3.5 text-warning" aria-hidden />
           <span className="text-body-sm text-muted-foreground">强制轨迹</span>
           <Switch
             aria-label="强制轨迹"

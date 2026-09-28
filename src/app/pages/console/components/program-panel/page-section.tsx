@@ -78,7 +78,6 @@ export const PageSection = ({
               <ChapterItemRow
                 key={item.sequence.id}
                 item={item}
-                slotLabel={`F${idx + 1}`}
                 isActive={item.sequence.id === activeSequenceId}
                 hasWarning={Boolean(issue)}
                 warningMessage={issue?.message}

@@ -8,7 +8,7 @@ const LONG_PRESS_MOVE_PX = 8;
 
 export type ProgramSequenceRowProps = {
   name: string;
-  indexLabel: string;
+  indexLabel?: string;
   durationLabel?: string | null;
   repairMessage?: string | null;
   forced?: boolean;
@@ -144,9 +144,11 @@ export const ProgramSequenceRow = ({
       ) : (
         <span className="w-7 shrink-0" aria-hidden />
       )}
-      <span className="w-8 shrink-0 text-right font-mono text-mono-sm tabular-nums text-muted-foreground">
-        {indexLabel}
-      </span>
+      {indexLabel ? (
+        <span className="w-8 shrink-0 text-right font-mono text-mono-sm tabular-nums text-muted-foreground">
+          {indexLabel}
+        </span>
+      ) : null}
       <span className="min-w-0 flex-1 truncate text-body-sm text-foreground">{name}</span>
       {forced ? <ForcedTrajectoryBadge /> : null}
       {warning ? (

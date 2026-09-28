@@ -1,3 +1,4 @@
+import { NEW_SEQUENCE_BASE_NAME } from "@/app/project/action-sequence/sequence-name";
 import type {
   ActionSequenceConfig,
 } from "@/app/project/action-sequence/types";
@@ -12,7 +13,7 @@ export const nextId = (prefix: string): string =>
 
 export const createEmptySequence = (id: number, name?: string): ActionSequenceConfig => ({
   id,
-  name: name ?? "新序列",
+  name: name ?? NEW_SEQUENCE_BASE_NAME,
   trajectoryMode: false,
   loop: false,
   blocks: [],

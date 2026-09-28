@@ -2,7 +2,7 @@
 export const SEQUENCE_NAME_MAX_LENGTH = 8;
 
 /** 新建序列的基础名；重名时追加「 (2)」「 (3)」…，与系统新建文件夹一致 */
-export const NEW_SEQUENCE_BASE_NAME = "新序列";
+export const NEW_SEQUENCE_BASE_NAME = "新动作";
 
 const codePointLength = (value: string): number => [...value].length;
 
@@ -22,7 +22,7 @@ export const sequenceNameError = (
   return null;
 };
 
-/** 在已有名称之外取下一个「新序列」「新序列 (2)」…，结果不超过 8 个字符 */
+/** 在已有名称之外取下一个「新动作」「新动作 (2)」…，结果不超过 8 个字符 */
 export const nextNewSequenceName = (existingNames: readonly string[]): string => {
   const taken = new Set(existingNames.map(normalizeSequenceName));
   if (!taken.has(NEW_SEQUENCE_BASE_NAME)) return NEW_SEQUENCE_BASE_NAME;
