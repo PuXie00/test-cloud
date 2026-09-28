@@ -13,8 +13,16 @@ import { virtualAxisDescriptor } from "@/app/project/virtual-axis-mapping";
 import { CONTROL_TYPE_RULES } from "@/app/project/configuration-rules";
 import type { ControlType, MotionAxisKind } from "@/app/project/configuration-types";
 
-const formatPlainNumber = (value: number): string =>
-  Number.isInteger(value) ? String(value) : value.toFixed(2);
+/** 虚轴 2、虚轴 3 的编辑步进是 0.1，标签最多显示一位小数。虚轴 1 的角度仍保留两位。 */
+const plainNumberPrecision = (axis: VirtualAxisId): number => (axis === "v1" ? 2 : 1);
+
+const formatPlainNumber = (value: number, axis: VirtualAxisId): string => {
+  const text = value.toFixed(plainNumberPrecision(axis));
+  const rounded = Number(text);
+  if (!Number.isFinite(rounded)) return text;
+  if (Number.isInteger(rounded)) return String(rounded);
+  return rounded.toFixed(plainNumberPrecision(axis));
+};
 
 const DEFAULT_MOTION_AXES = ["move"] as const;
 
@@ -83,7 +91,7 @@ export const formatVirtualAxisValue = (
   if (isLengthFamilyUnit(unit)) {
     return formatLengthFamily(canonicalValue, unit, display, options);
   }
-  return `${formatPlainNumber(canonicalValue)} ${unit}`;
+  return `${formatPlainNumber(canonicalValue, axis)} ${unit}`;
 };
 
 export const formatVirtualAxisSpeed = (
@@ -97,7 +105,7 @@ export const formatVirtualAxisSpeed = (
     return formatLengthFamily(canonicalSpeed, "mm/s", display, options);
   }
   const unit = getVirtualAxisCanonicalUnit(axis, controlType);
-  return `${formatPlainNumber(canonicalSpeed)} ${unit}/s`;
+  return `${formatPlainNumber(canonicalSpeed, axis)} ${unit}/s`;
 };
 
 export const formatVirtualAxisCompact = (
@@ -112,7 +120,7 @@ export const formatVirtualAxisCompact = (
     const value = formatLengthFamilyValue(canonicalValue, unit, display, options);
     return `${value}${getDisplayLengthFamilyUnit(unit, display)}`;
   }
-  return `${formatPlainNumber(canonicalValue)}${unit}`;
+  return `${formatPlainNumber(canonicalValue, axis)}${unit}`;
 };
 
 export const formatVirtualAxesCompact = (
