@@ -48,6 +48,8 @@ export type ActionStartPlan = {
   nearest: boolean
   direction: 1 | -1
   targetFrameMs: number
+  /** 过渡时长，秒。下发前换算成毫秒。 */
+  transitionSec: number
   members: readonly {
     objectId: number
     axes: readonly {
