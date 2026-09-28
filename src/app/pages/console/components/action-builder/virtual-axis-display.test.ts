@@ -13,6 +13,22 @@ describe("formatVirtualAxisCompact", () => {
   it("formats angle axis (v2) as degrees", () => {
     expect(formatVirtualAxisCompact("v2", 5, "mm", undefined, "fourPointSwing")).toBe("5°");
   });
+
+  it("rounds swing axes v2 and v3 to one decimal", () => {
+    expect(formatVirtualAxisCompact("v2", 1.25, "mm", undefined, "fourPointSwing")).toBe("1.3°");
+    expect(formatVirtualAxisCompact("v3", 1.24, "mm", undefined, "fourPointSwing")).toBe("1.2°");
+    expect(formatVirtualAxisCompact("v2", 10.04, "mm", undefined, "fourPointSwing")).toBe("10°");
+    expect(formatVirtualAxisCompact("v3", -3.26, "mm", undefined, "multiPointSwing")).toBe("-3.3°");
+    expect(
+      formatVirtualAxesCompact(
+        ["v1", "v2", "v3"],
+        { v1: 1234, v2: 1.25, v3: 2.04 },
+        "mm",
+        undefined,
+        "fourPointSwing",
+      ),
+    ).toBe("1234mm/1.3°/2°");
+  });
 });
 
 describe("formatVirtualAxesCompact", () => {
