@@ -9,7 +9,7 @@ export const isForcedTrajectory = (mode: TrajectoryMode | undefined): boolean =>
 
 export const ForcedTrajectoryBadge = ({ className }: { className?: string }) => (
   <span
-    className={cn("inline-flex shrink-0 text-warning", className)}
+    className={cn("inline-flex shrink-0 text-foreground", className)}
     title="强制轨迹"
   >
     <Route className="h-3.5 w-3.5" aria-hidden />
