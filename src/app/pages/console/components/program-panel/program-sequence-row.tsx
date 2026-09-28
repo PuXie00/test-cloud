@@ -2,6 +2,7 @@ import { GripVertical, X } from "lucide-react";
 import { useEffect, useRef, type DragEvent, type PointerEvent } from "react";
 import { cn } from "@/app/components/ui/utils";
 import { ForcedTrajectoryBadge } from "../forced-trajectory-badge";
+import { LoopBadge } from "../loop-badge";
 
 const LONG_PRESS_MS = 400;
 const LONG_PRESS_MOVE_PX = 8;
@@ -12,6 +13,7 @@ export type ProgramSequenceRowProps = {
   durationLabel?: string | null;
   repairMessage?: string | null;
   forced?: boolean;
+  loop?: boolean;
   draggable?: boolean;
   dropActive?: boolean;
   striped?: boolean;
@@ -34,6 +36,7 @@ export const ProgramSequenceRow = ({
   durationLabel,
   repairMessage,
   forced = false,
+  loop = false,
   draggable = false,
   dropActive = false,
   striped = false,
@@ -50,7 +53,9 @@ export const ProgramSequenceRow = ({
   onRemove,
 }: ProgramSequenceRowProps) => {
   const warning = repairMessage ?? undefined;
-  const accessibleLabel = [name, forced ? "强制轨迹" : null, warning].filter(Boolean).join("，");
+  const accessibleLabel = [name, forced ? "强制轨迹" : null, loop ? "循环" : null, warning]
+    .filter(Boolean)
+    .join("，");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startPointRef = useRef<{ x: number; y: number } | null>(null);
   const holdActiveRef = useRef(false);
@@ -128,29 +133,32 @@ export const ProgramSequenceRow = ({
         "hover:bg-accent",
       )}
     >
-      {draggable ? (
-        <span
-          data-row-chrome=""
-          role="button"
-          tabIndex={0}
-          aria-label={`拖动 ${name}`}
-          draggable
-          onDragStart={onDragStart}
-          onClick={(event) => event.stopPropagation()}
-          className="inline-flex h-7 w-7 shrink-0 cursor-grab items-center justify-center rounded-sm text-muted-foreground active:cursor-grabbing"
-        >
-          <GripVertical className="h-3.5 w-3.5" aria-hidden />
-        </span>
-      ) : (
-        <span className="w-7 shrink-0" aria-hidden />
-      )}
-      {indexLabel ? (
-        <span className="w-8 shrink-0 text-right font-mono text-mono-sm tabular-nums text-muted-foreground">
-          {indexLabel}
-        </span>
-      ) : null}
+      <span className="inline-flex shrink-0 items-center gap-0.5">
+        {draggable ? (
+          <span
+            data-row-chrome=""
+            role="button"
+            tabIndex={0}
+            aria-label={`拖动 ${name}`}
+            draggable
+            onDragStart={onDragStart}
+            onClick={(event) => event.stopPropagation()}
+            className="inline-flex h-7 w-7 shrink-0 cursor-grab items-center justify-center rounded-sm text-muted-foreground active:cursor-grabbing"
+          >
+            <GripVertical className="h-3.5 w-3.5" aria-hidden />
+          </span>
+        ) : (
+          <span className="w-7 shrink-0" aria-hidden />
+        )}
+        {indexLabel ? (
+          <span className="shrink-0 font-mono text-mono-sm tabular-nums text-muted-foreground">
+            {indexLabel}
+          </span>
+        ) : null}
+      </span>
       <span className="min-w-0 flex-1 truncate text-body-sm text-foreground">{name}</span>
       {forced ? <ForcedTrajectoryBadge /> : null}
+      {loop ? <LoopBadge /> : null}
       {warning ? (
         <span className="shrink-0 text-body-sm text-warning">待修复</span>
       ) : null}

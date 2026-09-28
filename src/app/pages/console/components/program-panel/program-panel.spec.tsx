@@ -200,6 +200,33 @@ describe("ProgramPanel variants", () => {
     expect(screen.getByRole("treeitem", { name: "非强制A" })).toBeTruthy();
     expect(screen.getByRole("treeitem", { name: "强制B，强制轨迹" })).toBeTruthy();
     expect(screen.getByText("强制")).toBeTruthy();
+    expect(screen.queryByText("循环")).toBeNull();
+  });
+
+  it("control variant marks a looping sequence with 循环", () => {
+    programState.current = {
+      id: "program-a",
+      name: "节目 A",
+      chapters: [
+        {
+          id: "ch-1",
+          name: "章节 1",
+          items: [
+            {
+              kind: "sequence",
+              sequence: { id: 1, name: "循环A", durationMs: 1000, loop: true },
+            },
+          ],
+        },
+      ],
+    };
+    render(
+      <ConsoleModeProvider>
+        <ProgramPanel variant="control" />
+      </ConsoleModeProvider>,
+    );
+    expect(screen.getByRole("treeitem", { name: "循环A，循环" })).toBeTruthy();
+    expect(screen.getByText("循环")).toBeTruthy();
   });
 
   it("authoring variant shows pages without current chapter or page", () => {

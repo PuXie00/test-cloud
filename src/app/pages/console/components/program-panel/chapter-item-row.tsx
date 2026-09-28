@@ -40,6 +40,7 @@ export const ChapterItemRow = ({
       durationLabel={(durationMs / 1000).toFixed(1)}
       repairMessage={repairMessage}
       forced={isForcedTrajectory(item.sequence.trajectoryMode)}
+      loop={item.sequence.loop === true}
       draggable={draggable}
       striped={striped}
       ariaSelected={isActive}

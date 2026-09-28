@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, ElementType } from "react";
-import { Minus, Pause, Play, Plus, RotateCcw, Route, Save, Trash2 } from "lucide-react";
+import { Minus, Pause, Play, Plus, Repeat, RotateCcw, Route, Save, Trash2 } from "lucide-react";
 import { Switch } from "@/app/components/ui/switch";
 import { cn } from "@/app/components/ui/utils";
 import type { TrajectoryMode } from "@shared/action-sequence";
@@ -116,6 +116,13 @@ export const TimelineToolbar = ({
             className="inline-flex h-7 items-center gap-1.5"
             title={!canLoop ? loopDisabledHint : undefined}
           >
+            <Repeat
+              className={cn(
+                "h-3.5 w-3.5",
+                canLoop ? "text-secondary" : "text-muted-foreground",
+              )}
+              aria-hidden
+            />
             <span className="text-body-sm text-muted-foreground">循环</span>
             <Switch
               aria-label="循环"

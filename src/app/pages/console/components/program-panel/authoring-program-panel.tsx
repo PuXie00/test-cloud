@@ -22,7 +22,13 @@ import { ProgramPageHeader } from "./program-page-header";
 import { ProgramSequenceRow } from "./program-sequence-row";
 import { programPageCount } from "./program-utils";
 
-type ItemMeta = { kind: "sequence"; refId: number; name: string; durationMs: number | null };
+type ItemMeta = {
+  kind: "sequence";
+  refId: number;
+  name: string;
+  durationMs: number | null;
+  loop: boolean;
+};
 
 type AuthoredChapterSectionProps = {
   chapter: ProgramNode;
@@ -97,6 +103,7 @@ const AuthoredPageSection = ({
               durationLabel={
                 meta && meta.durationMs !== null ? formatTime(meta.durationMs) : null
               }
+              loop={meta?.loop === true}
               draggable
               dropActive={dragOverIndex === index}
               striped={pageItemIndex % 2 !== 0}
@@ -271,6 +278,7 @@ export const AuthoringProgramPanel = ({ className }: AuthoringProgramPanelProps)
         refId: sequence.id,
         name: sequence.name,
         durationMs,
+        loop: sequence.loop === true,
       });
     }
     return map;

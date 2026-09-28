@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeftRight, Loader2, Locate, Play, Plus, Repeat, Shield } from "lucide-react";
+import { ArrowLeftRight, Loader2, Locate, Play, Plus, Shield } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/app/components/ui/popover";
 import { cn } from "@/app/components/ui/utils";
 import { useConsoleMode } from "../../../hooks/use-console-mode";
 import type { FaderSlotState } from "../../../hooks/use-executor-slots";
 import { VerticalFader } from "./vertical-fader";
 import { ForcedTrajectoryBadge, isForcedTrajectory } from "../../forced-trajectory-badge";
+import { LoopBadge } from "../../loop-badge";
 
 const LONG_PRESS_MS = 400;
 const LONG_PRESS_MOVE_PX = 8;
@@ -212,12 +213,7 @@ export const FaderSlot = ({
                   <span className="sr-only">反向</span>
                 </span>
               ) : null}
-              {slot.sequence?.loop ? (
-                <span className="inline-flex text-secondary" title="循环">
-                  <Repeat className="h-3.5 w-3.5" aria-hidden />
-                  <span className="sr-only">循环</span>
-                </span>
-              ) : null}
+              {slot.sequence?.loop ? <LoopBadge /> : null}
             </button>
           </PopoverTrigger>
           <PopoverContent side="top" align="center" className="w-40 bg-card p-2 shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
