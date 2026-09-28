@@ -21,11 +21,10 @@ const AXIS_EPSILON: Record<VirtualAxisId, number> = {
 
 const CLOSED_POSE_SLACK = 1e-9;
 
-/** 强制轨迹 xSafe=false 时禁止准备；接入规则待定时只需改这一处。 */
+/** 强制轨迹 xSafe=false 表示当前位置不在轨迹上，禁止准备。 */
 export const BLOCK_READY_WHEN_FORCED_UNSAFE = true;
 
-export const FORCED_UNSAFE_MESSAGE =
-  "强制轨迹接入校验未通过：当前位置与目标帧偏差超出曲线可吸收范围，禁止准备";
+export const FORCED_UNSAFE_MESSAGE = "当前位置不在轨迹上（xSafe 未通过），禁止准备";
 
 export const hpyFromPositions = (
   positions: { h?: number; p?: number; y?: number } | null | undefined,
