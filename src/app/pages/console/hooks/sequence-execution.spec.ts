@@ -217,6 +217,39 @@ describe("readySequence", () => {
     });
   });
 
+  it("attaches the start plan to every saved item only when one is given", async () => {
+    const startPlan = {
+      forced: true,
+      nearest: false,
+      direction: 1 as const,
+      startMode: "boundary" as const,
+      targetFrameMs: 0,
+      transitionSec: 2,
+      xSafe: true,
+      motorLimitScale: null,
+      members: [],
+    };
+    const withPlan = createTransport();
+    await readySequence({
+      document: documentWithSequence(validSequence),
+      sequenceId: validSequence.id,
+      startPlan,
+      transport: withPlan,
+    });
+    const items = withPlan.saveAction.mock.calls[0]?.[0] as Array<{ startPlan?: unknown }>;
+    expect(items.length).toBeGreaterThan(0);
+    expect(items.every((item) => item.startPlan === startPlan)).toBe(true);
+
+    const withoutPlan = createTransport();
+    await readySequence({
+      document: documentWithSequence(validSequence),
+      sequenceId: validSequence.id,
+      transport: withoutPlan,
+    });
+    const plain = withoutPlan.saveAction.mock.calls[0]?.[0] as Array<Record<string, unknown>>;
+    expect(plain.every((item) => !("startPlan" in item))).toBe(true);
+  });
+
   it("does not save when download validation fails", async () => {
     const transport = createTransport();
     const readied = await readySequence({

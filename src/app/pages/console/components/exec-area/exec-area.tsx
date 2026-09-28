@@ -136,7 +136,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     setSlotBusy(slotIndex, true);
     void (async () => {
       try {
-        const readied = await readySequence({ document, sequenceId });
+        const readied = await readySequence({ document, sequenceId, startPlan });
         if (!readied.ok) {
           clearSlotReady(slotIndex);
           reportSequenceResult(readied);
@@ -156,12 +156,16 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     })();
   };
 
-  const readyThenGoNext = (cardId: string, sequenceId: number) => {
+  const readyThenGoNext = (
+    cardId: string,
+    sequenceId: number,
+    startPlan: NearestStartPlan | null,
+  ) => {
     const document = currentProject?.document;
     if (!document) return;
     const authored = document.motion.actionSequences.find((entry) => entry.id === sequenceId);
     void (async () => {
-      const readied = await readySequence({ document, sequenceId });
+      const readied = await readySequence({ document, sequenceId, startPlan });
       if (!readied.ok) {
         reportSequenceResult(readied);
         return;
@@ -194,7 +198,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       poseConfirmLockRef.current = true;
       const { cardId, sequenceId } = poseDialog;
       setPoseDialog(null);
-      readyThenGoNext(cardId, sequenceId);
+      readyThenGoNext(cardId, sequenceId, dialogGate.plan);
       return;
     }
     const slot = poseDialog.slotIndex === null ? undefined : faderSlots[poseDialog.slotIndex];
@@ -249,7 +253,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
         return;
       }
     }
-    readyThenGoNext(cardId, sequenceId);
+    readyThenGoNext(cardId, sequenceId, null);
   };
 
   const handleTriggerSequence = (slotIndex: number, sequenceId: number) => {

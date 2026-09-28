@@ -357,7 +357,11 @@ export class CsocketApiService {
   // 动作准备Ready
 
   actionReady(items: ActionDataSaveItem[], opts?: CsocketSendOpts) {
-    // 
+    for (const item of items) {
+      if (item.startPlan !== undefined) {
+        console.log('actionReady startPlan', item.actionId, JSON.stringify(item.startPlan))
+      }
+    }
     const isTMaped = [];
     const isNotTMaped: {
       actionId: number,

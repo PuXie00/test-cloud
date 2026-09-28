@@ -1223,6 +1223,7 @@ describe("ExecArea launch guard", () => {
     });
     expect(stored?.[3].transitionSec).toBeGreaterThan(0);
     expect(stored?.[4]).toEqual({ 1: { h: 0, p: 0, y: 0 } });
+    expect(readySequenceMock.mock.calls[0]?.[0]).toMatchObject({ sequenceId: 15, startPlan: stored?.[3] });
   });
 
   it("uses the slot nearest and reverse options in the start dialog", async () => {
@@ -1243,7 +1244,7 @@ describe("ExecArea launch guard", () => {
     fireEvent.click(screen.getByRole("button", { name: "F2 Ready" }));
     expect(await screen.findByRole("alertdialog")).toBeTruthy();
     expect(screen.getByText("强制")).toBeTruthy();
-    expect(screen.getByRole("alert").textContent).toMatch(/禁止准备/);
+    expect(screen.getByRole("alert").textContent).toBe("当前位置不在轨迹上（xSafe 未通过），禁止准备");
     expect(screen.getByTestId("pose-transition-time").textContent).toMatch(/秒/);
     const confirm = screen.getByRole("button", { name: "确认" }) as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
@@ -1371,7 +1372,7 @@ describe("ExecArea launch guard", () => {
       expect(goSequenceMock).toHaveBeenCalledTimes(1);
     });
     expect(readySequenceMock).toHaveBeenCalledTimes(1);
-    expect(readySequenceMock.mock.calls[0]?.[0]).toMatchObject({ sequenceId: 15 });
+    expect(readySequenceMock.mock.calls[0]?.[0]).toMatchObject({ sequenceId: 15, startPlan: null });
     expect(closeMock).toHaveBeenCalledWith("card-stopped");
     expect(goSequenceMock.mock.calls[0]?.[0]).toMatchObject({ sequenceId: 15, faderPercent: 100 });
     expect(readySequenceMock.mock.invocationCallOrder[0]).toBeLessThan(closeMock.mock.invocationCallOrder[0]!);
