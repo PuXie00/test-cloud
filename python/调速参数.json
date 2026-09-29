@@ -1,0 +1,408 @@
+{
+  "_说明": {
+    "文件用途": "调速计算.py的统一输入文件，运行：python 调速计算.py。command.trajectory_run=false使用models和runtime计算非强制Move调速；true使用forced_action和forced_runtime计算强制轨迹倍率及时间。另一分支的数据不参与本次计算。所有_说明只用于阅读，不参与计算。",
+    "单位": "帧以毫秒ms表示；时间结果以秒s表示。HPY始终依次为高度H、角度P、角度Y。H沿用项目的位置单位，P/Y使用度；速度为每秒，加/减速度为每秒平方。",
+    "运动约定": "仅非强制分支：每个基准Move从零速出发、零速结束，不启用jerk平滑、不做段间非零末速混合。实际PLC必须使用相同运动语义。强制分支使用PLC保存曲线和时间主轴，不生成Move参数。两种分支都不声称任意状态可立即调速或反向成功。",
+    "command": {
+      "trajectory_run": "false=非强制Move分支，使用models和runtime；true=强制轨迹分支，使用forced_action和forced_runtime，只输出倍率及时间，不重发曲线或生成Move参数。",
+      "operation": "prepare=保存动作时只计算当前分支的允许倍率；adjust=非强制计算新的Move计划，强制只计算调速后的倍率和时间。prepare不需要对应分支的运行反馈。",
+      "requested_factor": "相对原始Base动作的绝对倍率，不是在当前倍率上再次相乘。两种分支均须遵守各自MaxScale。倍率必须是有限正数，例如1.2表示120%、0.805表示80.5%；强制分支允许超过1且不要求0.01步长，但不得超过曲线、HPY速度及实际电机速度算出的MaxScale。仅当强制曲线全程静止且UnboundedBySpeed=true时，MaxScale=null表示速度约束不给出有限上限。当前示例可保留1.2直接切换强制分支；实际PLC接口必须支持所请求倍率。",
+      "reverse": "false=本次希望正向，true=本次希望反向，不是每次调用都翻转。非强制与runtime.current_direction比较；强制与forced_runtime.current_direction比较，循环换向还需PLC明确允许。",
+      "loop_mode": "once=单次，repeat=首尾闭合的同向循环。非强制另支持ping_pong往返、每一趟算一轮；强制不支持自动ping_pong，须单独改变reverse。强制once表示原始单轮，不表示多轮运行中临时把PLC循环次数改为1。",
+      "frame_quantum_ms": "仅非强制使用：PLC指令发送时间的量化步长，单位ms，正数。示例1ms不保证实际通信能达到1ms。强制分支忽略本字段，按PLC时间主轴预测。"
+    },
+    "models": {
+      "model_id": "模型唯一编号，与runtime.model_states中的编号一一对应。",
+      "active_axes": "活动轴名称数组，例如[\"H\"]、[\"H\",\"P\"]或[\"H\",\"P\",\"Y\"]，与就近位置参数的写法一致。程序也兼容按H/P/Y顺序排列的3项布尔数组；建议新接口使用轴名。未启用轴不能在计划中产生位移或非零速度。",
+      "model_type": "1=单点，2=两点，4=四点，8=多点模型。用于把HPY运动转换为实际电机运动的保守速度上界。",
+      "motor_num": "实际电机/吊点数量。单点1、两点2、四点4；多点与point_init_pos数量一致。",
+      "max_motor_velocity": "单台实际电机允许的最大速度，必须大于0。输出的电机速度是对计划全程的保守上界，不是采样得到的精确峰值。",
+      "max_velocity_HPY": "保存的各轴最大速度，不是本次期望速度，活动轴应为正数。调速后参数和当前实测初速度都需要满足约束。",
+      "max_acceleration_HPY": "保存的各轴最大加速度。完整段按Base加速度×倍率平方变化，但不得超过此上限。",
+      "max_deceleration_HPY": "保存的各轴最大减速度。当前过渡的停车距离不足时，允许在此范围内调整减速度，不能坚持降倍率后的小减速度而越过目标。",
+      "min_position_HPY": "HPY各轴允许的最小位置/角度。当前点、端点及反向制动后的停车位置均须满足行程限制。",
+      "max_position_HPY": "HPY各轴允许的最大位置/角度，与min_position_HPY成对提供。",
+      "两点及四点几何": "沿用原工程拼写：BaseHight1/BaseHight2为安装高差参数，lLenth_inside为长向间距，maxheight为模型高度参数；四点另有wLenth_inside宽向间距。具体物理坐标约定以项目模型正解为准。四点混合P/Y倾斜当前不在已支持计算范围内；示例只使用P倾斜。",
+      "多点几何": "沿用原工程：Baseheight1/Baseheight2、maxheight为高度参数，betainit为初始角度，point_init_pos为各吊点局部XYZ坐标，数量应与motor_num一致。字段大小写不可混用。",
+      "segments": {
+        "segment_id": "模型内唯一的段编号。示例从0开始，与反馈current_segment_id对应。",
+        "start_frame": "Base动作上开始发送该Move的公共时间帧，单位ms。",
+        "end_frame": "该段Base结束帧，单位ms，大于start_frame。多个模型共用原动作时间线，模型空档保持上一段终点。",
+        "start_HPY": "该段保存的起点位置，不是点击调速时的反馈位置。各段之间位置应连续，空档不允许隐含跳变。",
+        "target_HPY": "该段保存的终点位置。反向时原起点成为目标，段顺序也反转。",
+        "velocity_HPY": "该段Base Move的速度上限，非负数，不是abcdef求导值；短距离段实际峰值可能低于这个值。",
+        "acceleration_HPY": "该段Base Move加速度，非负数。完整段使用Base值×绝对倍率平方。",
+        "deceleration_HPY": "该段Base Move减速度，非负数。反向需要根据新的运行方向重新规划，不能只把旧速度写成负数。"
+      },
+      "适用范围": "仅trajectory_run=false读取；这里是非强制Move原始动作，和forced_action中的强制曲线独立。"
+    },
+    "runtime": {
+      "适用范围": "仅trajectory_run=false且operation=adjust时提供。所有模型反馈须对应同一次一致快照，结果应用前上位机确认反馈及计划版本仍匹配；强制使用forced_runtime，不使用本组。",
+      "plan_revision": "反馈对应的已生效计划版本。首次Base运行用0；连续调速时应对应上次真正下发并已生效的结果版本，不能使用未执行的试算结果。",
+      "snapshot_id": "上位机本次反馈快照标识，结果携带它供下发前匹配；示例字符串只是演示。",
+      "current_direction": "当前正在执行的动作方向，1=正向，-1=反向。实际轴速度有各自符号，不等同于这个动作方向。",
+      "current_factor": "当前已生效的绝对Base倍率。调速不会在此倍率上重复相乘。",
+      "base_frame_ms": "当前反馈映射到Base动作的帧，单位ms。连续调速时从previous_plan的FrameMap推导/校验，不能把新计划帧直接当成Base帧。",
+      "online_frame_ms": "当前反馈在正在执行的计划时间表中的帧。首次按Base运行时可与base_frame_ms相同；调速后它们通常不同。",
+      "current_cycle_elapsed_s": "本轮已经实际消耗的墙钟时间，单位秒，用于计算本轮实际总时间，不等于Base帧直接除1000。",
+      "previous_plan": "首次运行填null。再次点击时传入上一次已真正生效的规划结果，保留FrameMap和版本；Python函数完整结果和compact_speed_output生成的精简结果均可回传。只传倍率不足以还原当前段和公共帧。",
+      "model_states": {
+        "model_id": "必须覆盖所有models编号，不能遗漏参与同步的模型。",
+        "current_segment_id": "PLC/执行计划中当前正在运行的原段编号；当前处于空档时必须填null。不是仅根据真实位置猜出来的编号。",
+        "position_HPY": "调速瞬间的实际反馈位置[H,P,Y]。必须与velocity_HPY来自同一快照。",
+        "velocity_HPY": "带正负号的实际反馈速度[H,P,Y]。静止时填[0,0,0]；运行中不能填期望速度或为了计算方便填零。新计划的峰速统计包含这些已有初速度。"
+      }
+    },
+    "计算情形": {
+      "适用范围": "以下各情形只针对非强制Move分支。",
+      "静止调速": "当前位置满足动作阶段约束且实际速度为0时，完整段可按V×r、A/D×r²缩放。动作首次启动前应先完成就近/起点接入，本文件不自动传送位置。",
+      "运行中加速或减速": "保留真实位置和初速度，当前过渡重新规划并检查电机速度；后续完整段复用保存时验证的倍率。只在保存或点击时调用，不需要每个PLC扫描周期重算。",
+      "运行中反向并调速": "先计算符合最大减速度/行程限制的制动段，先停模型等待共同反向起点，再规划反向Move，制动耗时计入本轮剩余时间。",
+      "单次与循环": "once到目标方向终端结束；repeat只接受闭合动作；ping_pong每到一个端点结束一趟，下一趟换向。不能把一次完整往返与一趟时间混为一谈。",
+      "模型空档": "没有活动段时保持该模型上个终点，所有模型仍共用公共帧。调速后的等待时长由新公共时间表决定。",
+      "连续多次点击": "使用最新真实反馈及最新已生效previous_plan，不重复对旧结果累乘倍率；保持Base永久不变。",
+      "不能立即应用": "当前反馈超限、停车距离不足、行程不足、参数不合法、计划版本不匹配或模型几何不支持时，返回明确不可应用结果，不输出伪安全的执行计划。运行重规划最多试算12次，各次必要时把倍率降低为前次的0.8；仍无法通过则返回deferred。deferred只代表本次不应用，算法本身不自动排队或等待；上位机取得新的可行反馈后重新调用。"
+    },
+    "输出说明": {
+      "适用范围": "以下主要说明非强制输出；强制分支的完整输出说明见本文件_说明.强制输出说明，不生成Models/Move指令。",
+      "MaxScale": "保存时计算的Base允许倍率上限，受虚轴V/A/D及实际电机速度共同限制；用户输入范围使用这个数。不是本次计划的最大速度。",
+      "RequestedFactor与AppliedFactor": "请求和本次实际计划采用的绝对Base倍率；未应用时以状态说明为准。",
+      "Status": "非强制planned=本次规划通过；强制predicted=包含时间主轴变速/反向过渡的预测，estimated=主轴反馈不全时的匀速估算；deferred=当前条件下暂不应用，需要新的反馈重新调用；invalid_input=输入无效。强制换向等待未知时deferred且时间为null。",
+      "Applied": "true只表示计算得到可应用的计划，不代表PLC已经接收、启动或完成。false时不得把本次失败结果替换正在执行的有效计划。",
+      "FactorLimited": "true表示实际采用的AppliedFactor低于用户RequestedFactor，可能受保存时上限或本次重规划检查限制。",
+      "PlanRevision与BasedOnPlanRevision": "BasedOnPlanRevision是本次规划依据的已生效版本，PlanRevision为拟应用的新版本；上位机在PLC实际切换成功后才把新版本记作已生效。",
+      "SnapshotId": "回传runtime.snapshot_id，用于确认计算结果对应哪次真实位置/速度反馈。",
+      "CommitRule": "结果生效规则：只有反馈和已生效计划版本仍匹配时才能统一应用；反馈或版本失配后，应重新计算。Applied不是执行确认。",
+      "MaxVelocity_HPY_per_s": "本次计划各模型H/P/Y实际速度绝对值的峰值，包含当前真实初速度、必要制动、剩余动作以及有循环时的后续稳态完整段。应结合MaximumSpeedScope阅读。不是速度上限或倍率。",
+      "MaxMotorVelocityUpperBound": "各模型实际电机速度的保守上界，覆盖与峰速统计相同的计划范围。这个数可能大于实际测得峰值，不能称为精确最大电机速度。",
+      "MaximumSpeedScope": "说明本次最大速度统计覆盖的具体范围；本次制动和剩余动作必含，循环模式另含后续完整轮/趟。",
+      "CurrentCycleRemaining_s": "从本次反馈快照开始，按新方案沿请求方向到本轮终端的预测剩余秒数，包含反向制动和等待；通信/生效延迟需由上位机调度处理。",
+      "CurrentCycleTotal_s": "本轮已实际耗时current_cycle_elapsed_s加本次剩余时间；本轮中途调速后通常不等于完整Base时间除倍率。",
+      "BaseActionTime_s": "保存时Base动作从第一个公共帧到最后一个公共帧的原始总跨度，单位秒，包含段间空档。",
+      "CompleteActionTime_s": "按本次请求方向和实际采用倍率计算，从Base一端到另一端的完整动作时间，包含空档和时间量化；不包含当前中途调速专有的初始过渡。",
+      "CompleteActionTimeChangeFromBase_s": "完整动作新耗时CompleteActionTime_s减原始BaseActionTime_s。负数表示整体缩短，正数表示延长。",
+      "NextLoopTime_s": "repeat时下一同向完整轮时间；ping_pong时下一反方向完整一趟时间。once没有下一轮。",
+      "FollowingLoopTime_s": "仅ping_pong输出再下一完整趟的时间，方向与本次请求方向相同，与NextLoopTime_s交替；once和repeat为null。",
+      "RoundTripTime_s": "ping_pong时两个方向完整两趟的合计时间，不是下一单趟时间。",
+      "FrameMap": "本次剩余动作的原Base帧与新发送帧对应表；反向Base帧递减，新发送帧仍递增。",
+      "Models": "本次各模型剩余Move计划，包含位置、V/A/D、起止发送帧和持续时间；必要的全组反向制动另列在BrakeModels。必须按照输出时间帧顺序执行，不可漏掉制动后直接执行Models。",
+      "BrakeModels": "需要反向时的独立制动参数，各轴先减速到0、先停者等待共同恢复时间；执行完对应制动/等待后再按Models发送剩余Move。制动期间再次点击调速或改变方向，仍先完成全组停车。",
+      "NextLoopModels与NextLoopFrameMap": "循环模式下下一完整轮/趟的指令和公共帧映射，供上位机调度使用。",
+      "FollowingLoopModels与FollowingLoopFrameMap": "循环模式下再下一完整轮/趟的指令及公共帧映射；ping_pong时与下一趟的方向交替。完整轮映射从自身0ms开始，上位机按实际循环起点偏移后调度。",
+      "每段PeakVelocity_HPY": "当前输出段各轴的实际绝对峰速，包含该段非零初速度；不同于velocity_HPY这个Move速度参数。短距离三角形或初速度较高时两者可能不同。",
+      "每段MotorSpeedUpperBound": "该段模型实际电机速度的保守上界，用于和max_motor_velocity比较，不是某个采样点的测量速度。",
+      "每段base_duration_s": "本次输出段对应的原Base时间跨度；当前正在执行且被重规划的段只计尚未完成的Base跨度，不包含点击前已执行部分。",
+      "每段allocated_time_s": "本次给该段分配的新发送时间跨度，即(end_frame-start_frame)/1000，包含共同时间安排所需的等待或同步余量。",
+      "每段duration_change_from_base_s": "该段新分配时间allocated_time_s减对应base_duration_s；负数为缩短，正数为延长。当前段比较的是剩余部分，不能与原完整段时长混用。",
+      "每段axis_commands": "H/P/Y各轴真正需要执行的指令列表；一轴有多阶段时必须按顺序执行完整列表，不能只取顶层V/A/D当作一个普通Move。ExecutionMode会提示是否包含先制动再Move。",
+      "每段axis_phases": "保留逐轴精确运动阶段，供积分验证/曲线预览；完整Python函数返回本字段。控制台compact_speed_output隐藏axis_phases，并隐藏ExecutionMode=move时与顶层参数重复的axis_commands；多阶段和BrakeModels的执行指令仍保留。函数完整结果与控制台精简结果均可作为previous_plan回传。",
+      "TimeBasis": "时间预测以同一次反馈快照为基准，假定jerk=0、每段末速为0、无跨段混合；不包含通信和PLC扫描延迟。",
+      "缓存": "Base倍率和完整段验证结果在当前Python进程内复用；更换动作、运动限制或几何参数后重新验证。保存至JSON的说明文字不等同于持久化缓存。"
+    },
+    "本示例": "非强制示例：四个模型各有两个零速起止Move，0–4000ms去程、4000–5000ms保持、5000–9000ms回程，首尾闭合。当前为正向1倍速第1000ms，实际速度非零，请求1.2倍速。单独改reverse=true可以测试运行中反向；要测试静止，须同时提供真实一致的静止位置、速度和帧，不能仅把速度改零冒充现场反馈。",
+    "切换示例": "当前command保留trajectory_run=false、requested_factor=1.2，运行原非强制四模型示例。只改为trajectory_run=true即可按1.2倍速计算本文件末尾强制示例，也可另选0.8等不超过MaxScale的有限正倍率，其余示例控制项兼容。两组是独立演示动作，不是同一动作的自动转换；现场应填当前分支对应的真实曲线及反馈，并确保PLC支持目标倍率。",
+    "强制曲线单位": "帧为ms，结果时间为s。所有HPY数组依次为[H,P,Y]，H沿用项目位置单位，P/Y为度，速度为每秒。PLC段内自变量u=(当前帧ms-start_frame)/100，位置=a+b*u+c*u²+d*u³+e*u⁴+f*u⁵；u不是0至1的归一化时间。保存节点必须是100ms整倍数，避免PLC整数转换改变曲线。",
+    "forced_action": {
+      "models": "至少一个模型，保存时提供全部原始曲线、速度限制及所需几何。当前Python进程按动作内容缓存倍率计算；曲线、限制或几何改变后重新计算，不是跨进程持久化缓存。",
+      "model_id": "正整数，动作内唯一的模型编号。",
+      "active_axes": "不重复的H/P/Y名称数组，例如[\"H\"]或[\"H\",\"P\",\"Y\"]。未启用轴可以保持常量，但不能产生运动。",
+      "model_type": "1=单点，2=两点，4=四点，8=多点；用于将HPY曲线速度转换为实际电机速度保守上界。",
+      "motor_num": "实际电机/吊点数量：单点1、两点2、四点4，多点与point_init_pos数量一致。",
+      "max_motor_velocity": "每台实际电机允许的最大速度，必须大于0。",
+      "max_velocity_HPY": "保存的HPY最大速度数组，活动轴必须为正数，未启用轴可为0。强制曲线不需要非强制Move的velocity_HPY/acceleration_HPY/deceleration_HPY。",
+      "两点及四点几何": "沿用原工程字段BaseHight1、BaseHight2、lLenth_inside、maxheight，四点另有wLenth_inside。含义及坐标约定与原模型正解一致；当前四点混合P/Y倾斜不受支持。",
+      "多点几何": "沿用Baseheight1、Baseheight2、maxheight、betainit及point_init_pos；point_init_pos为各吊点局部XYZ数组，数量等于motor_num。字段大小写须保持一致。",
+      "segments": {
+        "segment_id": "模型内唯一的非负整数段编号。",
+        "start_frame": "该曲线段起始帧，非负且为100ms整倍数。各段按时间顺序排列，相邻段不得有空档或重叠；保持段须显式写成常数曲线。",
+        "end_frame": "段终止帧，必须大于start_frame且为100ms整倍数；模型完整周期为最后结束帧减第一起始帧。",
+        "start_HPY": "该段起点[H,P,Y]，必须与a一致。相邻段位置须连续。",
+        "target_HPY": "该段终点[H,P,Y]，必须与u=(end_frame-start_frame)/100代入曲线的值一致。repeat时各模型最后终点须与最初起点闭合。",
+        "a至f": "a、b、c、d、e、f均为长度3的HPY系数数组，分别对应常数、一次至五次项，未用的高次项也写[0,0,0]。这些是PLC已保存的原始曲线系数，计算只读取，不缩放或重写。"
+      }
+    },
+    "forced_runtime": {
+      "适用范围": "adjust时传入同一快照的时间主轴反馈。再次点击使用最新真实反馈，不把上次试算当成PLC已生效状态。",
+      "current_frame_ms": "时间主轴当前累计帧，单位ms，可以为正数或负数。repeat上传累计帧，不能预先取模；算法按各模型自身周期及目标方向计算下一个边界。不是非强制重规划后的online_frame_ms。",
+      "current_direction": "当前PLC已接受的动作方向，整数1=正向，-1=反向；制动过程中不一定与实际主轴速度符号相同，不能只根据速度符号猜测。暂停时保留暂停前方向。",
+      "current_master_velocity_ms_per_s": "带符号的实际时间主轴速度，单位ms/s；正向1倍速为1000，静止为0。缺失或null时只给新倍率下的匀速估算，不补造现场初速度。",
+      "master_acceleration_ms_per_s2": "本次PLC实际有效的时间主轴加/减速度，单位ms/s²，必须为正数；XML movMainAbs的A/D使用同一个值。取PLC getAdjSpeedAcc选取C/D最小值后乘100的有效结果，不得拿虚轴max_acceleration_HPY代替。缺失或null只给匀速估算；0不是未知值。",
+      "reversal_allowed": "PLC当前是否已允许循环换向，true/false；repeat请求改变方向时必须明确为true，否则deferred且时间为null，不猜测PLC放行等待。",
+      "pending_reversal": "PLC是否仍有待完成换向，true/false，缺省false；true时deferred且时间为null，待反馈明确后重新计算。",
+      "not_started_model_ids": "可选的模型编号数组，缺省空数组。只有尚未进入曲线且PLC状态为RunToOneFrame的模型才列入，算法对这些模型按最初终点/起点计算第一轮；已进入循环的模型不能填。"
+    },
+    "强制输出说明": {
+      "输出范围": "强制adjust仅返回倍率、方向、时间及必要状态，不生成或返回a至f、Models或Move参数。倍率范围只校核HPY速度和实际电机速度，不保证主轴过渡带来的附加加速度或行程安全，实际执行仍由PLC的物理保护约束。",
+      "ScaleValid": "prepare的倍率范围计算是否成功；false时查看Reason。",
+      "MaxScale": "由原始曲线全程速度、保存的HPY速度上限及实际电机速度上限计算的统一允许倍率，保留浮点安全余量；不再固定封顶1，也不向下量化到0.01。运动曲线仍有计算得到的有限上限，任何请求不得超过它；全程静止曲线才可返回MaxScale=null且UnboundedBySpeed=true，表示速度约束不给出有限上限。应结合ScaleValid或Applied判断是否成功，不能仅将null判为失败。",
+      "ActionSignature": "保存动作内容签名，用于匹配同一曲线和约束的已计算范围，不是PLC执行确认。",
+      "ScaleBasis": "倍率上限的计算依据，强制分支为forced_curve_speed_bound。",
+      "CanLoop": "表示所有模型首尾位置满足闭合要求；不是额外速度保证。",
+      "RequestedFactor与AppliedFactor": "请求倍率和本次计算采用倍率，均为相对Base的倍数r，例如1.5表示1.5倍而不是150；合法成功时相同，失败时AppliedFactor为null。若PLC仍使用百分比接口，应仅在下发边界把AppliedFactor乘100并确保接口支持所得数值，不能直接把倍数写入百分比字段。",
+      "Direction": "目标方向1或-1。强制结果不再输出PLCMaxScale或PLCSpeedPercent；结果供上位机使用，函数本身不下发PLC。当前XML中的旧倍率限制尚未修改，取消上位机100%封顶不代表现场已支持更高倍率，后端PLC必须同步支持目标倍率及精度。",
+      "Status": "predicted=提供实际主轴速度和有效A/D，时间包含变速/反向制动过渡；estimated=缺少其中任一项，只按新倍率匀速估算；deferred=PLC换向等待未结束或未获明确许可；invalid_input=输入无效。失败时查看Reason。",
+      "Applied": "true仅表示计算得到可用结果，不代表PLC已接收、开始或完成；estimated也可为true，须同时检查Status和EstimateOnly。false时不能把结果当作已执行状态。",
+      "RemainingTime_s": "从反馈快照沿目标方向到当前轮终端的剩余秒数；predicted包含时间主轴加减速和必要的反向制动，estimated不包含过渡。once的多模型结果取各模型完成时间最大值。",
+      "CompleteCycleTime_s": "目标倍率下完整周期的稳态时间=周期ms/(1000*倍率)，不含本次中途调速过渡。once的多模型完整动作使用全体Timeline最早起点至最晚终点跨度。",
+      "NextLoopTime_s": "repeat时紧接当前轮之后的实际下一完整轮预测时间；若主轴变速跨过本轮边界，下一轮也包含尚未完成的过渡，不一定等于稳态CompleteCycleTime_s。once为null。",
+      "HasCommonCycle与ModelTimes": "HasCommonCycle表示各模型Timeline起止帧一致。repeat且不一致时不定义统一一轮，RemainingTime_s、CompleteCycleTime_s、NextLoopTime_s均为null，分别查看ModelTimes中按模型编号给出的这三个时间。",
+      "EstimateOnly与TimeBasis": "EstimateOnly=true且TimeBasis=steady_speed_estimate表示匀速估算；false且plc_master_ramp_prediction表示主轴过渡预测。TimeNotes解释估算限制或模型周期差异。所有时间均不含通信、PLC扫描、生效延迟及保护动作耗时。",
+      "失败时间": "deferred/invalid_input的RemainingTime_s、CompleteCycleTime_s和NextLoopTime_s为null，不能将null视为0秒。"
+    },
+    "强制示例": "单点H模型，0至4000ms从0到100，4000至8000ms返回0，首尾闭合且接缝速度为0。每段归一化曲线分别为300t²-200t³与100-300t²+200t³，t=u/40，换成PLC系数即c=±0.1875、d=∓0.003125。当前正向第1000ms，主轴速度1000ms/s；只切换trajectory_run=true时沿用command的1.2倍速，计算上限接近8倍并保留浮点安全余量。示例A/D=1000ms/s²是演示输入，未声称已从现场PLC读取，实际使用须替换为本次有效值。"
+  },
+  "command": {
+    "trajectory_run": true,
+    "operation": "adjust",
+    "requested_factor": 1.2,
+    "reverse": false,
+    "loop_mode": "repeat",
+    "frame_quantum_ms": 1
+  },
+  "models": [
+    {
+      "model_id": 1,
+      "active_axes": ["H"],
+      "model_type": 1,
+      "motor_num": 1,
+      "max_motor_velocity": 500,
+      "max_velocity_HPY": [300, 0, 0],
+      "max_acceleration_HPY": [150, 0, 0],
+      "max_deceleration_HPY": [150, 0, 0],
+      "min_position_HPY": [0, 0, 0],
+      "max_position_HPY": [8000, 0, 0],
+      "segments": [
+        {
+          "segment_id": 0,
+          "start_frame": 0,
+          "end_frame": 4000,
+          "start_HPY": [200, 0, 0],
+          "target_HPY": [300, 0, 0],
+          "velocity_HPY": [40, 0, 0],
+          "acceleration_HPY": [40, 0, 0],
+          "deceleration_HPY": [20, 0, 0]
+        },
+        {
+          "segment_id": 1,
+          "start_frame": 5000,
+          "end_frame": 9000,
+          "start_HPY": [300, 0, 0],
+          "target_HPY": [200, 0, 0],
+          "velocity_HPY": [50, 0, 0],
+          "acceleration_HPY": [25, 0, 0],
+          "deceleration_HPY": [25, 0, 0]
+        }
+      ]
+    },
+    {
+      "model_id": 2,
+      "active_axes": ["H", "P"],
+      "model_type": 2,
+      "motor_num": 2,
+      "max_motor_velocity": 500,
+      "BaseHight1": 100,
+      "BaseHight2": 0,
+      "lLenth_inside": 2000,
+      "maxheight": 8000,
+      "max_velocity_HPY": [300, 8, 0],
+      "max_acceleration_HPY": [150, 3, 0],
+      "max_deceleration_HPY": [150, 3, 0],
+      "min_position_HPY": [0, -20, 0],
+      "max_position_HPY": [8000, 20, 0],
+      "segments": [
+        {
+          "segment_id": 0,
+          "start_frame": 0,
+          "end_frame": 4000,
+          "start_HPY": [1000, 0, 0],
+          "target_HPY": [1100, 1, 0],
+          "velocity_HPY": [40, 0.4, 0],
+          "acceleration_HPY": [40, 0.4, 0],
+          "deceleration_HPY": [20, 0.2, 0]
+        },
+        {
+          "segment_id": 1,
+          "start_frame": 5000,
+          "end_frame": 9000,
+          "start_HPY": [1100, 1, 0],
+          "target_HPY": [1000, 0, 0],
+          "velocity_HPY": [50, 0.5, 0],
+          "acceleration_HPY": [25, 0.25, 0],
+          "deceleration_HPY": [25, 0.25, 0]
+        }
+      ]
+    },
+    {
+      "model_id": 3,
+      "active_axes": ["H", "P"],
+      "model_type": 4,
+      "motor_num": 4,
+      "max_motor_velocity": 500,
+      "BaseHight1": 100,
+      "BaseHight2": 0,
+      "lLenth_inside": 2000,
+      "wLenth_inside": 1800,
+      "maxheight": 8000,
+      "max_velocity_HPY": [300, 8, 0],
+      "max_acceleration_HPY": [150, 3, 0],
+      "max_deceleration_HPY": [150, 3, 0],
+      "min_position_HPY": [0, -20, 0],
+      "max_position_HPY": [8000, 20, 0],
+      "segments": [
+        {
+          "segment_id": 0,
+          "start_frame": 0,
+          "end_frame": 4000,
+          "start_HPY": [1000, 0, 0],
+          "target_HPY": [1100, 1, 0],
+          "velocity_HPY": [40, 0.4, 0],
+          "acceleration_HPY": [40, 0.4, 0],
+          "deceleration_HPY": [20, 0.2, 0]
+        },
+        {
+          "segment_id": 1,
+          "start_frame": 5000,
+          "end_frame": 9000,
+          "start_HPY": [1100, 1, 0],
+          "target_HPY": [1000, 0, 0],
+          "velocity_HPY": [50, 0.5, 0],
+          "acceleration_HPY": [25, 0.25, 0],
+          "deceleration_HPY": [25, 0.25, 0]
+        }
+      ]
+    },
+    {
+      "model_id": 4,
+      "active_axes": ["H", "P", "Y"],
+      "model_type": 8,
+      "motor_num": 8,
+      "max_motor_velocity": 500,
+      "Baseheight1": 100,
+      "Baseheight2": 0,
+      "maxheight": 8000,
+      "betainit": 0,
+      "point_init_pos": [
+        [2000, 0, 0],
+        [1414.21, 1414.21, 0],
+        [0, 2000, 0],
+        [-1414.21, 1414.21, 0],
+        [-2000, 0, 0],
+        [-1414.21, -1414.21, 0],
+        [0, -2000, 0],
+        [1414.21, -1414.21, 0]
+      ],
+      "max_velocity_HPY": [300, 8, 8],
+      "max_acceleration_HPY": [150, 3, 3],
+      "max_deceleration_HPY": [150, 3, 3],
+      "min_position_HPY": [0, -20, -20],
+      "max_position_HPY": [8000, 20, 20],
+      "segments": [
+        {
+          "segment_id": 0,
+          "start_frame": 0,
+          "end_frame": 4000,
+          "start_HPY": [1000, 0, 0],
+          "target_HPY": [1100, 1, -0.5],
+          "velocity_HPY": [40, 0.4, 0.2],
+          "acceleration_HPY": [40, 0.4, 0.2],
+          "deceleration_HPY": [20, 0.2, 0.1]
+        },
+        {
+          "segment_id": 1,
+          "start_frame": 5000,
+          "end_frame": 9000,
+          "start_HPY": [1100, 1, -0.5],
+          "target_HPY": [1000, 0, 0],
+          "velocity_HPY": [50, 0.5, 0.25],
+          "acceleration_HPY": [25, 0.25, 0.125],
+          "deceleration_HPY": [25, 0.25, 0.125]
+        }
+      ]
+    }
+  ],
+  "runtime": {
+    "plan_revision": 0,
+    "snapshot_id": "demo-001",
+    "current_direction": 1,
+    "current_factor": 1,
+    "base_frame_ms": 1000,
+    "online_frame_ms": 1000,
+    "current_cycle_elapsed_s": 1,
+    "previous_plan": null,
+    "model_states": [
+      {
+        "model_id": 1,
+        "current_segment_id": 0,
+        "position_HPY": [220, 0, 0],
+        "velocity_HPY": [40, 0, 0]
+      },
+      {
+        "model_id": 2,
+        "current_segment_id": 0,
+        "position_HPY": [1020, 0.2, 0],
+        "velocity_HPY": [40, 0.4, 0]
+      },
+      {
+        "model_id": 3,
+        "current_segment_id": 0,
+        "position_HPY": [1020, 0.2, 0],
+        "velocity_HPY": [40, 0.4, 0]
+      },
+      {
+        "model_id": 4,
+        "current_segment_id": 0,
+        "position_HPY": [1020, 0.2, -0.1],
+        "velocity_HPY": [40, 0.4, -0.2]
+      }
+    ]
+  },
+  "forced_action": {
+    "models": [
+      {
+        "model_id": 1,
+        "active_axes": ["H"],
+        "model_type": 1,
+        "motor_num": 1,
+        "max_motor_velocity": 500,
+        "max_velocity_HPY": [300, 0, 0],
+        "segments": [
+          {
+            "segment_id": 0,
+            "start_frame": 0,
+            "end_frame": 4000,
+            "start_HPY": [0, 0, 0],
+            "target_HPY": [100, 0, 0],
+            "a": [0, 0, 0],
+            "b": [0, 0, 0],
+            "c": [0.1875, 0, 0],
+            "d": [-0.003125, 0, 0],
+            "e": [0, 0, 0],
+            "f": [0, 0, 0]
+          },
+          {
+            "segment_id": 1,
+            "start_frame": 4000,
+            "end_frame": 8000,
+            "start_HPY": [100, 0, 0],
+            "target_HPY": [0, 0, 0],
+            "a": [100, 0, 0],
+            "b": [0, 0, 0],
+            "c": [-0.1875, 0, 0],
+            "d": [0.003125, 0, 0],
+            "e": [0, 0, 0],
+            "f": [0, 0, 0]
+          }
+        ]
+      }
+    ]
+  },
+  "forced_runtime": {
+    "current_frame_ms": 1000,
+    "current_direction": 1,
+    "current_master_velocity_ms_per_s": 1000,
+    "master_acceleration_ms_per_s2": 1000,
+    "reversal_allowed": true,
+    "pending_reversal": false,
+    "not_started_model_ids": []
+  }
+}

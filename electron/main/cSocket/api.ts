@@ -155,8 +155,9 @@ export class CsocketApiService {
         if (next) this.broadcastMasterStatus(next)
       }
       if (optCmd === 'Info|model') {
-        // console.log('Info|model', JSON.stringify(msg));
+        console.log('Info|model', JSON.stringify(msg));
         if (this.modelInfo.ingest(msg)) {
+          console.log('Info|model ingest>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>');
           this.broadcast(CSOCKET_CHANNELS.readModelInfoPolling, msg)
         }
       }
