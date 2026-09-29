@@ -129,6 +129,8 @@ export const downloadSequence = async (
   context: SequenceExecutionContext,
   transport: SequenceExecutionTransport,
   startPlan?: NearestStartPlan | null,
+  safeGroup = 1,
+  runDirection = true,
 ): Promise<DownloadedSequence> => {
   const issues = validateActionSequence(sequence, toValidationContext(context));
   if (hasBlockingSequenceIssues(issues)) {
@@ -138,12 +140,18 @@ export const downloadSequence = async (
   let compiled: ReturnType<typeof compilePlcAction>;
   try {
     resolveActionSequence(sequence);
-    compiled = compilePlcAction(sequence, toCompileContext(context));
+    compiled = compilePlcAction(sequence, toCompileContext(context), !runDirection);
   } catch {
     return { ok: false, reason: "validation", issues: [COMPILE_FAILURE_ISSUE] };
   }
 
-  const items = toActionDataSaveItems(compiled, sequence.id, sequence.trajectoryMode);
+  const items = toActionDataSaveItems(
+    compiled,
+    sequence.id,
+    sequence.trajectoryMode,
+    safeGroup,
+    runDirection,
+  );
   await transport.saveAction(startPlan ? items.map((item) => ({ ...item, startPlan })) : items);
   return {
     ok: true,
@@ -331,6 +339,8 @@ export const readySequence = async (args: {
   document: ProjectDocument;
   sequenceId: number;
   startPlan?: NearestStartPlan | null;
+  safeGroup?: number;
+  runDirection?: boolean;
   transport?: SequenceExecutionTransport;
 }): Promise<LocalSequenceReadyResult> => {
   const found = lookupAuthoredSequence(args.document, args.sequenceId);
@@ -343,6 +353,8 @@ export const readySequence = async (args: {
       sequenceExecutionContextFromDocument(args.document),
       transport,
       args.startPlan,
+      args.safeGroup ?? 1,
+      args.runDirection ?? true,
     );
     if (!downloaded.ok) {
       return { ok: false, toast: "warning", message: "动作序列校验失败，无法下载" };

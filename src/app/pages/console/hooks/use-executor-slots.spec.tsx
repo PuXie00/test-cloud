@@ -165,7 +165,11 @@ describe("ExecutorSlotsProvider", () => {
         children,
       );
     const { result, rerender } = renderHook(() => useExecutorSlots(), { wrapper });
-    expect(result.current.faderSlots[0]?.runOptions).toEqual({ nearest: false, reverse: false });
+    expect(result.current.faderSlots[0]?.runOptions).toEqual({
+      nearest: false,
+      reverse: false,
+      safeGroup: true,
+    });
 
     act(() => {
       result.current.setSlotRunOptions(0, { nearest: true });
@@ -173,12 +177,27 @@ describe("ExecutorSlotsProvider", () => {
     act(() => {
       result.current.setSlotRunOptions(0, { reverse: true });
     });
-    expect(result.current.faderSlots[0]?.runOptions).toEqual({ nearest: true, reverse: true });
-    expect(result.current.faderSlots[1]?.runOptions).toEqual({ nearest: false, reverse: false });
+    act(() => {
+      result.current.setSlotRunOptions(0, { safeGroup: false });
+    });
+    expect(result.current.faderSlots[0]?.runOptions).toEqual({
+      nearest: true,
+      reverse: true,
+      safeGroup: false,
+    });
+    expect(result.current.faderSlots[1]?.runOptions).toEqual({
+      nearest: false,
+      reverse: false,
+      safeGroup: true,
+    });
 
     pageItems = pageItemsFor([99, 16]);
     rerender();
-    expect(result.current.faderSlots[0]?.runOptions).toEqual({ nearest: false, reverse: false });
+    expect(result.current.faderSlots[0]?.runOptions).toEqual({
+      nearest: false,
+      reverse: false,
+      safeGroup: true,
+    });
   });
 
   it("always exposes twelve F1–F12 slots", () => {

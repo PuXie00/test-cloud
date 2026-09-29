@@ -116,17 +116,44 @@ describe("evaluateStartGate", () => {
   const sequence = twoPoseSequence({ v1: 10, v2: 0, v3: 0 }, { v1: 400, v2: 0, v3: 0 });
 
   it("treats an in-tolerance enabled axis as at-start even with nearest on", () => {
-    expect(gate(sequence, 10.5)).toEqual({ status: "at-start" });
-    expect(gate(sequence, 10.5, { nearest: true })).toEqual({ status: "at-start" });
+    expect(gate(sequence, 10.5)).toMatchObject({
+      status: "at-start",
+      plan: {
+        startMode: "at-start",
+        nearest: false,
+        direction: 1,
+        targetFrameMs: 0,
+        transitionSec: 0,
+        xSafe: null,
+        motorLimitScale: null,
+        members: [],
+      },
+    });
+    expect(gate(sequence, 10.5, { nearest: true })).toMatchObject({
+      status: "at-start",
+      plan: { startMode: "at-start", nearest: true, targetFrameMs: 0, members: [] },
+    });
   });
 
   it("uses the last frame as the start when reversed", () => {
-    expect(gate(sequence, 400, { reverse: true })).toEqual({ status: "at-start" });
+    expect(gate(sequence, 400, { reverse: true })).toMatchObject({
+      status: "at-start",
+      plan: {
+        startMode: "at-start",
+        direction: -1,
+        targetFrameMs: 4000,
+        transitionSec: 0,
+        members: [],
+      },
+    });
     expect(gate(sequence, 10, { reverse: true }).status).toBe("transition");
   });
 
   it("skips a member that has no pose", () => {
-    expect(gate(instructionSequence(), 0)).toEqual({ status: "at-start" });
+    expect(gate(instructionSequence(), 0)).toMatchObject({
+      status: "at-start",
+      plan: { startMode: "at-start", targetFrameMs: 0, members: [] },
+    });
   });
 
   it("returns to the start and adds the transition to the programmed time", () => {

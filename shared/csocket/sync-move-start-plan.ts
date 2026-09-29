@@ -1,6 +1,5 @@
 import type { ActionDataSaveItem, ActionStartPlan } from './action-data-save'
 
-export type { ActionStartPlan } from './action-data-save'
 
 export type SyncMoveVirtualAxis = {
   pos: number
@@ -32,12 +31,14 @@ const AXIS_ORDER = ['v1', 'v2', 'v3'] as const
 
 const ZERO_AXIS: SyncMoveVirtualAxis = { pos: 0, vel: 0, accVel: 0, decVel: 0 }
 
+const round1 = (value: number) => Math.round(value * 10) / 10
+
 /** 非强制准备：把上位机 startPlan 转成 [v1, v2, v3]，缺轴补 0。pos 取目标虚轴值。 */
 export const toSyncMoveStartPlan = (plan: ActionStartPlan): SyncMoveStartPlan => ({
   direction: plan.direction === 1,
   nearest: plan.nearest,
   targetFrameMs: plan.targetFrameMs,
-  transitionSec: plan.transitionSec * 1000,
+  transitionSec: Math.round(plan.transitionSec * 1000),
   modelList: plan.members.map((member) => {
     const moves = new Map(member.axes.map((axis) => [axis.axis, axis]))
     return {
@@ -47,9 +48,9 @@ export const toSyncMoveStartPlan = (plan: ActionStartPlan): SyncMoveStartPlan =>
         if (!move) return { ...ZERO_AXIS }
         return {
           pos: move.to,
-          vel: move.velocity,
-          accVel: move.acceleration,
-          decVel: move.deceleration,
+          vel: round1(move.velocity),
+          accVel: round1(move.acceleration),
+          decVel: round1(move.deceleration),
         }
       }),
     }

@@ -8,8 +8,11 @@ describe("toSyncMoveStartPlan", () => {
     const plan = toSyncMoveStartPlan({
       nearest: false,
       direction: 1,
+      startMode: "boundary",
       targetFrameMs: 0,
       transitionSec: 1.632993162,
+      xSafe: null,
+      motorLimitScale: null,
       members: [
         {
           objectId: 2,
@@ -40,13 +43,16 @@ describe("toSyncMoveStartPlan", () => {
     expect(plan).toEqual({
       direction: true,
       nearest: false,
+      startMode: "boundary",
       targetFrameMs: 0,
-      transitionSec: 1632.993162,
+      transitionSec: 1633,
+      xSafe: null,
+      motorLimitScale: null,
       modelList: [
         {
           deviceId: 2,
           virtualAxis: [
-            { pos: 1000, vel: 122.47, accVel: 150, decVel: 140 },
+            { pos: 1000, vel: 122.5, accVel: 150, decVel: 140 },
             zeroAxis,
             { pos: 0.5, vel: 1.2, accVel: 1.5, decVel: 1.4 },
           ],
@@ -59,8 +65,11 @@ describe("toSyncMoveStartPlan", () => {
     const plan = toSyncMoveStartPlan({
       nearest: true,
       direction: -1,
+      startMode: "nearest",
       targetFrameMs: 4000,
       transitionSec: 2.5,
+      xSafe: null,
+      motorLimitScale: 1,
       members: [
         { objectId: 7, axes: [] },
         {
@@ -82,8 +91,11 @@ describe("toSyncMoveStartPlan", () => {
 
     expect(plan.direction).toBe(false);
     expect(plan.nearest).toBe(true);
+    expect(plan.startMode).toBe("nearest");
     expect(plan.targetFrameMs).toBe(4000);
     expect(plan.transitionSec).toBe(2500);
+    expect(plan.xSafe).toBeNull();
+    expect(plan.motorLimitScale).toBe(1);
     expect(plan.modelList).toEqual([
       { deviceId: 7, virtualAxis: [zeroAxis, zeroAxis, zeroAxis] },
       {
@@ -110,8 +122,11 @@ describe("toSyncMovePrepareItems", () => {
         startPlan: {
           nearest: true,
           direction: 1,
+          startMode: "nearest",
           targetFrameMs: 1040,
           transitionSec: 4.4,
+          xSafe: true,
+          motorLimitScale: null,
           members: [
             {
               objectId: 1,
@@ -140,8 +155,11 @@ describe("toSyncMovePrepareItems", () => {
       startPlan: {
         direction: true,
         nearest: true,
+        startMode: "nearest",
         targetFrameMs: 1040,
         transitionSec: 4400,
+        xSafe: true,
+        motorLimitScale: null,
         modelList: [
           {
             deviceId: 1,
@@ -156,5 +174,35 @@ describe("toSyncMovePrepareItems", () => {
     });
     expect(items[1]).toEqual({ actionId: 5, modelList, IOBlockList });
     expect(items[1]).not.toHaveProperty("startPlan");
+  });
+
+  it("sends an empty at-start plan with the boundary frame", () => {
+    const [item] = toSyncMovePrepareItems([
+      {
+        actionId: 6,
+        modelList: [],
+        IOBlockList: [],
+        startPlan: {
+          nearest: false,
+          direction: -1,
+          startMode: "at-start",
+          targetFrameMs: 16000,
+          transitionSec: 0,
+          xSafe: null,
+          motorLimitScale: null,
+          members: [],
+        },
+      },
+    ]);
+    expect(item?.startPlan).toEqual({
+      direction: false,
+      nearest: false,
+      startMode: "at-start",
+      targetFrameMs: 16000,
+      transitionSec: 0,
+      xSafe: null,
+      motorLimitScale: null,
+      modelList: [],
+    });
   });
 });

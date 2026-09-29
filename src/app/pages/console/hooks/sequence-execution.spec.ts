@@ -164,6 +164,8 @@ describe("downloadSequence", () => {
     expect(expected[0]?.trajectoryMode).toBe(true);
     expect(expected[0]?.modelList.length).toBeGreaterThan(0);
     expect(expected[0]?.IOBlockList).toEqual([]);
+    expect(expected[0]?.safeGroup).toBe(1);
+    expect(expected[0]?.runDirection).toBe(true);
   });
 
   it("collects command-only model IDs from io blocks and reaches saveAction", async () => {
@@ -195,6 +197,43 @@ describe("downloadSequence", () => {
     const downloaded = await downloadSequence(moving, context, transport);
     expect(downloaded.ok).toBe(true);
     expect(transport.saveAction).toHaveBeenCalled();
+  });
+
+  it("writes interval kinematics on the start block when runDirection is reverse", async () => {
+    const moving: ActionSequenceConfig = {
+      ...validSequence,
+      blocks: [
+        { id: "start", kind: "pose", objectId: 7, atMs: 0, pose: { v1: 0, v2: 0, v3: 0 } },
+        { id: "end", kind: "pose", objectId: 7, atMs: 1000, pose: { v1: 100, v2: 0, v3: 0 } },
+      ],
+      segments: [{
+        fromRef: "start",
+        toRef: "end",
+        settings: { profiles: createDefaultAxisProfiles(1000) },
+      }],
+    };
+    const forward = createTransport();
+    const reverse = createTransport();
+    await downloadSequence(moving, context, forward, null, 1, true);
+    await downloadSequence(moving, context, reverse, null, 1, false);
+    const blocksOf = (transport: InstrumentedTransport) =>
+      transport.saveAction.mock.calls[0]?.[0][0].modelList[0].timeBlockList as Array<{
+        virtualAxis: Array<{ pos: number; vel: number; accVel: number; decVel: number }>;
+      }>;
+    const forwardBlocks = blocksOf(forward);
+    const reverseBlocks = blocksOf(reverse);
+    expect(forwardBlocks[0]?.virtualAxis[0]?.vel).toBe(0);
+    expect(forwardBlocks[1]?.virtualAxis[0]?.vel).not.toBe(0);
+    expect(reverseBlocks[0]?.virtualAxis[0]).toEqual({
+      ...forwardBlocks[1]?.virtualAxis[0],
+      pos: 0,
+    });
+    expect(reverseBlocks[1]?.virtualAxis[0]).toEqual({
+      pos: 100,
+      vel: 0,
+      accVel: 0,
+      decVel: 0,
+    });
   });
 });
 
@@ -248,6 +287,20 @@ describe("readySequence", () => {
     });
     const plain = withoutPlan.saveAction.mock.calls[0]?.[0] as Array<Record<string, unknown>>;
     expect(plain.every((item) => !("startPlan" in item))).toBe(true);
+    expect(plain.every((item) => item.safeGroup === 1)).toBe(true);
+    expect(plain.every((item) => item.runDirection === true)).toBe(true);
+
+    const closed = createTransport();
+    await readySequence({
+      document: documentWithSequence(validSequence),
+      sequenceId: validSequence.id,
+      safeGroup: 0,
+      runDirection: false,
+      transport: closed,
+    });
+    const closedItems = closed.saveAction.mock.calls[0]?.[0] as Array<Record<string, unknown>>;
+    expect(closedItems.every((item) => item.safeGroup === 0)).toBe(true);
+    expect(closedItems.every((item) => item.runDirection === false)).toBe(true);
   });
 
   it("does not save when download validation fails", async () => {

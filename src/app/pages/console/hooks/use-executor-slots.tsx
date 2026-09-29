@@ -7,9 +7,13 @@ import type { ActionSequence } from "../components/program-panel/program-data";
 
 export type FaderSlotPhase = "idle" | "ready" | "running";
 
-export type SlotRunOptions = { nearest: boolean; reverse: boolean };
+export type SlotRunOptions = { nearest: boolean; reverse: boolean; safeGroup: boolean };
 
-export const DEFAULT_SLOT_RUN_OPTIONS: SlotRunOptions = { nearest: false, reverse: false };
+export const DEFAULT_SLOT_RUN_OPTIONS: SlotRunOptions = {
+  nearest: false,
+  reverse: false,
+  safeGroup: true,
+};
 
 export type FaderSlotState = {
   index: number;
@@ -80,7 +84,7 @@ const runOptionsFor = (
   sequenceId: number | null,
 ): SlotRunOptions =>
   record && sequenceId !== null && record.sequenceId === sequenceId
-    ? { nearest: record.nearest, reverse: record.reverse }
+    ? { nearest: record.nearest, reverse: record.reverse, safeGroup: record.safeGroup }
     : DEFAULT_SLOT_RUN_OPTIONS;
 
 export const ExecutorSlotsProvider = ({

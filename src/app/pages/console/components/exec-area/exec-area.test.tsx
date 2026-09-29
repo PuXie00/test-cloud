@@ -363,7 +363,7 @@ const makeFaderSlot = (overrides: Partial<FaderSlotState> & { index: number }): 
   faderValue: 100,
   phase: "idle",
   isBusy: false,
-  runOptions: { nearest: false, reverse: false },
+  runOptions: { nearest: false, reverse: false, safeGroup: true },
   startPlan: null,
   preparedPoses: null,
   ...overrides,
@@ -775,14 +775,15 @@ describe("FaderSlot Ready/GO gate", () => {
 
   it("shows safety in both states, loop only when enabled, and cancels ready from the mark popover", () => {
     const onCancelReady = vi.fn();
-    render(
+    const slot = makeFaderSlot({
+      index: 0,
+      phase: "ready",
+      sequence: { id: 15, name: "开幕A", durationMs: 2000, loop: true, trajectoryMode: true },
+    });
+    const renderSlot = (safeGroup: boolean) =>
       withMode(
         <FaderSlot
-          slot={makeFaderSlot({
-            index: 0,
-            phase: "ready",
-            sequence: { id: 15, name: "开幕A", durationMs: 2000, loop: true, trajectoryMode: true },
-          })}
+          slot={{ ...slot, runOptions: { ...slot.runOptions, safeGroup } }}
           isPreviewing={false}
           onPreviewToggle={vi.fn()}
           onPreviewHoldStart={vi.fn()}
@@ -792,16 +793,18 @@ describe("FaderSlot Ready/GO gate", () => {
           onFaderChange={vi.fn()}
           onAssignFromDrag={vi.fn()}
         />,
-      ),
-    );
+      );
+    const { rerender } = render(renderSlot(true));
 
     expect(screen.getByText("安全组开启")).toBeTruthy();
     expect(screen.getByText("循环")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "开幕A 标记" }));
     expect((screen.getByRole("button", { name: "开启就近" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "开启反向" }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "关闭安全组" }));
+    expect((screen.getByRole("button", { name: "关闭安全组" }) as HTMLButtonElement).disabled).toBe(true);
+    rerender(renderSlot(false));
     expect(screen.getByText("安全组关闭")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "开启安全组" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "取消准备" }));
     expect(onCancelReady).toHaveBeenCalledTimes(1);
   });
@@ -831,16 +834,19 @@ describe("FaderSlot Ready/GO gate", () => {
     expect(screen.queryByText("就近")).toBeNull();
     expect(screen.queryByText("反向")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "开幕A 标记" }));
+    fireEvent.click(screen.getByRole("button", { name: "关闭安全组" }));
     fireEvent.click(screen.getByRole("button", { name: "开启就近" }));
     fireEvent.click(screen.getByRole("button", { name: "开启反向" }));
-    expect(onRunOptionsChange).toHaveBeenNthCalledWith(1, { nearest: true });
-    expect(onRunOptionsChange).toHaveBeenNthCalledWith(2, { reverse: true });
+    expect(onRunOptionsChange).toHaveBeenNthCalledWith(1, { safeGroup: false });
+    expect(onRunOptionsChange).toHaveBeenNthCalledWith(2, { nearest: true });
+    expect(onRunOptionsChange).toHaveBeenNthCalledWith(3, { reverse: true });
 
-    rerender(renderSlot({ runOptions: { nearest: true, reverse: true } }));
+    rerender(renderSlot({ runOptions: { nearest: true, reverse: true, safeGroup: true } }));
     expect(screen.getByText("就近")).toBeTruthy();
     expect(screen.getByText("反向")).toBeTruthy();
 
-    rerender(renderSlot({ phase: "ready", runOptions: { nearest: true, reverse: true } }));
+    rerender(renderSlot({ phase: "ready", runOptions: { nearest: true, reverse: true, safeGroup: true } }));
+    expect((screen.getByRole("button", { name: "关闭安全组" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "关闭就近" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "关闭反向" }) as HTMLButtonElement).disabled).toBe(true);
   });
@@ -1229,7 +1235,7 @@ describe("ExecArea launch guard", () => {
   it("uses the slot nearest and reverse options in the start dialog", async () => {
     snapshotsRef.current = [{ descriptor: { id: 1 }, positions: { h: 0, p: 0, y: 0 } }];
     faderSlotsRef.current = faderSlotsRef.current.map((slot) =>
-      slot.index === 1 ? { ...slot, runOptions: { nearest: true, reverse: true } } : slot,
+      slot.index === 1 ? { ...slot, runOptions: { nearest: true, reverse: true, safeGroup: true } } : slot,
     );
     render(withMode(<ExecArea />));
     fireEvent.click(screen.getByRole("button", { name: "F2 Ready" }));
@@ -1372,7 +1378,18 @@ describe("ExecArea launch guard", () => {
       expect(goSequenceMock).toHaveBeenCalledTimes(1);
     });
     expect(readySequenceMock).toHaveBeenCalledTimes(1);
-    expect(readySequenceMock.mock.calls[0]?.[0]).toMatchObject({ sequenceId: 15, startPlan: null });
+    expect(readySequenceMock.mock.calls[0]?.[0]).toMatchObject({
+      sequenceId: 15,
+      startPlan: {
+        startMode: "at-start",
+        direction: 1,
+        targetFrameMs: 2000,
+        transitionSec: 0,
+        xSafe: null,
+        motorLimitScale: null,
+        members: [],
+      },
+    });
     expect(closeMock).toHaveBeenCalledWith("card-stopped");
     expect(goSequenceMock.mock.calls[0]?.[0]).toMatchObject({ sequenceId: 15, faderPercent: 100 });
     expect(readySequenceMock.mock.invocationCallOrder[0]).toBeLessThan(closeMock.mock.invocationCallOrder[0]!);

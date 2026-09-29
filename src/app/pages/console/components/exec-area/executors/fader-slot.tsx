@@ -40,8 +40,7 @@ export const FaderSlot = ({
 }: FaderSlotProps) => {
   const { mode } = useConsoleMode();
   const [marksOpen, setMarksOpen] = useState(false);
-  const [safetyGroupOn, setSafetyGroupOn] = useState(true);
-  const { nearest: nearestOn, reverse: reverseOn } = slot.runOptions;
+  const { nearest: nearestOn, reverse: reverseOn, safeGroup: safetyGroupOn } = slot.runOptions;
   const sequenceId = slot.sequence?.id;
   const isEmpty = !slot.sequence;
   const isForced = isForcedTrajectory(slot.sequence?.trajectoryMode);
@@ -68,7 +67,6 @@ export const FaderSlot = ({
   useEffect(() => () => clearTimer(), []);
 
   useEffect(() => {
-    setSafetyGroupOn(true);
     setMarksOpen(false);
   }, [sequenceId]);
 
@@ -219,8 +217,9 @@ export const FaderSlot = ({
             <div className="flex flex-col gap-1">
               <button
                 type="button"
-                onClick={() => setSafetyGroupOn((current) => !current)}
-                className="inline-flex h-8 items-center justify-center rounded-sm bg-input-background text-body-sm text-foreground hover:bg-accent"
+                disabled={!canSetRunOptions}
+                onClick={() => onRunOptionsChange?.({ safeGroup: !safetyGroupOn })}
+                className="inline-flex h-8 items-center justify-center rounded-sm bg-input-background text-body-sm text-foreground hover:bg-accent disabled:opacity-40"
               >
                 {safetyGroupOn ? "关闭安全组" : "开启安全组"}
               </button>

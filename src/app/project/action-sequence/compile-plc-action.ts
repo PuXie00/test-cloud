@@ -65,6 +65,7 @@ const AXES: VirtualAxisId[] = ["v1", "v2", "v3"];
 const compileModels = (
   resolved: ResolvedActionSequence,
   objectById: Map<number, PlcCompileObject>,
+  kinematicsAtStart: boolean,
 ): cCompiledModel[] =>
   [...resolved.posesByObject.entries()]
     .sort((left, right) => compareNumber(left[0], right[0]))
@@ -74,10 +75,12 @@ const compileModels = (
       const enabledAxes = AXES.filter((axis) => object.enabledVirtualAxes.includes(axis));
       const objectSegments = resolved.segments.filter((segment) => segment.objectId === deviceId);
       const timeBlockList = poses.map((pose: ResolvedPosePoint, index) => {
-        const prev = poses[index - 1];
-        const segment = prev
-          ? objectSegments.find(
-              (item) => item.fromRef === prev.sourceRef && item.toRef === pose.sourceRef,
+        const neighbor = kinematicsAtStart ? poses[index + 1] : poses[index - 1];
+        const segment = neighbor
+          ? objectSegments.find((item) =>
+              kinematicsAtStart
+                ? item.fromRef === pose.sourceRef && item.toRef === neighbor.sourceRef
+                : item.fromRef === neighbor.sourceRef && item.toRef === pose.sourceRef,
             )
           : undefined;
         return {
@@ -99,6 +102,8 @@ const compileModels = (
 export const compilePlcAction = (
   sequence: ActionSequenceConfig,
   context: PlcCompileContext,
+  /** true：速度和加减速写在区间起点；false：写在终点。 */
+  kinematicsAtStart = false,
 ): PlcCompiledAction => {
   const issues = validateActionSequence(sequence, {
     objects: context.objects.map((object) => ({
@@ -154,7 +159,7 @@ export const compilePlcAction = (
   return {
     totalDuration: resolved.totalMs,
     timelines,
-    models: compileModels(resolved, objectById),
+    models: compileModels(resolved, objectById, kinematicsAtStart),
     ioBlocks: sortIoBlocks(resolved.commands.map(instructionToCompiledEvent)),
   };
 };

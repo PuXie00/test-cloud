@@ -5,6 +5,8 @@ export const toActionDataSaveItems = (
   compiled: PlcCompiledAction,
   actionId: number,
   trajectoryMode: TrajectoryMode,
+  safeGroup = 1,
+  runDirection = true,
 ): ActionDataSaveItem[] => [
   {
     actionId,
@@ -19,5 +21,7 @@ export const toActionDataSaveItems = (
     })),
     modelList: compiled.models,
     IOBlockList: compiled.ioBlocks,
+    runDirection,
+    safeGroup,
   },
 ];

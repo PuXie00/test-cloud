@@ -31,19 +31,20 @@ export const buildPreviewTimeline = (
   plan: NearestStartPlan | null,
   reverse: boolean,
 ): PreviewTimeline => {
-  if (plan && plan.transitionSec > 0) {
-    const transitionMs = plan.transitionSec * 1000;
+  const active = plan && plan.startMode !== "at-start" ? plan : null;
+  if (active && active.transitionSec > 0) {
+    const transitionMs = active.transitionSec * 1000;
     return {
-      plan,
+      plan: active,
       transitionMs,
-      direction: plan.direction,
-      programStartMs: plan.targetFrameMs,
+      direction: active.direction,
+      programStartMs: active.targetFrameMs,
       programTotalMs,
-      totalMs: transitionMs + remainingProgramMs(plan, programTotalMs),
+      totalMs: transitionMs + remainingProgramMs(active, programTotalMs),
     };
   }
   const direction: 1 | -1 = reverse ? -1 : 1;
-  const programStartMs = plan ? plan.targetFrameMs : direction > 0 ? 0 : programTotalMs;
+  const programStartMs = active ? active.targetFrameMs : direction > 0 ? 0 : programTotalMs;
   const programSpan = direction > 0 ? programTotalMs - programStartMs : programStartMs;
   return {
     plan: null,

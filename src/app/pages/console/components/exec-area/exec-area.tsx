@@ -130,13 +130,14 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     slotIndex: number,
     sequenceId: number,
     startPlan: NearestStartPlan | null,
+    options: { safeGroup: number; runDirection: boolean },
   ) => {
     const document = currentProject?.document;
     if (!document) return;
     setSlotBusy(slotIndex, true);
     void (async () => {
       try {
-        const readied = await readySequence({ document, sequenceId, startPlan });
+        const readied = await readySequence({ document, sequenceId, startPlan, ...options });
         if (!readied.ok) {
           clearSlotReady(slotIndex);
           reportSequenceResult(readied);
@@ -165,7 +166,13 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     if (!document) return;
     const authored = document.motion.actionSequences.find((entry) => entry.id === sequenceId);
     void (async () => {
-      const readied = await readySequence({ document, sequenceId, startPlan });
+      const readied = await readySequence({
+        document,
+        sequenceId,
+        startPlan,
+        safeGroup: 1,
+        runDirection: true,
+      });
       if (!readied.ok) {
         reportSequenceResult(readied);
         return;
@@ -208,7 +215,10 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     const plan = dialogGate.plan;
     setPoseDialog(null);
     if (slotIndex === null) return;
-    beginReady(slotIndex, sequenceId, plan);
+    beginReady(slotIndex, sequenceId, plan, {
+      safeGroup: slot?.runOptions.safeGroup === false ? 0 : 1,
+      runDirection: slot?.runOptions.reverse !== true,
+    });
   };
 
   const handleNextSequence = (cardId: string) => {
@@ -252,6 +262,8 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
         });
         return;
       }
+      readyThenGoNext(cardId, sequenceId, gate.status === "at-start" ? gate.plan : null);
+      return;
     }
     readyThenGoNext(cardId, sequenceId, null);
   };
@@ -321,6 +333,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     }
 
     if (poseDialog) return;
+    let startPlan: NearestStartPlan | null = null;
     if (authored) {
       const gate = evaluateStartGate({
         sequence: authored,
@@ -340,8 +353,12 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
         });
         return;
       }
+      if (gate.status === "at-start") startPlan = gate.plan;
     }
-    beginReady(slotIndex, sequenceId, null);
+    beginReady(slotIndex, sequenceId, startPlan, {
+      safeGroup: slot.runOptions.safeGroup ? 1 : 0,
+      runDirection: !slot.runOptions.reverse,
+    });
   };
 
   return (

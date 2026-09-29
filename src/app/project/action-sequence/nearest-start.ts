@@ -1,3 +1,4 @@
+import type { ActionStartMode } from "@shared/csocket/action-data-save";
 import type { VirtualAxisId } from "../project-document-types";
 import {
   AXES,
@@ -73,7 +74,7 @@ export type NearestStartPlan = {
   forced: boolean;
   nearest: boolean;
   direction: 1 | -1;
-  startMode: "nearest" | "boundary";
+  startMode: ActionStartMode;
   targetFrameMs: number;
   transitionSec: number;
   /** 仅强制：各活动轴 |目标−当前| ≤ 曲线速度²/(2·最大加速度) 才为 true */

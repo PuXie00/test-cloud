@@ -90,6 +90,8 @@ describe("toActionDataSaveItems", () => {
         params: [{ deviceId: 7, enableFlag: 0 }],
       },
     }]);
+    expect(item.safeGroup).toBe(1);
+    expect(item.runDirection).toBe(true);
   });
 
   it("maps a command-only compile to events and zero timelines", () => {
@@ -104,9 +106,11 @@ describe("toActionDataSaveItems", () => {
       }]),
       context,
     );
-    const items = toActionDataSaveItems(compiled, 3, false);
+    const items = toActionDataSaveItems(compiled, 3, false, 0, false);
     expect(items[0].actionId).toBe(3);
     expect(items[0].trajectoryMode).toBe(false);
+    expect(items[0].safeGroup).toBe(0);
+    expect(items[0].runDirection).toBe(false);
     expect(items[0].timelineCount).toBe(0);
     expect(items[0].timelineList).toEqual([]);
     expect(items[0].modelList).toEqual([]);

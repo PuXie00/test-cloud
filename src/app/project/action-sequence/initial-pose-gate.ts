@@ -6,7 +6,7 @@ import type {
 import type { ActionSequenceConfig, ModelPose } from "./types";
 import { isSequenceLooping } from "./sequence-loop";
 import { planNearestStart, type NearestStartMember, type NearestStartPlan } from "./nearest-start";
-import { memberTimeline } from "./nearest-start-frames";
+import { memberTimeline, sharedKeyframes } from "./nearest-start-frames";
 import { buildNearestStartMember } from "./nearest-start-model";
 import type { HpyPose } from "./nearest-start-motion";
 import { resolveActionSequence, type ResolvedActionSequence } from "./resolve-sequence";
@@ -94,7 +94,7 @@ export type StartGateTiming = {
 };
 
 export type StartGateResult =
-  | { status: "at-start" }
+  | { status: "at-start"; plan: NearestStartPlan }
   | ({ status: "transition" } & StartGateTiming)
   | ({ status: "blocked"; message: string } & StartGateTiming)
   | { status: "error"; message: string };
@@ -102,7 +102,34 @@ export type StartGateResult =
 const errorMessage = (error: unknown, fallback: string): string =>
   error instanceof Error ? error.message : fallback;
 
-/** 反向运行时序列从末帧开始，“起点”取各成员在公共末帧的位姿。 */
+const boundaryFrameMs = (resolved: ResolvedActionSequence, reverse: boolean): number => {
+  const frames = sharedKeyframes(
+    [...resolved.posesByObject.keys()].flatMap((objectId) => {
+      const timeline = memberTimeline(resolved, objectId);
+      return timeline ? [timeline] : [];
+    }),
+  );
+  if (frames.length === 0) return reverse ? resolved.totalMs : 0;
+  return reverse ? frames[frames.length - 1]! : frames[0]!;
+};
+
+/** 已在起点：不下发成员运动，只标明从第一帧或末帧开始。 */
+export const atStartPlan = (input: {
+  resolved: ResolvedActionSequence;
+  forced: boolean;
+  nearest: boolean;
+  reverse: boolean;
+}): NearestStartPlan => ({
+  forced: input.forced,
+  nearest: input.nearest,
+  direction: input.reverse ? -1 : 1,
+  startMode: "at-start",
+  targetFrameMs: boundaryFrameMs(input.resolved, input.reverse),
+  transitionSec: 0,
+  xSafe: null,
+  motorLimitScale: null,
+  members: [],
+});
 const boundaryPoseAt = (
   resolved: ResolvedActionSequence,
   objectId: number,
@@ -125,7 +152,7 @@ export const planStartTransition = (input: {
   telemetryByObjectId: ReadonlyMap<number, HpyPose>;
   nearest: boolean;
   reverse: boolean;
-}): NearestStartPlan | null => {
+}): NearestStartPlan => {
   const members: NearestStartMember[] = [];
   let offStart = false;
   for (const objectId of input.resolved.posesByObject.keys()) {
@@ -139,7 +166,14 @@ export const planStartTransition = (input: {
     }
     members.push(buildNearestStartMember(object, input.motors, poseFromHpy(current)));
   }
-  if (!offStart) return null;
+  if (!offStart) {
+    return atStartPlan({
+      resolved: input.resolved,
+      forced: input.sequence.trajectoryMode === true,
+      nearest: input.nearest,
+      reverse: input.reverse,
+    });
+  }
   return planNearestStart({
     resolved: input.resolved,
     members,
@@ -158,13 +192,13 @@ export const evaluateStartGate = (input: StartGateInput): StartGateResult => {
     return { status: "error", message: errorMessage(error, "动作序列无法解析") };
   }
 
-  let plan: NearestStartPlan | null;
+  let plan: NearestStartPlan;
   try {
     plan = planStartTransition({ ...input, resolved });
   } catch (error) {
     return { status: "error", message: errorMessage(error, "起始位姿过渡计算失败") };
   }
-  if (!plan) return { status: "at-start" };
+  if (plan.startMode === "at-start") return { status: "at-start", plan };
 
   const timing: StartGateTiming = {
     plan,

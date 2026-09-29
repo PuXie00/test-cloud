@@ -256,6 +256,35 @@ describe("compilePlcAction", () => {
     }]);
   });
 
+  it("writes the same kinematics on the interval start when requested", () => {
+    const sequence = sequenceOf(
+      [
+        { id: "start", kind: "pose", objectId: 7, atMs: 1000, pose: origin },
+        { id: "end", kind: "pose", objectId: 7, atMs: 2000, pose: { v1: 1000, v2: 0, v3: 0 } },
+      ],
+      {
+        segments: [{
+          fromRef: "start",
+          toRef: "end",
+          settings: { profiles: axisProfiles(150, 250) },
+        }],
+      },
+    );
+    const compiled = compilePlcAction(
+      sequence,
+      compileContext([{ id: 7, enabledVirtualAxes: ["v1"] as const }]),
+      true,
+    );
+    const expected = axisKinematics(trap(150, 250), 1000, 1000);
+    expect(compiled.models).toEqual([{
+      deviceId: 7,
+      timeBlockList: [
+        { time: 1000, virtualAxis: [{ pos: 0, ...expected }] },
+        { time: 2000, virtualAxis: [{ pos: 1000, vel: 0, accVel: 0, decVel: 0 }] },
+      ],
+    }]);
+  });
+
   it("omits disabled axes from C++ virtualAxis", () => {
     const compiled = compilePlcAction(
       laterInitialSequence,

@@ -44,12 +44,17 @@ export type cCompiledModel = {
 }
 
 /** 上位机算出的就近/回起点接入计划。非强制由 syncMovePrepare 转成 PLC 报文。 */
+export type ActionStartMode = 'nearest' | 'boundary' | 'at-start'
+
 export type ActionStartPlan = {
   nearest: boolean
   direction: 1 | -1
+  startMode: ActionStartMode
   targetFrameMs: number
   /** 过渡时长，秒。下发前换算成毫秒。 */
   transitionSec: number
+  xSafe: boolean | null
+  motorLimitScale: number | null
   members: readonly {
     objectId: number
     axes: readonly {
@@ -75,6 +80,8 @@ export type ActionDataSaveItem = {
   }>//plc需要的
   modelList:cCompiledModel[] // C++ 需要的
   IOBlockList: cCompiledEvent[]
+  runDirection: boolean // 运行方向，true为正向，false为反向
+  safeGroup: number // 安全组开启 1开启，0关闭
   /** 上位机算出的就近/回起点接入计划。非强制准备转入 syncMovePrepare，强制轨迹只打印。 */
   startPlan?: ActionStartPlan
 }

@@ -155,12 +155,14 @@ export class CsocketApiService {
         if (next) this.broadcastMasterStatus(next)
       }
       if (optCmd === 'Info|model') {
+        // console.log('Info|model', JSON.stringify(msg));
         if (this.modelInfo.ingest(msg)) {
           this.broadcast(CSOCKET_CHANNELS.readModelInfoPolling, msg)
         }
       }
       if (optCmd === 'Info|axis') {
         if (this.axisInfo.ingest(msg)) {
+          // console.log('Info|axis', JSON.stringify(msg));
           this.broadcast(CSOCKET_CHANNELS.readAxisInfoPolling, msg)
         }
       }
@@ -358,23 +360,28 @@ export class CsocketApiService {
   // 动作准备Ready
 
   actionReady(items: ActionDataSaveItem[], opts?: CsocketSendOpts) {
-    for (const item of items) {
-      if (item.startPlan !== undefined) {
-        console.log('actionReady startPlan', item.actionId, JSON.stringify(item.startPlan))
-      }
-    }
+    const isTMaped: any[] = []
     const isNotTMaped: SyncMovePrepareSource[] = []
     items.forEach(item => {
-      if (item.trajectoryMode) return
+      if (item.trajectoryMode) {
+        isTMaped.push(item)
+      } else {
       isNotTMaped.push({
         actionId: item.actionId,
         modelList: item.modelList,
         IOBlockList: item.IOBlockList,
         ...(item.startPlan ? { startPlan: item.startPlan } : {}),
-      })
+        })
+      }
     })
-    console.log('isNotTMaped', JSON.stringify(isNotTMaped))
-    return this.syncMovePrepare(isNotTMaped, opts)
+    const result: Promise<SendData>[] = []
+    if(isTMaped.length > 0) {
+      result.push(this.actionDataSavePlc(isTMaped, opts))
+    }
+    if(isNotTMaped.length > 0) {
+      result.push(this.syncMovePrepare(isNotTMaped, opts))
+    }
+    return Promise.all(result)
   }
   // 动作执行 Go
   actionGo(items: {
@@ -384,12 +391,41 @@ export class CsocketApiService {
     loopCount: number,
     trajectoryMode: boolean;
   }[], opts?: CsocketSendOpts) {
-    const maped = items.map((item) => ({
-      actionId: item.actionId,
-      startFlag: 1,
-      loopCount: item.loopCount,
-    }))
-    return this.syncMovebegin(maped, opts)
+    const isTMaped: {
+      actionId: number,
+      runDirection: number,
+      speedScale: number,
+      loopCount: number,
+    }[] = []
+    const isNotTMaped:  {
+      actionId: number;
+      startFlag: number;
+      loopCount: number;
+    }[] = []
+    items.forEach(item => {
+      if(item.trajectoryMode) {
+        isTMaped.push({
+          actionId: item.actionId,
+          runDirection: item.runDirection,
+          speedScale: item.speedScale,
+          loopCount: item.loopCount,
+        })
+      } else {
+        isNotTMaped.push({
+          actionId: item.actionId,
+          startFlag: 1,
+          loopCount: item.loopCount,
+        })
+      }
+    })
+    const result: Promise<SendData>[] = []
+    if(isTMaped.length > 0) {
+      result.push(this.sendBuilt('Opera|actionCall', '0x1005', isTMaped, opts))
+    }
+    if(isNotTMaped.length > 0) {
+      result.push(this.syncMovebegin(isNotTMaped, opts))
+    }
+    return Promise.all(result)
   }
 
   // 动作停止 Stop
@@ -397,16 +433,29 @@ export class CsocketApiService {
     actionId: number,
     trajectoryMode: boolean;
   }[], opts?: CsocketSendOpts) {
-    const isTMaped = items.filter(item => item.trajectoryMode)
-    const isNotTMaped = items.filter(item => !item.trajectoryMode)
-    const result = []
+    const isTMaped: {
+      actionId: number,
+    }[] = []
+    const isNotTMaped: {
+      actionId: number,
+    }[] = []
+    items.forEach(item => {
+      if(item.trajectoryMode) {
+        isTMaped.push({
+          actionId: item.actionId,
+        })
+      } else {
+        isNotTMaped.push({
+          actionId: item.actionId,
+        })
+      }
+    })
+    const result: Promise<SendData>[] = []
     if(isNotTMaped.length > 0) {
-      result.push(this.sendBuilt('Opera|syncMoveEnd','0x01FF',isNotTMaped.map(item => ({
-        actionId: item.actionId,
-      })), opts))
+      result.push(this.sendBuilt('Opera|syncMoveEnd','0x01FF',isNotTMaped, opts))
     }
     if(isTMaped.length > 0) {
-      result.push(this.sendBuilt('Action|stop', '', isTMaped, opts))
+      result.push(this.sendBuilt('Opera|stopAction', '0x1009', isTMaped, opts))
     }
     return Promise.all(result)
   }
@@ -763,7 +812,7 @@ export class CsocketApiService {
     const mapped = items.map((item) => ({
       actionId: item.actionId,
       checkCode: 0,
-      safeGroup: 0,
+      safeGroup: item.safeGroup,
       totalDuration: item.totalDuration,
       deviceCount: item.timelineCount
     }))
