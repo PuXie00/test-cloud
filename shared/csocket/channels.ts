@@ -82,6 +82,7 @@ export const CSOCKET_CHANNELS = {
   readMasterStatusPolling: 'csocket:event:read-master-status-polling',
   readModelInfoPolling: 'csocket:event:read-model-info-polling',
   readAxisInfoPolling: 'csocket:event:read-axis-info-polling',
+  readActionRun: 'csocket:event:read-action-run',
   verifyProject: 'csocket:event:verify-project',
   clockSync: 'csocket:event:clock-sync',
 } as const

@@ -168,6 +168,7 @@ export type CsocketAPI = {
   onReadMasterStatusPolling: (cb: (msg: CppAckResult) => void) => () => void
   onReadModelInfoPolling: (cb: (msg: CppAckResult) => void) => () => void
   onReadAxisInfoPolling: (cb: (msg: CppAckResult) => void) => () => void
+  onReadActionRun: (cb: (msg: CppAckResult) => void) => () => void
   onVerifyProject: (cb: (msg: CppAckResult) => void) => () => void
   onClockSync: (cb: (msg: CppAckResult) => void) => () => void
 }

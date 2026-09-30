@@ -111,6 +111,7 @@ export const createCsocketApi = () => ({
   onReadMasterStatusPolling: (cb: MsgHandler) => onChannel(CSOCKET_CHANNELS.readMasterStatusPolling, cb),
   onReadModelInfoPolling: (cb: MsgHandler) => onChannel(CSOCKET_CHANNELS.readModelInfoPolling, cb),
   onReadAxisInfoPolling: (cb: MsgHandler) => onChannel(CSOCKET_CHANNELS.readAxisInfoPolling, cb),
+  onReadActionRun: (cb: MsgHandler) => onChannel(CSOCKET_CHANNELS.readActionRun, cb),
   onVerifyProject: (cb: MsgHandler) => onChannel(CSOCKET_CHANNELS.verifyProject, cb),
   onClockSync: (cb: MsgHandler) => onChannel(CSOCKET_CHANNELS.clockSync, cb),
 })

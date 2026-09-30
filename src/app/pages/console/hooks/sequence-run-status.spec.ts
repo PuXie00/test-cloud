@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChapterItem } from "../components/program-panel/program-data";
 import {
-  EXAMPLE_SEQUENCE_RUNTIME,
   formatExecTime,
   hasNextChapterSequence,
   nextChapterSequence,
@@ -13,20 +12,8 @@ const item = (id: number): ChapterItem => ({
   sequence: { id, name: `S${id}`, durationMs: 0 },
 });
 
-describe("sequence run status fixture", () => {
-  it("exposes elapsed 12300, total 60000, loop 1", () => {
-    expect(EXAMPLE_SEQUENCE_RUNTIME).toHaveLength(1);
-    const row = EXAMPLE_SEQUENCE_RUNTIME[0]!;
-    expect(row.elapsedMs).toBe(12300);
-    expect(row.totalMs).toBe(60000);
-    expect(row.loopCount).toBe(1);
-    expect(row.speedPercent).toBe(100);
-    expect(row.remainingMs).toBe(47700);
-  });
-});
-
 describe("formatExecTime", () => {
-  it("formats the fixture elapsed and total", () => {
+  it("formats elapsed and total", () => {
     expect(formatExecTime(12300)).toBe("00:12.3");
     expect(formatExecTime(60000)).toBe("01:00.0");
   });
