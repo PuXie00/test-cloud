@@ -10,6 +10,7 @@ import { ConsoleModeProvider, useConsoleMode } from "./hooks/use-console-mode";
 import { ConsoleNavProvider } from "./hooks/use-console-nav";
 import { ControlledObjectsProvider } from "./hooks/use-controlled-objects";
 import { LogStreamProvider } from "./hooks/use-log-stream";
+import { useActionCardSeed } from "./hooks/action-card-seed";
 import { ExecCardsProvider, useExecCards } from "./hooks/use-exec-cards";
 import { ExecutorSlotsProvider } from "./hooks/use-executor-slots";
 import { sequenceReadyFingerprint } from "./hooks/sequence-execution";
@@ -48,6 +49,12 @@ import { PlcRuntimeProvider, usePlcRuntime } from "./hooks/plc-runtime-provider"
 import { RulesProvider } from "./hooks/use-rules";
 import { ControlLayoutProvider, useControlLayout } from "./hooks/use-control-layout";
 import { NEW_PROJECT_FLAG_KEY } from "./components/right-sidebar/config-wizard/config-wizard-constants";
+
+/** 任务卡里 PLC 没上报的信息（名称、时长、方向等）从当前工程的序列和执行槽取 */
+const ProjectExecCardsProvider = ({ children }: { children: ReactNode }) => {
+  const resolveActionSeed = useActionCardSeed();
+  return <ExecCardsProvider resolveActionSeed={resolveActionSeed}>{children}</ExecCardsProvider>;
+};
 
 const ProgramScopedProviders = ({ children }: { children: ReactNode }) => {
   const { pageItems } = useProgram();
@@ -231,7 +238,7 @@ export const ConsolePage = () => (
     <SelectionProvider>
       <ProgramProvider>
         <ProgramScopedProviders>
-          <ExecCardsProvider>
+          <ProjectExecCardsProvider>
             <ProjectStoreProvider>
               <PlcRuntimeProvider>
                 <ControlledObjectsProvider>
@@ -247,7 +254,7 @@ export const ConsolePage = () => (
                 </ControlledObjectsProvider>
               </PlcRuntimeProvider>
             </ProjectStoreProvider>
-          </ExecCardsProvider>
+          </ProjectExecCardsProvider>
         </ProgramScopedProviders>
       </ProgramProvider>
     </SelectionProvider>

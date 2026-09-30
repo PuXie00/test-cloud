@@ -1,7 +1,8 @@
 import { MoreVertical, Play, SkipForward, Square, Minus, Plus, X, RotateCcw } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
 import type { ExecCard, ExecCardSource } from "../../../hooks/use-exec-cards";
-import { EXAMPLE_SEQUENCE_RUNTIME, formatExecTime } from "../../../hooks/sequence-run-status";
+import { canCloseExecCard, isExecCardInTransition } from "../../../hooks/exec-card-run-status";
+import { formatExecTime } from "../../../hooks/sequence-run-status";
 import { ForcedTrajectoryBadge, isForcedTrajectory } from "../../forced-trajectory-badge";
 
 type ExecCardProps = {
@@ -28,6 +29,24 @@ const sourceLabel = (source: ExecCardSource) => {
   }
 };
 
+const NO_TIME = "--:--.-";
+const NO_VALUE = "—";
+
+/** 运行时间 / 序列时长；过渡状态时前半段显示“回迹中”；PLC 还没上报时留空位 */
+const runTimeText = (card: ExecCard): string => {
+  const total = card.totalMs !== undefined ? formatExecTime(card.totalMs) : NO_TIME;
+  if (isExecCardInTransition(card)) return `回迹中 / ${total}`;
+  const elapsed = card.run ? formatExecTime(card.run.runTimeMs) : NO_TIME;
+  return `${elapsed} / ${total}`;
+};
+
+/** 当前第几次 / 设定次数；设定为 0 表示无限循环 */
+const loopText = (card: ExecCard): string => {
+  if (!card.run) return NO_VALUE;
+  const set = card.run.loopCountSet > 0 ? String(card.run.loopCountSet) : "∞";
+  return `${card.run.loopCount} / ${set}`;
+};
+
 const actionBtnClass =
   "inline-flex h-8 flex-1 items-center justify-center gap-1 rounded-sm text-body-sm transition-colors";
 
@@ -41,11 +60,15 @@ export const ExecCardView = ({
   onSetSpeed,
   onClose,
 }: ExecCardProps) => {
-  const fixture = EXAMPLE_SEQUENCE_RUNTIME[0]!;
   const isStopped = card.status === "stopped" || card.status === "paused";
+  const isStopping = card.status === "stopping";
+  // 动作真正停下来（PLC 不再上报）之后才能关闭
+  const closeDisabled = !canCloseExecCard(card);
+  const closeTitle = closeDisabled ? "动作停下来后才能关闭" : undefined;
   const isCompleted = card.status === "completed";
   const isError = card.status === "error" || card.emergencyStopped;
   const skipDisabled = card.status !== "stopped" || !hasNextSequence || isError;
+  const speedDisabled = isError || isStopping || isExecCardInTransition(card);
   const maxSpeed = 200;
 
   return (
@@ -67,6 +90,11 @@ export const ExecCardView = ({
         {isForcedTrajectory(card.trajectoryMode) ? (
           <ForcedTrajectoryBadge className="px-1.5 text-muted-foreground" />
         ) : null}
+        {card.reverse ? (
+          <span className="shrink-0 rounded-sm bg-muted/50 px-1.5 text-label-caps text-muted-foreground">
+            反向
+          </span>
+        ) : null}
         <span className="shrink-0 font-mono text-mono-sm tabular-nums text-muted-foreground">
           {sourceLabel(card.source)}
         </span>
@@ -80,8 +108,10 @@ export const ExecCardView = ({
         <button
           type="button"
           aria-label="关闭任务"
+          disabled={closeDisabled}
+          title={closeTitle}
           onClick={onClose}
-          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
         >
           <X className="h-3 w-3" aria-hidden />
         </button>
@@ -91,12 +121,12 @@ export const ExecCardView = ({
         <div>
           <div className="text-label-caps text-muted-foreground">运行时间</div>
           <div className="font-mono text-mono-sm tabular-nums text-foreground">
-            {formatExecTime(fixture.elapsedMs)} / {formatExecTime(fixture.totalMs)}
+            {runTimeText(card)}
           </div>
         </div>
         <div>
           <div className="text-label-caps text-muted-foreground">循环次数</div>
-          <div className="font-mono text-mono-sm tabular-nums text-foreground">{fixture.loopCount}</div>
+          <div className="font-mono text-mono-sm tabular-nums text-foreground">{loopText(card)}</div>
         </div>
       </div>
 
@@ -104,7 +134,7 @@ export const ExecCardView = ({
         <button
           type="button"
           aria-label="降低速度"
-          disabled={isError}
+          disabled={speedDisabled}
           onClick={() => onSetSpeed(Math.max(0, card.speedPercent - 10))}
           className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-input-background text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30"
         >
@@ -115,7 +145,7 @@ export const ExecCardView = ({
           min={0}
           max={maxSpeed}
           value={card.speedPercent}
-          disabled={isError}
+          disabled={speedDisabled}
           onChange={(event) => onSetSpeed(Number(event.target.value))}
           className="h-1.5 min-w-0 flex-1 accent-primary disabled:opacity-30"
           aria-label="速度倍率"
@@ -123,7 +153,7 @@ export const ExecCardView = ({
         <button
           type="button"
           aria-label="提高速度"
-          disabled={isError}
+          disabled={speedDisabled}
           onClick={() => onSetSpeed(Math.min(maxSpeed, card.speedPercent + 10))}
           className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-input-background text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30"
         >
@@ -138,16 +168,23 @@ export const ExecCardView = ({
         {isError ? (
           <button
             type="button"
+            disabled={closeDisabled}
+            title={closeTitle}
             onClick={onClose}
-            className={cn(actionBtnClass, "bg-destructive text-destructive-foreground hover:bg-destructive/90")}
+            className={cn(
+              actionBtnClass,
+              "bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-40",
+            )}
           >
             <X className="h-3.5 w-3.5" /> 确认清除
           </button>
         ) : isCompleted ? (
           <button
             type="button"
+            disabled={closeDisabled}
+            title={closeTitle}
             onClick={onClose}
-            className={cn(actionBtnClass, "bg-muted/50 text-foreground hover:bg-muted")}
+            className={cn(actionBtnClass, "bg-muted/50 text-foreground hover:bg-muted disabled:opacity-40")}
           >
             <X className="h-3.5 w-3.5" /> 关闭
           </button>
@@ -176,7 +213,7 @@ export const ExecCardView = ({
                 onClick={onStop}
                 className={cn(actionBtnClass, "bg-muted/50 text-foreground hover:bg-muted")}
               >
-                <Square className="h-3.5 w-3.5" /> 停止
+                <Square className="h-3.5 w-3.5" /> {isStopping ? "停止中" : "停止"}
               </button>
             )}
             <button

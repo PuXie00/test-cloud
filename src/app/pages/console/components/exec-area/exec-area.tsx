@@ -14,6 +14,7 @@ import type { NearestStartPlan } from "@/app/project/action-sequence/nearest-sta
 import { hasUncoupledSequenceMember, sequenceObjectIds } from "@/app/project/action-sequence/sequence-object-ids";
 import { resolveMotionLaunchBlock } from "@/app/project/project-motion-readiness";
 import { useProject } from "@/app/project/use-project";
+import { sequenceTotalMs } from "../../hooks/action-card-seed";
 import { useControlledObjects } from "../../hooks/use-controlled-objects";
 import { useExecutorSlots } from "../../hooks/use-executor-slots";
 import { useExecCards } from "../../hooks/use-exec-cards";
@@ -95,6 +96,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
         card.source.kind === "fader" &&
         (card.status === "running" ||
           card.status === "paused" ||
+          card.status === "stopping" ||
           card.status === "stopped") &&
         !card.emergencyStopped
           ? [card.source.slotIndex]
@@ -192,6 +194,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
         sequenceId,
         sequenceHandle: started.sequenceHandle,
         trajectoryMode: authored?.trajectoryMode,
+        totalMs: sequenceTotalMs(authored),
       });
       stopPreview();
     })();
@@ -323,6 +326,8 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
             sequenceId,
             sequenceHandle: started.sequenceHandle,
             trajectoryMode: sequence.trajectoryMode,
+            totalMs: sequenceTotalMs(authored),
+            reverse: slot.runOptions.reverse,
           });
           stopPreview();
         } finally {

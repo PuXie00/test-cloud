@@ -11,6 +11,15 @@ import {
 } from "react";
 import { advanceRunningCards } from "./advance-running-cards";
 import {
+  applyActionRunReports,
+  canCloseExecCard,
+  fallbackActionCardSeed,
+  isExecCardInTransition,
+  parseActionRunReports,
+  settleSilentCards,
+  type ActionCardSeed,
+} from "./exec-card-run-status";
+import {
   getSequenceTransport,
   stopSequence,
   type SequenceRuntimeHandle,
@@ -23,7 +32,21 @@ export type ExecCardSource =
   | { kind: "manual" };
 
 export type ExecCardKind = "sequence";
-export type ExecCardStatus = "running" | "paused" | "stopped" | "completed" | "error";
+/** stopping：已下发停止，PLC 还在上报（减速中）；stopped：PLC 不再上报，真正停下来了 */
+export type ExecCardStatus = "running" | "paused" | "stopping" | "stopped" | "completed" | "error";
+
+/** PLC 最近一次上报的运行数据 */
+export type ExecCardRun = {
+  /** 1 过渡（回迹中），3 运行中 */
+  state: number;
+  /** 当前第几次循环 */
+  loopCount: number;
+  /** 设定循环次数；0 为无限循环 */
+  loopCountSet: number;
+  /** 轨迹运行到的位置（ms） */
+  runTimeMs: number;
+  reportedAt: number;
+};
 
 export type ExecCard = {
   id: string;
@@ -39,6 +62,15 @@ export type ExecCard = {
   sequenceId?: number;
   sequenceHandle?: SequenceRuntimeHandle;
   trajectoryMode?: TrajectoryMode;
+  /** 序列单次时长（ms），来自序列本身 */
+  totalMs?: number;
+  /** 反向运行，来自执行槽 */
+  reverse?: boolean;
+  /** PLC 还没上报过时为 undefined */
+  run?: ExecCardRun;
+  /** PLC 仍在上报这个动作 */
+  plcActive?: boolean;
+  stopRequestedAt?: number;
 };
 
 type ExecCardsContextValue = {
@@ -52,6 +84,8 @@ type ExecCardsContextValue = {
     sequenceId?: number;
     sequenceHandle?: SequenceRuntimeHandle;
     trajectoryMode?: TrajectoryMode;
+    totalMs?: number;
+    reverse?: boolean;
   }) => string;
   pause: (id: string) => void;
   resume: (id: string) => void;
@@ -65,17 +99,59 @@ type ExecCardsContextValue = {
 
 const ExecCardsContext = createContext<ExecCardsContextValue | null>(null);
 
-type ExecCardsProviderProps = { children: ReactNode };
+type ExecCardsProviderProps = {
+  children: ReactNode;
+  /** PLC 上报了没有任务卡的动作时，从序列 / 执行槽取补建任务卡的信息 */
+  resolveActionSeed?: (actionId: number) => ActionCardSeed;
+};
+
+const RUN_SETTLE_CHECK_MS = 100;
+
+const isStoppable = (card: ExecCard) =>
+  card.status === "running" || card.status === "stopping" || card.status === "paused";
+
+const isTrulyStopped = (card: ExecCard) =>
+  (card.status === "stopped" || card.status === "paused") && !card.plcActive;
 
 const hasActiveRunningCard = (cards: ExecCard[]) =>
   cards.some((card) => card.status === "running" && !card.emergencyStopped);
 
-export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
+export const ExecCardsProvider = ({
+  children,
+  resolveActionSeed = fallbackActionCardSeed,
+}: ExecCardsProviderProps) => {
   const [cards, setCards] = useState<ExecCard[]>([]);
   const cardsRef = useRef(cards);
   cardsRef.current = cards;
+  const resolveActionSeedRef = useRef(resolveActionSeed);
+  resolveActionSeedRef.current = resolveActionSeed;
   const rafRef = useRef<number | null>(null);
   const lastTickRef = useRef(0);
+
+  useEffect(() => {
+    const api = typeof window !== "undefined" ? window.csocketApi : undefined;
+    if (!api?.onReadActionRun) return;
+    return api.onReadActionRun((msg) => {
+      const reports = parseActionRunReports(msg);
+      if (reports.length === 0) return;
+      const now = Date.now();
+      setCards(
+        (current) =>
+          applyActionRunReports(current, reports, now, (actionId) =>
+            resolveActionSeedRef.current(actionId),
+          ) ?? current,
+      );
+    });
+  }, []);
+
+  const hasUnsettledCard = cards.some((card) => card.plcActive || card.status === "stopping");
+  useEffect(() => {
+    if (!hasUnsettledCard) return;
+    const timer = setInterval(() => {
+      setCards((current) => settleSilentCards(current, Date.now()) ?? current);
+    }, RUN_SETTLE_CHECK_MS);
+    return () => clearInterval(timer);
+  }, [hasUnsettledCard]);
 
   const stopLoop = useCallback(() => {
     if (rafRef.current !== null) {
@@ -138,7 +214,18 @@ export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
   }, [cards]);
 
   const launch = useCallback<ExecCardsContextValue["launch"]>(
-    ({ kind, name, durationMs, source, speedPercent = 100, sequenceId, sequenceHandle, trajectoryMode }) => {
+    ({
+      kind,
+      name,
+      durationMs,
+      source,
+      speedPercent = 100,
+      sequenceId,
+      sequenceHandle,
+      trajectoryMode,
+      totalMs,
+      reverse,
+    }) => {
       const id = `card-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
       setCards((current) => [
         {
@@ -155,6 +242,8 @@ export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
           ...(sequenceId !== undefined ? { sequenceId } : {}),
           ...(sequenceHandle ? { sequenceHandle } : {}),
           ...(trajectoryMode !== undefined ? { trajectoryMode } : {}),
+          ...(totalMs !== undefined ? { totalMs } : {}),
+          ...(reverse !== undefined ? { reverse } : {}),
         },
         ...current,
       ]);
@@ -169,19 +258,24 @@ export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
     );
   }, []);
 
-  const resume = useCallback((id: string) => {
+  /** 继续 / 重新：动作真正停下来之后才能操作。目前只改本地状态，清掉上一轮的上报，等 PLC 重新上报 */
+  const resumeLocally = useCallback((id: string) => {
     setCards((current) =>
-      current.map((card) =>
-        card.id === id && (card.status === "paused" || card.status === "stopped")
-          ? { ...card, status: "running" as const }
-          : card,
-      ),
+      current.map((card) => {
+        if (card.id !== id || !isTrulyStopped(card)) return card;
+        const { run: _staleRun, stopRequestedAt: _stopRequestedAt, ...rest } = card;
+        return { ...rest, status: "running" as const };
+      }),
     );
   }, []);
 
+  const resume = resumeLocally;
+
+  /** 下发停止后进入停止中；PLC 不再上报才算真正停下来（见 settleSilentCards） */
   const stop = useCallback((id: string) => {
     const card = cardsRef.current.find((entry) => entry.id === id);
-    if (card?.sequenceHandle) {
+    if (!card || !isStoppable(card)) return;
+    if (card.sequenceHandle) {
       void stopSequence(
         {
           actionId: card.sequenceHandle.actionId,
@@ -191,22 +285,28 @@ export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
         getSequenceTransport(),
       ).catch(() => undefined);
     }
+    const stopRequestedAt = Date.now();
     setCards((current) =>
-      current.map((entry) => (entry.id === id ? { ...entry, status: "stopped" as const } : entry)),
+      current.map((entry) =>
+        entry.id === id && isStoppable(entry)
+          ? { ...entry, status: "stopping" as const, stopRequestedAt }
+          : entry,
+      ),
     );
   }, []);
 
-  const restart = useCallback((id: string) => {
-    setCards((current) =>
-      current.map((card) => (card.id === id ? { ...card, status: "running" as const } : card)),
-    );
-  }, []);
+  const restart = resumeLocally;
 
   const skipNext = useCallback(() => {}, []);
 
   const setSpeed = useCallback((id: string, percent: number) => {
     setCards((current) =>
-      current.map((card) => (card.id === id ? { ...card, speedPercent: percent } : card)),
+      current.map((card) =>
+        // 过渡（回迹）中、停止中不能调速
+        card.id === id && !isExecCardInTransition(card) && card.status !== "stopping"
+          ? { ...card, speedPercent: percent }
+          : card,
+      ),
     );
   }, []);
 
@@ -231,12 +331,14 @@ export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
     }
   }, []);
 
+  /** 动作真正停下来之后才能关闭任务卡 */
   const close = useCallback((id: string) => {
     const card = cardsRef.current.find((entry) => entry.id === id);
+    if (!card || !canCloseExecCard(card)) return;
     if (
-      card?.sequenceHandle &&
+      card.sequenceHandle &&
       !card.emergencyStopped &&
-      (card.status === "running" || card.status === "paused" || card.status === "stopped")
+      (card.status === "paused" || card.status === "stopped")
     ) {
       void stopSequence(
         {
