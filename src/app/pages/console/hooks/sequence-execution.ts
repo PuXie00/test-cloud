@@ -8,6 +8,7 @@ import {
 import type { NearestStartPlan } from "@/app/project/action-sequence/nearest-start";
 import { toActionDataSaveItems } from "@/app/project/action-sequence/plc-action-payload";
 import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
+import { sequenceObjectIds } from "@/app/project/action-sequence/sequence-object-ids";
 import { isSequenceLooping } from "@/app/project/action-sequence/sequence-loop";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
 import {
@@ -35,6 +36,7 @@ export type SequenceExecutionContext = {
 export type SequenceRuntimeHandle = {
   actionId: number;
   trajectoryMode?: boolean;
+  deviceId?: number[];
 };
 
 export type DownloadedSequence =
@@ -54,10 +56,12 @@ export type SequenceExecutionTransport = {
     speedScale: number;
     trajectoryMode: TrajectoryMode;
     loopCount: number;
+    deviceId: number[];
   }) => Promise<void>;
   stopAction: (input: {
     actionId: number;
     trajectoryMode: boolean;
+    deviceId: number[];
   }) => Promise<void>;
 };
 
@@ -165,6 +169,7 @@ export const stopSequence = async (
   handle: {
     actionId: number;
     trajectoryMode: boolean;
+    deviceId: number[];
   },
   transport: SequenceExecutionTransport,
 ): Promise<void> => {
@@ -244,6 +249,7 @@ export const createCsocketSequenceTransport = (
           speedScale: input.speedScale,
           loopCount: input.loopCount,
           trajectoryMode: input.trajectoryMode,
+          deviceId: input.deviceId,
         },
       ]),
       "actionGo",
@@ -255,6 +261,7 @@ export const createCsocketSequenceTransport = (
         {
           actionId: input.actionId,
           trajectoryMode: input.trajectoryMode,
+          deviceId: input.deviceId,
         },
       ]),
       "actionStop",
@@ -392,6 +399,7 @@ export const goSequence = async (args: {
 
   const fromFader = args.faderPercent !== undefined;
   const speedPercent = args.faderPercent ?? 100;
+  const deviceId = [...sequenceObjectIds(found.sequence)].sort((left, right) => left - right);
   const transport = args.transport ?? getSequenceTransport();
 
   try {
@@ -401,6 +409,7 @@ export const goSequence = async (args: {
       speedScale: fromFader ? mapFaderPercentToSpeedScale(speedPercent) : 1,
       trajectoryMode: found.sequence.trajectoryMode,
       loopCount: toActionGoLoopCount(isSequenceLooping(found.sequence)),
+      deviceId,
     });
 
     return {
@@ -409,6 +418,7 @@ export const goSequence = async (args: {
       speedPercent,
       sequenceHandle: {
         actionId: found.sequence.id,
+        deviceId,
       },
     };
   } catch {
@@ -419,6 +429,7 @@ export const goSequence = async (args: {
       speedPercent,
       sequenceHandle: {
         actionId: found.sequence.id,
+        deviceId,
       },
     };
   }

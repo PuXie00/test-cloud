@@ -7,15 +7,46 @@ import {
 } from "./motion-profile";
 import type { MotionProfile } from "./types";
 
-const ZERO_COEFF = { a: 0, b: 0, c: 0, d: 0, e: 0, f: 0 };
+/** PLC 用 t = startTime(ms) / 100，即 0.1s。P = A + B t + C t²。 */
+const TICK_PER_SEC = 10;
 
 const snapPlc = (value: number): number => roundProjectCoordinate(value);
 
-const holdSegment = (startTime: number, position: number): PlcCurveSegment => ({
-  startTime,
-  position: snapPlc(position),
-  ...ZERO_COEFF,
-});
+const isHold = (segment: PlcCurveSegment): boolean =>
+  segment.b === 0 && segment.c === 0 && segment.d === 0 && segment.e === 0 && segment.f === 0;
+
+const holdSegment = (startTime: number, position: number): PlcCurveSegment => {
+  const snapped = snapPlc(position);
+  return {
+    startTime,
+    position: snapped,
+    a: snapped,
+    b: 0,
+    c: 0,
+    d: 0,
+    e: 0,
+    f: 0,
+  };
+};
+
+const phaseSegment = (
+  startTime: number,
+  position: number,
+  velocityPerSec: number,
+  accelPerSec2: number,
+): PlcCurveSegment => {
+  const snapped = snapPlc(position);
+  return {
+    startTime,
+    position: snapped,
+    a: snapped,
+    b: snapPlc(velocityPerSec / TICK_PER_SEC),
+    c: snapPlc(accelPerSec2 / (2 * TICK_PER_SEC * TICK_PER_SEC)),
+    d: 0,
+    e: 0,
+    f: 0,
+  };
+};
 
 export const trapezoidToCurveSegments = (
   profile: MotionProfile,
@@ -38,15 +69,43 @@ export const trapezoidToCurveSegments = (
   const cruiseEndPos =
     startPos +
     evaluateMotionProfile(profile, (accelMs + cruiseMs) / durationMs, durationMs) * travel;
-  const cruiseStartTime = startMs + accelMs;
-  const decelStartTime = cruiseStartTime + cruiseMs;
-
-  return [
-    { ...holdSegment(startMs, startPos), a: snapPlc(sign * kinematics.acceleration) },
-    {
-      ...holdSegment(cruiseStartTime, accelEndPos),
-      b: cruiseMs === 0 ? 0 : snapPlc(sign * kinematics.peakVelocity),
-    },
-    { ...holdSegment(decelStartTime, cruiseEndPos), c: snapPlc(sign * kinematics.deceleration) },
+  const cruiseVelocity = sign * kinematics.peakVelocity;
+  const rows = [
+    phaseSegment(startMs, startPos, 0, sign * kinematics.acceleration),
+    phaseSegment(
+      startMs + accelMs + cruiseMs,
+      cruiseEndPos,
+      cruiseVelocity,
+      -sign * kinematics.deceleration,
+    ),
   ];
+  if (cruiseMs > 0) {
+    rows.splice(
+      1,
+      0,
+      phaseSegment(startMs + accelMs, accelEndPos, cruiseVelocity, 0),
+    );
+  }
+  return rows;
+};
+
+/** 连续静止点只留第一点，并在总时长处补零速终点。 */
+export const finalizePlcTimeline = (
+  segments: PlcCurveSegment[],
+  endMs: number,
+  endPos: number,
+): PlcCurveSegment[] => {
+  const collapsed: PlcCurveSegment[] = [];
+  for (const segment of segments) {
+    const prev = collapsed[collapsed.length - 1];
+    if (prev && isHold(prev) && isHold(segment) && prev.position === snapPlc(segment.position)) {
+      continue;
+    }
+    collapsed.push(segment);
+  }
+  const last = collapsed[collapsed.length - 1];
+  if (!last || last.startTime < endMs) {
+    collapsed.push(holdSegment(endMs, endPos));
+  }
+  return collapsed;
 };

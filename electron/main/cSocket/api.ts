@@ -391,12 +391,17 @@ export class CsocketApiService {
     speedScale: number,
     loopCount: number,
     trajectoryMode: boolean;
+    deviceId: number[],// 该动作下面的所有物体id
   }[], opts?: CsocketSendOpts) {
-    const isTMaped: {
+    const isTMapedHead: {
       actionId: number,
       runDirection: number,
       speedScale: number,
       loopCount: number,
+      startMode: number,
+    }[] = []
+    const isTMaped:{
+      deviceId: number,
     }[] = []
     const isNotTMaped:  {
       actionId: number;
@@ -405,11 +410,17 @@ export class CsocketApiService {
     }[] = []
     items.forEach(item => {
       if(item.trajectoryMode) {
-        isTMaped.push({
+        isTMapedHead.push({
           actionId: item.actionId,
-          runDirection: item.runDirection,
-          speedScale: item.speedScale,
+          runDirection: item.runDirection === 0 ? 1 : 2,
+          speedScale: item.speedScale * 100,
           loopCount: item.loopCount,
+          startMode: 1
+        })
+        item.deviceId.forEach(deviceId => {
+          isTMaped.push({
+            deviceId: deviceId,
+          })
         })
       } else {
         isNotTMaped.push({
@@ -421,6 +432,10 @@ export class CsocketApiService {
     })
     const result: Promise<SendData>[] = []
     if(isTMaped.length > 0) {
+      opts = {
+        ...opts,
+        paramHeard: isTMapedHead,
+      }
       result.push(this.sendBuilt('Opera|actionCall', '0x1005', isTMaped, opts))
     }
     if(isNotTMaped.length > 0) {
@@ -432,18 +447,35 @@ export class CsocketApiService {
   // 动作停止 Stop
   actionStop(items: {
     actionId: number,
+    deviceId: number[],
     trajectoryMode: boolean;
   }[], opts?: CsocketSendOpts) {
-    const isTMaped: {
+    const isTMapedHead: {
       actionId: number,
+      runDirection: number,
+      speedScale: number,
+      loopCount: number,
+      startMode: number,
+    }[] = []
+    const isTMaped: {
+      deviceId: number,
     }[] = []
     const isNotTMaped: {
       actionId: number,
     }[] = []
     items.forEach(item => {
       if(item.trajectoryMode) {
-        isTMaped.push({
+        isTMapedHead.push({
           actionId: item.actionId,
+          runDirection: 1,
+          speedScale: 100,
+          loopCount: 1,
+          startMode: 0,
+        })
+        item.deviceId.forEach(deviceId => {
+          isTMaped.push({
+            deviceId: deviceId,
+          })
         })
       } else {
         isNotTMaped.push({
@@ -456,7 +488,11 @@ export class CsocketApiService {
       result.push(this.sendBuilt('Opera|syncMoveEnd','0x01FF',isNotTMaped, opts))
     }
     if(isTMaped.length > 0) {
-      result.push(this.sendBuilt('Opera|stopAction', '0x1009', isTMaped, opts))
+      opts = {
+        ...opts,
+        paramHeard: isTMapedHead,
+      }
+      result.push(this.sendBuilt('Opera|actionCall', '0x1005', isTMaped, opts))
     }
     return Promise.all(result)
   }
@@ -490,7 +526,7 @@ export class CsocketApiService {
     deviceId: number //电机id
     enableFlag: number //使能标志
   }[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('Operation|enable', '0x0001', items, opts)
+    return this.sendBuilt('Opera|enable', '0x0001', items, opts)
   }
   // 报警复位
   resetAlarmMotor(items: {
@@ -499,18 +535,18 @@ export class CsocketApiService {
     
   ], opts?: CsocketSendOpts) {
 
-    return this.sendBuilt('Operation|resetAlarm', '0x0002', items, opts)
+    return this.sendBuilt('Opera|resetAlarm', '0x0002', items, opts)
   }
   // 清除731报警
   clear731AlarmMotor(items: 
     {
       deviceId: number //电机id
     }[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('Operation|clear731Alarm', '0x0004', items, opts)
+    return this.sendBuilt('Opera|clear731Alarm', '0x0004', items, opts)
   }
   // 点亮从站灯带
   lightSlaveMotor(items: { lightFlag: number }[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('Operation|lightSlave', '0x0005', items, opts)
+    return this.sendBuilt('Opera|lightSlave', '0x0005', items, opts)
   }
   // 轴设定位移,position为0时为设原点
   setPositionMotor(
@@ -518,7 +554,7 @@ export class CsocketApiService {
     positionSign: number; position: number }[],
     opts?: CsocketSendOpts,
   ) {
-    return this.sendBuilt('Operation|setPosition', '0x0003', items, opts)
+    return this.sendBuilt('Opera|setPosition', '0x0003', items, opts)
   }
   // 轴点动
   jogMotor(items: { 
@@ -535,7 +571,7 @@ export class CsocketApiService {
       acceleration: 0,
       deceleration: 0,
     }))
-    return this.sendBuilt('Operation|jog', '0x0006', mapped, opts)
+    return this.sendBuilt('Opera|jog', '0x0006', mapped, opts)
   }
   // 绝对位置运动
   moveAbsMotor(
@@ -556,7 +592,7 @@ export class CsocketApiService {
       acceleration: 0,
       deceleration: 0,
     }))
-    return this.sendBuilt('Operation|moveAbs', '0x0007', mapped, opts)
+    return this.sendBuilt('Opera|moveAbs', '0x0007', mapped, opts)
   }
   // 停止
   stopMotor(items: { deviceId: number }[], opts?: CsocketSendOpts) {
@@ -564,25 +600,25 @@ export class CsocketApiService {
       deviceId: item.deviceId,
       deceleration: 0, // 走默认的减速时间
     }))
-    return this.sendBuilt('Operation|stop', '0x0008', mapped, opts)
+    return this.sendBuilt('Opera|stop', '0x0008', mapped, opts)
   }
   // 急停
   eStopMotor(items: { deceleration: number }[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('Operation|eStop', '0x0009', items, opts)
+    return this.sendBuilt('Opera|eStop', '0x0009', items, opts)
   }
   // 扭矩测试
   torqueTestMotor(items: unknown[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('Operation|torqueTest', '0x000A', items, opts)
+    return this.sendBuilt('Opera|torqueTest', '0x000A', items, opts)
   }
   // 刹车测试
   brakeTestMotor(items: unknown[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('Operation|brakeTest', '0x000B', items, opts)
+    return this.sendBuilt('Opera|brakeTest', '0x000B', items, opts)
   }
   // 通讯测试
   commTestMotor(items: {
     deviceId: number //电机id
   }[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('Operation|commTest', '0x000C', items, opts)
+    return this.sendBuilt('Opera|commTest', '0x000C', items, opts)
   }
   // 配置轴运行参数
   configureAxisRunParamMotor(
@@ -636,18 +672,18 @@ export class CsocketApiService {
         ? { deviceId: item.deviceId, coupleFlag: item.coupleFlag }
         : item,
     )
-    return this.sendBuilt('Operation|couple', '0x0101', mapped, opts)
+    return this.sendBuilt('Opera|couple', '0x0101', mapped, opts)
   }
   // 物体使能/断使能
   enableModel(items: {
     deviceId: number,//物体id
     enableFlag: number//使能标志
    }[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('Operation|enable', '0x0102', items, opts)
+    return this.sendBuilt('Opera|enable', '0x0102', items, opts)
   }
   // 物体复位
   resetModel(items: { deviceId: number }[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('Operation|reset', '0x0103', items ?? [], opts)
+    return this.sendBuilt('Opera|reset', '0x0103', items ?? [], opts)
   }
   // 物体点动
   jogModel(
@@ -661,7 +697,7 @@ export class CsocketApiService {
     }[],
     opts?: CsocketSendOpts,
   ) {
-    return this.sendBuilt('Operation|jog', '0x0104', items, opts)
+    return this.sendBuilt('Opera|jog', '0x0104', items, opts)
   }
   // 目标位置运动（三轴）
   moveTargetModel(
@@ -683,7 +719,7 @@ export class CsocketApiService {
     }[],
     opts?: CsocketSendOpts,
   ) {
-    return this.sendBuilt('Operation|moveTarget', '0x0105', items, opts)
+    return this.sendBuilt('Opera|moveTarget', '0x0105', items, opts)
   }
   //  动作 同步模型目标位置运动预备（仅内部调用，不暴露 IPC）
   private syncMovePrepare(
@@ -709,11 +745,11 @@ export class CsocketApiService {
   }
   // 减速停止
   stopModel(items: { deviceId: number, deceleration: number }[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('Operation|stop', '0x0107', items, opts)
+    return this.sendBuilt('Opera|stop', '0x0107', items, opts)
   }
   // 急停停止
   eStopModel(items: { deviceId: number, deceleration: number }[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('Operation|eStop', '0x0108', items, opts)
+    return this.sendBuilt('Opera|eStop', '0x0108', items, opts)
   }
   // 配置物体参数(含悬挂点)
   configureModelParamModel(
@@ -757,19 +793,19 @@ export class CsocketApiService {
     items: { deviceId: number, switchFlag: number }[],
     opts?: CsocketSendOpts,
   ) {
-    return this.sendBuilt('Operation|simulationSwitch', '0x1001', items, opts)
+    return this.sendBuilt('Opera|simulationSwitch', '0x1001', items, opts)
   }
   // 全场停止
   allStopPlc(items: { deviceId: number }[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('Operation|AllStop', '0x1002', items ?? [], opts)
+    return this.sendBuilt('Opera|AllStop', '0x1002', items ?? [], opts)
   }
   // 总线复位
   busResetPlc(items: { deviceId: number, busNo: number }[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('Operation|busReset', '0x1003', items, opts)
+    return this.sendBuilt('Opera|busReset', '0x1003', items, opts)
   }
   // PLC复位
   resetPlc(items: { deviceId: number }[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('Operation|plcReset', '0x1004', items ?? [], opts)
+    return this.sendBuilt('Opera|plcReset', '0x1004', items ?? [], opts)
   }
   // 动作预演/准备
   actionPreparePlc(
@@ -783,7 +819,7 @@ export class CsocketApiService {
     }[],
     opts?: CsocketSendOpts,
   ) {
-    return this.sendBuilt('Operation|actionPrepare', '0x1005', items, opts)
+    return this.sendBuilt('Opera|actionPrepare', '0x1005', items, opts)
   }
   // 动作同步调用
   actionSyncCallPlc(
@@ -799,11 +835,11 @@ export class CsocketApiService {
     opts?: CsocketSendOpts,
   ) {
     console.log('actionSyncCallPlc', JSON.stringify(items));
-    return this.sendBuilt('Operation|actionSyncCall', '0x1006', items, opts)
+    return this.sendBuilt('Opera|actionSyncCall', '0x1006', items, opts)
   }
   // 停止动作
   stopActionPlc(items: { actionId: number }[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('Operation|stopAction', '0x1007', items ?? [], opts)
+    return this.sendBuilt('Opera|stopAction', '0x1007', items ?? [], opts)
   }
   // 动作数据保存
   actionDataSavePlc(
@@ -832,16 +868,16 @@ export class CsocketApiService {
         })
       })
     })
-    return this.sendBuilt('Config|actionDataSave', '0x1016', paramsMapped, opts)
+    return this.sendBuilt('Config2|actionDataSave', '0x1016', paramsMapped, opts)
   }
   
   // 规则启动
   ruleStartPlc(items: { enableFlag: number }[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('Operation|ruleStart', '0x1008', items, opts)
+    return this.sendBuilt('Opera|ruleStart', '0x1008', items, opts)
   }
   // 规则删除
   ruleDeletePlc(items?: unknown[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('Operation|ruleDelete', '0x1009', items ?? [], opts)
+    return this.sendBuilt('Opera|ruleDelete', '0x1009', items ?? [], opts)
   }
   // 同步电机
   syncMotorPlc(
@@ -950,6 +986,6 @@ export class CsocketApiService {
   // }
   // 时钟同步
   // clockSyncPlc(items?: unknown[], opts?: CsocketSendOpts) {
-  //   return this.sendBuilt('Operation|clockSync', '0x1056', items ?? [], opts)
+  //   return this.sendBuilt('Opera|clockSync', '0x1056', items ?? [], opts)
   // }
 }

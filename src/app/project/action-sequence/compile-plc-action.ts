@@ -6,7 +6,7 @@ import type {
 } from "@shared/csocket/action-data-save";
 import { roundProjectCoordinate } from "../project-quantity";
 import { axisKinematics, ZERO_AXIS_KINEMATICS } from "./axis-kinematics";
-import { trapezoidToCurveSegments } from "./curve-segments";
+import { finalizePlcTimeline, trapezoidToCurveSegments } from "./curve-segments";
 import { instructionToCompiledEvent } from "./instruction-registry";
 import {
   resolveActionSequence,
@@ -148,10 +148,12 @@ export const compilePlcAction = (
                   segment.durationMs,
                 ),
               );
-        if (segments.length > MAX_PLC_CURVE_SEGMENTS) {
+        const endPose = poses[poses.length - 1]?.pose[axis] ?? first.pose[axis];
+        const closed = finalizePlcTimeline(segments, resolved.totalMs, endPose);
+        if (closed.length > MAX_PLC_CURVE_SEGMENTS) {
           throw new Error(`PLC timeline segmentCount exceeds ${MAX_PLC_CURVE_SEGMENTS}`);
         }
-        return { modelId, virtualAxisNo, segments };
+        return { modelId, virtualAxisNo, segments: closed };
       });
     }),
   );

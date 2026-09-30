@@ -390,12 +390,13 @@ describe("goSequence", () => {
       speedScale: 1.5,
       trajectoryMode: true,
       loopCount: 1,
+      deviceId: [7],
     });
     expect(started).toEqual({
       ok: true,
       name: "Seq",
       speedPercent: 150,
-      sequenceHandle: { actionId: validSequence.id },
+      sequenceHandle: { actionId: validSequence.id, deviceId: [7] },
     });
   });
 
@@ -412,7 +413,7 @@ describe("goSequence", () => {
       ok: true,
       name: "Seq",
       speedPercent: 80,
-      sequenceHandle: { actionId: validSequence.id },
+      sequenceHandle: { actionId: validSequence.id, deviceId: [7] },
     });
   });
 
@@ -429,7 +430,7 @@ describe("goSequence", () => {
         ok: true,
         name: "Seq",
         speedPercent: 100,
-        sequenceHandle: { actionId: validSequence.id },
+        sequenceHandle: { actionId: validSequence.id, deviceId: [7] },
       });
       expect(api.actionGo).toHaveBeenCalledTimes(1);
       expect(api.actionGo.mock.calls[0]?.[0]?.[0]).toMatchObject({ loopCount: 1 });
@@ -446,7 +447,7 @@ describe("goSequence", () => {
       transport,
     });
     expect(transport.syncCall).toHaveBeenCalledWith(
-      expect.objectContaining({ loopCount: 0 }),
+      expect.objectContaining({ loopCount: 0, deviceId: [7] }),
     );
   });
 });
@@ -467,12 +468,13 @@ describe("startLocalAuthoredSequence", () => {
       speedScale: 1,
       trajectoryMode: true,
       loopCount: 1,
+      deviceId: [7],
     });
     expect(started).toEqual({
       ok: true,
       name: "Seq",
       speedPercent: 100,
-      sequenceHandle: { actionId: validSequence.id },
+      sequenceHandle: { actionId: validSequence.id, deviceId: [7] },
     });
     expect(started).not.toHaveProperty("durationMs");
   });
@@ -494,10 +496,11 @@ describe("startLocalAuthoredSequence", () => {
 describe("stopSequence", () => {
   it("calls stopAction with actionId and trajectoryMode", async () => {
     const transport = createTransport();
-    await stopSequence({ actionId: 12, trajectoryMode: true }, transport);
+    await stopSequence({ actionId: 12, trajectoryMode: true, deviceId: [7] }, transport);
     expect(transport.stopAction).toHaveBeenCalledWith({
       actionId: 12,
       trajectoryMode: true,
+      deviceId: [7],
     });
     expect(transport.syncCall).not.toHaveBeenCalled();
   });
@@ -531,10 +534,11 @@ describe("createLocalSequenceTransport", () => {
         speedScale: 1,
         trajectoryMode: false,
         loopCount: 1,
+        deviceId: [],
       }),
     ).resolves.toBeUndefined();
     await expect(
-      transport.stopAction({ actionId: 1, trajectoryMode: false }),
+      transport.stopAction({ actionId: 1, trajectoryMode: false, deviceId: [] }),
     ).resolves.toBeUndefined();
     expect(actionReady).not.toHaveBeenCalled();
   });
@@ -597,6 +601,7 @@ describe("createCsocketSequenceTransport", () => {
       speedScale: 1.5,
       trajectoryMode: true,
       loopCount: 0,
+      deviceId: [7, 8],
     });
     expect(api.actionGo).toHaveBeenCalled();
     const wireItem = api.actionGo.mock.calls[0]?.[0]?.[0] as Record<string, unknown>;
@@ -606,8 +611,11 @@ describe("createCsocketSequenceTransport", () => {
       speedScale: 1.5,
       loopCount: 0,
       trajectoryMode: true,
+      deviceId: [7, 8],
     });
-    await transport.stopAction({ actionId: 9, trajectoryMode: true });
-    expect(api.actionStop.mock.calls[0]?.[0]).toEqual([{ actionId: 9, trajectoryMode: true }]);
+    await transport.stopAction({ actionId: 9, trajectoryMode: true, deviceId: [7, 8] });
+    expect(api.actionStop.mock.calls[0]?.[0]).toEqual([
+      { actionId: 9, trajectoryMode: true, deviceId: [7, 8] },
+    ]);
   });
 });

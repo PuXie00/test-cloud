@@ -186,6 +186,7 @@ export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
         {
           actionId: card.sequenceHandle.actionId,
           trajectoryMode: card.trajectoryMode === true,
+          deviceId: card.sequenceHandle.deviceId ?? [],
         },
         getSequenceTransport(),
       ).catch(() => undefined);
@@ -216,6 +217,7 @@ export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
             {
               actionId: card.sequenceHandle.actionId,
               trajectoryMode: card.trajectoryMode === true,
+              deviceId: card.sequenceHandle.deviceId ?? [],
             },
           ]
         : [],
@@ -240,6 +242,7 @@ export const ExecCardsProvider = ({ children }: ExecCardsProviderProps) => {
         {
           actionId: card.sequenceHandle.actionId,
           trajectoryMode: card.trajectoryMode === true,
+          deviceId: card.sequenceHandle.deviceId ?? [],
         },
         getSequenceTransport(),
       ).catch(() => undefined);

@@ -132,13 +132,13 @@ describe("compilePlcAction", () => {
       compiled.timelines.map((timeline) => [timeline.virtualAxisNo, timeline.segments]),
     );
     expect(byAxis[1]).toEqual([
-      { startTime: 4000, position: 42, a: 0, b: 0, c: 0, d: 0, e: 0, f: 0 },
+      { startTime: 4000, position: 42, a: 42, b: 0, c: 0, d: 0, e: 0, f: 0 },
     ]);
     expect(byAxis[2]?.[0]?.position).toBe(1);
     expect(byAxis[3]?.[0]?.position).toBe(2);
   });
 
-  it("rounds hold-row position to one decimal", () => {
+  it("keeps hold-row position and sets A to the same value", () => {
     const compiled = compilePlcAction(
       sequenceOf([{
         id: "only",
@@ -150,11 +150,11 @@ describe("compilePlcAction", () => {
       threeAxisContext,
     );
     const byAxis = Object.fromEntries(
-      compiled.timelines.map((timeline) => [timeline.virtualAxisNo, timeline.segments[0]?.position]),
+      compiled.timelines.map((timeline) => [timeline.virtualAxisNo, timeline.segments[0]]),
     );
-    expect(byAxis[1]).toBe(42.2);
-    expect(byAxis[2]).toBe(1.2);
-    expect(byAxis[3]).toBe(2);
+    expect(byAxis[1]).toMatchObject({ position: 42.2, a: 42.2 });
+    expect(byAxis[2]).toMatchObject({ position: 1.2, a: 1.2 });
+    expect(byAxis[3]).toMatchObject({ position: 2, a: 2 });
   });
 
   it("compiles a command-only sequence with io blocks and no timelines or models", () => {
@@ -200,10 +200,63 @@ describe("compilePlcAction", () => {
       compileContext([{ id: 7, enabledVirtualAxes: ["v1"] as const }]),
     );
     const segments = compiled.timelines[0]?.segments ?? [];
-    expect(segments).toHaveLength(3);
+    expect(segments).toHaveLength(4);
     expect(segments[0]?.startTime).toBe(1000);
     expect(segments[1]?.startTime).toBe(1150);
     expect(segments[2]?.startTime).toBe(1750);
+    expect(segments[3]).toEqual({
+      startTime: 2000,
+      position: 1000,
+      a: 1000,
+      b: 0,
+      c: 0,
+      d: 0,
+      e: 0,
+      f: 0,
+    });
+  });
+
+  it("matches the model-6 PLC polynomial for 0-1000-0 over 20000ms", () => {
+    const idle = { kind: "idle" as const };
+    const moving = trap(1000, 1000);
+    const profiles = { v1: moving, v2: idle, v3: idle };
+    const sequence = sequenceOf(
+      [
+        { id: "a", kind: "pose", objectId: 6, atMs: 0, pose: origin },
+        { id: "b", kind: "pose", objectId: 6, atMs: 10000, pose: { v1: 1000, v2: 0, v3: 0 } },
+        { id: "c", kind: "pose", objectId: 6, atMs: 20000, pose: origin },
+      ],
+      {
+        segments: [
+          { fromRef: "a", toRef: "b", settings: { profiles } },
+          { fromRef: "b", toRef: "c", settings: { profiles } },
+        ],
+      },
+    );
+    const compiled = compilePlcAction(
+      sequence,
+      compileContext([{ id: 6, enabledVirtualAxes: ["v1", "v2", "v3"] as const }]),
+    );
+    expect(compiled.totalDuration).toBe(20000);
+    const byAxis = Object.fromEntries(
+      compiled.timelines.map((timeline) => [timeline.virtualAxisNo, timeline.segments]),
+    );
+    const h = byAxis[1] ?? [];
+    expect(h).toHaveLength(7);
+    expect(h.map((row) => row.startTime)).toEqual([0, 1000, 9000, 10000, 11000, 19000, 20000]);
+    expect(h[0]).toMatchObject({ position: 0, a: 0, b: 0, c: 0.6 });
+    expect(h[1]).toMatchObject({ position: 55.6, a: 55.6, b: 11.1, c: 0 });
+    expect(h[2]).toMatchObject({ position: 944.4, a: 944.4, b: 11.1, c: -0.6 });
+    expect(h[3]).toMatchObject({ position: 1000, a: 1000, b: 0, c: -0.6 });
+    expect(h[4]).toMatchObject({ position: 944.4, a: 944.4, b: -11.1, c: 0 });
+    expect(h[5]).toMatchObject({ position: 55.6, a: 55.6, b: -11.1, c: 0.6 });
+    expect(h[6]).toMatchObject({ position: 0, a: 0, b: 0, c: 0 });
+    for (const axis of [2, 3]) {
+      expect(byAxis[axis]).toEqual([
+        { startTime: 0, position: 0, a: 0, b: 0, c: 0, d: 0, e: 0, f: 0 },
+        { startTime: 20000, position: 0, a: 0, b: 0, c: 0, d: 0, e: 0, f: 0 },
+      ]);
+    }
   });
 
   it("throws when a timeline exceeds 100 segments", () => {
