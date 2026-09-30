@@ -100,3 +100,34 @@ describe("buildModelParamPayload max velocity", () => {
     expect(payload?.paramCount).not.toHaveProperty("hMaxVelocity");
   });
 });
+
+describe("buildModelParamPayload max acceleration", () => {
+  const motor = (maxAxisVelocity: number) =>
+    ({ controlledObjectId: 42, params: { maxAxisVelocity } }) as unknown as Parameters<
+      typeof buildModelParamPayload
+    >[1][number];
+
+  it("derives h/p/y max accel/decel from each virtual axis max velocity / minAccelTime", () => {
+    const object: ControlledObject = {
+      ...multiPointObject,
+      motionParams: {
+        move: axisParams({ speed: 40, minAccelTime: 0.5 }),
+        swingX: axisParams({ speed: 2, minAccelTime: 2 }),
+        yawY: axisParams({ speed: 3, minAccelTime: 0.5 }),
+      },
+    };
+    const payload = buildModelParamPayload(object, [motor(300), motor(250)]);
+    expect(payload?.paramCount.hMaxAcceleration).toBe(500);
+    expect(payload?.paramCount.hMaxDeceleration).toBe(500);
+    expect(payload?.paramCount.pMaxAcceleration).toBe(2);
+    expect(payload?.paramCount.pMaxDeceleration).toBe(2);
+    expect(payload?.paramCount.yMaxAcceleration).toBe(10);
+    expect(payload?.paramCount.yMaxDeceleration).toBe(10);
+  });
+
+  it("uses the unbound v1 max velocity when no motor is bound", () => {
+    const payload = buildModelParamPayload(hoistObject, []);
+    expect(payload?.paramCount.hMaxAcceleration).toBe(500);
+    expect(payload?.paramCount.hMaxDeceleration).toBe(500);
+  });
+});
