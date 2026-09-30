@@ -15,18 +15,22 @@ describe("trapezoidToCurveSegments", () => {
   it("writes position as A and velocity/accel in 0.1s units", () => {
     const rows = trapezoidToCurveSegments(trap(200, 200), 0, 0, 100, 1000);
     expect(rows).toHaveLength(3);
-    expect(rows[0]).toEqual({ startTime: 0, position: 0, a: 0, b: 0, c: 3.1, ...zeroTail });
+    expect(rows[0]).toEqual({ startTime: 0, position: 0, a: 0, b: 0, c: 3.125, ...zeroTail });
     expect(rows[1]).toEqual({ startTime: 200, position: 12.5, a: 12.5, b: 12.5, c: 0, ...zeroTail });
-    expect(rows[2]).toEqual({ startTime: 800, position: 87.5, a: 87.5, b: 12.5, c: -3.1, ...zeroTail });
+    expect(rows[2]?.startTime).toBe(800);
+    expect(rows[2]?.position).toBeCloseTo(87.5, 6);
+    expect(rows[2]?.a).toBeCloseTo(87.5, 6);
+    expect(rows[2]?.b).toBeCloseTo(12.5, 6);
+    expect(rows[2]?.c).toBeCloseTo(-3.125, 6);
   });
 
   it("signs B and C with travel", () => {
     const rows = trapezoidToCurveSegments(trap(200, 200), 0, 50, 30, 1000);
     expect(rows[0]?.a).toBe(50);
-    expect(rows[0]?.c).toBe(-0.6);
+    expect(rows[0]?.c).toBe(-0.625);
     expect(rows[1]?.b).toBe(-2.5);
     expect(rows[2]?.b).toBe(-2.5);
-    expect(rows[2]?.c).toBe(0.6);
+    expect(rows[2]?.c).toBe(0.625);
     expect(rows[0]?.position).toBe(50);
     expect(rows[1]?.position).toBe(47.5);
     expect(rows[2]?.position).toBe(32.5);
@@ -37,9 +41,9 @@ describe("trapezoidToCurveSegments", () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]?.startTime).toBe(1000);
     expect(rows[1]?.startTime).toBe(1200);
-    expect(rows[0]?.c).toBe(12.5);
+    expect(rows[0]?.c).toBeCloseTo(12.5, 6);
     expect(rows[1]?.b).toBe(50);
-    expect(rows[1]?.c).toBe(-12.5);
+    expect(rows[1]?.c).toBeCloseTo(-12.5, 6);
     expect(rows[1]?.position).toBe(50);
     expect(rows[1]?.a).toBe(50);
   });
@@ -53,12 +57,15 @@ describe("trapezoidToCurveSegments", () => {
     ]);
   });
 
-  it("rounds position and coefficients to one decimal", () => {
+  it("keeps full position and coefficient precision", () => {
     const rows = trapezoidToCurveSegments(trap(200, 200), 0, 0.16, 33.16, 1000);
-    expect(rows[0]).toEqual({ startTime: 0, position: 0.2, a: 0.2, b: 0, c: 1, ...zeroTail });
-    expect(rows[1]).toEqual({ startTime: 200, position: 4.3, a: 4.3, b: 4.1, c: 0, ...zeroTail });
-    expect(rows[2]?.position).toBe(29);
-    expect(rows[2]?.a).toBe(29);
-    expect(rows[2]?.c).toBe(-1);
+    expect(rows[0]?.position).toBe(0.16);
+    expect(rows[0]?.a).toBe(0.16);
+    expect(rows[0]?.c).toBeCloseTo(1.03125, 5);
+    expect(rows[1]?.position).toBeCloseTo(4.285, 3);
+    expect(rows[1]?.a).toBeCloseTo(4.285, 3);
+    expect(rows[1]?.b).toBeCloseTo(4.125, 5);
+    expect(rows[2]?.position).toBeCloseTo(29.035, 3);
+    expect(rows[2]?.c).toBeCloseTo(-1.03125, 5);
   });
 });

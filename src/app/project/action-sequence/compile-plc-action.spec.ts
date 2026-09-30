@@ -152,8 +152,8 @@ describe("compilePlcAction", () => {
     const byAxis = Object.fromEntries(
       compiled.timelines.map((timeline) => [timeline.virtualAxisNo, timeline.segments[0]]),
     );
-    expect(byAxis[1]).toMatchObject({ position: 42.2, a: 42.2 });
-    expect(byAxis[2]).toMatchObject({ position: 1.2, a: 1.2 });
+    expect(byAxis[1]).toMatchObject({ position: 42.16, a: 42.16 });
+    expect(byAxis[2]).toMatchObject({ position: 1.24, a: 1.24 });
     expect(byAxis[3]).toMatchObject({ position: 2, a: 2 });
   });
 
@@ -244,12 +244,20 @@ describe("compilePlcAction", () => {
     const h = byAxis[1] ?? [];
     expect(h).toHaveLength(7);
     expect(h.map((row) => row.startTime)).toEqual([0, 1000, 9000, 10000, 11000, 19000, 20000]);
-    expect(h[0]).toMatchObject({ position: 0, a: 0, b: 0, c: 0.6 });
-    expect(h[1]).toMatchObject({ position: 55.6, a: 55.6, b: 11.1, c: 0 });
-    expect(h[2]).toMatchObject({ position: 944.4, a: 944.4, b: 11.1, c: -0.6 });
-    expect(h[3]).toMatchObject({ position: 1000, a: 1000, b: 0, c: -0.6 });
-    expect(h[4]).toMatchObject({ position: 944.4, a: 944.4, b: -11.1, c: 0 });
-    expect(h[5]).toMatchObject({ position: 55.6, a: 55.6, b: -11.1, c: 0.6 });
+    expect(h[0]?.c).toBeCloseTo(0.5555556, 6);
+    expect(h[1]?.position).toBeCloseTo(55.5555556, 6);
+    expect(h[1]?.a).toBe(h[1]?.position);
+    expect(h[1]?.b).toBeCloseTo(11.1111111, 6);
+    expect(h[2]?.position).toBeCloseTo(944.4444444, 6);
+    expect(h[2]?.b).toBeCloseTo(11.1111111, 6);
+    expect(h[2]?.c).toBeCloseTo(-0.5555556, 6);
+    expect(h[3]).toMatchObject({ position: 1000, a: 1000, b: 0 });
+    expect(h[3]?.c).toBeCloseTo(-0.5555556, 6);
+    expect(h[4]?.position).toBeCloseTo(944.4444444, 6);
+    expect(h[4]?.b).toBeCloseTo(-11.1111111, 6);
+    expect(h[5]?.position).toBeCloseTo(55.5555556, 6);
+    expect(h[5]?.b).toBeCloseTo(-11.1111111, 6);
+    expect(h[5]?.c).toBeCloseTo(0.5555556, 6);
     expect(h[6]).toMatchObject({ position: 0, a: 0, b: 0, c: 0 });
     for (const axis of [2, 3]) {
       expect(byAxis[axis]).toEqual([

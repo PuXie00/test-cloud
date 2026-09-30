@@ -168,7 +168,7 @@ describe("ExecutorSlotsProvider", () => {
     expect(result.current.faderSlots[0]?.runOptions).toEqual({
       nearest: false,
       reverse: false,
-      safeGroup: true,
+      safeGroup: false,
     });
 
     act(() => {
@@ -178,17 +178,17 @@ describe("ExecutorSlotsProvider", () => {
       result.current.setSlotRunOptions(0, { reverse: true });
     });
     act(() => {
-      result.current.setSlotRunOptions(0, { safeGroup: false });
+      result.current.setSlotRunOptions(0, { safeGroup: true });
     });
     expect(result.current.faderSlots[0]?.runOptions).toEqual({
       nearest: true,
       reverse: true,
-      safeGroup: false,
+      safeGroup: true,
     });
     expect(result.current.faderSlots[1]?.runOptions).toEqual({
       nearest: false,
       reverse: false,
-      safeGroup: true,
+      safeGroup: false,
     });
 
     pageItems = pageItemsFor([99, 16]);
@@ -196,7 +196,7 @@ describe("ExecutorSlotsProvider", () => {
     expect(result.current.faderSlots[0]?.runOptions).toEqual({
       nearest: false,
       reverse: false,
-      safeGroup: true,
+      safeGroup: false,
     });
   });
 

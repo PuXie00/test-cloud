@@ -167,6 +167,7 @@ export class CsocketApiService {
           this.broadcast(CSOCKET_CHANNELS.readAxisInfoPolling, msg)
         }
       }
+      
       if (optCmd === 'CONFIG|Pro|verify') {
         this.broadcast(CSOCKET_CHANNELS.verifyProject, msg as CppAckResult<{
           deviceId: number, // plc id
@@ -393,12 +394,17 @@ export class CsocketApiService {
     trajectoryMode: boolean;
     deviceId: number[],// 该动作下面的所有物体id
   }[], opts?: CsocketSendOpts) {
-    const isTMapedHead: {
+    const isTMapedHeadPrepare: {
       actionId: number,
       runDirection: number,
       speedScale: number,
       loopCount: number,
-      startMode: number,
+      deviceCount: number,
+    }[] = []
+    const isTMapedHeadRelease: {
+      actionId: number,
+      startFlag: number,
+      deviceCount: number,
     }[] = []
     const isTMaped:{
       deviceId: number,
@@ -410,12 +416,17 @@ export class CsocketApiService {
     }[] = []
     items.forEach(item => {
       if(item.trajectoryMode) {
-        isTMapedHead.push({
+        isTMapedHeadPrepare.push({
           actionId: item.actionId,
           runDirection: item.runDirection === 0 ? 1 : 2,
           speedScale: item.speedScale * 100,
           loopCount: item.loopCount,
-          startMode: 1
+          deviceCount: item.deviceId.length,
+        })
+        isTMapedHeadRelease.push({
+          actionId: item.actionId,
+          startFlag: 1,
+          deviceCount: item.deviceId.length,
         })
         item.deviceId.forEach(deviceId => {
           isTMaped.push({
@@ -432,11 +443,20 @@ export class CsocketApiService {
     })
     const result: Promise<SendData>[] = []
     if(isTMaped.length > 0) {
-      opts = {
+      const prepareOpts = {
         ...opts,
-        paramHeard: isTMapedHead,
+        paramHeard: isTMapedHeadPrepare,
       }
-      result.push(this.sendBuilt('Opera|actionCall', '0x1005', isTMaped, opts))
+      const releaseOpts = {
+        ...opts,
+        paramHeard: isTMapedHeadRelease,
+      }
+      result.push((async () => {
+        const prepared = await this.sendBuilt('Opera|actionSyncPrepare', '0x1006', isTMaped, prepareOpts)
+        if (!isCppAckOk(prepared)) return ackFailed(prepared)
+        const released = await this.sendBuilt('Opera|actionSyncRelease', '0x1007', isTMaped, releaseOpts)
+        return isCppAckOk(released) ? released : ackFailed(released)
+      })())
     }
     if(isNotTMaped.length > 0) {
       result.push(this.syncMovebegin(isNotTMaped, opts))
@@ -452,10 +472,16 @@ export class CsocketApiService {
   }[], opts?: CsocketSendOpts) {
     const isTMapedHead: {
       actionId: number,
+      startFlag: number,
+      deviceCount: number,
+    }[] = []
+    const isTMapedHeadCall: {
+      actionId: number,
       runDirection: number,
       speedScale: number,
       loopCount: number,
       startMode: number,
+      deviceCount: number,
     }[] = []
     const isTMaped: {
       deviceId: number,
@@ -467,10 +493,16 @@ export class CsocketApiService {
       if(item.trajectoryMode) {
         isTMapedHead.push({
           actionId: item.actionId,
+          startFlag: 0,
+          deviceCount: item.deviceId.length,
+        })
+        isTMapedHeadCall.push({
+          actionId: item.actionId,
           runDirection: 1,
           speedScale: 100,
           loopCount: 1,
           startMode: 0,
+          deviceCount: item.deviceId.length,
         })
         item.deviceId.forEach(deviceId => {
           isTMaped.push({
@@ -488,11 +520,20 @@ export class CsocketApiService {
       result.push(this.sendBuilt('Opera|syncMoveEnd','0x01FF',isNotTMaped, opts))
     }
     if(isTMaped.length > 0) {
-      opts = {
+      let localOpts = {
         ...opts,
         paramHeard: isTMapedHead,
       }
-      result.push(this.sendBuilt('Opera|actionCall', '0x1005', isTMaped, opts))
+      const callOpts = {
+        ...opts,
+        paramHeard: isTMapedHeadCall,
+      }
+      result.push((async () => {
+        // const released = await this.sendBuilt('Opera|actionSyncRelease', '0x1007', isTMaped, localOpts)
+        // if (!isCppAckOk(released)) return ackFailed(released)
+        const call = await this.sendBuilt('Opera|actionCall', '0x1005', isTMaped, callOpts)
+        return isCppAckOk(call) ? call : ackFailed(call)
+      })())
     }
     return Promise.all(result)
   }

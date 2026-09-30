@@ -1,5 +1,4 @@
 import type { PlcCurveSegment } from "@shared/csocket/action-data-save";
-import { roundProjectCoordinate } from "../project-quantity";
 import {
   calculateMotionProfileKinematics,
   cruiseMsOf,
@@ -10,17 +9,20 @@ import type { MotionProfile } from "./types";
 /** PLC 用 t = startTime(ms) / 100，即 0.1s。P = A + B t + C t²。 */
 const TICK_PER_SEC = 10;
 
-const snapPlc = (value: number): number => roundProjectCoordinate(value);
+const finitePlc = (value: number): number => {
+  if (!Number.isFinite(value)) return 0;
+  return Object.is(value, -0) ? 0 : value;
+};
 
 const isHold = (segment: PlcCurveSegment): boolean =>
   segment.b === 0 && segment.c === 0 && segment.d === 0 && segment.e === 0 && segment.f === 0;
 
 const holdSegment = (startTime: number, position: number): PlcCurveSegment => {
-  const snapped = snapPlc(position);
+  const value = finitePlc(position);
   return {
     startTime,
-    position: snapped,
-    a: snapped,
+    position: value,
+    a: value,
     b: 0,
     c: 0,
     d: 0,
@@ -35,13 +37,13 @@ const phaseSegment = (
   velocityPerSec: number,
   accelPerSec2: number,
 ): PlcCurveSegment => {
-  const snapped = snapPlc(position);
+  const value = finitePlc(position);
   return {
     startTime,
-    position: snapped,
-    a: snapped,
-    b: snapPlc(velocityPerSec / TICK_PER_SEC),
-    c: snapPlc(accelPerSec2 / (2 * TICK_PER_SEC * TICK_PER_SEC)),
+    position: value,
+    a: value,
+    b: finitePlc(velocityPerSec / TICK_PER_SEC),
+    c: finitePlc(accelPerSec2 / (2 * TICK_PER_SEC * TICK_PER_SEC)),
     d: 0,
     e: 0,
     f: 0,
@@ -98,7 +100,7 @@ export const finalizePlcTimeline = (
   const collapsed: PlcCurveSegment[] = [];
   for (const segment of segments) {
     const prev = collapsed[collapsed.length - 1];
-    if (prev && isHold(prev) && isHold(segment) && prev.position === snapPlc(segment.position)) {
+    if (prev && isHold(prev) && isHold(segment) && prev.position === segment.position) {
       continue;
     }
     collapsed.push(segment);

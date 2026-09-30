@@ -12,7 +12,7 @@ export type SlotRunOptions = { nearest: boolean; reverse: boolean; safeGroup: bo
 export const DEFAULT_SLOT_RUN_OPTIONS: SlotRunOptions = {
   nearest: false,
   reverse: false,
-  safeGroup: true,
+  safeGroup: false,
 };
 
 export type FaderSlotState = {

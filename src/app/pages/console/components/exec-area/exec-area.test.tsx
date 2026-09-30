@@ -363,7 +363,7 @@ const makeFaderSlot = (overrides: Partial<FaderSlotState> & { index: number }): 
   faderValue: 100,
   phase: "idle",
   isBusy: false,
-  runOptions: { nearest: false, reverse: false, safeGroup: true },
+  runOptions: { nearest: false, reverse: false, safeGroup: false },
   startPlan: null,
   preparedPoses: null,
   ...overrides,
@@ -834,10 +834,10 @@ describe("FaderSlot Ready/GO gate", () => {
     expect(screen.queryByText("就近")).toBeNull();
     expect(screen.queryByText("反向")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "开幕A 标记" }));
-    fireEvent.click(screen.getByRole("button", { name: "关闭安全组" }));
+    fireEvent.click(screen.getByRole("button", { name: "开启安全组" }));
     fireEvent.click(screen.getByRole("button", { name: "开启就近" }));
     fireEvent.click(screen.getByRole("button", { name: "开启反向" }));
-    expect(onRunOptionsChange).toHaveBeenNthCalledWith(1, { safeGroup: false });
+    expect(onRunOptionsChange).toHaveBeenNthCalledWith(1, { safeGroup: true });
     expect(onRunOptionsChange).toHaveBeenNthCalledWith(2, { nearest: true });
     expect(onRunOptionsChange).toHaveBeenNthCalledWith(3, { reverse: true });
 
