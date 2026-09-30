@@ -3,6 +3,12 @@ import type {
   ControlledObject,
   Motor,
 } from "../components/right-sidebar/config-wizard/config-wizard-types";
+import { ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE } from "@/app/project/configuration-rules";
+import { deriveMaxAccelerationFromMaxVelocity } from "@/app/project/motion-acceleration";
+import {
+  DEFAULT_SWING_AXIS_MAX_VELOCITY,
+  resolveVirtualAxisMaxVelocity,
+} from "@/app/project/virtual-axis-max-velocity";
 import { isCppAckFailed } from "@shared/csocket/ack";
 import { runCsocket } from "./motor-csocket-payload";
 
@@ -48,19 +54,27 @@ const ZERO_AXIS: MappedAxis = {
   abnormalDeceleration: 0,
 };
 
-const mapAxis = (params?: MotionAxisParams): MappedAxis =>
-  params
-    ? {
-        maxStroke: params.maxAngle,
-        minStroke: params.minAngle,
-        defaultVelocity: params.speed,
-        defaultAcceleration: params.acceleration,
-        defaultDeceleration: params.deceleration,
-        maxAcceleration: params.maxAcceleration,
-        maxDeceleration: params.maxDeceleration,
-        abnormalDeceleration: params.abnormalDeceleration,
-      }
-    : ZERO_AXIS;
+/** 最大加减速度按虚轴最大速度 / 最短加减速时间换算；无虚轴上限时退回默认速度 */
+const mapAxis = (
+  params: MotionAxisParams | undefined,
+  maxVelocity: number | undefined,
+): MappedAxis => {
+  if (!params) return ZERO_AXIS;
+  const maxRate = deriveMaxAccelerationFromMaxVelocity(
+    maxVelocity ?? params.speed,
+    params.minAccelTime,
+  );
+  return {
+    maxStroke: params.maxAngle,
+    minStroke: params.minAngle,
+    defaultVelocity: params.speed,
+    defaultAcceleration: params.acceleration,
+    defaultDeceleration: params.deceleration,
+    maxAcceleration: maxRate,
+    maxDeceleration: maxRate,
+    abnormalDeceleration: params.abnormalDeceleration,
+  };
+};
 
 export type ModelIdentityPayload = {
   deviceId: number;
@@ -186,11 +200,25 @@ export const buildModelParamPayload = (
 
   const hanging = buildHangingBinding(object, motors);
 
-  const h = mapAxis(object.motionParams?.[resolveHKind(object.controlType)]);
+  const maxVelocity = resolveVirtualAxisMaxVelocity(
+    {
+      id: object.id,
+      enabledVirtualAxes: ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE[object.controlType],
+      pDefaultMaxVelocity: object.pDefaultMaxVelocity,
+      yDefaultMaxVelocity: object.yDefaultMaxVelocity,
+    },
+    motors,
+  );
+
+  const h = mapAxis(object.motionParams?.[resolveHKind(object.controlType)], maxVelocity.v1);
   const pRaw = object.motionParams?.swingX;
   const yRaw = resolveYParams(object);
-  const p = pRaw ? mapAxis(pRaw) : undefined;
-  const y = yRaw ? mapAxis(yRaw) : undefined;
+  const p = pRaw
+    ? mapAxis(pRaw, maxVelocity.v2 ?? DEFAULT_SWING_AXIS_MAX_VELOCITY)
+    : undefined;
+  const y = yRaw
+    ? mapAxis(yRaw, maxVelocity.v3 ?? DEFAULT_SWING_AXIS_MAX_VELOCITY)
+    : undefined;
 
   return {
     deviceId: object.id,

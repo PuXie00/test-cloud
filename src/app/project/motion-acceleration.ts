@@ -7,6 +7,12 @@ const rateFromSpeedAndTime = (speed: number, timeSec: number): number => {
   return round1(speed / timeSec);
 };
 
+/** 由虚轴最大速度 + 最短加减速时间派生最大加减速度（最大加速度 = 最大减速度） */
+export const deriveMaxAccelerationFromMaxVelocity = (
+  maxVelocity: number,
+  minAccelTime: number,
+): number => rateFromSpeedAndTime(maxVelocity, minAccelTime);
+
 /** 由速度 + 加减速时间派生加减速度（加速度 = 减速度） */
 export const deriveMotionAxisAccelerations = (
   params: Pick<MotionAxisParams, "speed" | "accelTime" | "minAccelTime" | "emergencyDecelTime">,
