@@ -21,6 +21,18 @@ export const hasNextChapterSequence = (
   sequenceId: number,
 ): boolean => nextChapterSequence(items, sequenceId) !== null;
 
+/** 下一条序列在当前页所挂的推子槽；不在当前页的推子槽里时为 null。 */
+export const nextSequenceSlot = <Slot extends { sequence: { id: number } | null }>(
+  items: readonly ChapterItem[],
+  sequenceId: number | undefined,
+  slots: readonly Slot[],
+): Slot | null => {
+  if (sequenceId === undefined) return null;
+  const next = nextChapterSequence(items, sequenceId);
+  if (!next) return null;
+  return slots.find((slot) => slot.sequence?.id === next.sequence.id) ?? null;
+};
+
 /** 下一条存在，且任务列表里还没有这条序列。 */
 export const nextSequenceIsFree = (
   items: readonly ChapterItem[],

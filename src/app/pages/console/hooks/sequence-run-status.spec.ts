@@ -5,6 +5,7 @@ import {
   hasNextChapterSequence,
   nextChapterSequence,
   nextSequenceIsFree,
+  nextSequenceSlot,
 } from "./sequence-run-status";
 
 const item = (id: number): ChapterItem => ({
@@ -42,5 +43,24 @@ describe("nextSequenceIsFree", () => {
     expect(nextSequenceIsFree([item(7), item(8)], 7, [8])).toBe(false);
     expect(nextSequenceIsFree([item(7), item(8)], 7, [])).toBe(true);
     expect(nextSequenceIsFree([item(7)], 7, [])).toBe(false);
+  });
+});
+
+describe("nextSequenceSlot", () => {
+  const items = [item(1), item(2), item(3)];
+  const slots = [
+    { index: 0, sequence: { id: 1 } },
+    { index: 1, sequence: { id: 2 } },
+    { index: 2, sequence: null },
+  ];
+
+  it("finds the fader slot that holds the next sequence", () => {
+    expect(nextSequenceSlot(items, 1, slots)).toBe(slots[1]);
+  });
+
+  it("is null when the next sequence is not on the current page, or there is none", () => {
+    expect(nextSequenceSlot(items, 2, slots)).toBeNull();
+    expect(nextSequenceSlot(items, 3, slots)).toBeNull();
+    expect(nextSequenceSlot(items, undefined, slots)).toBeNull();
   });
 });

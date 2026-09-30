@@ -16,10 +16,10 @@ import { resolveMotionLaunchBlock } from "@/app/project/project-motion-readiness
 import { useProject } from "@/app/project/use-project";
 import { sequenceTotalMs } from "../../hooks/action-card-seed";
 import { useControlledObjects } from "../../hooks/use-controlled-objects";
-import { useExecutorSlots } from "../../hooks/use-executor-slots";
+import { useExecutorSlots, type FaderSlotState } from "../../hooks/use-executor-slots";
 import { useExecCards } from "../../hooks/use-exec-cards";
 import { useProgram } from "../../hooks/use-program";
-import { nextChapterSequence } from "../../hooks/sequence-run-status";
+import { nextChapterSequence, nextSequenceSlot } from "../../hooks/sequence-run-status";
 import { goSequence, readySequence } from "../../hooks/sequence-execution";
 import { useSequencePreview } from "../../hooks/use-sequence-preview";
 import { useBuildDebug } from "../build-debug/build-debug-context";
@@ -32,13 +32,16 @@ type ExecAreaProps = { className?: string };
 
 type PoseDialogState = StartGateOptions & {
   intent: "fader" | "next";
-  slotIndex: number | null;
+  slotIndex: number;
   cardId: string | null;
   sequenceId: number;
   telemetryByObjectId: Map<number, HpyPose>;
 };
 
-const NEXT_SEQUENCE_OPTIONS: StartGateOptions = { nearest: false, reverse: false };
+const slotReadyOptions = (slot: FaderSlotState) => ({
+  safeGroup: slot.runOptions.safeGroup ? 1 : 0,
+  runDirection: !slot.runOptions.reverse,
+});
 
 const needsPoseDialog = (gate: StartGateResult): boolean => gate.status !== "at-start";
 
@@ -112,10 +115,8 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     if (!poseDialog) return null;
     const document = currentProject?.document;
     if (!document) return null;
-    if (poseDialog.intent === "fader") {
-      const sequence = poseDialog.slotIndex === null ? null : faderSlots[poseDialog.slotIndex]?.sequence;
-      if (!sequence || sequence.id !== poseDialog.sequenceId) return null;
-    }
+    const sequence = faderSlots[poseDialog.slotIndex]?.sequence;
+    if (!sequence || sequence.id !== poseDialog.sequenceId) return null;
     const authored = document.motion.actionSequences.find((entry) => entry.id === poseDialog.sequenceId);
     if (!authored) return null;
     return evaluateStartGate({
@@ -128,100 +129,122 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     });
   }, [poseDialog, currentProject, faderSlots]);
 
+  /** 准备一个推子槽；成功后槽显示“已准备”。 */
+  const readySlot = async (
+    slotIndex: number,
+    sequenceId: number,
+    startPlan: NearestStartPlan | null,
+    options: { safeGroup: number; runDirection: boolean },
+  ): Promise<boolean> => {
+    const document = currentProject?.document;
+    if (!document) return false;
+    const readied = await readySequence({ document, sequenceId, startPlan, ...options });
+    if (!readied.ok) {
+      clearSlotReady(slotIndex);
+      reportSequenceResult(readied);
+      return false;
+    }
+    const authored = document.motion.actionSequences.find((entry) => entry.id === sequenceId);
+    markSlotReady(
+      slotIndex,
+      sequenceId,
+      readied.fingerprint,
+      startPlan,
+      capturePreparedPoses(authored ? sequenceObjectIds(authored) : [], telemetryRef.current),
+    );
+    return true;
+  };
+
+  /** GO 一个推子槽；成功后槽显示“启动”，并出一张来源为该槽的任务卡。 */
+  const goSlot = async (slot: FaderSlotState, sequenceId: number): Promise<void> => {
+    const document = currentProject?.document;
+    if (!document) return;
+    const started = await goSequence({
+      document,
+      sequenceId,
+      faderPercent: slot.faderValue,
+      reverse: slot.runOptions.reverse,
+    });
+    if (!started.ok) {
+      reportSequenceResult(started);
+      return;
+    }
+    const authored = document.motion.actionSequences.find((entry) => entry.id === sequenceId);
+    clearSlotReady(slot.index);
+    setSlotRunning(slot.index, true);
+    launch({
+      kind: "sequence",
+      name: started.name,
+      durationMs: null,
+      source: { kind: "fader", slotIndex: slot.index },
+      speedPercent: started.speedPercent,
+      sequenceId,
+      sequenceHandle: started.sequenceHandle,
+      trajectoryMode: slot.sequence?.trajectoryMode,
+      totalMs: sequenceTotalMs(authored),
+      reverse: slot.runOptions.reverse,
+    });
+    stopPreview();
+  };
+
   const beginReady = (
     slotIndex: number,
     sequenceId: number,
     startPlan: NearestStartPlan | null,
     options: { safeGroup: number; runDirection: boolean },
   ) => {
-    const document = currentProject?.document;
-    if (!document) return;
+    if (!currentProject?.document) return;
     setSlotBusy(slotIndex, true);
     void (async () => {
       try {
-        const readied = await readySequence({ document, sequenceId, startPlan, ...options });
-        if (!readied.ok) {
-          clearSlotReady(slotIndex);
-          reportSequenceResult(readied);
-          return;
-        }
-        const authored = document.motion.actionSequences.find((entry) => entry.id === sequenceId);
-        markSlotReady(
-          slotIndex,
-          sequenceId,
-          readied.fingerprint,
-          startPlan,
-          capturePreparedPoses(authored ? sequenceObjectIds(authored) : [], telemetryRef.current),
-        );
+        await readySlot(slotIndex, sequenceId, startPlan, options);
       } finally {
         setSlotBusy(slotIndex, false);
       }
     })();
   };
 
+  /**
+   * 任务卡的“下一条”：在下一条序列所在的推子槽上把准备和 GO 连着做，
+   * 槽的状态（已准备、启动）和手动操作该槽时一致。
+   */
   const readyThenGoNext = (
     cardId: string,
+    slot: FaderSlotState,
     sequenceId: number,
     startPlan: NearestStartPlan | null,
   ) => {
-    const document = currentProject?.document;
-    if (!document) return;
-    const authored = document.motion.actionSequences.find((entry) => entry.id === sequenceId);
+    if (!currentProject?.document) return;
+    setSlotBusy(slot.index, true);
     void (async () => {
-      const readied = await readySequence({
-        document,
-        sequenceId,
-        startPlan,
-        safeGroup: 1,
-        runDirection: true,
-      });
-      if (!readied.ok) {
-        reportSequenceResult(readied);
-        return;
+      try {
+        if (slot.phase !== "ready") {
+          const readied = await readySlot(slot.index, sequenceId, startPlan, slotReadyOptions(slot));
+          if (!readied) return;
+        }
+        close(cardId);
+        await goSlot(slot, sequenceId);
+      } finally {
+        setSlotBusy(slot.index, false);
       }
-      close(cardId);
-      const started = await goSequence({ document, sequenceId, faderPercent: 100 });
-      if (!started.ok) {
-        reportSequenceResult(started);
-        return;
-      }
-      launch({
-        kind: "sequence",
-        name: started.name,
-        durationMs: null,
-        source: { kind: "program" },
-        speedPercent: started.speedPercent,
-        sequenceId,
-        sequenceHandle: started.sequenceHandle,
-        trajectoryMode: authored?.trajectoryMode,
-        totalMs: sequenceTotalMs(authored),
-      });
-      stopPreview();
     })();
   };
 
   const handleConfirmPose = () => {
     if (!poseDialog || dialogGate?.status !== "transition") return;
     if (poseConfirmLockRef.current) return;
-    if (poseDialog.intent === "next") {
-      if (!poseDialog.cardId) return;
-      poseConfirmLockRef.current = true;
-      const { cardId, sequenceId } = poseDialog;
-      setPoseDialog(null);
-      readyThenGoNext(cardId, sequenceId, dialogGate.plan);
-      return;
-    }
-    const slot = poseDialog.slotIndex === null ? undefined : faderSlots[poseDialog.slotIndex];
-    if (slot?.isBusy) return;
+    const slot = faderSlots[poseDialog.slotIndex];
+    if (!slot || slot.isBusy) return;
+    if (poseDialog.intent === "next" && !poseDialog.cardId) return;
     poseConfirmLockRef.current = true;
-    const { slotIndex, sequenceId } = poseDialog;
+    const { slotIndex, sequenceId, cardId } = poseDialog;
     const plan = dialogGate.plan;
     setPoseDialog(null);
-    if (slotIndex === null) return;
-    beginReady(slotIndex, sequenceId, plan, {
-      safeGroup: slot?.runOptions.safeGroup === false ? 0 : 1,
-      runDirection: slot?.runOptions.reverse !== true,
-    });
+    if (poseDialog.intent === "next" && cardId) {
+      readyThenGoNext(cardId, slot, sequenceId, plan);
+      return;
+    }
+    beginReady(slotIndex, sequenceId, plan, slotReadyOptions(slot));
   };
 
   const handleNextSequence = (cardId: string) => {
@@ -233,8 +256,14 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       [];
     const next = nextChapterSequence(chapterItems, card.sequenceId);
     if (!next || cards.some((entry) => entry.sequenceId === next.sequence.id)) return;
-    const document = currentProject?.document;
     const sequenceId = next.sequence.id;
+    const slot = nextSequenceSlot(chapterItems, card.sequenceId, faderSlots);
+    if (!slot) {
+      toast.warning("下一条序列不在当前页的推子槽中");
+      return;
+    }
+    if (slot.isBusy || slot.phase === "running") return;
+    const document = currentProject?.document;
     const issue = resolveMotionLaunchBlock(document, "sequence", sequenceId);
     if (issue) {
       toast.warning(issue.message);
@@ -246,29 +275,45 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       toast.warning("未耦合");
       return;
     }
+    if (slot.phase === "ready") {
+      if (
+        authored &&
+        slot.preparedPoses &&
+        !preparedPosesMatchTelemetry(
+          slot.preparedPoses,
+          document.setup.controlledObjects,
+          telemetryByObjectId,
+        )
+      ) {
+        setPreparedPoseAlert(slot.index);
+        return;
+      }
+      readyThenGoNext(cardId, slot, sequenceId, slot.startPlan);
+      return;
+    }
+    let startPlan: NearestStartPlan | null = null;
     if (authored) {
       const gate = evaluateStartGate({
         sequence: authored,
         objects: document.setup.controlledObjects,
         motors: document.setup.motors,
         telemetryByObjectId,
-        ...NEXT_SEQUENCE_OPTIONS,
+        ...slot.runOptions,
       });
       if (needsPoseDialog(gate)) {
         setPoseDialog({
           intent: "next",
-          slotIndex: null,
+          slotIndex: slot.index,
           cardId,
           sequenceId,
-          ...NEXT_SEQUENCE_OPTIONS,
+          ...slot.runOptions,
           telemetryByObjectId: new Map(telemetryByObjectId),
         });
         return;
       }
-      readyThenGoNext(cardId, sequenceId, gate.status === "at-start" ? gate.plan : null);
-      return;
+      if (gate.status === "at-start") startPlan = gate.plan;
     }
-    readyThenGoNext(cardId, sequenceId, null);
+    readyThenGoNext(cardId, slot, sequenceId, startPlan);
   };
 
   const handleTriggerSequence = (slotIndex: number, sequenceId: number) => {
@@ -302,35 +347,10 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
         setPreparedPoseAlert(slotIndex);
         return;
       }
-      const faderPercent = slot.faderValue;
       setSlotBusy(slotIndex, true);
       void (async () => {
         try {
-          const started = await goSequence({
-            document,
-            sequenceId,
-            faderPercent,
-            reverse: slot.runOptions.reverse,
-          });
-          if (!started.ok) {
-            reportSequenceResult(started);
-            return;
-          }
-          clearSlotReady(slotIndex);
-          setSlotRunning(slotIndex, true);
-          launch({
-            kind: "sequence",
-            name: started.name,
-            durationMs: null,
-            source: { kind: "fader", slotIndex },
-            speedPercent: started.speedPercent,
-            sequenceId,
-            sequenceHandle: started.sequenceHandle,
-            trajectoryMode: sequence.trajectoryMode,
-            totalMs: sequenceTotalMs(authored),
-            reverse: slot.runOptions.reverse,
-          });
-          stopPreview();
+          await goSlot(slot, sequenceId);
         } finally {
           setSlotBusy(slotIndex, false);
         }
@@ -361,10 +381,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       }
       if (gate.status === "at-start") startPlan = gate.plan;
     }
-    beginReady(slotIndex, sequenceId, startPlan, {
-      safeGroup: slot.runOptions.safeGroup ? 1 : 0,
-      runDirection: !slot.runOptions.reverse,
-    });
+    beginReady(slotIndex, sequenceId, startPlan, slotReadyOptions(slot));
   };
 
   return (

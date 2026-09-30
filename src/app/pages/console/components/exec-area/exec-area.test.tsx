@@ -1370,7 +1370,7 @@ describe("ExecArea launch guard", () => {
     };
   };
 
-  it("prepares the next sequence and then goes without another pose check", async () => {
+  it("runs ready then go on the next sequence's fader slot", async () => {
     armStoppedChapter();
     render(withMode(<ExecArea />));
     fireEvent.click(screen.getByRole("button", { name: "下一条" }));
@@ -1392,17 +1392,101 @@ describe("ExecArea launch guard", () => {
     });
     expect(closeMock).toHaveBeenCalledWith("card-stopped");
     expect(goSequenceMock.mock.calls[0]?.[0]).toMatchObject({ sequenceId: 15, faderPercent: 100 });
-    expect(readySequenceMock.mock.invocationCallOrder[0]).toBeLessThan(closeMock.mock.invocationCallOrder[0]!);
+    // 槽状态和手动操作 F2 一致：先“已准备”，GO 成功后转“启动”
+    expect(markSlotReadyMock).toHaveBeenCalledTimes(1);
+    expect(markSlotReadyMock.mock.calls[0]?.slice(0, 3)).toEqual([1, 15, "fp-15"]);
+    expect(clearSlotReadyMock).toHaveBeenCalledWith(1);
+    expect(setSlotRunningMock).toHaveBeenCalledWith(1, true);
+    expect(setSlotBusyMock).toHaveBeenCalledWith(1, true);
+    expect(setSlotBusyMock).toHaveBeenLastCalledWith(1, false);
+    expect(readySequenceMock.mock.invocationCallOrder[0]).toBeLessThan(markSlotReadyMock.mock.invocationCallOrder[0]!);
+    expect(markSlotReadyMock.mock.invocationCallOrder[0]).toBeLessThan(closeMock.mock.invocationCallOrder[0]!);
     expect(closeMock.mock.invocationCallOrder[0]).toBeLessThan(goSequenceMock.mock.invocationCallOrder[0]!);
     expect(launchMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        source: { kind: "program" },
+        source: { kind: "fader", slotIndex: 1 },
         sequenceId: 15,
         speedPercent: 100,
       }),
     );
+    expect(launchMock.mock.calls[0]?.[0]?.source).not.toEqual({ kind: "program" });
     expect(screen.queryByRole("heading", { name: "当前未在准备位姿，请重新准备" })).toBeNull();
+  });
+
+  it("uses the next slot's fader value and run options", async () => {
+    armStoppedChapter();
+    faderSlotsRef.current = faderSlotsRef.current.map((slot) =>
+      slot.index === 1
+        ? { ...slot, faderValue: 60, runOptions: { nearest: false, reverse: true, safeGroup: true } }
+        : slot,
+    );
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "下一条" }));
+    await waitFor(() => {
+      expect(goSequenceMock).toHaveBeenCalledTimes(1);
+    });
+    expect(readySequenceMock.mock.calls[0]?.[0]).toMatchObject({
+      sequenceId: 15,
+      safeGroup: 1,
+      runDirection: false,
+    });
+    expect(goSequenceMock.mock.calls[0]?.[0]).toMatchObject({
+      sequenceId: 15,
+      faderPercent: 60,
+      reverse: true,
+    });
+    expect(launchMock).toHaveBeenCalledWith(
+      expect.objectContaining({ source: { kind: "fader", slotIndex: 1 }, speedPercent: 60, reverse: true }),
+    );
+  });
+
+  it("goes straight away when the next slot is already ready", async () => {
+    armStoppedChapter();
+    faderSlotsRef.current = faderSlotsRef.current.map((slot) =>
+      slot.index === 1 ? { ...slot, phase: "ready" as const } : slot,
+    );
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "下一条" }));
+    await waitFor(() => {
+      expect(goSequenceMock).toHaveBeenCalledTimes(1);
+    });
+    expect(readySequenceMock).not.toHaveBeenCalled();
     expect(markSlotReadyMock).not.toHaveBeenCalled();
+    expect(closeMock).toHaveBeenCalledWith("card-stopped");
+    expect(clearSlotReadyMock).toHaveBeenCalledWith(1);
+    expect(launchMock).toHaveBeenCalledWith(
+      expect.objectContaining({ source: { kind: "fader", slotIndex: 1 }, sequenceId: 15 }),
+    );
+  });
+
+  it("does nothing while the next slot is busy or already running", () => {
+    armStoppedChapter();
+    faderSlotsRef.current = faderSlotsRef.current.map((slot) =>
+      slot.index === 1 ? { ...slot, phase: "running" as const } : slot,
+    );
+    const { unmount } = render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "下一条" }));
+    unmount();
+    faderSlotsRef.current = faderSlotsRef.current.map((slot) =>
+      slot.index === 1 ? { ...slot, phase: "idle" as const, isBusy: true } : slot,
+    );
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "下一条" }));
+    expect(readySequenceMock).not.toHaveBeenCalled();
+    expect(goSequenceMock).not.toHaveBeenCalled();
+    expect(closeMock).not.toHaveBeenCalled();
+  });
+
+  it("warns when the next sequence has no fader slot on the current page", () => {
+    armStoppedChapter();
+    faderSlotsRef.current = faderSlotsRef.current.map((slot) =>
+      slot.index === 1 ? { ...slot, sequence: null } : slot,
+    );
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "下一条" }));
+    expect(toastWarning).toHaveBeenCalledWith("下一条序列不在当前页的推子槽中");
+    expect(readySequenceMock).not.toHaveBeenCalled();
+    expect(closeMock).not.toHaveBeenCalled();
   });
 
   it("asks for the start pose before preparing the next sequence", async () => {
@@ -1459,10 +1543,11 @@ describe("ExecArea launch guard", () => {
     });
     expect(closeMock).not.toHaveBeenCalled();
     expect(goSequenceMock).not.toHaveBeenCalled();
+    expect(markSlotReadyMock).not.toHaveBeenCalled();
     expect(toastWarning).toHaveBeenCalledWith("动作序列校验失败，无法下载");
   });
 
-  it("closes the current card when the following go fails", async () => {
+  it("closes the current card and leaves the slot ready when the following go fails", async () => {
     armStoppedChapter();
     goSequenceMock.mockResolvedValueOnce({
       ok: false,
@@ -1476,6 +1561,9 @@ describe("ExecArea launch guard", () => {
     });
     expect(closeMock).toHaveBeenCalledWith("card-stopped");
     expect(launchMock).not.toHaveBeenCalled();
+    expect(markSlotReadyMock.mock.calls[0]?.slice(0, 2)).toEqual([1, 15]);
+    expect(clearSlotReadyMock).not.toHaveBeenCalled();
+    expect(setSlotRunningMock).not.toHaveBeenCalledWith(1, true);
     expect(toastError).toHaveBeenCalledWith("动作序列启动失败");
   });
 
@@ -1712,10 +1800,14 @@ describe("execution cards", () => {
     expect(screen.getByText("running")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "stop" }));
     expect(stopSequenceMock).toHaveBeenCalledWith(
-      { actionId: 9, trajectoryMode: true },
+      { actionId: 9, trajectoryMode: true, deviceId: [] },
       localSequenceTransport,
     );
-    expect(screen.getByText("stopped")).toBeTruthy();
+    // 停止后先是停止中，PLC 不再上报才算真正停下来；之前不能重新
+    expect(screen.getByText("stopping")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "restart" }));
+    expect(screen.getByText("stopping")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("stopped")).toBeTruthy(), { timeout: 2000 });
     fireEvent.click(screen.getByRole("button", { name: "restart" }));
     expect(screen.getByText("running")).toBeTruthy();
   });
