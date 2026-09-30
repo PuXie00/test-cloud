@@ -155,9 +155,9 @@ export class CsocketApiService {
         if (next) this.broadcastMasterStatus(next)
       }
       if (optCmd === 'Info|model') {
-        console.log('Info|model', JSON.stringify(msg));
+        // console.log('Info|model', JSON.stringify(msg));
         if (this.modelInfo.ingest(msg)) {
-          console.log('Info|model ingest>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>');
+          // console.log('Info|model ingest>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>');
           this.broadcast(CSOCKET_CHANNELS.readModelInfoPolling, msg)
         }
       }
@@ -167,6 +167,7 @@ export class CsocketApiService {
           this.broadcast(CSOCKET_CHANNELS.readAxisInfoPolling, msg)
         }
       }
+
       
       if (optCmd === 'CONFIG|Pro|verify') {
         this.broadcast(CSOCKET_CHANNELS.verifyProject, msg as CppAckResult<{
@@ -181,6 +182,25 @@ export class CsocketApiService {
           timestamp: number,
         }>)
       }
+      if (optCmd === 'Info|act') {
+        console.log('Info|act', JSON.stringify(msg));
+        this.broadcast(CSOCKET_CHANNELS.readActionRun, msg as CppAckResult<{
+          actionId: number, // 动作ID
+          state: number, // 动作状态 1:过渡状态，正在走到轨迹上 3： 运行中 
+          loopCount: number, // 当前第几次循环
+          loopCountSet: number, // 设定循环次数
+          runTime: number, // 轨迹运行的当前帧
+        }>)
+      }
+      // if (optCmd === 'Info|actionRun') {
+      //   this.broadcast(CSOCKET_CHANNELS.readActionRun, msg as CppAckResult<{
+      //     actionId: number, // 动作ID
+      //     state: number, // 动作状态 1:过渡状态，正在走到轨迹上 3： 运行中 
+      //     loopCount: number, // 当前第几次循环
+      //     loopCountSet: number, // 设定循环次数
+      //     runTime: number, // 轨迹运行的当前帧
+      //   }>)
+      // }
     })
 
     this.client.onStatus((status) => {
