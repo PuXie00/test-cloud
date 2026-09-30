@@ -1,6 +1,7 @@
 import { useExecCards } from "../../../hooks/use-exec-cards";
 import { useProgram } from "../../../hooks/use-program";
-import { nextSequenceIsFree } from "../../../hooks/sequence-run-status";
+import { useExecutorSlots } from "../../../hooks/use-executor-slots";
+import { nextSequenceIsFree, nextSequenceSlot } from "../../../hooks/sequence-run-status";
 import { ExecCardView } from "./exec-card";
 import { ExecEmptyState } from "./exec-empty-state";
 
@@ -11,10 +12,17 @@ type ExecCardsProps = {
 export const ExecCards = ({ onNextSequence }: ExecCardsProps) => {
   const { cards, resume, stop, skipNext, setSpeed, close, restart } = useExecCards();
   const { program, currentChapterId } = useProgram();
+  const { faderSlots } = useExecutorSlots();
   const chapterItems =
     program.chapters.find((chapter) => chapter.id === currentChapterId)?.items ??
     program.chapters[0]?.items ??
     [];
+
+  /** “下一条”操作的是下一条序列所在的推子槽：槽要在当前页，且没在忙、没在运行 */
+  const nextSlotIsFree = (sequenceId: number | undefined): boolean => {
+    const slot = nextSequenceSlot(chapterItems, sequenceId, faderSlots);
+    return slot !== null && !slot.isBusy && slot.phase !== "running";
+  };
 
   if (cards.length === 0) {
     return <ExecEmptyState />;
@@ -28,6 +36,7 @@ export const ExecCards = ({ onNextSequence }: ExecCardsProps) => {
           card={card}
           hasNextSequence={
             card.status === "stopped" &&
+            nextSlotIsFree(card.sequenceId) &&
             nextSequenceIsFree(
               chapterItems,
               card.sequenceId,
