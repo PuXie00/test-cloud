@@ -134,6 +134,26 @@ export const applyActionRunReports = (
   return next === cards ? null : next;
 };
 
+/**
+ * GO 成功后登记任务卡。PLC 的上报可能比 GO 的应答先到，这时已经按上报补建过一张卡：
+ * 同一个动作只保留一张，用 GO 的信息覆盖它并沿用已收到的运行数据，不再新增。
+ */
+export const addLaunchedCard = (cards: ExecCard[], launched: ExecCard): ExecCard[] => {
+  const actionId = execCardActionId(launched);
+  const index =
+    actionId === undefined ? -1 : cards.findIndex((card) => execCardActionId(card) === actionId);
+  if (index < 0) return [launched, ...cards];
+  const existing = cards[index]!;
+  const merged: ExecCard = {
+    ...launched,
+    id: existing.id,
+    startedAt: existing.startedAt,
+    ...(existing.run ? { run: existing.run } : {}),
+    ...(existing.plcActive !== undefined ? { plcActive: existing.plcActive } : {}),
+  };
+  return cards.map((card, cardIndex) => (cardIndex === index ? merged : card));
+};
+
 const isReported = (card: ExecCard, now: number): boolean =>
   card.run !== undefined && now - card.run.reportedAt <= ACTION_RUN_STALE_MS;
 
