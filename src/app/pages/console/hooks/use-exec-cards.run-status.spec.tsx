@@ -99,6 +99,28 @@ describe("ExecCardsProvider PLC action run status", () => {
     expect(rows()).toEqual(["开幕|running|3|1000"]);
   });
 
+  it("keeps one card when the PLC reports the action before the GO reply launches it", () => {
+    report([running({ state: 1, runTime: 0 })]);
+    expect(rows()).toEqual(["序列4|running|1|0"]);
+    let launchedId = "";
+    act(() => {
+      launchedId = api.launch({
+        kind: "sequence",
+        name: "开幕",
+        durationMs: null,
+        source: { kind: "fader", slotIndex: 0 },
+        sequenceId: 4,
+        sequenceHandle: { actionId: 4, deviceId: [1] },
+        trajectoryMode: true,
+        reverse: true,
+      });
+    });
+    expect(rows()).toEqual(["开幕|running|1|0"]);
+    expect(api.cards[0]).toMatchObject({ id: launchedId, reverse: true, trajectoryMode: true, plcActive: true });
+    report([running({ runTime: 300 })]);
+    expect(rows()).toEqual(["开幕|running|3|300"]);
+  });
+
   it("stops the card once the PLC no longer reports it, and leaves closing to the user", () => {
     report([running()]);
     act(() => vi.advanceTimersByTime(ACTION_RUN_STALE_MS + 200));

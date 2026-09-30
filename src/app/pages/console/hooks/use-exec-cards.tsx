@@ -11,8 +11,10 @@ import {
 } from "react";
 import { advanceRunningCards } from "./advance-running-cards";
 import {
+  addLaunchedCard,
   applyActionRunReports,
   canCloseExecCard,
+  execCardActionId,
   fallbackActionCardSeed,
   isExecCardInTransition,
   parseActionRunReports,
@@ -226,28 +228,30 @@ export const ExecCardsProvider = ({
       totalMs,
       reverse,
     }) => {
-      const id = `card-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-      setCards((current) => [
-        {
-          id,
-          kind,
-          name,
-          source,
-          durationMs,
-          elapsedMs: 0,
-          speedPercent,
-          status: "running",
-          startedAt: Date.now(),
-          emergencyStopped: false,
-          ...(sequenceId !== undefined ? { sequenceId } : {}),
-          ...(sequenceHandle ? { sequenceHandle } : {}),
-          ...(trajectoryMode !== undefined ? { trajectoryMode } : {}),
-          ...(totalMs !== undefined ? { totalMs } : {}),
-          ...(reverse !== undefined ? { reverse } : {}),
-        },
-        ...current,
-      ]);
-      return id;
+      const launched: ExecCard = {
+        id: `card-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        kind,
+        name,
+        source,
+        durationMs,
+        elapsedMs: 0,
+        speedPercent,
+        status: "running",
+        startedAt: Date.now(),
+        emergencyStopped: false,
+        ...(sequenceId !== undefined ? { sequenceId } : {}),
+        ...(sequenceHandle ? { sequenceHandle } : {}),
+        ...(trajectoryMode !== undefined ? { trajectoryMode } : {}),
+        ...(totalMs !== undefined ? { totalMs } : {}),
+        ...(reverse !== undefined ? { reverse } : {}),
+      };
+      const actionId = execCardActionId(launched);
+      const existing =
+        actionId === undefined
+          ? undefined
+          : cardsRef.current.find((card) => execCardActionId(card) === actionId);
+      setCards((current) => addLaunchedCard(current, launched));
+      return existing?.id ?? launched.id;
     },
     [],
   );

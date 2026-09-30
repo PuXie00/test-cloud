@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ACTION_RUN_STALE_MS,
   ACTION_RUN_STATE,
+  addLaunchedCard,
   applyActionRunReports,
   canCloseExecCard,
   fallbackActionCardSeed,
@@ -121,6 +122,50 @@ describe("applyActionRunReports", () => {
       run: { runTimeMs: 12300, reportedAt: 1000 },
     });
     expect(next?.[1]?.id).toBe("card");
+  });
+});
+
+describe("addLaunchedCard", () => {
+  const seeded = card({
+    id: "card-action-4-abc",
+    name: "序列4",
+    source: { kind: "external" },
+    startedAt: 900,
+    plcActive: true,
+    run: { state: 1, loopCount: 1, loopCountSet: 1, runTimeMs: 0, reportedAt: 950 },
+  });
+  const launched = card({
+    id: "card-launched",
+    name: "开幕升降",
+    source: { kind: "fader", slotIndex: 3 },
+    speedPercent: 60,
+    trajectoryMode: true,
+    reverse: true,
+    totalMs: 60000,
+    startedAt: 1000,
+  });
+
+  it("adds the launched card on top when the action has no card yet", () => {
+    const other = card({ id: "other", sequenceId: 8, sequenceHandle: { actionId: 8 } });
+    expect(addLaunchedCard([other], launched)).toEqual([launched, other]);
+  });
+
+  it("keeps a single card when the PLC reported the action before the GO reply", () => {
+    const next = addLaunchedCard([seeded], launched);
+    expect(next).toHaveLength(1);
+    expect(next[0]).toEqual({
+      ...launched,
+      id: seeded.id,
+      startedAt: seeded.startedAt,
+      plcActive: true,
+      run: seeded.run,
+    });
+  });
+
+  it("does not merge cards that have no action id", () => {
+    const anonymous = card({ id: "a", sequenceId: undefined, sequenceHandle: undefined });
+    const another = card({ id: "b", sequenceId: undefined, sequenceHandle: undefined });
+    expect(addLaunchedCard([anonymous], another)).toEqual([another, anonymous]);
   });
 });
 
