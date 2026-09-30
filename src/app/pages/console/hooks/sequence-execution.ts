@@ -57,6 +57,7 @@ export type SequenceExecutionTransport = {
     trajectoryMode: TrajectoryMode;
     loopCount: number;
     deviceId: number[];
+    runDirection: 1 | 2;
   }) => Promise<void>;
   stopAction: (input: {
     actionId: number;
@@ -227,8 +228,8 @@ const requireSaveAck = (raw: unknown): void => {
   }
 };
 
-/** Placeholder until firmware confirms run direction encoding. */
-const ADAPTER_RUN_DIRECTION = 0;
+/** PLC 准备头：未开反向为 1，开启反向为 2。 */
+export const toPlcRunDirection = (reverse: boolean): 1 | 2 => (reverse ? 2 : 1);
 
 /** C++: 0 = 一直循环，1 = 播一次。 */
 export const toActionGoLoopCount = (looping: boolean): 0 | 1 => (looping ? 0 : 1);
@@ -245,7 +246,7 @@ export const createCsocketSequenceTransport = (
       await api.actionGo([
         {
           actionId: input.actionId,
-          runDirection: ADAPTER_RUN_DIRECTION,
+          runDirection: input.runDirection,
           speedScale: input.speedScale,
           loopCount: input.loopCount,
           trajectoryMode: input.trajectoryMode,
@@ -392,6 +393,7 @@ export const goSequence = async (args: {
   document: ProjectDocument;
   sequenceId: number;
   faderPercent?: number;
+  reverse?: boolean;
   transport?: SequenceExecutionTransport;
 }): Promise<LocalSequenceStartResult> => {
   const found = lookupAuthoredSequence(args.document, args.sequenceId);
@@ -410,6 +412,7 @@ export const goSequence = async (args: {
       trajectoryMode: found.sequence.trajectoryMode,
       loopCount: toActionGoLoopCount(isSequenceLooping(found.sequence)),
       deviceId,
+      runDirection: toPlcRunDirection(args.reverse === true),
     });
 
     return {
@@ -439,6 +442,7 @@ export const startLocalAuthoredSequence = async (args: {
   document: ProjectDocument;
   sequenceId: number;
   faderPercent?: number;
+  reverse?: boolean;
   transport?: SequenceExecutionTransport;
 }): Promise<LocalSequenceStartResult> => {
   const readied = await readySequence(args);

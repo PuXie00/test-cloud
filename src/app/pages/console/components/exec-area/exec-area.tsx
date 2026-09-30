@@ -310,6 +310,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
             document,
             sequenceId,
             faderPercent,
+            reverse: slot.runOptions.reverse,
           });
           if (!started.ok) {
             reportSequenceResult(started);

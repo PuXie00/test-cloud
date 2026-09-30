@@ -438,7 +438,7 @@ export class CsocketApiService {
       if(item.trajectoryMode) {
         isTMapedHeadPrepare.push({
           actionId: item.actionId,
-          runDirection: item.runDirection === 0 ? 1 : 2,
+          runDirection: item.runDirection === 2 ? 2 : 1,
           speedScale: item.speedScale * 100,
           loopCount: item.loopCount,
           deviceCount: item.deviceId.length,

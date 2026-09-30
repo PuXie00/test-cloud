@@ -391,6 +391,7 @@ describe("goSequence", () => {
       trajectoryMode: true,
       loopCount: 1,
       deviceId: [7],
+      runDirection: 1,
     });
     expect(started).toEqual({
       ok: true,
@@ -398,6 +399,19 @@ describe("goSequence", () => {
       speedPercent: 150,
       sequenceHandle: { actionId: validSequence.id, deviceId: [7] },
     });
+  });
+
+  it("sends PLC runDirection 2 when reverse is on", async () => {
+    const transport = createTransport();
+    await goSequence({
+      document: documentWithSequence(validSequence),
+      sequenceId: validSequence.id,
+      reverse: true,
+      transport,
+    });
+    expect(transport.syncCall).toHaveBeenCalledWith(
+      expect.objectContaining({ runDirection: 2 }),
+    );
   });
 
   it("simulates GO success when syncCall throws", async () => {
@@ -469,6 +483,7 @@ describe("startLocalAuthoredSequence", () => {
       trajectoryMode: true,
       loopCount: 1,
       deviceId: [7],
+      runDirection: 1,
     });
     expect(started).toEqual({
       ok: true,
@@ -535,6 +550,7 @@ describe("createLocalSequenceTransport", () => {
         trajectoryMode: false,
         loopCount: 1,
         deviceId: [],
+        runDirection: 1,
       }),
     ).resolves.toBeUndefined();
     await expect(
@@ -602,12 +618,13 @@ describe("createCsocketSequenceTransport", () => {
       trajectoryMode: true,
       loopCount: 0,
       deviceId: [7, 8],
+      runDirection: 1,
     });
     expect(api.actionGo).toHaveBeenCalled();
     const wireItem = api.actionGo.mock.calls[0]?.[0]?.[0] as Record<string, unknown>;
     expect(wireItem).toEqual({
       actionId: 9,
-      runDirection: 0,
+      runDirection: 1,
       speedScale: 1.5,
       loopCount: 0,
       trajectoryMode: true,
