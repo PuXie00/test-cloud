@@ -1,4 +1,10 @@
-import type { ControlType, MotionAxisParams } from "@/app/project/configuration-types";
+import { CONTROL_TYPE_RULES } from "@/app/project/configuration-rules";
+import type {
+  ControlType,
+  MotionAxisId,
+  MotionAxisParams,
+} from "@/app/project/configuration-types";
+import { motionKindForAxisId } from "@/app/project/virtual-axis-mapping";
 import type {
   ControlledObject,
   Motor,
@@ -67,14 +73,14 @@ const originDistances = (object: ControlledObject): { origin_distance1: number; 
     ? { origin_distance1: 0, origin_distance2: object.pulleyDistance }
     : { origin_distance1: object.pulleyDistance, origin_distance2: 0 };
 
-const yParams = (object: ControlledObject): MotionAxisParams | undefined => {
-  if (object.controlType === "fourPointSwing" || object.controlType === "dualTiltFourPointSwing") {
-    return object.motionParams?.swingY;
-  }
-  if (object.controlType === "multiPointSwing") {
-    return object.motionParams?.yawY;
-  }
-  return undefined;
+/** 只取该控制类型实际有的运动轴；旋转类物体的 h 不是升降，不给求解器 */
+const solverAxisParams = (
+  object: ControlledObject,
+  id: MotionAxisId,
+): MotionAxisParams | undefined => {
+  const kind = motionKindForAxisId(CONTROL_TYPE_RULES[object.controlType].motionAxes, id);
+  if (kind === undefined || kind === "rotation") return undefined;
+  return object.motionParams?.[id];
 };
 
 const paramsForType = (object: ControlledObject, type: SolverTypeCode): number[][] => {
@@ -115,9 +121,9 @@ export const buildSolverCallItem = (input: {
     motor_H: bound.map((motor) => input.motorPositions.get(motor.id) ?? 0),
     // motor_H: bound.map((motor) => 0),
     limit_data: [
-      axisLimit(input.object.motionParams?.move),
-      axisLimit(input.object.motionParams?.swingX),
-      axisLimit(yParams(input.object)),
+      axisLimit(solverAxisParams(input.object, "h")),
+      axisLimit(solverAxisParams(input.object, "p")),
+      axisLimit(solverAxisParams(input.object, "y")),
     ],
     limit_rim: rimForType(input.object, type),
     betainit: type === 63 ? (input.object.initialTiltDirection ?? 0) : 0,

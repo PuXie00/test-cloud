@@ -11,7 +11,7 @@ const object = {
   pulleyDistance: 80,
   modelRunDirection: 2,
   initialTiltDirection: 90,
-  motionParams: { move: { maxAngle: 800 } },
+  motionParams: { h: { maxAngle: 800 } },
   maxAxisVelocity: 500,
   driveAxes: [
     { key: "0", mount: { x: 100, z: 100 } },

@@ -30,7 +30,7 @@ const singlePointObject = (
   modelRunDirection: 1,
   driveAxes: [{ key: "0" }],
   maxAxisVelocity: 200,
-  motionParams: { move: { ...MOTION_DEFAULTS.move } },
+  motionParams: { h: { ...MOTION_DEFAULTS.move } },
   params: {},
   ...overrides,
 });

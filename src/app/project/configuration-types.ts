@@ -10,7 +10,11 @@ export type ControlType =
   | "dualTiltFourPointSwing"
   | "multiPointSwing";
 
+/** 运动轴类型：决定单位、标签、默认值；由控制类型 + 运动轴派生，不落盘 */
 export type MotionAxisKind = "rotation" | "move" | "swingX" | "swingY" | "yawY";
+
+/** motionParams 的键：h / p / y 依次对应虚轴 v1 / v2 / v3 */
+export type MotionAxisId = "h" | "p" | "y";
 
 export type ShapePresetId =
   | "cube"
@@ -61,6 +65,13 @@ export type MotionAxisParams = {
   maxDeceleration: number;
   /** 异常减速度，由 speed / emergencyDecelTime 派生 */
   abnormalDeceleration: number;
+  /** 虚轴最大速度（°/s）；仅 p / y（虚轴 2/3）必有，h（虚轴 1）无 */
+  defaultMaxVelocity?: number;
 };
+
+export type MotionParamsByAxis = Partial<Record<MotionAxisId, MotionAxisParams>>;
+
+/** 表单逐项编辑的数值字段；defaultMaxVelocity 按虚轴单独编辑 */
+export type MotionAxisFieldKey = Exclude<keyof MotionAxisParams, "defaultMaxVelocity">;
 
 export type PlcProtocol = "modbus-tcp" | "ethercat" | "profinet";

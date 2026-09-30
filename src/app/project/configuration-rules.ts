@@ -2,11 +2,14 @@ import type {
   ControlType,
   MotionAxisKind,
   MotionAxisParams,
+  MotionParamsByAxis,
   ShapeDimensionValuesByPreset,
   ShapePresetId,
 } from "./configuration-types";
 import type { VirtualAxisId } from "./project-document-types";
 import { normalizeMotionAxisParams } from "./motion-acceleration";
+import { motionAxisIdForKind } from "./virtual-axis-mapping";
+import { DEFAULT_SWING_AXIS_MAX_VELOCITY } from "./virtual-axis-max-velocity";
 import {
   normalizeInitialTiltDirection,
   normalizeMountRotation,
@@ -164,6 +167,7 @@ export const MOTION_DEFAULTS = {
     maxAcceleration: 0,
     maxDeceleration: 0,
     abnormalDeceleration: 0,
+    defaultMaxVelocity: DEFAULT_SWING_AXIS_MAX_VELOCITY,
   }),
   swingY: normalizeMotionAxisParams({
     minAngle: -20,
@@ -177,6 +181,7 @@ export const MOTION_DEFAULTS = {
     maxAcceleration: 0,
     maxDeceleration: 0,
     abnormalDeceleration: 0,
+    defaultMaxVelocity: DEFAULT_SWING_AXIS_MAX_VELOCITY,
   }),
   yawY: normalizeMotionAxisParams({
     minAngle: -20,
@@ -190,15 +195,14 @@ export const MOTION_DEFAULTS = {
     maxAcceleration: 0,
     maxDeceleration: 0,
     abnormalDeceleration: 0,
+    defaultMaxVelocity: DEFAULT_SWING_AXIS_MAX_VELOCITY,
   }),
 } satisfies Record<MotionAxisKind, MotionAxisParams>;
 
-export const defaultMotionParamsForControlType = (
-  controlType: ControlType,
-): Partial<Record<MotionAxisKind, MotionAxisParams>> => {
-  const result: Partial<Record<MotionAxisKind, MotionAxisParams>> = {};
-  for (const axis of CONTROL_TYPE_RULES[controlType].motionAxes) {
-    result[axis] = { ...MOTION_DEFAULTS[axis] };
+export const defaultMotionParamsForControlType = (controlType: ControlType): MotionParamsByAxis => {
+  const result: MotionParamsByAxis = {};
+  for (const kind of CONTROL_TYPE_RULES[controlType].motionAxes) {
+    result[motionAxisIdForKind(kind)] = { ...MOTION_DEFAULTS[kind] };
   }
   return result;
 };

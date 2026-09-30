@@ -1,8 +1,7 @@
 /** 工程文件 schema，试验版 — 见 docs/superpowers/specs/2026-06-04-project-document-design.md */
 import type {
   ControlType,
-  MotionAxisKind,
-  MotionAxisParams,
+  MotionParamsByAxis,
   PlcProtocol,
   ShapeDimensions,
   ShapePresetId,
@@ -16,8 +15,10 @@ export type { ControlTypeCode } from "./control-type-code";
 
 export type {
   ControlType,
+  MotionAxisId,
   MotionAxisKind,
   MotionAxisParams,
+  MotionParamsByAxis,
   PlcProtocol,
   ShapeDimensions,
   ShapePresetId,
@@ -169,13 +170,9 @@ export type ControlledObjectConfig = {
   /** 多点吊点布局参数；缺失按 custom */
   mountLayout?: MountLayout;
   driveAxes: DriveAxisBinding[];
-  motionParams: Partial<Record<MotionAxisKind, MotionAxisParams>>;
+  motionParams: MotionParamsByAxis;
   /** 最大轴速度，速度比例基准；不是虚轴 1 运行上限 */
   maxAxisVelocity: number;
-  /** 虚轴 2 最大速度（°/s）；启用 v2 时必有 */
-  pDefaultMaxVelocity?: number;
-  /** 虚轴 3 最大速度（°/s）；启用 v3 时必有 */
-  yDefaultMaxVelocity?: number;
   motionSpeedControl?: MotionSpeedControl;
   /** 扩展属性占位；后续扩展使用 */
   params: Record<string, number>;

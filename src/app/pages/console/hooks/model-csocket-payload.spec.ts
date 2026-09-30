@@ -29,7 +29,7 @@ const baseObject: ControlledObject = {
   centerOffset: { x: 0, y: 0, z: 0 },
   rotation: { x: 0, y: 0, z: 0 },
   color: "#869398",
-  motionParams: { move: axisParams() },
+  motionParams: { h: axisParams() },
   maxAxisVelocity: 200,
   pulleyDistance: 0,
   modelRunDirection: 1,
@@ -40,14 +40,12 @@ const baseObject: ControlledObject = {
 const multiPointObject: ControlledObject = {
   ...baseObject,
   controlType: "multiPointSwing",
-  pDefaultMaxVelocity: 4,
-  yDefaultMaxVelocity: 5,
   safetyRadius: 1500,
   initialTiltDirection: 90,
   motionParams: {
-    move: axisParams({ maxAngle: 800, minAngle: 10, speed: 40 }),
-    swingX: axisParams({ minAngle: -20, maxAngle: 20, speed: 2 }),
-    yawY: axisParams({ minAngle: -15, maxAngle: 15, speed: 3 }),
+    h: axisParams({ maxAngle: 800, minAngle: 10, speed: 40 }),
+    p: axisParams({ minAngle: -20, maxAngle: 20, speed: 2, defaultMaxVelocity: 4 }),
+    y: axisParams({ minAngle: -15, maxAngle: 15, speed: 3, defaultMaxVelocity: 5 }),
   },
   axes: [
     { key: "0", custom: true, mount: { x: 100, z: 100 } },
@@ -60,18 +58,16 @@ const multiPointObject: ControlledObject = {
 const hoistObject: ControlledObject = {
   ...baseObject,
   controlType: "singlePointMove",
-  motionParams: { move: axisParams() },
+  motionParams: { h: axisParams() },
   axes: [{ key: "0", custom: false, mount: { x: 0, z: 0 } }],
 };
 
 const twoPointSwingObject: ControlledObject = {
   ...baseObject,
   controlType: "twoPointSwing",
-  pDefaultMaxVelocity: 4,
-  yDefaultMaxVelocity: 5,
   motionParams: {
-    move: axisParams(),
-    swingX: axisParams({ minAngle: -20, maxAngle: 20, speed: 2 }),
+    h: axisParams(),
+    p: axisParams({ minAngle: -20, maxAngle: 20, speed: 2, defaultMaxVelocity: 4 }),
   },
   axes: [
     { key: "0", custom: true, mount: { x: 100, z: 0 } },
@@ -111,9 +107,9 @@ describe("buildModelParamPayload max acceleration", () => {
     const object: ControlledObject = {
       ...multiPointObject,
       motionParams: {
-        move: axisParams({ speed: 40, minAccelTime: 0.5 }),
-        swingX: axisParams({ speed: 2, minAccelTime: 2 }),
-        yawY: axisParams({ speed: 3, minAccelTime: 0.5 }),
+        h: axisParams({ speed: 40, minAccelTime: 0.5 }),
+        p: axisParams({ speed: 2, minAccelTime: 2, defaultMaxVelocity: 4 }),
+        y: axisParams({ speed: 3, minAccelTime: 0.5, defaultMaxVelocity: 5 }),
       },
     };
     const payload = buildModelParamPayload(object, [motor(300), motor(250)]);

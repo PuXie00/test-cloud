@@ -200,7 +200,7 @@
           }
         ],
         "motionParams": {
-          "move": {
+          "h": {
             "speed": 50,
             "minAngle": 0,
             "maxAngle": 1000,
@@ -254,7 +254,6 @@
         "pulleyDistance": 0,
         "modelRunDirection": 1,
         "maxAxisVelocity": 200,
-        "pDefaultMaxVelocity": 3,
         "driveAxes": [
           {
             "key": "0",
@@ -272,7 +271,7 @@
           }
         ],
         "motionParams": {
-          "move": {
+          "h": {
             "speed": 50,
             "minAngle": 0,
             "maxAngle": 1000,
@@ -285,7 +284,7 @@
             "maxDeceleration": 50,
             "abnormalDeceleration": 500
           },
-          "swingX": {
+          "p": {
             "speed": 2,
             "minAngle": -20,
             "maxAngle": 20,
@@ -296,7 +295,8 @@
             "deceleration": 0.7,
             "maxAcceleration": 2,
             "maxDeceleration": 2,
-            "abnormalDeceleration": 10
+            "abnormalDeceleration": 10,
+            "defaultMaxVelocity": 3
           }
         },
         "params": {}
@@ -340,8 +340,6 @@
         "pulleyDistance": 0,
         "modelRunDirection": 1,
         "maxAxisVelocity": 200,
-        "pDefaultMaxVelocity": 3,
-        "yDefaultMaxVelocity": 3,
         "safetyRadius": 0,
         "initialTiltDirection": 0,
         "mountRotation": 0,
@@ -387,7 +385,7 @@
           }
         ],
         "motionParams": {
-          "move": {
+          "h": {
             "speed": 50,
             "minAngle": 0,
             "maxAngle": 1000,
@@ -400,7 +398,7 @@
             "maxDeceleration": 50,
             "abnormalDeceleration": 500
           },
-          "swingX": {
+          "p": {
             "speed": 2,
             "minAngle": -20,
             "maxAngle": 20,
@@ -411,9 +409,10 @@
             "deceleration": 0.7,
             "maxAcceleration": 2,
             "maxDeceleration": 2,
-            "abnormalDeceleration": 10
+            "abnormalDeceleration": 10,
+            "defaultMaxVelocity": 3
           },
-          "yawY": {
+          "y": {
             "speed": 2,
             "minAngle": -20,
             "maxAngle": 20,
@@ -424,7 +423,8 @@
             "deceleration": 0.7,
             "maxAcceleration": 2,
             "maxDeceleration": 2,
-            "abnormalDeceleration": 10
+            "abnormalDeceleration": 10,
+            "defaultMaxVelocity": 3
           }
         },
         "params": {}

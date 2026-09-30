@@ -1,8 +1,7 @@
-import { CONTROL_TYPE_RULES } from "@/app/project/configuration-rules";
-import type { ControlType, MotionAxisKind, MotionAxisParams } from "@/app/project/configuration-types";
+import type { ControlType, MotionAxisId, MotionAxisParams } from "@/app/project/configuration-types";
 import { DIMENSION_KEY_TO_VIRTUAL_AXIS, VIRTUAL_AXES } from "@/app/project/manual-jog";
 import type { VirtualAxisId, VirtualAxisValues } from "@/app/project/project-document-types";
-import { motionKindForVirtualAxis } from "@/app/project/virtual-axis-mapping";
+import { motionAxisIdForVirtualAxis } from "@/app/project/virtual-axis-mapping";
 import type { ControlledObjectSnapshot } from "../../monitor-grid/monitor-data";
 import {
   clampToAxisRange,
@@ -14,7 +13,7 @@ import {
 export type AxisRangeSource = {
   id: number;
   controlType: ControlType;
-  motionParams?: Partial<Record<MotionAxisKind, Pick<MotionAxisParams, "minAngle" | "maxAngle">>>;
+  motionParams?: Partial<Record<MotionAxisId, Pick<MotionAxisParams, "minAngle" | "maxAngle">>>;
 };
 
 const isRange = (range: AxisRange | undefined): range is AxisRange =>
@@ -27,8 +26,7 @@ export const virtualAxisRangeFor = (
   object: AxisRangeSource,
   axis: VirtualAxisId,
 ): AxisRange | undefined => {
-  const kinds = CONTROL_TYPE_RULES[object.controlType].motionAxes;
-  const params = object.motionParams?.[motionKindForVirtualAxis(kinds, axis)];
+  const params = object.motionParams?.[motionAxisIdForVirtualAxis(axis)];
   if (!params) return undefined;
   const range = { min: params.minAngle, max: params.maxAngle };
   return isRange(range) ? range : undefined;

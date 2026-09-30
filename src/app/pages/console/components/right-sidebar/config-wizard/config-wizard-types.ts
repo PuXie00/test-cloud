@@ -7,8 +7,10 @@ export type {
 } from "@/app/project/project-document-types";
 export type {
   ControlType,
+  MotionAxisId,
   MotionAxisKind,
   MotionAxisParams,
+  MotionParamsByAxis,
   PlcProtocol,
   ShapeDimensions,
   ShapePresetId,
@@ -17,8 +19,7 @@ export type { MotionSpeedControl } from "@/app/project/motion-speed";
 
 import type {
   ControlType,
-  MotionAxisKind,
-  MotionAxisParams,
+  MotionParamsByAxis,
   ShapeDimensions,
   ShapePresetId,
 } from "@/app/project/configuration-types";
@@ -54,14 +55,10 @@ export type ControlledObject = {
   /** 模型朝向欧拉角，单位 deg，0–360；Babylon 顺序 XYZ */
   rotation: { x: number; y: number; z: number };
   color: string;
-  motionParams?: Partial<Record<MotionAxisKind, MotionAxisParams>>;
+  motionParams?: MotionParamsByAxis;
   motionSpeedControl?: MotionSpeedControl;
   /** 最大轴速度，速度比例基准；不是虚轴 1 运行上限 */
   maxAxisVelocity: number;
-  /** 虚轴 2 最大速度（°/s）；启用 v2 时必有 */
-  pDefaultMaxVelocity?: number;
-  /** 虚轴 3 最大速度（°/s）；启用 v3 时必有 */
-  yDefaultMaxVelocity?: number;
   /** 原点到滑轮距离（轴链条最短长度），单位 mm */
   pulleyDistance: number;
   /** 模型运行方向：1 正向，2 反向 */

@@ -1,5 +1,9 @@
 import type { VirtualAxisKinematics } from "@/app/viz3d";
-import { ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE } from "@/app/project/configuration-rules";
+import {
+  CONTROL_TYPE_RULES,
+  ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE,
+} from "@/app/project/configuration-rules";
+import { motionParamsOfKind } from "@/app/project/virtual-axis-mapping";
 import type { ControlledObject } from "../components/right-sidebar/config-wizard/config-wizard-types";
 
 export const sceneKinematicsForObject = (
@@ -10,7 +14,12 @@ export const sceneKinematicsForObject = (
     controlType: object.controlType,
     runDirection: object.modelRunDirection === 2 ? 2 : 1,
     pulleyDistance: object.pulleyDistance,
-    maxHeight: object.motionParams?.move?.maxAngle ?? 0,
+    maxHeight:
+      motionParamsOfKind(
+        CONTROL_TYPE_RULES[object.controlType].motionAxes,
+        object.motionParams,
+        "move",
+      )?.maxAngle ?? 0,
     betaInit: object.initialTiltDirection ?? 0,
   };
 };
