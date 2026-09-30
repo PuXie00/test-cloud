@@ -1,10 +1,10 @@
-import type { MotionAxisKind, MotionAxisParams } from "@/app/project/configuration-types";
+import type { MotionAxisFieldKey, MotionAxisKind } from "@/app/project/configuration-types";
 
 export type AxisRangeConfig = {
   label: string;
-  minKey: keyof MotionAxisParams;
-  maxKey: keyof MotionAxisParams;
-  specKey: keyof MotionAxisParams;
+  minKey: MotionAxisFieldKey;
+  maxKey: MotionAxisFieldKey;
+  specKey: MotionAxisFieldKey;
   minAriaLabel: string;
   maxAriaLabel: string;
 };

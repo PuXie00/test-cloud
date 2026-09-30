@@ -56,7 +56,7 @@ export const buildMotorOverspeedObjects = (
         objectId: object.id,
         pointInitPos,
         ...origins,
-        maxHeight: object.motionParams.move?.maxAngle ?? 0,
+        maxHeight: object.motionParams.h?.maxAngle ?? 0,
         betaInit: object.initialTiltDirection ?? 0,
         motors: boundMotors,
       },

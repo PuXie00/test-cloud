@@ -25,10 +25,9 @@ const swingObject = (): ControlledObjectConfig => ({
     { key: "1", mount: { x: 0, z: 0 } },
   ],
   maxAxisVelocity: 200,
-  pDefaultMaxVelocity: 4,
   motionParams: {
-    move: { ...MOTION_DEFAULTS.move },
-    swingX: { ...MOTION_DEFAULTS.swingX },
+    h: { ...MOTION_DEFAULTS.move },
+    p: { ...MOTION_DEFAULTS.swingX, defaultMaxVelocity: 4 },
   },
   params: {},
 });
@@ -97,7 +96,7 @@ describe("sequenceValidationContextFromSetup", () => {
       safetyRadius: 1850,
       motionParams: {
         ...twoPoint.motionParams,
-        yawY: { ...MOTION_DEFAULTS.yawY },
+        y: { ...MOTION_DEFAULTS.yawY },
       },
     };
     const document = createEmptyDocument({ id: "p", name: "P", author: "t" });

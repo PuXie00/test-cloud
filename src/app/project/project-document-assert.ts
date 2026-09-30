@@ -1,18 +1,19 @@
 import {
   CONTROL_TYPE_RULES,
   controlTypeHasMultiPointSwingParams,
-  ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE,
   maxDriveAxesForControlType,
   SHAPE_DIMENSION_KEYS,
 } from "./configuration-rules";
-import type { ControlType, ShapePresetId } from "./configuration-types";
+import type { ControlType, MotionAxisId, ShapePresetId } from "./configuration-types";
 import {
   CONTROL_TYPE_CODES,
   decodeControlType,
   isControlTypeCode,
   type ControlTypeCode,
 } from "./control-type-code";
-import { PROJECT_SCHEMA_VERSION, type VirtualAxisId } from "./project-document-types";
+import { PROJECT_SCHEMA_VERSION } from "./project-document-types";
+import { motionAxisIdForKind } from "./virtual-axis-mapping";
+import { motionAxisHasDefaultMaxVelocity } from "./virtual-axis-max-velocity";
 import { INSTRUCTION_PRESET_IDS } from "./action-sequence/instruction-registry";
 
 const CURRENT_WIZARD_STEPS = ["objects", "hardware", "binding", "review"] as const;
@@ -346,11 +347,20 @@ const validateShapeDimensions = (
 
 const validateMotionAxisParams = (
   value: unknown,
+  id: MotionAxisId,
   path: string,
   a: StructuralAssertions,
 ): void => {
   const params = a.record(value, path);
   for (const key of MOTION_PARAM_KEYS) a.finite(params[key], `${path}.${key}`);
+  if (motionAxisHasDefaultMaxVelocity(id)) {
+    const defaultMaxVelocity = a.finite(params.defaultMaxVelocity, `${path}.defaultMaxVelocity`);
+    if (defaultMaxVelocity <= 0) {
+      a.fail(`${path}.defaultMaxVelocity`, "expected a positive number");
+    }
+  } else if (params.defaultMaxVelocity !== undefined) {
+    a.fail(`${path}.defaultMaxVelocity`, "expected defaultMaxVelocity only on motion axes p / y");
+  }
 };
 
 const validateMotionParams = (
@@ -360,7 +370,8 @@ const validateMotionParams = (
   a: StructuralAssertions,
 ): void => {
   const motionParams = a.record(value, path);
-  const expectedAxes = CONTROL_TYPE_RULES[controlType].motionAxes;
+  const expectedAxes: readonly MotionAxisId[] =
+    CONTROL_TYPE_RULES[controlType].motionAxes.map(motionAxisIdForKind);
   
   for (const axis of expectedAxes) {
     if (motionParams[axis] === undefined) {
@@ -369,10 +380,10 @@ const validateMotionParams = (
   }
   
   for (const axis of Object.keys(motionParams)) {
-    if (!expectedAxes.includes(axis as never)) {
+    if (!expectedAxes.includes(axis as MotionAxisId)) {
       a.fail(path, `unexpected motion axis "${axis}" for control type "${controlType}"`);
     }
-    validateMotionAxisParams(motionParams[axis], `${path}.${axis}`, a);
+    validateMotionAxisParams(motionParams[axis], axis as MotionAxisId, `${path}.${axis}`, a);
   }
 };
 
@@ -448,23 +459,6 @@ const validateCurrentObject = (value: unknown, path: string, a: StructuralAssert
   const maxAxisVelocity = a.finite(object.maxAxisVelocity, `${path}.maxAxisVelocity`);
   if (maxAxisVelocity <= 0) {
     a.fail(`${path}.maxAxisVelocity`, "expected a positive number");
-  }
-  const enabled: readonly VirtualAxisId[] = ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE[controlType];
-  if (enabled.includes("v2")) {
-    const pDefaultMaxVelocity = a.finite(object.pDefaultMaxVelocity, `${path}.pDefaultMaxVelocity`);
-    if (pDefaultMaxVelocity <= 0) {
-      a.fail(`${path}.pDefaultMaxVelocity`, "expected a positive number");
-    }
-  } else if (object.pDefaultMaxVelocity !== undefined) {
-    a.fail(`${path}.pDefaultMaxVelocity`, "expected pDefaultMaxVelocity only when virtual axis v2 is enabled");
-  }
-  if (enabled.includes("v3")) {
-    const yDefaultMaxVelocity = a.finite(object.yDefaultMaxVelocity, `${path}.yDefaultMaxVelocity`);
-    if (yDefaultMaxVelocity <= 0) {
-      a.fail(`${path}.yDefaultMaxVelocity`, "expected a positive number");
-    }
-  } else if (object.yDefaultMaxVelocity !== undefined) {
-    a.fail(`${path}.yDefaultMaxVelocity`, "expected yDefaultMaxVelocity only when virtual axis v3 is enabled");
   }
   if (object.params !== undefined) {
     const params = a.record(object.params, `${path}.params`);

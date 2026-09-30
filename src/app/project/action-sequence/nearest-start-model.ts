@@ -1,13 +1,15 @@
 import { CONTROL_TYPE_RULES } from "@/app/project/configuration-rules";
 import { decodeControlType } from "@/app/project/control-type-code";
-import type { MotionAxisKind } from "@/app/project/configuration-types";
 import type {
   ControlledObjectConfig,
   DriveAxisBinding,
   MotorConfig,
   VirtualAxisId,
 } from "@/app/project/project-document-types";
-import { motionKindForVirtualAxis } from "@/app/project/virtual-axis-mapping";
+import {
+  motionAxisIdForVirtualAxis,
+  motionParamsOfKind,
+} from "@/app/project/virtual-axis-mapping";
 import { resolveVirtualAxisMaxVelocity } from "@/app/project/virtual-axis-max-velocity";
 import type { NearestStartGeometry, NearestStartMember } from "./nearest-start";
 import { ZERO_VAD, type AxisVad } from "./nearest-start-motion";
@@ -20,11 +22,8 @@ const mountOf = (axis: DriveAxisBinding): { x: number; z: number } => axis.mount
 const positive = (value: number | undefined, fallback: number): number =>
   typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
 
-const paramsFor = (object: ControlledObjectConfig, axis: VirtualAxisId) => {
-  const motionAxes = CONTROL_TYPE_RULES[decodeControlType(object.controlType)].motionAxes;
-  const kind: MotionAxisKind = motionKindForVirtualAxis(motionAxes, axis);
-  return object.motionParams[kind];
-};
+const paramsFor = (object: ControlledObjectConfig, axis: VirtualAxisId) =>
+  object.motionParams[motionAxisIdForVirtualAxis(axis)];
 
 const defaultVadFor = (object: ControlledObjectConfig, axis: VirtualAxisId): AxisVad => {
   if (!object.enabledVirtualAxes.includes(axis)) return ZERO_VAD;
@@ -71,7 +70,14 @@ const baseHeights = (object: ControlledObjectConfig): { baseHeight1: number; bas
     : { baseHeight1: object.pulleyDistance, baseHeight2: 0 };
 
 const maxHeightFor = (object: ControlledObjectConfig): number =>
-  positive(object.motionParams.move?.maxAngle, positive(object.dimensions.h, 1));
+  positive(
+    motionParamsOfKind(
+      CONTROL_TYPE_RULES[decodeControlType(object.controlType)].motionAxes,
+      object.motionParams,
+      "move",
+    )?.maxAngle,
+    positive(object.dimensions.h, 1),
+  );
 
 const twoPointLength = (object: ControlledObjectConfig): number => {
   const [first, second] = object.driveAxes;

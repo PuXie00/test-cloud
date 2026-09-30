@@ -210,8 +210,7 @@ export const JogControl = ({ dimensions }: JogControlProps) => {
                 selectedObjects.map((item) => ({
                   id: item.id,
                   enabledVirtualAxes: ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE[item.controlType],
-                  pDefaultMaxVelocity: item.pDefaultMaxVelocity,
-                  yDefaultMaxVelocity: item.yDefaultMaxVelocity,
+                  motionParams: item.motionParams,
                 })),
                 motors,
               );

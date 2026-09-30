@@ -3,7 +3,11 @@ import type {
   ControlledObject,
   Motor,
 } from "../components/right-sidebar/config-wizard/config-wizard-types";
-import { ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE } from "@/app/project/configuration-rules";
+import {
+  CONTROL_TYPE_RULES,
+  ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE,
+} from "@/app/project/configuration-rules";
+import { motionKindForAxisId } from "@/app/project/virtual-axis-mapping";
 import { deriveMaxAccelerationFromMaxVelocity } from "@/app/project/motion-acceleration";
 import {
   DEFAULT_SWING_AXIS_MAX_VELOCITY,
@@ -153,20 +157,14 @@ const buildHangingBinding = (
   ),
 });
 
-const resolveHKind = (controlType: ControlType): "rotation" | "move" =>
-  controlType === "singlePointRotation" || controlType === "continuousRotation"
-    ? "rotation"
-    : "move";
-
-const resolveYParams = (object: ControlledObject): MotionAxisParams | undefined => {
-  if (object.controlType === "fourPointSwing" || object.controlType === "dualTiltFourPointSwing") {
-    return object.motionParams?.swingY;
-  }
-  if (object.controlType === "multiPointSwing") {
-    return object.motionParams?.yawY;
-  }
-  return undefined;
-};
+/** p / y 只在该控制类型有这根轴时下发 */
+const resolveSwingParams = (
+  object: ControlledObject,
+  id: "p" | "y",
+): MotionAxisParams | undefined =>
+  motionKindForAxisId(CONTROL_TYPE_RULES[object.controlType].motionAxes, id) !== undefined
+    ? object.motionParams?.[id]
+    : undefined;
 
 const prefixedAxisFields = (prefix: "p" | "y", axis: MappedAxis) =>
   prefix === "p"
@@ -204,15 +202,14 @@ export const buildModelParamPayload = (
     {
       id: object.id,
       enabledVirtualAxes: ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE[object.controlType],
-      pDefaultMaxVelocity: object.pDefaultMaxVelocity,
-      yDefaultMaxVelocity: object.yDefaultMaxVelocity,
+      motionParams: object.motionParams,
     },
     motors,
   );
 
-  const h = mapAxis(object.motionParams?.[resolveHKind(object.controlType)], maxVelocity.v1);
-  const pRaw = object.motionParams?.swingX;
-  const yRaw = resolveYParams(object);
+  const h = mapAxis(object.motionParams?.h, maxVelocity.v1);
+  const pRaw = resolveSwingParams(object, "p");
+  const yRaw = resolveSwingParams(object, "y");
   const p = pRaw
     ? mapAxis(pRaw, maxVelocity.v2 ?? DEFAULT_SWING_AXIS_MAX_VELOCITY)
     : undefined;
@@ -240,9 +237,9 @@ export const buildModelParamPayload = (
       hMaxDeceleration: h.maxDeceleration,
       hAbnormalDeceleration: h.abnormalDeceleration,
       ...(p ? prefixedAxisFields("p", p) : {}),
-      ...(p && object.pDefaultMaxVelocity !== undefined ? { pDefaultMaxVelocity: object.pDefaultMaxVelocity } : {}),
+      ...(p && pRaw?.defaultMaxVelocity !== undefined ? { pDefaultMaxVelocity: pRaw.defaultMaxVelocity } : {}),
       ...(y ? prefixedAxisFields("y", y) : {}),
-      ...(y && object.yDefaultMaxVelocity !== undefined ? { yDefaultMaxVelocity: object.yDefaultMaxVelocity } : {}),
+      ...(y && yRaw?.defaultMaxVelocity !== undefined ? { yDefaultMaxVelocity: yRaw.defaultMaxVelocity } : {}),
     },
   };
 };

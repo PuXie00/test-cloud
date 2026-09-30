@@ -1,7 +1,7 @@
 import type {
   ControlType,
+  MotionAxisFieldKey,
   MotionAxisKind,
-  MotionAxisParams,
   ShapeDimensions,
   ShapePresetId,
 } from "@/app/project/configuration-types";
@@ -208,7 +208,7 @@ export const SHAPE_FIELD_KEYS = SHAPE_DIMENSION_KEYS;
 type MotionFieldTier = "common" | "advanced";
 
 export type MotionAxisFieldDefinition = {
-  key: keyof MotionAxisParams;
+  key: MotionAxisFieldKey;
   label: string;
   unit: string;
   tier: MotionFieldTier;

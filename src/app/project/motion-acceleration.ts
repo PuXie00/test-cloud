@@ -1,4 +1,9 @@
-import type { MotionAxisKind, MotionAxisParams } from "./configuration-types";
+import type {
+  MotionAxisId,
+  MotionAxisParams,
+  MotionParamsByAxis,
+} from "./configuration-types";
+import { normalizeAxisDefaultMaxVelocity } from "./virtual-axis-max-velocity";
 
 const round1 = (value: number) => Math.round(value * 10) / 10;
 
@@ -37,13 +42,11 @@ export const normalizeMotionAxisParams = (params: MotionAxisParams): MotionAxisP
   ...deriveMotionAxisAccelerations(params),
 });
 
-export const normalizeMotionParams = (
-  motionParams: Partial<Record<MotionAxisKind, MotionAxisParams>>,
-): Partial<Record<MotionAxisKind, MotionAxisParams>> => {
-  const next: Partial<Record<MotionAxisKind, MotionAxisParams>> = { ...motionParams };
-  for (const axis of Object.keys(next) as MotionAxisKind[]) {
-    const params = next[axis];
-    if (params) next[axis] = normalizeMotionAxisParams(params);
+export const normalizeMotionParams = (motionParams: MotionParamsByAxis): MotionParamsByAxis => {
+  const next: MotionParamsByAxis = { ...motionParams };
+  for (const id of Object.keys(next) as MotionAxisId[]) {
+    const params = next[id];
+    if (params) next[id] = normalizeAxisDefaultMaxVelocity(id, normalizeMotionAxisParams(params));
   }
   return next;
 };

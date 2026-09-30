@@ -59,7 +59,7 @@
           }
         ],
         "motionParams": {
-          "move": {
+          "h": {
             "speed": 50,
             "minAngle": 0,
             "maxAngle": 1000,
@@ -117,7 +117,7 @@
           }
         ],
         "motionParams": {
-          "rotation": {
+          "h": {
             "speed": 30,
             "minAngle": 0,
             "maxAngle": 360,

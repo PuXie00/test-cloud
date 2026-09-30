@@ -3,7 +3,7 @@ import { CollapsePanel } from "@/app/components/ics/collapse-panel";
 import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-input";
 import { Checkbox } from "@/app/components/ui/checkbox";
 import { Input } from "@/app/components/ui/input";
-import type { MotionAxisKind, MotionAxisParams } from "@/app/project/configuration-types";
+import type { MotionAxisFieldKey, MotionAxisKind, MotionAxisParams } from "@/app/project/configuration-types";
 import {
   MOTION_AXIS_FIELD_DEFINITIONS,
   MOTION_DEFAULTS,
@@ -16,10 +16,10 @@ type MotionAxisSectionProps = {
   value: MotionAxisParams;
   onChange: (value: MotionAxisParams) => void;
   /** 按字段写入（批量编辑时避免用整对象覆盖其他物体的未改字段） */
-  onFieldChange?: (key: keyof MotionAxisParams, next: number) => void;
-  excludeKeys?: (keyof MotionAxisParams)[];
+  onFieldChange?: (key: MotionAxisFieldKey, next: number) => void;
+  excludeKeys?: (MotionAxisFieldKey)[];
   /** 批量：这些 key 的值在选中物体间不一致 */
-  mixedKeys?: ReadonlySet<keyof MotionAxisParams>;
+  mixedKeys?: ReadonlySet<MotionAxisFieldKey>;
   autoSpeed?: {
     enabled: boolean;
     summary: ReactNode;
@@ -30,7 +30,7 @@ type MotionAxisSectionProps = {
 };
 
 /** 自定义速度时虚轴可改的字段；最大轴速度只在物体级设置一次 */
-const CUSTOM_SPEED_KEYS = new Set<keyof MotionAxisParams>(["speed"]);
+const CUSTOM_SPEED_KEYS = new Set<MotionAxisFieldKey>(["speed"]);
 
 export const MotionAxisSection = ({
   axis,
@@ -42,7 +42,7 @@ export const MotionAxisSection = ({
   autoSpeed,
 }: MotionAxisSectionProps) => {
   const fields = MOTION_AXIS_FIELD_DEFINITIONS[axis];
-  const hiddenKeys = new Set<keyof MotionAxisParams>(excludeKeys);
+  const hiddenKeys = new Set<MotionAxisFieldKey>(excludeKeys);
   const shouldHideSpeedFields = autoSpeed?.enabled && !autoSpeed.customEnabled;
   const commonFields = fields.filter(
     (field) =>
@@ -58,7 +58,7 @@ export const MotionAxisSection = ({
   );
   const speedFields = fields.filter((field) => CUSTOM_SPEED_KEYS.has(field.key));
 
-  const handleFieldChange = (key: keyof MotionAxisParams, next: number) => {
+  const handleFieldChange = (key: MotionAxisFieldKey, next: number) => {
     if (onFieldChange) {
       onFieldChange(key, next);
       return;

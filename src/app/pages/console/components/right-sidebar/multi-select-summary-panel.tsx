@@ -21,6 +21,7 @@ import {
 import { ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE } from "@/app/project/configuration-rules";
 import type {
   ControlType,
+  MotionAxisFieldKey,
   MotionAxisKind,
   MotionAxisParams,
 } from "@/app/project/configuration-types";
@@ -33,8 +34,11 @@ import {
   DEFAULT_SWING_AXIS_MAX_VELOCITY,
   clampMotionParamsToAxisMax,
   resolveVirtualAxisMaxVelocity,
+  swingAxisMaxVelocityOf,
+  withSwingAxisMaxVelocity,
 } from "@/app/project/virtual-axis-max-velocity";
 import type { VirtualAxisId } from "@/app/project/project-document-types";
+import { motionAxisIdForKind } from "@/app/project/virtual-axis-mapping";
 import { getVirtualAxisMeta } from "@/app/pages/console/components/action-builder/virtual-axis-display";
 import {
   CONTROL_TYPE_DEFINITION_BY_ID,
@@ -143,7 +147,11 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
           selectedObjects.map((object) => {
             const control =
               object.motionSpeedControl ??
-              inferMotionSpeedControl(object.motionParams ?? {}, object.maxAxisVelocity);
+              inferMotionSpeedControl(
+                object.motionParams ?? {},
+                object.maxAxisVelocity,
+                CONTROL_TYPE_DEFINITION_BY_ID[object.controlType].motionAxes,
+              );
             return control.speedRatio;
           }),
         )
@@ -158,14 +166,16 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
   const sharedPMax = showPMax
     ? getSharedValue(
         selectedObjects.map(
-          (object) => object.pDefaultMaxVelocity ?? DEFAULT_SWING_AXIS_MAX_VELOCITY,
+          (object) =>
+            swingAxisMaxVelocityOf(object.motionParams, "v2") ?? DEFAULT_SWING_AXIS_MAX_VELOCITY,
         ),
       )
     : null;
   const sharedYMax = showYMax
     ? getSharedValue(
         selectedObjects.map(
-          (object) => object.yDefaultMaxVelocity ?? DEFAULT_SWING_AXIS_MAX_VELOCITY,
+          (object) =>
+            swingAxisMaxVelocityOf(object.motionParams, "v3") ?? DEFAULT_SWING_AXIS_MAX_VELOCITY,
         ),
       )
     : null;
@@ -179,16 +189,16 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
   );
 
   const readAxisParams = (object: ControlledObject, axis: MotionAxisKind): MotionAxisParams =>
-    object.motionParams?.[axis] ?? MOTION_DEFAULTS[axis];
+    object.motionParams?.[motionAxisIdForKind(axis)] ?? MOTION_DEFAULTS[axis];
 
   const getSharedAxisField = (
     axis: MotionAxisKind,
-    key: keyof MotionAxisParams,
+    key: MotionAxisFieldKey,
   ): SharedValue<number> =>
     getSharedValue(selectedObjects.map((object) => readAxisParams(object, axis)[key]));
 
-  const getAxisMixedKeys = (axis: MotionAxisKind): Set<keyof MotionAxisParams> => {
-    const mixed = new Set<keyof MotionAxisParams>();
+  const getAxisMixedKeys = (axis: MotionAxisKind): Set<MotionAxisFieldKey> => {
+    const mixed = new Set<MotionAxisFieldKey>();
     for (const field of MOTION_AXIS_FIELD_DEFINITIONS[axis]) {
       if (getSharedAxisField(axis, field.key) === MIXED) mixed.add(field.key);
     }
@@ -294,8 +304,7 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
       {
         id: object.id,
         enabledVirtualAxes: ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE[object.controlType],
-        pDefaultMaxVelocity: object.pDefaultMaxVelocity,
-        yDefaultMaxVelocity: object.yDefaultMaxVelocity,
+        motionParams: object.motionParams,
       },
       motors,
     );
@@ -307,7 +316,11 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
       const objectAxes = CONTROL_TYPE_DEFINITION_BY_ID[object.controlType].motionAxes;
       const speedControl =
         object.motionSpeedControl ??
-        inferMotionSpeedControl(motionParams, object.maxAxisVelocity);
+        inferMotionSpeedControl(
+          motionParams,
+          object.maxAxisVelocity,
+          CONTROL_TYPE_DEFINITION_BY_ID[object.controlType].motionAxes,
+        );
       return {
         maxAxisVelocity: next,
         motionParams: deriveMotionParamsFromSpeedControl(
@@ -321,35 +334,22 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
     });
   };
 
-  const handlePMaxVelocityChange = (next: number) => {
+  const patchSwingAxisMaxVelocity = (axis: "v2" | "v3", next: number) => {
     patchAll((object) => {
-      if (!objectHasVirtualAxis(object, "v2")) return {};
-      const nextObject = { ...object, pDefaultMaxVelocity: next };
+      if (!objectHasVirtualAxis(object, axis)) return {};
+      const motionParams = withSwingAxisMaxVelocity(object.motionParams ?? {}, axis, next);
       return {
-        pDefaultMaxVelocity: next,
         motionParams: clampMotionParamsToAxisMax(
-          object.motionParams ?? {},
-          CONTROL_TYPE_DEFINITION_BY_ID[object.controlType].motionAxes,
-          resolvedMaxForObject(nextObject),
+          motionParams,
+          resolvedMaxForObject({ ...object, motionParams }),
         ),
       };
     });
   };
 
-  const handleYMaxVelocityChange = (next: number) => {
-    patchAll((object) => {
-      if (!objectHasVirtualAxis(object, "v3")) return {};
-      const nextObject = { ...object, yDefaultMaxVelocity: next };
-      return {
-        yDefaultMaxVelocity: next,
-        motionParams: clampMotionParamsToAxisMax(
-          object.motionParams ?? {},
-          CONTROL_TYPE_DEFINITION_BY_ID[object.controlType].motionAxes,
-          resolvedMaxForObject(nextObject),
-        ),
-      };
-    });
-  };
+  const handlePMaxVelocityChange = (next: number) => patchSwingAxisMaxVelocity("v2", next);
+
+  const handleYMaxVelocityChange = (next: number) => patchSwingAxisMaxVelocity("v3", next);
 
   const handleSpeedRatioChange = (speedRatio: number) => {
     if (sharedMotionAxes.length === 0) return;
@@ -358,7 +358,11 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
       const objectAxes = CONTROL_TYPE_DEFINITION_BY_ID[object.controlType].motionAxes;
       const speedControl =
         object.motionSpeedControl ??
-        inferMotionSpeedControl(motionParams, object.maxAxisVelocity);
+        inferMotionSpeedControl(
+          motionParams,
+          object.maxAxisVelocity,
+          CONTROL_TYPE_DEFINITION_BY_ID[object.controlType].motionAxes,
+        );
       const nextControl = { ...speedControl, speedRatio };
       return {
         motionSpeedControl: nextControl,
@@ -375,7 +379,7 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
 
   const handleMotionFieldChange = (
     axis: MotionAxisKind,
-    key: keyof MotionAxisParams,
+    key: MotionAxisFieldKey,
     next: number,
   ) => {
     patchAll((object) => {
@@ -384,12 +388,17 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
       const nextAxis = normalizeMotionAxisParams({ ...current, [key]: next });
       const speedControl =
         object.motionSpeedControl ??
-        inferMotionSpeedControl(motionParams, object.maxAxisVelocity);
-      const override = speedControl.overrides?.[axis];
+        inferMotionSpeedControl(
+          motionParams,
+          object.maxAxisVelocity,
+          CONTROL_TYPE_DEFINITION_BY_ID[object.controlType].motionAxes,
+        );
+      const id = motionAxisIdForKind(axis);
+      const override = speedControl.overrides?.[id];
       return {
         motionParams: {
           ...motionParams,
-          [axis]: nextAxis,
+          [id]: nextAxis,
         },
         ...(override?.enabled && key === "speed"
           ? {
@@ -397,7 +406,7 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
                 ...speedControl,
                 overrides: {
                   ...(speedControl.overrides ?? {}),
-                  [axis]: {
+                  [id]: {
                     ...override,
                     speed: next,
                   },
@@ -420,7 +429,7 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
       return {
         motionParams: {
           ...motionParams,
-          [axis]: normalizeMotionAxisParams({
+          [motionAxisIdForKind(axis)]: normalizeMotionAxisParams({
             ...current,
             [rangeConfig.minKey]: range.min,
             [rangeConfig.maxKey]: range.max,
@@ -439,13 +448,17 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
       if (!objectAxes.some((item) => item === axis)) return {};
       const speedControl =
         object.motionSpeedControl ??
-        inferMotionSpeedControl(motionParams, object.maxAxisVelocity);
+        inferMotionSpeedControl(
+          motionParams,
+          object.maxAxisVelocity,
+          CONTROL_TYPE_DEFINITION_BY_ID[object.controlType].motionAxes,
+        );
       const axisParams = readAxisParams(object, axis);
       const nextControl = {
         ...speedControl,
         overrides: {
           ...(speedControl.overrides ?? {}),
-          [axis]: {
+          [motionAxisIdForKind(axis)]: {
             enabled,
             speed: axisParams.speed,
           },
@@ -774,8 +787,9 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
                       inferMotionSpeedControl(
                         object.motionParams ?? {},
                         object.maxAxisVelocity,
+                        CONTROL_TYPE_DEFINITION_BY_ID[object.controlType].motionAxes,
                       );
-                    return control.overrides?.[axis]?.enabled ?? false;
+                    return control.overrides?.[motionAxisIdForKind(axis)]?.enabled ?? false;
                   }),
                 );
                 return (

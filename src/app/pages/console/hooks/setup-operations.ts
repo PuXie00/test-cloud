@@ -3,7 +3,6 @@ import {
   CONTROL_TYPE_RULES,
   controlTypeHasNoDriveAxes,
   defaultMotionParamsForControlType,
-  ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE,
   ensureMinimumDriveAxes,
   maxDriveAxesForControlType,
   resolveSwingYawModelParams,
@@ -13,8 +12,7 @@ import {
   DEFAULT_MODEL_RUN_DIRECTION,
   DEFAULT_PULLEY_DISTANCE,
 } from "@/app/project/hoist-point-defaults";
-import { DEFAULT_MAX_AXIS_VELOCITY } from "@/app/project/motion-speed";
-import { virtualAxisMaxFieldsFor } from "@/app/project/virtual-axis-max-velocity";
+import { DEFAULT_MAX_AXIS_VELOCITY, keepSpeedOverrides } from "@/app/project/motion-speed";
 import type { WizardSetupState } from "@/app/project/setup-persist";
 import type {
   AxisDefinition,
@@ -40,6 +38,7 @@ import {
   allocateSetupEntityIdsInProject,
   toSetupEntityIdSource,
 } from "./setup-entity-id";
+import { MOTION_AXIS_IDS, motionKindForAxisId } from "@/app/project/virtual-axis-mapping";
 
 export type MultiPointAxesConfigurationInput = {
   axes: AxisDefinition[];
@@ -301,8 +300,6 @@ export const changeObjectControlType = (
           initialTiltDirection: _dropInitialTilt,
           mountRotation: _dropMountRotation,
           mountLayout: _dropMountLayout,
-          pDefaultMaxVelocity: _dropPMaxVelocity,
-          yDefaultMaxVelocity: _dropYMaxVelocity,
           ...rest
         } = item;
         return {
@@ -312,7 +309,6 @@ export const changeObjectControlType = (
           axes: [],
           motionParams: defaultMotionParamsForControlType(resolved),
           ...resolveSwingYawModelParams(resolved),
-          ...virtualAxisMaxFieldsFor(ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE[resolved], item),
         };
       }),
       motors: state.motors.map((motor) =>
@@ -323,11 +319,20 @@ export const changeObjectControlType = (
 
   const motionParams = defaultMotionParamsForControlType(resolved);
   const requiredAxisType = requiredAxisTypeForControlType(resolved);
-  for (const axis of CONTROL_TYPE_RULES[resolved].motionAxes) {
-    if (object.motionParams?.[axis]) {
-      motionParams[axis] = object.motionParams[axis];
-    }
+  // h 类型变了（升降 ↔ 旋转，单位不同）重置为默认值；p / y 沿用原参数
+  const hKindChanged =
+    motionKindForAxisId(CONTROL_TYPE_RULES[object.controlType].motionAxes, "h") !==
+    motionKindForAxisId(CONTROL_TYPE_RULES[resolved].motionAxes, "h");
+  const keptAxisIds = MOTION_AXIS_IDS.filter(
+    (id) =>
+      motionParams[id] !== undefined &&
+      object.motionParams?.[id] !== undefined &&
+      !(id === "h" && hKindChanged),
+  );
+  for (const id of keptAxisIds) {
+    motionParams[id] = object.motionParams?.[id];
   }
+  const motionSpeedControl = keepSpeedOverrides(object.motionSpeedControl, keptAxisIds);
 
   const templateKeys = ensureMinimumDriveAxes(resolved, []).map((axis) => ({ key: axis.key }));
   const mergedAxes = mergeTemplateAxes(resolved, templateKeys, object.axes);
@@ -344,8 +349,6 @@ export const changeObjectControlType = (
         initialTiltDirection: _dropInitialTilt,
         mountRotation: _dropMountRotation,
         mountLayout: _dropMountLayout,
-        pDefaultMaxVelocity: _dropPMaxVelocity,
-        yDefaultMaxVelocity: _dropYMaxVelocity,
         ...rest
       } = item;
 
@@ -354,12 +357,12 @@ export const changeObjectControlType = (
         controlType: resolved,
         rotation: normalizeObjectRotationDeg(item.rotation, resolved),
         motionParams,
+        ...(motionSpeedControl !== undefined ? { motionSpeedControl } : {}),
         axes: nextAxes,
         pulleyDistance: item.pulleyDistance ?? DEFAULT_PULLEY_DISTANCE,
         modelRunDirection: item.modelRunDirection ?? DEFAULT_MODEL_RUN_DIRECTION,
         maxAxisVelocity: item.maxAxisVelocity ?? DEFAULT_MAX_AXIS_VELOCITY,
         ...resolveSwingYawModelParams(resolved, item),
-        ...virtualAxisMaxFieldsFor(ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE[resolved], item),
       };
     }),
     motors: state.motors.map((motor) => {

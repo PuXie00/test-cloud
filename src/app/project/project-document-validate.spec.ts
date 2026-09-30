@@ -38,7 +38,7 @@ const makeObject = (
   modelRunDirection: 1,
   driveAxes: [{ key: "0", mount: { x: 0, z: 0 } }],
   maxAxisVelocity: 200,
-  motionParams: { move: { ...MOTION_DEFAULTS.move } },
+  motionParams: { h: { ...MOTION_DEFAULTS.move } },
   params: {},
   ...overrides,
 });
@@ -248,7 +248,7 @@ describe("project-motion-readiness sequence gate", () => {
 });
 
 describe("virtual axis max velocity fields", () => {
-  it("rejects missing pDefaultMaxVelocity when v2 is enabled", () => {
+  it("rejects motion axis p without defaultMaxVelocity", () => {
     const document = documentOf({
       setup: {
         plcs: [],
@@ -258,8 +258,8 @@ describe("virtual axis max velocity fields", () => {
             controlType: 6,
             enabledVirtualAxes: ["v1", "v2"],
             motionParams: {
-              move: { ...MOTION_DEFAULTS.move },
-              swingX: { ...MOTION_DEFAULTS.swingX },
+              h: { ...MOTION_DEFAULTS.move },
+              p: { ...MOTION_DEFAULTS.swingX, defaultMaxVelocity: undefined },
             },
             driveAxes: [
               { key: "0", mount: { x: 0, z: 0 } },
@@ -270,16 +270,26 @@ describe("virtual axis max velocity fields", () => {
         alignment: {},
       },
     });
-    expect(() => assertProjectDocumentStructure(document)).toThrow(/pDefaultMaxVelocity/);
+    expect(() => assertProjectDocumentStructure(document)).toThrow(/motionParams\.p\.defaultMaxVelocity/);
   });
 
-  it("rejects pDefaultMaxVelocity on v1-only objects", () => {
+  it("rejects motionParams keyed by motion kind instead of h / p / y", () => {
     const document = documentOf();
-    document.setup.controlledObjects[0] = makeObject(OBJECT_A, "A", { pDefaultMaxVelocity: 3 });
-    expect(() => assertProjectDocumentStructure(document)).toThrow(/pDefaultMaxVelocity/);
+    document.setup.controlledObjects[0] = makeObject(OBJECT_A, "A", {
+      motionParams: { move: { ...MOTION_DEFAULTS.move } } as never,
+    });
+    expect(() => assertProjectDocumentStructure(document)).toThrow(/motion axis "h"/);
   });
 
-  it("accepts swing objects with p/y max velocity", () => {
+  it("rejects defaultMaxVelocity on motion axis h", () => {
+    const document = documentOf();
+    document.setup.controlledObjects[0] = makeObject(OBJECT_A, "A", {
+      motionParams: { h: { ...MOTION_DEFAULTS.move, defaultMaxVelocity: 3 } },
+    });
+    expect(() => assertProjectDocumentStructure(document)).toThrow(/motionParams\.h\.defaultMaxVelocity/);
+  });
+
+  it("accepts swing objects with defaultMaxVelocity on p / y", () => {
     const document = documentOf({
       setup: {
         plcs: [],
@@ -288,15 +298,13 @@ describe("virtual axis max velocity fields", () => {
           makeObject(OBJECT_A, "A", {
             controlType: 7,
             enabledVirtualAxes: ["v1", "v2", "v3"],
-            pDefaultMaxVelocity: 3,
-            yDefaultMaxVelocity: 3,
             safetyRadius: 1000,
             initialTiltDirection: 0,
             mountRotation: 0,
             motionParams: {
-              move: { ...MOTION_DEFAULTS.move },
-              swingX: { ...MOTION_DEFAULTS.swingX },
-              yawY: { ...MOTION_DEFAULTS.yawY },
+              h: { ...MOTION_DEFAULTS.move },
+              p: { ...MOTION_DEFAULTS.swingX },
+              y: { ...MOTION_DEFAULTS.yawY },
             },
             driveAxes: [
               { key: "0", mount: { x: 0, z: 0 } },

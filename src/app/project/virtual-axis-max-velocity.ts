@@ -1,6 +1,14 @@
-import type { MotionAxisKind, MotionAxisParams } from "./configuration-types";
+import type {
+  MotionAxisId,
+  MotionAxisParams,
+  MotionParamsByAxis,
+} from "./configuration-types";
 import type { VirtualAxisId } from "./project-document-types";
-import { virtualAxisForMotionKind } from "./virtual-axis-mapping";
+import {
+  MOTION_AXIS_IDS,
+  motionAxisIdForVirtualAxis,
+  virtualAxisForMotionAxisId,
+} from "./virtual-axis-mapping";
 
 export const UNBOUND_V1_MAX_VELOCITY = 500;
 export const DEFAULT_SWING_AXIS_MAX_VELOCITY = 3;
@@ -13,8 +21,7 @@ export type MotorVelocitySource = {
 export type VirtualAxisMaxObject = {
   id: number;
   enabledVirtualAxes: readonly VirtualAxisId[];
-  pDefaultMaxVelocity?: number;
-  yDefaultMaxVelocity?: number;
+  motionParams?: MotionParamsByAxis;
 };
 
 const isPositiveFinite = (value: unknown): value is number =>
@@ -23,19 +30,41 @@ const isPositiveFinite = (value: unknown): value is number =>
 const positiveOrDefault = (value: unknown, fallback: number): number =>
   isPositiveFinite(value) ? value : fallback;
 
-export const virtualAxisMaxFieldsFor = (
-  enabledVirtualAxes: readonly VirtualAxisId[],
-  current?: { pDefaultMaxVelocity?: number; yDefaultMaxVelocity?: number },
-): { pDefaultMaxVelocity?: number; yDefaultMaxVelocity?: number } => {
-  const enabled = new Set(enabledVirtualAxes);
+/** p / y（虚轴 2/3）带 defaultMaxVelocity；h（虚轴 1，升降/旋转）不带 */
+export const motionAxisHasDefaultMaxVelocity = (id: MotionAxisId): boolean => id !== "h";
+
+/** p / y 补齐正的 defaultMaxVelocity，h 去掉该字段 */
+export const normalizeAxisDefaultMaxVelocity = (
+  id: MotionAxisId,
+  params: MotionAxisParams,
+): MotionAxisParams => {
+  const { defaultMaxVelocity, ...rest } = params;
+  if (!motionAxisHasDefaultMaxVelocity(id)) return rest;
   return {
-    ...(enabled.has("v2")
-      ? { pDefaultMaxVelocity: positiveOrDefault(current?.pDefaultMaxVelocity, DEFAULT_SWING_AXIS_MAX_VELOCITY) }
-      : {}),
-    ...(enabled.has("v3")
-      ? { yDefaultMaxVelocity: positiveOrDefault(current?.yDefaultMaxVelocity, DEFAULT_SWING_AXIS_MAX_VELOCITY) }
-      : {}),
+    ...rest,
+    defaultMaxVelocity: positiveOrDefault(defaultMaxVelocity, DEFAULT_SWING_AXIS_MAX_VELOCITY),
   };
+};
+
+/** 读取虚轴 2/3 在 motionParams 中配置的最大速度 */
+export const swingAxisMaxVelocityOf = (
+  motionParams: MotionParamsByAxis | undefined,
+  axis: "v2" | "v3",
+): number | undefined => {
+  const value = motionParams?.[motionAxisIdForVirtualAxis(axis)]?.defaultMaxVelocity;
+  return isPositiveFinite(value) ? value : undefined;
+};
+
+/** 写入虚轴 2/3 的最大速度；motionParams 中无对应轴时原样返回 */
+export const withSwingAxisMaxVelocity = (
+  motionParams: MotionParamsByAxis,
+  axis: "v2" | "v3",
+  value: number,
+): MotionParamsByAxis => {
+  const id = motionAxisIdForVirtualAxis(axis);
+  const params = motionParams[id];
+  if (!params) return motionParams;
+  return { ...motionParams, [id]: { ...params, defaultMaxVelocity: value } };
 };
 
 const v1MaxFromMotors = (
@@ -62,30 +91,24 @@ export const resolveVirtualAxisMaxVelocity = (
       resolved.v1 = v1MaxFromMotors(object.id, motors);
       continue;
     }
-    if (axis === "v2" && isPositiveFinite(object.pDefaultMaxVelocity)) {
-      resolved.v2 = object.pDefaultMaxVelocity;
-      continue;
-    }
-    if (axis === "v3" && isPositiveFinite(object.yDefaultMaxVelocity)) {
-      resolved.v3 = object.yDefaultMaxVelocity;
-    }
+    const max = swingAxisMaxVelocityOf(object.motionParams, axis);
+    if (max !== undefined) resolved[axis] = max;
   }
   return resolved;
 };
 
 export const clampMotionParamsToAxisMax = (
-  motionParams: Partial<Record<MotionAxisKind, MotionAxisParams>>,
-  motionAxes: readonly MotionAxisKind[],
+  motionParams: MotionParamsByAxis,
   resolved: Partial<Record<VirtualAxisId, number>>,
-): Partial<Record<MotionAxisKind, MotionAxisParams>> => {
-  const next: Partial<Record<MotionAxisKind, MotionAxisParams>> = { ...motionParams };
-  for (const axis of motionAxes) {
-    const current = next[axis];
+): MotionParamsByAxis => {
+  const next: MotionParamsByAxis = { ...motionParams };
+  for (const id of MOTION_AXIS_IDS) {
+    const current = next[id];
     if (!current) continue;
-    const cap = resolved[virtualAxisForMotionKind(axis)];
+    const cap = resolved[virtualAxisForMotionAxisId(id)];
     if (cap === undefined) continue;
     if (current.speed <= cap) continue;
-    next[axis] = { ...current, speed: cap };
+    next[id] = { ...current, speed: cap };
   }
   return next;
 };

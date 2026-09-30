@@ -18,13 +18,11 @@ import {
 } from "./hoist-point-defaults";
 import { encodeControlType } from "./control-type-code";
 import { normalizeMaxAxisVelocity } from "./motion-speed";
-import { virtualAxisMaxFieldsFor } from "./virtual-axis-max-velocity";
 import { normalizeMotionParams } from "./motion-acceleration";
 import type {
   ControlType,
   ControlledObjectConfig,
-  MotionAxisKind,
-  MotionAxisParams,
+  MotionParamsByAxis,
   MotorConfig,
   MountLayout,
   PlcConfig,
@@ -89,7 +87,7 @@ const resolveShapeDimensions = (object: ControlledObject): ShapeDimensions =>
 const resolveMotionParams = (
   object: ControlledObject,
   controlType: ControlType,
-): Partial<Record<MotionAxisKind, MotionAxisParams>> => {
+): MotionParamsByAxis => {
   const raw =
     Object.keys(object.motionParams ?? {}).length > 0
       ? (object.motionParams ?? {})
@@ -140,7 +138,6 @@ export const wizardControlledObjectToConfig = (object: ControlledObject): Contro
       object.modelRunDirection ?? DEFAULT_MODEL_RUN_DIRECTION,
     ),
     maxAxisVelocity: normalizeMaxAxisVelocity(object.maxAxisVelocity),
-    ...virtualAxisMaxFieldsFor(ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE[controlType], object),
     ...(swingYaw.safetyRadius !== undefined
       ? {
           safetyRadius: roundProjectCoordinate(normalizeSafetyRadius(swingYaw.safetyRadius)),

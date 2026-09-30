@@ -49,8 +49,8 @@ const twoPoint: ControlledObject = {
   rotation: { x: 0, y: 0, z: 0 },
   color: "#869398",
   motionParams: {
-    move: axisParams({ minAngle: 10, maxAngle: 800 }),
-    swingX: axisParams({ minAngle: -30, maxAngle: 30 }),
+    h: axisParams({ minAngle: 10, maxAngle: 800 }),
+    p: axisParams({ minAngle: -30, maxAngle: 30 }),
   },
   maxAxisVelocity: 200,
   pulleyDistance: 120,
@@ -68,9 +68,9 @@ const fourPoint: ControlledObject = {
   controlType: "fourPointSwing",
   dimensions: { w: 1800, h: 1000, d: 900 },
   motionParams: {
-    move: axisParams({ minAngle: 0, maxAngle: 800 }),
-    swingX: axisParams({ minAngle: -20, maxAngle: 20 }),
-    swingY: axisParams({ minAngle: -15, maxAngle: 15 }),
+    h: axisParams({ minAngle: 0, maxAngle: 800 }),
+    p: axisParams({ minAngle: -20, maxAngle: 20 }),
+    y: axisParams({ minAngle: -15, maxAngle: 15 }),
   },
   axes: [
     { key: "0", custom: false, mount: { x: -400, z: -200 } },
@@ -90,9 +90,9 @@ const multiPoint: ControlledObject = {
   pulleyDistance: 80,
   modelRunDirection: 2,
   motionParams: {
-    move: axisParams({ minAngle: 10, maxAngle: 800 }),
-    swingX: axisParams({ minAngle: -20, maxAngle: 20 }),
-    yawY: axisParams({ minAngle: -15, maxAngle: 15 }),
+    h: axisParams({ minAngle: 10, maxAngle: 800 }),
+    p: axisParams({ minAngle: -20, maxAngle: 20 }),
+    y: axisParams({ minAngle: -15, maxAngle: 15 }),
   },
   axes: [
     { key: "0", custom: true, mount: { x: 100, z: 100 } },

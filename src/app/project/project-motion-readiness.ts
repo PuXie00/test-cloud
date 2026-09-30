@@ -1,5 +1,4 @@
 import { buildMotorOverspeedObjects } from "@/app/kinematics/motor-overspeed-from-setup";
-import type { MotionAxisKind } from "./configuration-types";
 import { decodeControlType } from "./control-type-code";
 import {
   hasBlockingSequenceIssues,
@@ -7,7 +6,7 @@ import {
   type SequenceValidationContext,
 } from "./action-sequence/validate-sequence";
 import { isSequenceProgramItemRef, type ControlledObjectConfig, type MotorConfig, type ProjectDocument } from "./project-document-types";
-import { motionKindForVirtualAxis } from "./virtual-axis-mapping";
+import { motionAxisIdForVirtualAxis } from "./virtual-axis-mapping";
 import { resolveVirtualAxisMaxVelocity } from "./virtual-axis-max-velocity";
 
 export type MotionRepairIssue = {
@@ -24,12 +23,10 @@ const limitsFromObject = (
   object: ControlledObjectConfig,
   motors: readonly MotorConfig[],
 ): SequenceValidationContext["objects"][number]["limits"] => {
-  const kinds = Object.keys(object.motionParams) as MotionAxisKind[];
   const limits: SequenceValidationContext["objects"][number]["limits"] = {};
   const resolved = resolveVirtualAxisMaxVelocity(object, motors);
   for (const axis of object.enabledVirtualAxes) {
-    const kind = motionKindForVirtualAxis(kinds, axis);
-    const params = object.motionParams[kind];
+    const params = object.motionParams[motionAxisIdForVirtualAxis(axis)];
     if (!params) continue;
     limits[axis] = {
       min: params.minAngle,

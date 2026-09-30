@@ -24,7 +24,6 @@ import {
 } from "@/app/project/configuration-rules";
 import type { ControlType } from "@/app/project/configuration-types";
 import {
-  CONTROL_TYPE_DEFINITION_BY_ID,
   defaultShapeDimensions,
   SHAPE_DEFINITIONS,
   toEngineDimensions,
@@ -42,7 +41,6 @@ import { DEFAULT_MAX_AXIS_VELOCITY } from "@/app/project/motion-speed";
 import {
   clampMotionParamsToAxisMax,
   resolveVirtualAxisMaxVelocity,
-  virtualAxisMaxFieldsFor,
 } from "@/app/project/virtual-axis-max-velocity";
 import {
   defaultMotorParamsFromModel,
@@ -149,19 +147,17 @@ const clampObjectsToResolvedAxisMax = (
   if (objectIds.size === 0) return objects;
   return objects.map((item) => {
     if (!objectIds.has(item.id)) return item;
-    const axes = CONTROL_TYPE_DEFINITION_BY_ID[item.controlType].motionAxes;
     const resolved = resolveVirtualAxisMaxVelocity(
       {
         id: item.id,
         enabledVirtualAxes: ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE[item.controlType],
-        pDefaultMaxVelocity: item.pDefaultMaxVelocity,
-        yDefaultMaxVelocity: item.yDefaultMaxVelocity,
+        motionParams: item.motionParams,
       },
       motors,
     );
     return {
       ...item,
-      motionParams: clampMotionParamsToAxisMax(item.motionParams ?? {}, axes, resolved),
+      motionParams: clampMotionParamsToAxisMax(item.motionParams ?? {}, resolved),
     };
   });
 };
@@ -201,7 +197,6 @@ const createControlledObject = (
     color: input.color ?? "#869398",
     motionParams: defaultMotionParamsForControlType(controlType),
     maxAxisVelocity: DEFAULT_MAX_AXIS_VELOCITY,
-    ...virtualAxisMaxFieldsFor(ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE[controlType]),
     pulleyDistance: DEFAULT_PULLEY_DISTANCE,
     modelRunDirection: DEFAULT_MODEL_RUN_DIRECTION,
     ...resolveSwingYawModelParams(controlType),

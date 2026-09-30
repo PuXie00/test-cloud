@@ -26,8 +26,11 @@ import {
   DEFAULT_SWING_AXIS_MAX_VELOCITY,
   clampMotionParamsToAxisMax,
   resolveVirtualAxisMaxVelocity,
+  swingAxisMaxVelocityOf,
+  withSwingAxisMaxVelocity,
 } from "@/app/project/virtual-axis-max-velocity";
 import type { VirtualAxisId } from "@/app/project/project-document-types";
+import { motionAxisIdForKind } from "@/app/project/virtual-axis-mapping";
 import { getVirtualAxisMeta } from "@/app/pages/console/components/action-builder/virtual-axis-display";
 import { mmVec3ToM } from "@/app/project/length-units";
 import { useProject } from "@/app/project/use-project";
@@ -216,13 +219,13 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
   const motionParams = object.motionParams ?? {};
   const maxAxisVelocity = object.maxAxisVelocity;
   const speedControl =
-    object.motionSpeedControl ?? inferMotionSpeedControl(motionParams, maxAxisVelocity);
+    object.motionSpeedControl ??
+    inferMotionSpeedControl(motionParams, maxAxisVelocity, motionAxes);
   const resolvedMaxByAxis = resolveVirtualAxisMaxVelocity(
     {
       id: object.id,
       enabledVirtualAxes: enabledVirtualAxesOf(object.controlType),
-      pDefaultMaxVelocity: object.pDefaultMaxVelocity,
-      yDefaultMaxVelocity: object.yDefaultMaxVelocity,
+      motionParams: object.motionParams,
     },
     motors,
   );
@@ -269,12 +272,13 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
     : "";
 
   const handleMotionAxisChange = (axis: MotionAxisKind, value: MotionAxisParams) => {
+    const id = motionAxisIdForKind(axis);
     const normalized = normalizeMotionAxisParams(value);
-    const override = speedControl.overrides?.[axis];
+    const override = speedControl.overrides?.[id];
     updateObject(objectId, {
       motionParams: {
         ...motionParams,
-        [axis]: normalized,
+        [id]: normalized,
       },
       ...(override?.enabled
         ? {
@@ -282,7 +286,7 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
               ...speedControl,
               overrides: {
                 ...(speedControl.overrides ?? {}),
-                [axis]: {
+                [id]: {
                   ...override,
                   speed: normalized.speed,
                 },
@@ -319,35 +323,27 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
     });
   };
 
-  const applyResolvedMotion = (
-    patch: Partial<ControlledObject>,
-    nextObject: ControlledObject,
-  ) => {
+  const applySwingAxisMaxVelocity = (axis: "v2" | "v3", next: number) => {
+    const nextMotionParams = withSwingAxisMaxVelocity(motionParams, axis, next);
     const resolved = resolveVirtualAxisMaxVelocity(
       {
-        id: nextObject.id,
-        enabledVirtualAxes: enabledVirtualAxesOf(nextObject.controlType),
-        pDefaultMaxVelocity: nextObject.pDefaultMaxVelocity,
-        yDefaultMaxVelocity: nextObject.yDefaultMaxVelocity,
+        id: object.id,
+        enabledVirtualAxes: enabledVirtualAxesOf(object.controlType),
+        motionParams: nextMotionParams,
       },
       motors,
     );
     updateObject(objectId, {
-      ...patch,
-      motionParams: clampMotionParamsToAxisMax(
-        nextObject.motionParams ?? {},
-        motionAxes,
-        resolved,
-      ),
+      motionParams: clampMotionParamsToAxisMax(nextMotionParams, resolved),
     });
   };
 
   const handlePMaxVelocityChange = (next: number) => {
-    applyResolvedMotion({ pDefaultMaxVelocity: next }, { ...object, pDefaultMaxVelocity: next });
+    applySwingAxisMaxVelocity("v2", next);
   };
 
   const handleYMaxVelocityChange = (next: number) => {
-    applyResolvedMotion({ yDefaultMaxVelocity: next }, { ...object, yDefaultMaxVelocity: next });
+    applySwingAxisMaxVelocity("v3", next);
   };
 
   const handleSpeedRatioChange = (speedRatio: number) => {
@@ -355,12 +351,13 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
   };
 
   const handleSpeedOverrideEnabledChange = (axis: MotionAxisKind, enabled: boolean) => {
-    const axisParams = motionParams[axis] ?? MOTION_DEFAULTS[axis];
+    const id = motionAxisIdForKind(axis);
+    const axisParams = motionParams[id] ?? MOTION_DEFAULTS[axis];
     applySpeedControl({
       ...speedControl,
       overrides: {
         ...(speedControl.overrides ?? {}),
-        [axis]: {
+        [id]: {
           enabled,
           speed: axisParams.speed,
         },
@@ -418,7 +415,7 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
             <div className="space-y-2">
               
               {motionAxes.map((axis) => {
-                const axisValue = motionParams[axis] ?? MOTION_DEFAULTS[axis];
+                const axisValue = motionParams[motionAxisIdForKind(axis)] ?? MOTION_DEFAULTS[axis];
                 const rangeConfig = AXIS_RANGE_CONFIG[axis];
                 const rangeFieldSpec = MOTION_AXIS_FIELD_DEFINITIONS[axis].find(
                   (field) => field.key === rangeConfig.specKey,
@@ -472,7 +469,7 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
                     </span>
                     <UnitAwareNumericInput
                       aria-label={`${getVirtualAxisMeta("v2", object.controlType).label}最大速度`}
-                      value={object.pDefaultMaxVelocity ?? DEFAULT_SWING_AXIS_MAX_VELOCITY}
+                      value={swingAxisMaxVelocityOf(motionParams, "v2") ?? DEFAULT_SWING_AXIS_MAX_VELOCITY}
                       onChange={handlePMaxVelocityChange}
                       min={0.1}
                       step={0.1}
@@ -488,7 +485,7 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
                     </span>
                     <UnitAwareNumericInput
                       aria-label={`${getVirtualAxisMeta("v3", object.controlType).label}最大速度`}
-                      value={object.yDefaultMaxVelocity ?? DEFAULT_SWING_AXIS_MAX_VELOCITY}
+                      value={swingAxisMaxVelocityOf(motionParams, "v3") ?? DEFAULT_SWING_AXIS_MAX_VELOCITY}
                       onChange={handleYMaxVelocityChange}
                       min={0.1}
                       step={0.1}
@@ -522,7 +519,7 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
                 </div>
               </div>
               {motionAxes.map((axis) => {
-                const axisValue = motionParams[axis] ?? MOTION_DEFAULTS[axis];
+                const axisValue = motionParams[motionAxisIdForKind(axis)] ?? MOTION_DEFAULTS[axis];
                 const rangeConfig = AXIS_RANGE_CONFIG[axis];
 
                 return (
@@ -536,7 +533,8 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
                         autoSpeed={{
                           enabled: true,
                           summary: speedSummary(axis, axisValue),
-                          customEnabled: speedControl.overrides?.[axis]?.enabled ?? false,
+                          customEnabled:
+                            speedControl.overrides?.[motionAxisIdForKind(axis)]?.enabled ?? false,
                           onCustomEnabledChange: (enabled) =>
                             handleSpeedOverrideEnabledChange(axis, enabled),
                         }}

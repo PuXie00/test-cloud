@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { MotionAxisKind } from "./configuration-types";
 import {
+  motionAxisIdForKind,
+  motionAxisIdForVirtualAxis,
+  motionKindForAxisId,
   motionKindForVirtualAxis,
+  motionParamsOfKind,
+  virtualAxisForMotionAxisId,
   virtualAxisDescriptor,
   virtualAxisForMotionKind,
   virtualAxisMotionKinds,
@@ -93,5 +98,34 @@ describe("virtualAxisForMotionKind", () => {
     expect(virtualAxisForMotionKind("swingX")).toBe("v2");
     expect(virtualAxisForMotionKind("swingY")).toBe("v3");
     expect(virtualAxisForMotionKind("yawY")).toBe("v3");
+  });
+});
+
+describe("motion axis ids h / p / y", () => {
+  it("map one-to-one onto virtual axes v1 / v2 / v3", () => {
+    expect((["v1", "v2", "v3"] as const).map(motionAxisIdForVirtualAxis)).toEqual(["h", "p", "y"]);
+    expect((["h", "p", "y"] as const).map(virtualAxisForMotionAxisId)).toEqual(["v1", "v2", "v3"]);
+  });
+
+  it("place every motion kind on its id", () => {
+    expect(motionAxisIdForKind("move")).toBe("h");
+    expect(motionAxisIdForKind("rotation")).toBe("h");
+    expect(motionAxisIdForKind("swingX")).toBe("p");
+    expect(motionAxisIdForKind("swingY")).toBe("y");
+    expect(motionAxisIdForKind("yawY")).toBe("y");
+  });
+
+  it("derive the kind of an id from the control type's motion axes", () => {
+    expect(motionKindForAxisId(rotationOnly, "h")).toBe("rotation");
+    expect(motionKindForAxisId(yawYOnly, "h")).toBe("move");
+    expect(motionKindForAxisId(yawYOnly, "y")).toBe("yawY");
+    expect(motionKindForAxisId(swingYOnly, "y")).toBe("swingY");
+    expect(motionKindForAxisId(swingXOnly, "y")).toBeUndefined();
+  });
+
+  it("read params by kind only when the control type has that kind", () => {
+    const motionParams = { h: { maxAngle: 360 } };
+    expect(motionParamsOfKind(rotationOnly, motionParams, "rotation")).toBe(motionParams.h);
+    expect(motionParamsOfKind(rotationOnly, motionParams, "move")).toBeUndefined();
   });
 });

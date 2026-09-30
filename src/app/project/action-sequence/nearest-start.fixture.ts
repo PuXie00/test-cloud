@@ -18,7 +18,7 @@ const baseObject = (overrides: Partial<ControlledObjectConfig>): ControlledObjec
   modelRunDirection: 1,
   driveAxes: [{ key: "0", mount: { x: 0, z: 0 } }],
   maxAxisVelocity: 200,
-  motionParams: { move: { ...MOTION_DEFAULTS.move, maxAngle: 8000 } },
+  motionParams: { h: { ...MOTION_DEFAULTS.move, maxAngle: 8000 } },
   params: {},
   ...overrides,
 });
@@ -33,15 +33,14 @@ export const twoPointFixture = (): ControlledObjectConfig =>
     controlType: 6,
     enabledVirtualAxes: ["v1", "v2"],
     pulleyDistance: 100,
-    pDefaultMaxVelocity: 3,
     maxAxisVelocity: 500,
     driveAxes: [
       { key: "0", mount: { x: -1000, z: 0 } },
       { key: "1", mount: { x: 1000, z: 0 } },
     ],
     motionParams: {
-      move: { ...MOTION_DEFAULTS.move, maxAngle: 8000 },
-      swingX: { ...MOTION_DEFAULTS.swingX },
+      h: { ...MOTION_DEFAULTS.move, maxAngle: 8000 },
+      p: { ...MOTION_DEFAULTS.swingX },
     },
   });
 
@@ -52,8 +51,6 @@ export const fourPointFixture = (): ControlledObjectConfig =>
     controlType: 9,
     enabledVirtualAxes: ["v1", "v2", "v3"],
     pulleyDistance: 100,
-    pDefaultMaxVelocity: 3,
-    yDefaultMaxVelocity: 3,
     maxAxisVelocity: 500,
     driveAxes: [
       { key: "0", mount: { x: -1000, z: -900 } },
@@ -62,9 +59,9 @@ export const fourPointFixture = (): ControlledObjectConfig =>
       { key: "3", mount: { x: -1000, z: 900 } },
     ],
     motionParams: {
-      move: { ...MOTION_DEFAULTS.move, maxAngle: 8000 },
-      swingX: { ...MOTION_DEFAULTS.swingX },
-      swingY: { ...MOTION_DEFAULTS.swingY },
+      h: { ...MOTION_DEFAULTS.move, maxAngle: 8000 },
+      p: { ...MOTION_DEFAULTS.swingX },
+      y: { ...MOTION_DEFAULTS.swingY },
     },
   });
 
@@ -84,14 +81,12 @@ export const multiPointFixture = (): ControlledObjectConfig =>
     controlType: 7,
     enabledVirtualAxes: ["v1", "v2", "v3"],
     pulleyDistance: 100,
-    pDefaultMaxVelocity: 3,
-    yDefaultMaxVelocity: 3,
     maxAxisVelocity: 500,
     driveAxes: ring(2000, 8),
     motionParams: {
-      move: { ...MOTION_DEFAULTS.move, maxAngle: 8000 },
-      swingX: { ...MOTION_DEFAULTS.swingX },
-      yawY: { ...MOTION_DEFAULTS.yawY },
+      h: { ...MOTION_DEFAULTS.move, maxAngle: 8000 },
+      p: { ...MOTION_DEFAULTS.swingX },
+      y: { ...MOTION_DEFAULTS.yawY },
     },
   });
 

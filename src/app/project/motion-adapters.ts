@@ -13,7 +13,7 @@ import {
 import { CONTROL_TYPE_RULES } from "./configuration-rules";
 import type { MotionAxisKind } from "./configuration-types";
 import { decodeControlType } from "./control-type-code";
-import { motionKindForVirtualAxis } from "./virtual-axis-mapping";
+import { motionAxisIdForVirtualAxis } from "./virtual-axis-mapping";
 import { migrateActionSequenceProfiles } from "./action-sequence/migrate-motion-profiles";
 import { resolveVirtualAxisMaxVelocity } from "./virtual-axis-max-velocity";
 
@@ -51,12 +51,10 @@ export const setupObjectToTimelineObject = (
   motors: readonly MotorConfig[] = [],
 ): TimelineControlledObject => {
   const maxSpeedByAxis = resolveVirtualAxisMaxVelocity(object, motors);
-  const kinds = Object.keys(object.motionParams) as MotionAxisKind[];
   const minAccelTimeByAxis: Partial<Record<VirtualAxisId, number>> = {};
   const rangeByAxis: Partial<Record<VirtualAxisId, { min: number; max: number }>> = {};
   for (const axis of object.enabledVirtualAxes) {
-    const kind = motionKindForVirtualAxis(kinds, axis);
-    const params = object.motionParams[kind];
+    const params = object.motionParams[motionAxisIdForVirtualAxis(axis)];
     if (!params) continue;
     minAccelTimeByAxis[axis] = params.minAccelTime;
     rangeByAxis[axis] = { min: params.minAngle, max: params.maxAngle };
