@@ -20,7 +20,7 @@ import { useExecutorSlots, type FaderSlotState } from "../../hooks/use-executor-
 import { useExecCards } from "../../hooks/use-exec-cards";
 import { useProgram } from "../../hooks/use-program";
 import { nextChapterSequence, nextSequenceSlot } from "../../hooks/sequence-run-status";
-import { goSequence, readySequence } from "../../hooks/sequence-execution";
+import { goSequence, readySequence, releaseSequence } from "../../hooks/sequence-execution";
 import { useSequencePreview } from "../../hooks/use-sequence-preview";
 import { useBuildDebug } from "../build-debug/build-debug-context";
 import { ExecCards } from "./exec-cards/exec-cards";
@@ -207,6 +207,8 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
   /**
    * 任务卡的“下一条”：在下一条序列所在的推子槽上把准备和 GO 连着做，
    * 槽的状态（已准备、启动）和手动操作该槽时一致。
+   * 必须先释放上一条动作再准备：释放指令会停掉同一批物体，放在准备之后会把刚准备好的下一条一起停掉
+   * （表现为回起始点没有执行、GO 后动作在跑但模型不动）。
    */
   const readyThenGoNext = (
     cardId: string,
@@ -215,14 +217,24 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     startPlan: NearestStartPlan | null,
   ) => {
     if (!currentProject?.document) return;
+    const card = cards.find((entry) => entry.id === cardId);
     setSlotBusy(slot.index, true);
     void (async () => {
       try {
-        if (slot.phase !== "ready") {
-          const readied = await readySlot(slot.index, sequenceId, startPlan, slotReadyOptions(slot));
-          if (!readied) return;
+        if (card?.sequenceHandle && !card.emergencyStopped) {
+          const released = await releaseSequence({
+            actionId: card.sequenceHandle.actionId,
+            trajectoryMode: card.trajectoryMode === true,
+            deviceId: card.sequenceHandle.deviceId ?? [],
+          });
+          if (!released.ok) {
+            reportSequenceResult(released);
+            return;
+          }
         }
-        close(cardId);
+        const readied = await readySlot(slot.index, sequenceId, startPlan, slotReadyOptions(slot));
+        if (!readied) return;
+        close(cardId, { release: false });
         await goSlot(slot, sequenceId);
       } finally {
         setSlotBusy(slot.index, false);
@@ -275,22 +287,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       toast.warning("未耦合");
       return;
     }
-    if (slot.phase === "ready") {
-      if (
-        authored &&
-        slot.preparedPoses &&
-        !preparedPosesMatchTelemetry(
-          slot.preparedPoses,
-          document.setup.controlledObjects,
-          telemetryByObjectId,
-        )
-      ) {
-        setPreparedPoseAlert(slot.index);
-        return;
-      }
-      readyThenGoNext(cardId, slot, sequenceId, slot.startPlan);
-      return;
-    }
+    // 下一条槽即使已准备也要重新准备：释放上一条会把它的准备一起停掉
     let startPlan: NearestStartPlan | null = null;
     if (authored) {
       const gate = evaluateStartGate({

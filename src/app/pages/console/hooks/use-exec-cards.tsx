@@ -96,7 +96,8 @@ type ExecCardsContextValue = {
   skipNext: (id: string) => void;
   setSpeed: (id: string, percent: number) => void;
   emergencyStopAll: () => void;
-  close: (id: string) => void;
+  /** release=false：动作已经在别处释放过，只移除任务卡，不再下发停止 */
+  close: (id: string, options?: { release?: boolean }) => void;
 };
 
 const ExecCardsContext = createContext<ExecCardsContextValue | null>(null);
@@ -336,10 +337,11 @@ export const ExecCardsProvider = ({
   }, []);
 
   /** 动作真正停下来之后才能关闭任务卡 */
-  const close = useCallback((id: string) => {
+  const close = useCallback((id: string, options?: { release?: boolean }) => {
     const card = cardsRef.current.find((entry) => entry.id === id);
     if (!card || !canCloseExecCard(card)) return;
     if (
+      options?.release !== false &&
       card.sequenceHandle &&
       !card.emergencyStopped &&
       (card.status === "paused" || card.status === "stopped")

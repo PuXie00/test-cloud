@@ -195,6 +195,17 @@ describe("ExecCardsProvider PLC action run status", () => {
     expect(rows()).toEqual(["开幕|stopped|-|-"]);
   });
 
+  it("sends the release on close unless the action was already released", () => {
+    report([running(), running({ actionId: 5 })]);
+    act(() => vi.advanceTimersByTime(ACTION_RUN_STALE_MS + 200));
+    const [first, second] = api.cards;
+    act(() => api.close(first!.id));
+    expect(stopSequenceMock).toHaveBeenCalledTimes(1);
+    act(() => api.close(second!.id, { release: false }));
+    expect(stopSequenceMock).toHaveBeenCalledTimes(1);
+    expect(rows()).toEqual([]);
+  });
+
   it("keeps an emergency-stopped card until the PLC goes silent", () => {
     report([running()]);
     const id = api.cards[0]!.id;

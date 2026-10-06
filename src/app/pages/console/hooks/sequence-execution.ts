@@ -177,6 +177,25 @@ export const stopSequence = async (
   await transport.stopAction(handle);
 };
 
+export type SequenceReleaseResult = { ok: true } | LocalSequenceFailure;
+
+/**
+ * 释放一个已停下的动作（同停止指令）。PLC 拒绝时如实报错；没连上 PLC 时按成功处理。
+ * 下一个动作准备前要先释放上一个，否则释放会把刚准备好的同一批物体一起停掉。
+ */
+export const releaseSequence = async (
+  handle: { actionId: number; trajectoryMode: boolean; deviceId: number[] },
+  transport: SequenceExecutionTransport = getSequenceTransport(),
+): Promise<SequenceReleaseResult> => {
+  try {
+    await stopSequence(handle, transport);
+    return { ok: true };
+  } catch (error) {
+    if (isPlcRejection(error)) return plcFailure("上一条动作释放失败", error);
+    return { ok: true };
+  }
+};
+
 export const createLocalSequenceTransport = (): SequenceExecutionTransport => ({
   saveAction: async () => undefined,
   syncCall: async () => undefined,
@@ -198,33 +217,68 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isCsocketFailure = (value: unknown): value is CsocketResult<never> & { ok: false } =>
   isRecord(value) && value.ok === false;
 
-const unwrapCppAck = (raw: unknown, label: string): CppAckResult => {
+/** C++ 没连上或没有应答时 sendBuilt 回的错误码 */
+const PLC_UNREACHABLE_CODE = "SEND_FAILED";
+
+/** 动作指令被 PLC 拒绝或没有送达；code 为 SEND_FAILED 表示没连上 / 没应答 */
+export class PlcCommandError extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+  ) {
+    super(message);
+    this.name = "PlcCommandError";
+  }
+}
+
+/**
+ * PLC 明确拒绝了指令（有应答但 success=false，或下载有错误）。
+ * 没连上 / 没应答 / 通道异常这一阶段仍按本地模拟成功处理，不算拒绝。
+ */
+export const isPlcRejection = (error: unknown): boolean =>
+  error instanceof PlcCommandError && error.code !== PLC_UNREACHABLE_CODE;
+
+/**
+ * actionReady / actionGo / actionStop 在主进程里按模式拆成多条指令，返回的是应答数组；
+ * 单条应答也兼容。
+ */
+const unwrapCppAcks = (raw: unknown, label: string): CppAckResult[] => {
   if (isCsocketFailure(raw)) {
-    throw new Error(raw.message || `csocket ${label} failed`);
+    throw new PlcCommandError(raw.message || `csocket ${label} failed`, PLC_UNREACHABLE_CODE);
   }
   const inner = isRecord(raw) && raw.ok === true ? raw.data : raw;
-  if (!isRecord(inner) || typeof inner.success !== "boolean") {
-    throw new Error(`csocket ${label} missing CppAckResult`);
+  const acks: unknown[] = Array.isArray(inner) ? inner : [inner];
+  if (acks.length === 0 || acks.some((ack) => !isRecord(ack) || typeof ack.success !== "boolean")) {
+    // 没拿到可用的应答，按没应答处理
+    throw new PlcCommandError(`csocket ${label} missing CppAckResult`, PLC_UNREACHABLE_CODE);
   }
-  return inner as CppAckResult;
+  return acks as CppAckResult[];
 };
 
-const requireSuccessfulAck = (raw: unknown, label: string): CppAckResult => {
-  const ack = unwrapCppAck(raw, label);
-  if (!ack.success) {
-    throw new Error(ack.message || `${label} success=false`);
+const requireSuccessfulAcks = (raw: unknown, label: string): CppAckResult[] => {
+  const acks = unwrapCppAcks(raw, label);
+  const failed = acks.find((ack) => !ack.success);
+  if (failed) {
+    throw new PlcCommandError(
+      failed.message || `${label} success=false`,
+      String(failed.code ?? "ACK_FAILED"),
+    );
   }
-  return ack;
+  return acks;
 };
 
 const requireSaveAck = (raw: unknown): void => {
-  const ack = requireSuccessfulAck(raw, "actionDataSave");
-  const first = ack.data?.[0];
-  const errorCount =
-    isRecord(first) && typeof first.errorCount === "number" ? first.errorCount : 0;
-  if (errorCount > 0) {
-    const codes = isRecord(first) && "errorCode" in first ? first.errorCode : [];
-    throw new Error(`actionDataSave errorCount=${errorCount} errorCode=${JSON.stringify(codes)}`);
+  for (const ack of requireSuccessfulAcks(raw, "actionDataSave")) {
+    const first = ack.data?.[0];
+    const errorCount =
+      isRecord(first) && typeof first.errorCount === "number" ? first.errorCount : 0;
+    if (errorCount > 0) {
+      const codes = isRecord(first) && "errorCode" in first ? first.errorCode : [];
+      throw new PlcCommandError(
+        `actionDataSave errorCount=${errorCount} errorCode=${JSON.stringify(codes)}`,
+        "SAVE_ERROR",
+      );
+    }
   }
 };
 
@@ -238,11 +292,11 @@ export const createCsocketSequenceTransport = (
   api: SequenceCsocketClient,
 ): SequenceExecutionTransport => ({
   saveAction: async (items) => {
-    await requireSaveAck(await api.actionReady(items));
+    requireSaveAck(await api.actionReady(items));
   },
   syncCall: async (input) => {
     void input.startTimestamp;
-    await requireSuccessfulAck(
+    requireSuccessfulAcks(
       await api.actionGo([
         {
           actionId: input.actionId,
@@ -257,7 +311,7 @@ export const createCsocketSequenceTransport = (
     );
   },
   stopAction: async (input) => {
-    await requireSuccessfulAck(
+    requireSuccessfulAcks(
       await api.actionStop([
         {
           actionId: input.actionId,
@@ -309,6 +363,12 @@ export type LocalSequenceStartResult =
       sequenceHandle: SequenceRuntimeHandle;
     }
   | LocalSequenceFailure;
+
+const plcFailure = (action: string, error: unknown): LocalSequenceFailure => ({
+  ok: false,
+  toast: "error",
+  message: `${action}：${error instanceof Error ? error.message : String(error)}`,
+});
 
 type SequenceLookup =
   | { ok: true; sequence: ActionSequenceConfig }
@@ -376,7 +436,9 @@ export const readySequence = async (args: {
       },
       fingerprint: sequenceReadyFingerprint(found.sequence),
     };
-  } catch {
+  } catch (error) {
+    // PLC 拒绝了准备：如实报错，不能当成已准备
+    if (isPlcRejection(error)) return plcFailure("动作准备失败", error);
     // PLC / csocket is optional this phase: simulate a successful Ready locally.
     return {
       ok: true,
@@ -424,7 +486,9 @@ export const goSequence = async (args: {
         deviceId,
       },
     };
-  } catch {
+  } catch (error) {
+    // PLC 拒绝了启动：如实报错，不能出任务卡
+    if (isPlcRejection(error)) return plcFailure("动作启动失败", error);
     // PLC / csocket is optional this phase: simulate a successful GO locally.
     return {
       ok: true,
