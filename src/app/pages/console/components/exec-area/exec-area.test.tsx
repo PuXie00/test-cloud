@@ -40,6 +40,7 @@ const {
   toastError,
   launchMock,
   stopSequenceMock,
+  releaseSequenceMock,
   localSequenceTransport,
   faderSlotsRef,
   documentRef,
@@ -63,6 +64,9 @@ const {
   toastError: vi.fn(),
   launchMock: vi.fn(() => "card-1"),
   stopSequenceMock: vi.fn(async () => undefined),
+  releaseSequenceMock: vi.fn(async (): Promise<
+    { ok: true } | { ok: false; toast: "warning" | "error"; message: string }
+  > => ({ ok: true })),
   localSequenceTransport: {
     saveAction: vi.fn(),
     syncCall: vi.fn(),
@@ -303,6 +307,7 @@ vi.mock("../../hooks/sequence-execution", () => ({
   startLocalAuthoredSequence: (...args: unknown[]) =>
     startLocalAuthoredSequenceMock(...args as [{ sequenceId: number }]),
   stopSequence: (...args: unknown[]) => stopSequenceMock(...args),
+  releaseSequence: (...args: unknown[]) => releaseSequenceMock(...(args as [])),
   getLocalSequenceTransport: () => localSequenceTransport,
   getSequenceTransport: () => localSequenceTransport,
 }));
@@ -492,6 +497,7 @@ afterEach(() => {
   cleanup();
   launchMock.mockClear();
   stopSequenceMock.mockClear();
+  releaseSequenceMock.mockClear();
   toastWarning.mockClear();
   toastError.mockClear();
   readySequenceMock.mockClear();
@@ -1390,7 +1396,16 @@ describe("ExecArea launch guard", () => {
         members: [],
       },
     });
-    expect(closeMock).toHaveBeenCalledWith("card-stopped");
+    // 先释放上一条，再准备下一条；卡片在准备成功后移除，不再重复下发停止
+    expect(releaseSequenceMock).toHaveBeenCalledWith({
+      actionId: 14,
+      trajectoryMode: false,
+      deviceId: [],
+    });
+    expect(releaseSequenceMock.mock.invocationCallOrder[0]).toBeLessThan(
+      readySequenceMock.mock.invocationCallOrder[0]!,
+    );
+    expect(closeMock).toHaveBeenCalledWith("card-stopped", { release: false });
     expect(goSequenceMock.mock.calls[0]?.[0]).toMatchObject({ sequenceId: 15, faderPercent: 100 });
     // 槽状态和手动操作 F2 一致：先“已准备”，GO 成功后转“启动”
     expect(markSlotReadyMock).toHaveBeenCalledTimes(1);
@@ -1440,7 +1455,7 @@ describe("ExecArea launch guard", () => {
     );
   });
 
-  it("goes straight away when the next slot is already ready", async () => {
+  it("prepares the next slot again even when it is already ready", async () => {
     armStoppedChapter();
     faderSlotsRef.current = faderSlotsRef.current.map((slot) =>
       slot.index === 1 ? { ...slot, phase: "ready" as const } : slot,
@@ -1450,13 +1465,34 @@ describe("ExecArea launch guard", () => {
     await waitFor(() => {
       expect(goSequenceMock).toHaveBeenCalledTimes(1);
     });
-    expect(readySequenceMock).not.toHaveBeenCalled();
-    expect(markSlotReadyMock).not.toHaveBeenCalled();
-    expect(closeMock).toHaveBeenCalledWith("card-stopped");
+    // 释放上一条会停掉已准备好的同一批物体，所以先释放再重新准备
+    expect(releaseSequenceMock.mock.invocationCallOrder[0]).toBeLessThan(
+      readySequenceMock.mock.invocationCallOrder[0]!,
+    );
+    expect(markSlotReadyMock).toHaveBeenCalledTimes(1);
+    expect(closeMock).toHaveBeenCalledWith("card-stopped", { release: false });
     expect(clearSlotReadyMock).toHaveBeenCalledWith(1);
     expect(launchMock).toHaveBeenCalledWith(
       expect.objectContaining({ source: { kind: "fader", slotIndex: 1 }, sequenceId: 15 }),
     );
+  });
+
+  it("keeps the stopped card and prepares nothing when releasing the previous action fails", async () => {
+    armStoppedChapter();
+    releaseSequenceMock.mockResolvedValueOnce({
+      ok: false,
+      toast: "error",
+      message: "上一条动作释放失败：动作不存在",
+    });
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "下一条" }));
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalledWith("上一条动作释放失败：动作不存在");
+    });
+    expect(readySequenceMock).not.toHaveBeenCalled();
+    expect(goSequenceMock).not.toHaveBeenCalled();
+    expect(closeMock).not.toHaveBeenCalled();
+    expect(setSlotBusyMock).toHaveBeenLastCalledWith(1, false);
   });
 
   it("does nothing while the next slot is busy or already running", () => {
@@ -1502,7 +1538,7 @@ describe("ExecArea launch guard", () => {
       expect(goSequenceMock).toHaveBeenCalledTimes(1);
     });
     expect(readySequenceMock).toHaveBeenCalledTimes(1);
-    expect(closeMock).toHaveBeenCalledWith("card-stopped");
+    expect(closeMock).toHaveBeenCalledWith("card-stopped", { release: false });
   });
 
   it("leaves the stopped card when the start-pose dialog is cancelled", async () => {
@@ -1559,7 +1595,7 @@ describe("ExecArea launch guard", () => {
     await waitFor(() => {
       expect(goSequenceMock).toHaveBeenCalled();
     });
-    expect(closeMock).toHaveBeenCalledWith("card-stopped");
+    expect(closeMock).toHaveBeenCalledWith("card-stopped", { release: false });
     expect(launchMock).not.toHaveBeenCalled();
     expect(markSlotReadyMock.mock.calls[0]?.slice(0, 2)).toEqual([1, 15]);
     expect(clearSlotReadyMock).not.toHaveBeenCalled();

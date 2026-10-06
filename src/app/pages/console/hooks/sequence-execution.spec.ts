@@ -13,6 +13,7 @@ import {
   goSequence,
   mapFaderPercentToSpeedScale,
   readySequence,
+  releaseSequence,
   sequenceReadyFingerprint,
   startLocalAuthoredSequence,
   stopSequence,
@@ -372,6 +373,79 @@ describe("readySequence", () => {
   });
 });
 
+describe("readySequence PLC rejection", () => {
+  it("reports a Ready the PLC rejects instead of marking it ready", async () => {
+    const api = createMockCsocketApi([{ success: false, code: 3, message: "物体未耦合" }]);
+    vi.stubGlobal("window", { csocketApi: api });
+    try {
+      const readied = await readySequence({
+        document: documentWithSequence(validSequence),
+        sequenceId: validSequence.id,
+      });
+      expect(readied).toEqual({ ok: false, toast: "error", message: "动作准备失败：物体未耦合" });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("reports download errors returned in the array reply", async () => {
+    const api = createMockCsocketApi([
+      { success: true, data: [{ actionId: 1, errorCount: 1, errorCode: [7] }] },
+    ]);
+    vi.stubGlobal("window", { csocketApi: api });
+    try {
+      const readied = await readySequence({
+        document: documentWithSequence(validSequence),
+        sequenceId: validSequence.id,
+      });
+      expect(readied).toMatchObject({ ok: false, toast: "error" });
+      expect(readied.ok ? "" : readied.message).toMatch(/errorCount=1/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("accepts a successful array reply as ready", async () => {
+    const api = createMockCsocketApi([{ success: true, code: 0, message: "", data: [] }]);
+    vi.stubGlobal("window", { csocketApi: api });
+    try {
+      const readied = await readySequence({
+        document: documentWithSequence(validSequence),
+        sequenceId: validSequence.id,
+      });
+      expect(readied.ok).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe("releaseSequence", () => {
+  const handle = { actionId: 4, trajectoryMode: false, deviceId: [7] };
+
+  it("sends the stop for the action", async () => {
+    const transport = createTransport();
+    await expect(releaseSequence(handle, transport)).resolves.toEqual({ ok: true });
+    expect(transport.stopAction).toHaveBeenCalledWith(handle);
+  });
+
+  it("reports a release the PLC rejects", async () => {
+    const api = createMockCsocketApi({ success: true, data: [] });
+    api.actionStop.mockResolvedValueOnce([{ success: false, code: 2, message: "动作不存在" }]);
+    await expect(releaseSequence(handle, createCsocketSequenceTransport(api))).resolves.toEqual({
+      ok: false,
+      toast: "error",
+      message: "上一条动作释放失败：动作不存在",
+    });
+  });
+
+  it("treats an unreachable PLC as released", async () => {
+    const api = createMockCsocketApi({ success: true, data: [] });
+    api.actionStop.mockResolvedValueOnce([{ success: false, code: "SEND_FAILED", message: "SEND_FAILED" }]);
+    await expect(releaseSequence(handle, createCsocketSequenceTransport(api))).resolves.toEqual({ ok: true });
+  });
+});
+
 describe("goSequence", () => {
   it("syncs without saving and uses the fader speedScale", async () => {
     const transport = createTransport();
@@ -431,8 +505,9 @@ describe("goSequence", () => {
     });
   });
 
-  it("simulates GO success when csocket sync fails", async () => {
-    const api = createMockCsocketApi({ success: false, message: "actionGo success=false" });
+  it("simulates GO success when the PLC is not reachable", async () => {
+    const api = createMockCsocketApi({ success: true, data: [] });
+    api.actionGo.mockResolvedValueOnce([{ success: false, code: "SEND_FAILED", message: "SEND_FAILED" }]);
     vi.stubGlobal("window", { csocketApi: api });
     try {
       const started = await goSequence({
@@ -448,6 +523,22 @@ describe("goSequence", () => {
       });
       expect(api.actionGo).toHaveBeenCalledTimes(1);
       expect(api.actionGo.mock.calls[0]?.[0]?.[0]).toMatchObject({ loopCount: 1 });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("reports a GO the PLC rejects instead of pretending it started", async () => {
+    const api = createMockCsocketApi({ success: true, data: [] });
+    api.actionGo.mockResolvedValueOnce([{ success: false, code: 5, message: "模型未就绪" }]);
+    vi.stubGlobal("window", { csocketApi: api });
+    try {
+      const started = await goSequence({
+        document: documentWithSequence(validSequence),
+        sequenceId: validSequence.id,
+        faderPercent: 100,
+      });
+      expect(started).toEqual({ ok: false, toast: "error", message: "动作启动失败：模型未就绪" });
     } finally {
       vi.unstubAllGlobals();
     }
@@ -590,6 +681,27 @@ describe("createCsocketSequenceTransport", () => {
     await expect(createCsocketSequenceTransport(withErrors).saveAction([])).rejects.toThrow(
       /errorCount|errorCode/i,
     );
+  });
+
+  it("checks every reply in the array the main process returns", async () => {
+    const api = createMockCsocketApi([{ success: true, data: [] }]);
+    api.actionGo.mockResolvedValueOnce([
+      { success: true, data: [] },
+      { success: false, code: 9, message: "release failed" },
+    ]);
+    const transport = createCsocketSequenceTransport(api);
+    await expect(transport.saveAction([])).resolves.toBeUndefined();
+    await expect(
+      transport.syncCall({
+        actionId: 1,
+        startTimestamp: 0,
+        speedScale: 1,
+        trajectoryMode: true,
+        loopCount: 1,
+        deviceId: [1],
+        runDirection: 1,
+      }),
+    ).rejects.toThrow("release failed");
   });
 
   it("throws for CsocketResult { ok: false } and success: false", async () => {
