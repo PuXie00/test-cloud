@@ -16,6 +16,8 @@ import {
   resizeDynamicPreset,
   shiftTimelineBlocks,
   updateSegmentSettings,
+  upsertPoseBlock,
+  upsertSetEnabledBlock,
 } from "./sequence-ops";
 
 const origin: ModelPose = { v1: 0, v2: 0, v3: 0 };
@@ -206,7 +208,8 @@ describe("sequence-ops", () => {
     expect(resolved.segments[0]?.settings.profiles).toEqual(movingV1IdleOthers(1000, 1000));
   });
 
-  it("allows a pose on a dynamic preset endpoint and a set-enabled inside the range", () => {
+  it("refuses a pose on a dynamic preset endpoint but allows a set-enabled inside the range", () => {
+    // 预设在起点也有该物体的关键点，两个点同一时刻是校验的 duplicate-pose-time 错误
     const atStart = insertTimelineBlock(sequenceWithDynamicPreset, {
       id: "at-start",
       kind: "pose",
@@ -214,7 +217,7 @@ describe("sequence-ops", () => {
       atMs: 1000,
       pose: { v1: 0, v2: 0, v3: 0 },
     });
-    expect(atStart.ok).toBe(true);
+    expect(atStart).toEqual({ ok: false, reason: "time-conflict" });
 
     const command = insertTimelineBlock(sequenceWithDynamicPreset, {
       id: "enable-1",
@@ -661,5 +664,147 @@ describe("block copy / paste with motion segments", () => {
       1500,
     );
     expect(pasted).toEqual({ ok: false, reason: "motion-overlap" });
+  });
+});
+
+describe("blocks at an occupied time", () => {
+  const withPose: ActionSequenceConfig = {
+    id: 4,
+    name: "Occupied",
+    trajectoryMode: false,
+    blocks: [
+      { id: "p0", kind: "pose", objectId: 7, atMs: 0, pose: origin },
+      { id: "p1", kind: "pose", objectId: 7, atMs: 2000, pose: { v1: 100, v2: 0, v3: 0 } },
+    ],
+    segments: [],
+  };
+  const tunedPose = updateSegmentSettings(withPose, "p0", "p1", {
+    profiles: movingV1IdleOthers(400, 300),
+  });
+
+  it("refuses inserting a second pose for the same object at the same time", () => {
+    expect(
+      insertTimelineBlock(withPose, { id: "dup", kind: "pose", objectId: 7, atMs: 2000, pose: origin }),
+    ).toEqual({ ok: false, reason: "time-conflict" });
+  });
+
+  it("still allows another object, or an instruction, at that time", () => {
+    expect(
+      insertTimelineBlock(withPose, { id: "other", kind: "pose", objectId: 8, atMs: 2000, pose: origin }).ok,
+    ).toBe(true);
+    expect(
+      insertTimelineBlock(withPose, {
+        id: "en",
+        kind: "instruction",
+        presetId: "set-enabled",
+        objectId: 7,
+        atMs: 2000,
+        instr: { enabled: true },
+      }).ok,
+    ).toBe(true);
+  });
+
+  it("does not move or paste a pose onto an occupied time", () => {
+    expect(moveTimelineBlock(withPose, "p0", 2000)).toBe(withPose);
+    expect(
+      pasteTimelineBlocks(withPose, copyTimelineBlocks(withPose, ["p0"]), 2000),
+    ).toEqual({ ok: false, reason: "time-conflict" });
+  });
+
+  it("refuses two identical instructions at the same time", () => {
+    const withEnable: ActionSequenceConfig = {
+      ...withPose,
+      blocks: [
+        ...withPose.blocks,
+        { id: "en", kind: "instruction", presetId: "set-enabled", objectId: 7, atMs: 1000, instr: { enabled: true } },
+      ],
+    };
+    expect(
+      insertTimelineBlock(withEnable, {
+        id: "en2",
+        kind: "instruction",
+        presetId: "set-enabled",
+        objectId: 7,
+        atMs: 1000,
+        instr: { enabled: false },
+      }),
+    ).toEqual({ ok: false, reason: "time-conflict" });
+  });
+
+  it("keeps editing sequences that already had a duplicate from before", () => {
+    const legacy: ActionSequenceConfig = {
+      ...withPose,
+      blocks: [...withPose.blocks, { id: "dup", kind: "pose", objectId: 7, atMs: 2000, pose: origin }],
+    };
+    expect(
+      insertTimelineBlock(legacy, { id: "later", kind: "pose", objectId: 7, atMs: 5000, pose: origin }).ok,
+    ).toBe(true);
+  });
+
+  it("updates the existing pose in place, keeping its id and segment settings", () => {
+    const result = upsertPoseBlock(tunedPose, {
+      id: "new",
+      kind: "pose",
+      objectId: 7,
+      atMs: 2040,
+      pose: { v1: 300, v2: 0, v3: 0 },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result).toMatchObject({ blockId: "p1", updated: true });
+    expect(result.sequence.blocks).toHaveLength(2);
+    expect(result.sequence.blocks.find((block) => block.id === "p1")).toMatchObject({
+      atMs: 2000,
+      pose: { v1: 300, v2: 0, v3: 0 },
+    });
+    expect(result.sequence.segments.find((segment) => segment.toRef === "p1")?.settings.profiles.v1).toEqual(
+      tunedPose.segments.find((segment) => segment.toRef === "p1")?.settings.profiles.v1,
+    );
+  });
+
+  it("inserts a new pose when the time is free", () => {
+    const result = upsertPoseBlock(withPose, {
+      id: "new",
+      kind: "pose",
+      objectId: 7,
+      atMs: 4000,
+      pose: origin,
+    });
+    expect(result).toMatchObject({ ok: true, blockId: "new", updated: false });
+  });
+
+  it("refuses to overwrite a preset key point", () => {
+    expect(
+      upsertPoseBlock(sequenceWithDynamicPreset, {
+        id: "new",
+        kind: "pose",
+        objectId: 7,
+        atMs: 1000,
+        pose: origin,
+      }),
+    ).toEqual({ ok: false, reason: "time-conflict" });
+  });
+
+  it("updates an existing set-enabled command instead of adding another", () => {
+    const withEnable: ActionSequenceConfig = {
+      ...withPose,
+      blocks: [
+        ...withPose.blocks,
+        { id: "en", kind: "instruction", presetId: "set-enabled", objectId: 7, atMs: 1000, instr: { enabled: true } },
+      ],
+    };
+    const result = upsertSetEnabledBlock(withEnable, {
+      id: "en2",
+      kind: "instruction",
+      presetId: "set-enabled",
+      objectId: 7,
+      atMs: 1000,
+      instr: { enabled: false },
+    });
+    expect(result).toMatchObject({ ok: true, blockId: "en", updated: true });
+    if (!result.ok) return;
+    expect(result.sequence.blocks.filter((block) => block.kind === "instruction")).toEqual([
+      { id: "en", kind: "instruction", presetId: "set-enabled", objectId: 7, atMs: 1000, instr: { enabled: false } },
+    ]);
   });
 });

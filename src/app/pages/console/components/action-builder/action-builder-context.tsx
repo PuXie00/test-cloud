@@ -60,6 +60,9 @@ import {
   moveTimelineBlock,
   pasteTimelineBlocks,
   timelineClipboardObjectIds,
+  upsertPoseBlock,
+  upsertSetEnabledBlock,
+  type UpsertResult,
   replaceTimelineBlock,
   resizeDynamicPreset,
   shiftTimelineBlocks,
@@ -79,6 +82,8 @@ import {
   stripSequenceFromProgramTree,
   TIMELINE_PX_PER_SECOND_DEFAULT,
   TIMELINE_ZOOM_FACTOR,
+  formatTime,
+  snapTimeMs,
   type ControlledObject as TimelineControlledObject,
   type ProgramNode,
 } from "./timeline/timeline-data";
@@ -95,9 +100,26 @@ export { useActionBuilder } from "./use-action-builder";
 
 const PASTE_ERROR_MESSAGE: Record<SequenceEditError, string> = {
   "motion-overlap": "粘贴位置和已有动作重叠，请换个时间或物体再粘贴",
+  "time-conflict": "粘贴位置上该物体已有动作块，请换个时间或物体再粘贴",
   "invalid-time-range": "粘贴后的时间不合法",
   "invalid-preset": "预设不适用于目标物体",
   "missing-block": "粘贴失败",
+};
+
+/** 插入块被拒时的提示；其他原因保持原来的静默 */
+const INSERT_ERROR_MESSAGE: Partial<Record<SequenceEditError, string>> = {
+  "motion-overlap": "该时刻和物体已有的动作重叠，无法插入",
+  "time-conflict": "所选物体在该时刻已有动作块，无法插入",
+};
+
+/** 在播放头位置给多个物体新建或更新动作块的结果 */
+type UpsertOutcome = {
+  committed: boolean;
+  blockIds: string[];
+  /** 该时刻已有同类块、被更新的个数 */
+  updated: number;
+  /** 该时刻已有其他动作（如预设关键点）而没插入的物体名 */
+  refusedNames: string[];
 };
 
 type MotionProjection = {
@@ -400,8 +422,17 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   );
 
   const handleInsertTimelineBlock = useCallback(
-    (block: TimelineBlock): boolean =>
-      applySequenceEdit((current) => insertTimelineBlock(current, block, sequenceEditOptions)),
+    (block: TimelineBlock): boolean => {
+      let failure: SequenceEditError | null = null;
+      const ok = applySequenceEdit((current) => {
+        const result = insertTimelineBlock(current, block, sequenceEditOptions);
+        failure = result.ok ? null : result.reason;
+        return result;
+      });
+      const message = failure ? INSERT_ERROR_MESSAGE[failure as SequenceEditError] : undefined;
+      if (message) toast.warning(message);
+      return ok;
+    },
     [applySequenceEdit, sequenceEditOptions],
   );
 
@@ -508,6 +539,46 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     [selectedBlockIds, updateSelectedSequence, sequenceEditOptions],
   );
 
+  /** 逐个物体在播放头位置新建或更新动作块，一次提交 */
+  const upsertForObjects = useCallback(
+    (
+      objectIds: number[],
+      upsert: (current: ActionSequenceConfig, objectId: number) => UpsertResult,
+    ): UpsertOutcome => {
+      const outcome: UpsertOutcome = { committed: false, blockIds: [], updated: 0, refusedNames: [] };
+      outcome.committed = updateSelectedSequence((current) => {
+        let next = current;
+        for (const objectId of objectIds) {
+          const result = upsert(next, objectId);
+          if (!result.ok) {
+            outcome.refusedNames.push(getTimelineObject(objectId)?.name ?? `物体 ${objectId}`);
+            continue;
+          }
+          next = result.sequence;
+          outcome.blockIds.push(result.blockId);
+          if (result.updated) outcome.updated += 1;
+        }
+        return next === current ? null : next;
+      });
+      return outcome;
+    },
+    [updateSelectedSequence, getTimelineObject],
+  );
+
+  const reportUpsert = useCallback(
+    (outcome: UpsertOutcome, label: string) => {
+      const at = `${formatTime(snapTimeMs(cursorMs))}s`;
+      if (outcome.refusedNames.length > 0) {
+        toast.warning(`${outcome.refusedNames.join("、")} 在 ${at} 已有其他动作，未插入${label}`);
+      }
+      if (!outcome.committed) return;
+      if (outcome.updated > 0) toast.success(`已更新 ${outcome.updated} 个物体在 ${at} 的${label}`);
+      setSelection(selectionFromBlockIds(outcome.blockIds));
+      setSequenceMissingHint(false);
+    },
+    [cursorMs],
+  );
+
   const poseForObject = useCallback(
     (objectId: number): ModelPose => {
       const object = getTimelineObject(objectId);
@@ -522,29 +593,16 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         setSequenceMissingHint(true);
         return;
       }
-      const createdIds: string[] = [];
-      const ok = updateSelectedSequence((current) => {
-        let next = current;
-        for (const objectId of objectIds) {
-          const block: TimelineBlock = {
-            id: nextId("blk"),
-            kind: "pose",
-            objectId,
-            atMs: cursorMs,
-            pose: poseForObject(objectId),
-          };
-          const result = insertTimelineBlock(next, block, sequenceEditOptions);
-          if (!result.ok) continue;
-          next = result.sequence;
-          createdIds.push(block.id);
-        }
-        return next === current ? null : next;
-      });
-      if (!ok) return;
-      setSelection(selectionFromBlockIds(createdIds));
-      setSequenceMissingHint(false);
+      const outcome = upsertForObjects(objectIds, (current, objectId) =>
+        upsertPoseBlock(
+          current,
+          { id: nextId("blk"), kind: "pose", objectId, atMs: cursorMs, pose: poseForObject(objectId) },
+          sequenceEditOptions,
+        ),
+      );
+      reportUpsert(outcome, "位姿");
     },
-    [selectedSequenceId, sequence, cursorMs, poseForObject, updateSelectedSequence, sequenceEditOptions],
+    [selectedSequenceId, sequence, cursorMs, poseForObject, sequenceEditOptions],
   );
 
   const handleCreateSetEnabled = useCallback(
@@ -553,30 +611,19 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         setSequenceMissingHint(true);
         return;
       }
-      const createdIds: string[] = [];
-      const ok = updateSelectedSequence((current) => {
-        let next = current;
-        for (const objectId of objectIds) {
-          const block: TimelineBlock = {
-            id: nextId("blk"),
-            kind: "instruction",
-            presetId: "set-enabled",
-            objectId,
-            atMs: cursorMs,
-            instr: { enabled },
-          };
-          const result = insertTimelineBlock(next, block);
-          if (!result.ok) continue;
-          next = result.sequence;
-          createdIds.push(block.id);
-        }
-        return next === current ? null : next;
-      });
-      if (!ok) return;
-      setSelection(selectionFromBlockIds(createdIds));
-      setSequenceMissingHint(false);
+      const outcome = upsertForObjects(objectIds, (current, objectId) =>
+        upsertSetEnabledBlock(current, {
+          id: nextId("blk"),
+          kind: "instruction",
+          presetId: "set-enabled",
+          objectId,
+          atMs: cursorMs,
+          instr: { enabled },
+        }),
+      );
+      reportUpsert(outcome, enabled ? "使能指令" : "断使能指令");
     },
-    [selectedSequenceId, sequence, cursorMs, updateSelectedSequence],
+    [selectedSequenceId, sequence, cursorMs],
   );
 
   const handleCreateSequence = useCallback(
