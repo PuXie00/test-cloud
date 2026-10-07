@@ -10,6 +10,8 @@ import type {
   ActionSequenceConfig,
   MotionSegmentConfig,
   MotionSegmentSettings,
+  PoseBlock,
+  SetEnabledInstruction,
   TimelineBlock,
 } from "@/app/project/action-sequence/types";
 import type { VirtualAxisId } from "@/app/project/project-document-types";
@@ -17,6 +19,8 @@ import { snapTimeMs } from "./timeline/timeline-data";
 
 export type SequenceEditError =
   | "motion-overlap"
+  /** 同一物体同一时刻已有动作块（位姿、预设关键点或同类指令） */
+  | "time-conflict"
   | "missing-block"
   | "invalid-time-range"
   | "invalid-preset";
@@ -238,11 +242,53 @@ const tryFinalize = (
   }
 };
 
+/**
+ * 同一物体同一时刻的重复动作：运动关键点重复（与校验的 duplicate-pose-time 一致），
+ * 或同类指令重复。键为「类别:物体@时刻」。
+ */
+const sameTimeKeys = (sequence: ActionSequenceConfig): Set<string> => {
+  const keys = new Set<string>();
+  try {
+    for (const [objectId, points] of resolveActionSequence(sequence).posesByObject) {
+      for (let index = 0; index < points.length - 1; index += 1) {
+        const atMs = points[index]?.atMs;
+        if (atMs !== undefined && atMs === points[index + 1]?.atMs) {
+          keys.add(`pose:${objectId}@${atMs}`);
+        }
+      }
+    }
+  } catch {
+    // 预设解析失败时由 tryFinalize / 校验处理
+  }
+  const instructions = new Set<string>();
+  for (const block of sequence.blocks) {
+    if (block.kind !== "instruction") continue;
+    const key = `${block.presetId}:${block.objectId}@${block.atMs}`;
+    if (instructions.has(key)) keys.add(key);
+    instructions.add(key);
+  }
+  return keys;
+};
+
+/** 这次编辑新增了同一时刻的重复动作（原本就有的重复不算，避免老数据一改就被拦） */
+const introducesSameTimeConflict = (
+  previous: ActionSequenceConfig,
+  next: ActionSequenceConfig,
+): boolean => {
+  const before = sameTimeKeys(previous);
+  for (const key of sameTimeKeys(next)) {
+    if (!before.has(key)) return true;
+  }
+  return false;
+};
+
 const commitBlocks = (
+  previous: ActionSequenceConfig,
   sequence: ActionSequenceConfig,
   options?: SequenceEditOptions,
 ): EditResult => {
   if (hasMotionOverlap(sequence)) return { ok: false, reason: "motion-overlap" };
+  if (introducesSameTimeConflict(previous, sequence)) return { ok: false, reason: "time-conflict" };
   return tryFinalize(sequence, options);
 };
 
@@ -256,8 +302,69 @@ export const insertTimelineBlock = (
   if (error) return { ok: false, reason: error };
   const next = cloneSequence(sequence);
   next.blocks.push(cloneBlock(snapped));
-  return commitBlocks(next, options);
+  return commitBlocks(sequence, next, options);
 };
+
+export type UpsertResult =
+  | { ok: true; sequence: ActionSequenceConfig; blockId: string; updated: boolean }
+  | { ok: false; reason: SequenceEditError };
+
+const upsertAtTime = <T extends PoseBlock | SetEnabledInstruction>(
+  sequence: ActionSequenceConfig,
+  block: T,
+  isSame: (existing: TimelineBlock, atMs: number) => existing is T,
+  update: (existing: T) => T,
+  options?: SequenceEditOptions,
+): UpsertResult => {
+  const atMs = snapTimeMs(block.atMs);
+  const existing = sequence.blocks.find((item): item is T => isSame(item, atMs));
+  if (existing) {
+    const replaced = replaceTimelineBlock(sequence, update(existing), options);
+    return replaced.ok
+      ? { ok: true, sequence: replaced.sequence, blockId: existing.id, updated: true }
+      : replaced;
+  }
+  const inserted = insertTimelineBlock(sequence, block, options);
+  return inserted.ok
+    ? { ok: true, sequence: inserted.sequence, blockId: block.id, updated: false }
+    : inserted;
+};
+
+/**
+ * 新建位姿：该物体在这一时刻已有位姿就更新它的数值（保留原块和前后的运动区间设置），
+ * 否则新建；这一时刻是预设关键点等其他动作时拒绝（time-conflict）。
+ */
+export const upsertPoseBlock = (
+  sequence: ActionSequenceConfig,
+  block: PoseBlock,
+  options?: SequenceEditOptions,
+): UpsertResult =>
+  upsertAtTime(
+    sequence,
+    block,
+    (existing, atMs): existing is PoseBlock =>
+      existing.kind === "pose" && existing.objectId === block.objectId && existing.atMs === atMs,
+    (existing) => ({ ...existing, pose: { ...block.pose } }),
+    options,
+  );
+
+/** 新建使能 / 断使能：该物体在这一时刻已有同类指令就更新，否则新建 */
+export const upsertSetEnabledBlock = (
+  sequence: ActionSequenceConfig,
+  block: SetEnabledInstruction,
+  options?: SequenceEditOptions,
+): UpsertResult =>
+  upsertAtTime(
+    sequence,
+    block,
+    (existing, atMs): existing is SetEnabledInstruction =>
+      existing.kind === "instruction" &&
+      existing.presetId === block.presetId &&
+      existing.objectId === block.objectId &&
+      existing.atMs === atMs,
+    (existing) => ({ ...existing, instr: { ...block.instr } }),
+    options,
+  );
 
 export const applyPoseAxisWrite = (
   sequence: ActionSequenceConfig,
@@ -297,7 +404,7 @@ export const replaceTimelineBlock = (
   if (error) return { ok: false, reason: error };
   const next = cloneSequence(sequence);
   next.blocks[index] = cloneBlock(snapped);
-  return commitBlocks(next, options);
+  return commitBlocks(sequence, next, options);
 };
 
 export const moveTimelineBlock = (
@@ -314,7 +421,7 @@ export const moveTimelineBlock = (
   if (timeRangeError(moved)) return sequence;
   const next = cloneSequence(sequence);
   next.blocks[index] = moved;
-  const committed = commitBlocks(next, options);
+  const committed = commitBlocks(sequence, next, options);
   if (!committed.ok) return sequence;
   return committed.sequence;
 };
@@ -336,7 +443,7 @@ export const shiftTimelineBlocks = (
   next.blocks = next.blocks.map((block) =>
     ids.has(block.id) ? snapBlockTimes(shiftBlock(block, clampedDelta)) : block,
   );
-  const committed = commitBlocks(next, options);
+  const committed = commitBlocks(sequence, next, options);
   if (!committed.ok) return sequence;
   return committed.sequence;
 };
@@ -365,7 +472,7 @@ export const resizeDynamicPreset = (
   }
   resized.startMs = snappedStart;
   resized.endMs = snappedEnd;
-  return commitBlocks(next, options);
+  return commitBlocks(sequence, next, options);
 };
 
 export const deleteTimelineBlocks = (
@@ -516,7 +623,7 @@ export const pasteTimelineBlocks = (
     }
     next.segments.push(...remapped.clipboard.segments);
   }
-  const committed = commitBlocks(next, options);
+  const committed = commitBlocks(sequence, next, options);
   if (!committed.ok) return committed;
   return { ok: true, sequence: committed.sequence, createdIds, droppedBlocks };
 };
