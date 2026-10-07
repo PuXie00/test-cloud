@@ -152,3 +152,54 @@ describe("content library panel", () => {
     expect(builderState.current.handleSequenceSelect).toHaveBeenCalledWith(2);
   });
 });
+
+describe("content library copy / paste", () => {
+  const handleSequenceCopy = vi.fn();
+  const handleSequencePaste = vi.fn();
+
+  beforeEach(() => {
+    handleSequenceCopy.mockClear();
+    handleSequencePaste.mockClear();
+  });
+
+  const openMenuOn = (element: Element) => {
+    fireEvent.contextMenu(element);
+    return screen.findByRole("menu");
+  };
+
+  it("copies the right-clicked sequence from the context menu", async () => {
+    mockBuilder({ handleSequenceCopy, handleSequencePaste, canPasteSequence: false });
+    render(<ContentLibraryPanel />);
+    await openMenuOn(screen.getByRole("button", { name: "共享斜面" }));
+    const paste = screen.getByRole("menuitem", { name: /粘贴为新序列/ });
+    expect(paste.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(screen.getByRole("menuitem", { name: /复制「共享斜面」/ }));
+    expect(handleSequenceCopy).toHaveBeenCalledWith(1);
+  });
+
+  it("pastes from the context menu on empty space, where copy is unavailable", async () => {
+    mockBuilder({ handleSequenceCopy, handleSequencePaste, canPasteSequence: true });
+    render(<ContentLibraryPanel />);
+    await openMenuOn(screen.getByRole("listbox", { name: "动作序列库列表" }));
+    expect(screen.getByRole("menuitem", { name: /^复制/ }).getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(screen.getByRole("menuitem", { name: /粘贴为新序列/ }));
+    expect(handleSequencePaste).toHaveBeenCalledTimes(1);
+  });
+
+  it("copies the focused row with Ctrl+C and pastes with Ctrl+V", () => {
+    mockBuilder({ handleSequenceCopy, handleSequencePaste, canPasteSequence: true });
+    render(<ContentLibraryPanel />);
+    const row = screen.getByRole("button", { name: "共享斜面" });
+    fireEvent.keyDown(row, { key: "c", ctrlKey: true });
+    expect(handleSequenceCopy).toHaveBeenCalledWith(1);
+    fireEvent.keyDown(row, { key: "v", metaKey: true });
+    expect(handleSequencePaste).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not paste with Ctrl+V when nothing has been copied", () => {
+    mockBuilder({ handleSequenceCopy, handleSequencePaste, canPasteSequence: false });
+    render(<ContentLibraryPanel />);
+    fireEvent.keyDown(screen.getByRole("button", { name: "共享斜面" }), { key: "v", ctrlKey: true });
+    expect(handleSequencePaste).not.toHaveBeenCalled();
+  });
+});

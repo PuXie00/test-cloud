@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { MousePointerClick } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
@@ -9,7 +9,8 @@ import {
 import { sequencePathIsClosed, SEQUENCE_LOOP_DISABLED_HINT } from "@/app/project/action-sequence/sequence-loop";
 import { invalidTimelineTargets } from "@/app/project/action-sequence/validate-sequence";
 import { useActionBuilder } from "../use-action-builder";
-import { selectionBlockIds } from "../sequence-selection";
+import { ClipboardContextMenu, clipboardShortcutOf } from "../action-clipboard-menu";
+import { isBlockSelected, selectionBlockIds } from "../sequence-selection";
 import {
   TIMELINE_PX_PER_SECOND_MAX,
   TIMELINE_PX_PER_SECOND_MIN,
@@ -54,6 +55,7 @@ const SequenceEditor = () => {
     handleDeleteSequence,
     handleBlockCopy,
     handleBlockPaste,
+    canPasteBlock,
     handleTimelinePxPerSecondChange,
     handleTimelineZoomIn,
     handleTimelineZoomOut,
@@ -116,16 +118,25 @@ const SequenceEditor = () => {
   const timelineResolved = resolved ?? unresolvedSequenceStub(sequence);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (isEditableTarget(event.target)) return;
-    const mod = event.ctrlKey || event.metaKey;
-    if (mod && event.key.toLowerCase() === "c") {
+    const shortcut = clipboardShortcutOf(event);
+    if (shortcut === "copy") {
       event.preventDefault();
       handleBlockCopy();
       return;
     }
-    if (mod && event.key.toLowerCase() === "v") {
+    if (shortcut === "paste") {
       event.preventDefault();
       handleBlockPaste();
+    }
+  };
+
+  /** 右键点在没选中的块上时先选中它，菜单里的“复制”作用于这个块 */
+  const handleTimelineContextMenu = (event: MouseEvent<HTMLElement>) => {
+    const target =
+      event.target instanceof Element ? event.target.closest<HTMLElement>("[data-block-id]") : null;
+    const blockId = target?.dataset.blockId;
+    if (blockId && !isBlockSelected(selection, blockId)) {
+      handleSelectionChange({ kind: "block", blockId });
     }
   };
 
@@ -164,26 +175,36 @@ const SequenceEditor = () => {
           预设无法解析，可继续编辑块
         </div>
       )}
-      <div className="flex min-h-0 flex-1">
-        <TimelineEditor
-          sequence={sequence}
-          resolved={timelineResolved}
-          objects={timelineObjects}
-          selection={selection}
-          cursorMs={cursorMs}
-          isPlaying={isPlaying}
-          timelinePxPerSecond={timelinePxPerSecond}
-          onSelectionChange={handleSelectionChange}
-          onCursorChange={handleCursorChange}
-          onPoseMove={handleMoveTimelineBlock}
-          onPresetMove={handleMoveTimelineBlock}
-          onBlocksShift={handleShiftTimelineBlocks}
-          onBlocksShiftEnd={handleShiftTimelineBlocksEnd}
-          onDynamicPresetResize={handleResizeDynamicPreset}
-          onTimelinePxPerSecondChange={handleTimelinePxPerSecondChange}
-          invalidTargets={invalidTargets}
-        />
-      </div>
+      <ClipboardContextMenu
+        copyLabel="复制动作块"
+        pasteLabel="粘贴到播放头"
+        canCopy={selectedBlockIds.length > 0}
+        canPaste={canPasteBlock}
+        onCopy={handleBlockCopy}
+        onPaste={handleBlockPaste}
+        onContextMenu={handleTimelineContextMenu}
+      >
+        <div className="flex min-h-0 flex-1">
+          <TimelineEditor
+            sequence={sequence}
+            resolved={timelineResolved}
+            objects={timelineObjects}
+            selection={selection}
+            cursorMs={cursorMs}
+            isPlaying={isPlaying}
+            timelinePxPerSecond={timelinePxPerSecond}
+            onSelectionChange={handleSelectionChange}
+            onCursorChange={handleCursorChange}
+            onPoseMove={handleMoveTimelineBlock}
+            onPresetMove={handleMoveTimelineBlock}
+            onBlocksShift={handleShiftTimelineBlocks}
+            onBlocksShiftEnd={handleShiftTimelineBlocksEnd}
+            onDynamicPresetResize={handleResizeDynamicPreset}
+            onTimelinePxPerSecondChange={handleTimelinePxPerSecondChange}
+            invalidTargets={invalidTargets}
+          />
+        </div>
+      </ClipboardContextMenu>
     </div>
   );
 };
