@@ -503,4 +503,29 @@ describe("timeline copy / paste", () => {
     expect(handleBlockCopy).toHaveBeenCalledTimes(1);
     expect(handleBlockPaste).toHaveBeenCalledTimes(1);
   });
+
+  it("handles Ctrl/⌘+C and V on the window when the dock is unfocused", () => {
+    mockBuilder({
+      handleBlockCopy,
+      handleBlockPaste,
+      canPasteBlock: false,
+      selection: { kind: "block", blockId: "pose-1" },
+    });
+    render(<EditorDock />);
+    expect(fireEvent.keyDown(window, { key: "c", ctrlKey: true })).toBe(false);
+    expect(fireEvent.keyDown(document.body, { key: "v", ctrlKey: true })).toBe(false);
+    expect(handleBlockCopy).toHaveBeenCalledTimes(1);
+    expect(handleBlockPaste).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves Ctrl/⌘+C alone without selected blocks, and keys already handled elsewhere", () => {
+    mockBuilder({ handleBlockCopy, handleBlockPaste, canPasteBlock: true });
+    render(<EditorDock />);
+    expect(fireEvent.keyDown(window, { key: "c", ctrlKey: true })).toBe(true);
+    const handled = new KeyboardEvent("keydown", { key: "v", ctrlKey: true, cancelable: true });
+    handled.preventDefault();
+    window.dispatchEvent(handled);
+    expect(handleBlockCopy).not.toHaveBeenCalled();
+    expect(handleBlockPaste).not.toHaveBeenCalled();
+  });
 });

@@ -25,8 +25,6 @@ export type SequenceClipboard = {
 
 export type BlocksClipboard = TimelineClipboard & {
   projectId: string | null;
-  /** 复制时的物体选择版本；粘贴时选择变过才粘贴到选中的物体上 */
-  objectSelectionVersion: number;
   /** 块用到的物体，按时间轴轨道顺序 */
   objects: ClipboardObject[];
 };

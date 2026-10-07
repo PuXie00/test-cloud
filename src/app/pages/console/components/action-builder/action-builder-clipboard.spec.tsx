@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { ProjectProvider } from "@/app/project/project-provider";
@@ -15,6 +15,12 @@ import { ProjectStoreProvider } from "@/app/pages/console/hooks/use-project-stor
 import { ActionBuilderProvider } from "./action-builder-context";
 import { actionClipboard } from "./action-clipboard";
 import { useActionBuilder } from "./use-action-builder";
+
+const { toastWarning } = vi.hoisted(() => ({ toastWarning: vi.fn() }));
+
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), warning: toastWarning, error: vi.fn(), info: vi.fn() },
+}));
 
 const stubCsocketOpenProject = () => {
   const ok = async () => ({ ok: true as const, data: { success: true as const } });
@@ -84,6 +90,7 @@ const pastedBlocks = (result: Rendered) =>
 describe("action builder copy / paste", () => {
   beforeEach(() => {
     actionClipboard.clear();
+    toastWarning.mockClear();
     installMemoryProjectAPI();
     stubCsocketOpenProject();
   });
@@ -97,6 +104,7 @@ describe("action builder copy / paste", () => {
   it("pastes two connected blocks with their motion segment at the playhead", async () => {
     const { result } = renderBuilder();
     await openFixtureProject(result);
+    act(() => result.current.builder.handleObjectsSelect([7]));
     armTwoPoses(result);
     act(() => result.current.builder.handleBlockCopy());
     expect(result.current.builder.canPasteBlock).toBe(true);
@@ -132,7 +140,7 @@ describe("action builder copy / paste", () => {
     ]);
   });
 
-  it("pastes back onto the original object when the object selection did not change", async () => {
+  it("pastes onto the objects selected at paste time, even if they were selected before copying", async () => {
     const { result } = renderBuilder();
     await openFixtureProject(result);
     act(() => result.current.builder.handleObjectsSelect([8, 9]));
@@ -142,7 +150,45 @@ describe("action builder copy / paste", () => {
     act(() => result.current.builder.handleBlockPaste());
 
     expect(pastedBlocks(result).map((block) => (block.kind === "pose" ? block.objectId : null))).toEqual([
-      7, 7,
+      8, 8, 9, 9,
+    ]);
+  });
+
+  it("warns and pastes nothing when no object is selected", async () => {
+    const { result } = renderBuilder();
+    await openFixtureProject(result);
+    armTwoPoses(result);
+    act(() => result.current.builder.handleBlockCopy());
+    act(() => result.current.builder.handleCursorChange(5000));
+    act(() => result.current.builder.handleBlockPaste());
+
+    expect(toastWarning).toHaveBeenCalledWith("请先选中要粘贴到的物体");
+    expect(pastedBlocks(result)).toEqual([]);
+  });
+
+  it("warns why when the paste lands on existing blocks", async () => {
+    const { result } = renderBuilder();
+    await openFixtureProject(result);
+    act(() => result.current.builder.handleObjectsSelect([7]));
+    armTwoPoses(result);
+    act(() => result.current.builder.handleBlockCopy());
+    act(() => result.current.builder.handleCursorChange(1000));
+    act(() => result.current.builder.handleBlockPaste());
+
+    expect(toastWarning).toHaveBeenCalledTimes(1);
+    expect(toastWarning.mock.calls[0]?.[0]).toMatch(/粘贴位置/);
+    expect(pastedBlocks(result)).toEqual([]);
+  });
+
+  it("warns when there is nothing to paste", async () => {
+    const { result } = renderBuilder();
+    await openFixtureProject(result);
+    act(() => result.current.builder.handleBlockPaste());
+    act(() => result.current.builder.handleSequencePaste());
+
+    expect(toastWarning.mock.calls.map((call) => call[0])).toEqual([
+      "还没有复制动作块",
+      "还没有复制动作序列",
     ]);
   });
 

@@ -196,10 +196,13 @@ describe("content library copy / paste", () => {
     expect(handleSequencePaste).toHaveBeenCalledTimes(1);
   });
 
-  it("does not paste with Ctrl+V when nothing has been copied", () => {
+  it("claims Ctrl+C / V so the timeline's window shortcuts do not run too", () => {
     mockBuilder({ handleSequenceCopy, handleSequencePaste, canPasteSequence: false });
     render(<ContentLibraryPanel />);
-    fireEvent.keyDown(screen.getByRole("button", { name: "共享斜面" }), { key: "v", ctrlKey: true });
-    expect(handleSequencePaste).not.toHaveBeenCalled();
+    const row = screen.getByRole("button", { name: "共享斜面" });
+    expect(fireEvent.keyDown(row, { key: "c", ctrlKey: true })).toBe(false);
+    // 没复制过也交给 handleSequencePaste，由它提示
+    expect(fireEvent.keyDown(row, { key: "v", ctrlKey: true })).toBe(false);
+    expect(handleSequencePaste).toHaveBeenCalledTimes(1);
   });
 });

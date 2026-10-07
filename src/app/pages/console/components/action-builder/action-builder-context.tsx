@@ -42,7 +42,6 @@ import {
 import {
   actionClipboard,
   buildPastedSequence,
-  matchClipboardObjects,
   retargetToSelectedObjects,
   useActionClipboard,
   type ClipboardObject,
@@ -52,7 +51,6 @@ import {
   copyTimelineBlocks,
   deleteTimelineBlocks,
   insertTimelineBlock,
-  type ObjectIdMap,
   type PasteResult,
   type PoseAxisWrite,
   type SequenceEditError,
@@ -142,8 +140,6 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   const [sequenceMissingHint, setSequenceMissingHint] = useState(false);
   const [timelinePxPerSecond, setTimelinePxPerSecond] = useState(TIMELINE_PX_PER_SECOND_DEFAULT);
   const clipboard = useActionClipboard();
-  /** 物体选择每变一次加一；用来判断复制之后用户有没有重新选物体 */
-  const objectSelectionVersionRef = useRef(0);
   const [lastPersistError, setLastPersistError] = useState<string | null>(null);
   const [isShiftingBlocks, setIsShiftingBlocks] = useState(false);
   const [sequenceIssues, setSequenceIssues] = useState<SequenceIssue[]>([]);
@@ -262,10 +258,6 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     hydratedMotionRef.current = document.motion;
     hydratingRef.current = false;
   }, [currentProject?.id, currentProject?.document, documentRevision]);
-
-  useEffect(() => {
-    objectSelectionVersionRef.current += 1;
-  }, [selectedObjectIds]);
 
   /** 当前工程的物体，按时间轴轨道顺序 */
   const projectClipboardObjects = useCallback(
@@ -778,56 +770,54 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     actionClipboard.setBlocks({
       ...copied,
       projectId: currentProject?.id ?? null,
-      objectSelectionVersion: objectSelectionVersionRef.current,
       objects: describeClipboardObjects(timelineClipboardObjectIds(copied)),
     });
     toast.success(`已复制 ${copied.blocks.length} 个动作块`);
   }, [selectedBlockIds, sequence, currentProject?.id, describeClipboardObjects]);
 
-  /**
-   * 粘贴到播放头位置。复制后重新选了物体（或换了工程且选了物体）就粘贴到选中的物体上；
-   * 否则粘贴回原来的物体，换了工程时按 id / 名称找对应物体。
-   */
+  /** 粘贴到播放头位置、当前选中的物体上；粘贴不成功都用警告提示原因 */
   const handleBlockPaste = useCallback(() => {
     const copied = actionClipboard.get().blocks;
-    if (!copied || copied.blocks.length === 0 || !selectedSequenceId) return;
-    const sameProject = copied.projectId === (currentProject?.id ?? null);
-    const reselected =
-      !sameProject || copied.objectSelectionVersion !== objectSelectionVersionRef.current;
-
-    let objectMaps: ObjectIdMap[] | undefined;
-    if (selectedObjectIds.length > 0 && reselected) {
-      const trackOrder = new Map(timelineObjects.map((object, index) => [object.id, index]));
-      const targetIds = [...selectedObjectIds].sort(
-        (left, right) => (trackOrder.get(left) ?? 0) - (trackOrder.get(right) ?? 0),
-      );
-      const retargeted = retargetToSelectedObjects(copied.objects, targetIds);
-      if (!retargeted.ok) {
-        toast.warning(retargeted.message);
-        return;
-      }
-      objectMaps = retargeted.maps;
-    } else if (!sameProject) {
-      objectMaps = [matchClipboardObjects(copied.objects, projectClipboardObjects())];
+    if (!copied || copied.blocks.length === 0) {
+      toast.warning("还没有复制动作块");
+      return;
+    }
+    if (selectedSequenceId === null) {
+      toast.warning("请先选择要粘贴到的动作序列");
+      return;
+    }
+    if (selectedObjectIds.length === 0) {
+      toast.warning("请先选中要粘贴到的物体");
+      return;
+    }
+    const trackOrder = new Map(timelineObjects.map((object, index) => [object.id, index]));
+    const targetIds = [...selectedObjectIds].sort(
+      (left, right) => (trackOrder.get(left) ?? 0) - (trackOrder.get(right) ?? 0),
+    );
+    const retargeted = retargetToSelectedObjects(copied.objects, targetIds);
+    if (!retargeted.ok) {
+      toast.warning(retargeted.message);
+      return;
     }
 
     let result: PasteResult | null = null;
     updateSelectedSequence((current) => {
-      const pasted = pasteTimelineBlocks(current, copied, cursorMs, sequenceEditOptions, objectMaps);
+      const pasted = pasteTimelineBlocks(
+        current,
+        copied,
+        cursorMs,
+        sequenceEditOptions,
+        retargeted.maps,
+      );
       result = pasted;
       return pasted.ok && pasted.createdIds.length > 0 ? pasted.sequence : null;
     });
     const outcome = result as PasteResult | null;
-    if (!outcome) return;
-    if (!outcome.ok) {
-      toast.warning(PASTE_ERROR_MESSAGE[outcome.reason]);
+    if (!outcome || !outcome.ok || outcome.createdIds.length === 0) {
+      toast.warning(outcome && !outcome.ok ? PASTE_ERROR_MESSAGE[outcome.reason] : "粘贴失败");
       return;
     }
-    if (outcome.droppedBlocks > 0) {
-      toast.warning(`${outcome.droppedBlocks} 个动作块在当前工程里找不到对应物体，未粘贴`);
-    }
     const createdIds = outcome.createdIds;
-    if (createdIds.length === 0) return;
     setSelection(
       createdIds.length === 1
         ? { kind: "block", blockId: createdIds[0]! }
@@ -835,10 +825,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     );
   }, [
     selectedSequenceId,
-    currentProject?.id,
     selectedObjectIds,
     timelineObjects,
-    projectClipboardObjects,
     updateSelectedSequence,
     cursorMs,
     sequenceEditOptions,
@@ -861,7 +849,11 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   /** 粘贴成一条新序列（可来自别的工程），粘贴后选中它 */
   const handleSequencePaste = useCallback(() => {
     const copied = actionClipboard.get().sequence;
-    if (!copied || !currentProject?.document) return;
+    if (!copied) {
+      toast.warning("还没有复制动作序列");
+      return;
+    }
+    if (!currentProject?.document) return;
     let id: number;
     try {
       [id] = allocateSequenceIdsInProject(motionRef.current.sequences, 1);
