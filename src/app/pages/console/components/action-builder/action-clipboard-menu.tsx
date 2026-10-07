@@ -1,4 +1,4 @@
-import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -16,8 +16,13 @@ const isEditableTarget = (target: EventTarget | null): boolean => {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
 };
 
+type ShortcutEvent = Pick<
+  globalThis.KeyboardEvent,
+  "key" | "ctrlKey" | "metaKey" | "shiftKey" | "altKey" | "target"
+>;
+
 /** Ctrl/⌘+C、Ctrl/⌘+V；输入框里的按键不拦，留给文本复制粘贴 */
-export const clipboardShortcutOf = (event: KeyboardEvent): ClipboardShortcut | null => {
+export const clipboardShortcutOf = (event: ShortcutEvent): ClipboardShortcut | null => {
   if (isEditableTarget(event.target)) return null;
   if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey) return null;
   const key = event.key.toLowerCase();

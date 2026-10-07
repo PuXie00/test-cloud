@@ -127,20 +127,20 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
     setMenuSequenceId(sequenceIdAt(event.target));
   };
 
-  /** 焦点在某一行时复制这一行，否则复制当前选中的序列；粘贴生成新序列 */
+  /**
+   * 焦点在某一行时复制这一行，否则复制当前选中的序列；粘贴生成新序列。
+   * 按键一律拦下，时间轴挂在 window 上的复制粘贴就不会再处理一遍。
+   */
   const handleListKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     const shortcut = clipboardShortcutOf(event);
+    if (!shortcut) return;
+    event.preventDefault();
     if (shortcut === "copy") {
       const id = sequenceIdAt(event.target) ?? selectedSequenceId;
-      if (id === null) return;
-      event.preventDefault();
-      handleSequenceCopy(id);
+      if (id !== null) handleSequenceCopy(id);
       return;
     }
-    if (shortcut === "paste" && canPasteSequence) {
-      event.preventDefault();
-      handleSequencePaste();
-    }
+    handleSequencePaste();
   };
 
   const menuSequence = sequences.find((sequence) => sequence.id === menuSequenceId);
