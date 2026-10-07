@@ -153,7 +153,6 @@ describe("actionClipboard store", () => {
     });
     actionClipboard.setBlocks({
       projectId: "p",
-      objectSelectionVersion: 1,
       blocks: [],
       segments: [],
       objects: [],
@@ -161,7 +160,7 @@ describe("actionClipboard store", () => {
     off();
     expect(listener).toHaveBeenCalledTimes(2);
     expect(actionClipboard.get().sequence?.sequence.name).toBe("S");
-    expect(actionClipboard.get().blocks?.objectSelectionVersion).toBe(1);
+    expect(actionClipboard.get().blocks?.projectId).toBe("p");
   });
 
   it("stores a copy, so later edits to the source do not change the clipboard", () => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { MousePointerClick } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
@@ -98,6 +98,19 @@ const SequenceEditor = () => {
   useEffect(() => {
     const onWindowKeyDown = (event: globalThis.KeyboardEvent) => {
       if (isEditableTarget(event.target)) return;
+      // 复制粘贴不论焦点在哪都作用于时间轴；动作序列库有焦点时由它自己处理（已 preventDefault）
+      const shortcut = event.defaultPrevented ? null : clipboardShortcutOf(event);
+      if (shortcut === "copy") {
+        if (selectedBlockIds.length === 0) return;
+        event.preventDefault();
+        handleBlockCopy();
+        return;
+      }
+      if (shortcut === "paste") {
+        event.preventDefault();
+        handleBlockPaste();
+        return;
+      }
       if (event.key === " " || event.code === "Space") {
         if (!canPlay && !isPlaying) return;
         event.preventDefault();
@@ -111,24 +124,19 @@ const SequenceEditor = () => {
     };
     window.addEventListener("keydown", onWindowKeyDown);
     return () => window.removeEventListener("keydown", onWindowKeyDown);
-  }, [canPlay, handleBlockDelete, handlePlayToggle, isPlaying, selectedBlockIds.length]);
+  }, [
+    canPlay,
+    handleBlockCopy,
+    handleBlockDelete,
+    handleBlockPaste,
+    handlePlayToggle,
+    isPlaying,
+    selectedBlockIds.length,
+  ]);
 
   if (!sequence) return null;
 
   const timelineResolved = resolved ?? unresolvedSequenceStub(sequence);
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const shortcut = clipboardShortcutOf(event);
-    if (shortcut === "copy") {
-      event.preventDefault();
-      handleBlockCopy();
-      return;
-    }
-    if (shortcut === "paste") {
-      event.preventDefault();
-      handleBlockPaste();
-    }
-  };
 
   /** 右键点在没选中的块上时先选中它，菜单里的“复制”作用于这个块 */
   const handleTimelineContextMenu = (event: MouseEvent<HTMLElement>) => {
@@ -144,7 +152,6 @@ const SequenceEditor = () => {
     <div
       ref={rootRef}
       tabIndex={0}
-      onKeyDown={handleKeyDown}
       className="flex min-h-0 min-w-0 flex-1 flex-col outline-none"
     >
       <TimelineToolbar
