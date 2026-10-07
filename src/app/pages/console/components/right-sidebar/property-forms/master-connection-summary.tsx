@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { isCppAckFailed } from "@shared/csocket/ack";
 import { cn } from "@/app/components/ui/utils";
 import { usePlcRuntime } from "@/app/pages/console/hooks/plc-runtime-provider";
 import { reconcileMotorsByOrder } from "@/app/pages/console/hooks/plc-reconciliation";
@@ -88,6 +90,15 @@ export const MasterConnectionSummary = ({
 
   const handlePlcReset = () => {
     // 后续接入 C++
+    const send = window.csocketApi?.resetPlc;
+    if (!send) return;
+    void send([{ deviceId: plcId }])
+      .then((result) => {
+        if (isCppAckFailed(result)) toast.error("PLC复位失败");
+      })
+      .catch(() => {
+        toast.error("PLC复位失败");
+      });
   };
 
   return (

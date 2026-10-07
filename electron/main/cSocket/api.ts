@@ -42,6 +42,13 @@ const toCppRelativeProjectPath = (projectPath: string): string => {
   const name = normalized.split('\\').filter(Boolean).pop() ?? ''
   return `.\\Project\\${name}`
 }
+// const toCppRelativeProjectPath = (projectPath: string): string => {
+//   const normalized = projectPath.trim().replace(/\//g, '\\').replace(/\\+$/, '')
+//   const match = normalized.match(/(?:^|\\)Project\\([^\\]+)$/i)
+//   if (match?.[1]) return `..\\Project\\${match[1]}`
+//   const name = normalized.split('\\').filter(Boolean).pop() ?? ''
+//   return `..\\Project\\${name}`
+// }
 
 type ModelParamCount = {
   modelType: number
@@ -133,6 +140,7 @@ export class CsocketApiService {
     this.wired = true
 
     this.client.onMessage((payload) => {
+	//console.log('payload', JSON.stringify(payload));
       if (!payload || typeof payload !== 'object') return
       if (
         'type' in payload &&
@@ -140,12 +148,13 @@ export class CsocketApiService {
       ) {
         return
       }
+     
       const envelope = payload as CppEnvelope
       const msg = envelope.result
       const optCmd = envelope.OptCmd
       if (!optCmd) return
       if (optCmd === 'Info|plc') {
-        // console.log('Info|plc', JSON.stringify(msg));
+        //console.log('Info|plc', JSON.stringify(msg));
         const next = this.plcMasterStatus.ingestPlc(msg)
         if (next) this.broadcastMasterStatus(next)
       }
@@ -155,7 +164,7 @@ export class CsocketApiService {
         if (next) this.broadcastMasterStatus(next)
       }
       if (optCmd === 'Info|model') {
-        // console.log('Info|model', JSON.stringify(msg));
+        //console.log('Info|model', JSON.stringify(msg));
         if (this.modelInfo.ingest(msg)) {
           // console.log('Info|model ingest>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>');
           this.broadcast(CSOCKET_CHANNELS.readModelInfoPolling, msg)
@@ -419,6 +428,8 @@ export class CsocketApiService {
       runDirection: number,
       speedScale: number,
       loopCount: number,
+      isNearest: number,
+      selectedCurveTimeMs: number,
       deviceCount: number,
     }[] = []
     const isTMapedHeadRelease: {
@@ -441,6 +452,8 @@ export class CsocketApiService {
           runDirection: item.runDirection === 2 ? 2 : 1,
           speedScale: item.speedScale * 100,
           loopCount: item.loopCount,
+          isNearest: 1,
+          selectedCurveTimeMs: 0,
           deviceCount: item.deviceId.length,
         })
         isTMapedHeadRelease.push({

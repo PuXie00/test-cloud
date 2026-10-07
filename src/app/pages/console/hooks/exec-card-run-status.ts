@@ -13,7 +13,7 @@ export const ACTION_RUN_TIME_UNIT_MS = 1;
  * PLC 只上报正在执行的动作（约 50ms 一次），不会通知完成或停止。
  * 一个动作超过这么久没再上报，才视为真正停下来了。
  */
-export const ACTION_RUN_STALE_MS = 500;
+export const ACTION_RUN_STALE_MS = 1000;
 
 export type ActionRunReport = {
   actionId: number;
