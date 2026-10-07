@@ -1,4 +1,12 @@
-import { useMemo, useRef, useState, type DragEvent, type PointerEvent } from "react";
+import {
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+  type PointerEvent,
+} from "react";
 import { ListClock, Plus, Search } from "lucide-react";
 import { PanelHeader } from "@/app/components/ics/panel-header";
 import { cn } from "@/app/components/ui/utils";
@@ -14,6 +22,7 @@ import {
   type ProgramNode,
 } from "../timeline/timeline-data";
 import { writeLibraryDrag } from "./library-dnd";
+import { ClipboardContextMenu, clipboardShortcutOf } from "../action-clipboard-menu";
 
 type LibraryEntry = { kind: "sequence"; sequence: ActionSequenceConfig };
 
@@ -51,12 +60,17 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
     handleSequenceSelect,
     handleCreateSequence,
     handleProgramItemInsert,
+    canPasteSequence,
+    handleSequenceCopy,
+    handleSequencePaste,
   } = useActionBuilder();
   const { currentProject } = useProject();
   const document = currentProject?.document;
 
   const [search, setSearch] = useState("");
   const [chapterMenuFor, setChapterMenuFor] = useState<number | null>(null);
+  /** 右键点到的序列；点在空白处为 null */
+  const [menuSequenceId, setMenuSequenceId] = useState<number | null>(null);
   const longPressRef = useRef<number | null>(null);
 
   const chapters = useMemo(() => collectChapters(programs), [programs]);
@@ -101,6 +115,36 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
     writeLibraryDrag(event.dataTransfer, { kind: "sequence", id: entry.sequence.id });
   };
 
+  const sequenceIdAt = (target: EventTarget | null): number | null => {
+    const row =
+      target instanceof Element ? target.closest<HTMLElement>("[data-sequence-id]") : null;
+    const id = row ? Number(row.dataset.sequenceId) : NaN;
+    return Number.isFinite(id) ? id : null;
+  };
+
+  const handleListContextMenu = (event: MouseEvent<HTMLElement>) => {
+    clearLongPress();
+    setMenuSequenceId(sequenceIdAt(event.target));
+  };
+
+  /** 焦点在某一行时复制这一行，否则复制当前选中的序列；粘贴生成新序列 */
+  const handleListKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    const shortcut = clipboardShortcutOf(event);
+    if (shortcut === "copy") {
+      const id = sequenceIdAt(event.target) ?? selectedSequenceId;
+      if (id === null) return;
+      event.preventDefault();
+      handleSequenceCopy(id);
+      return;
+    }
+    if (shortcut === "paste" && canPasteSequence) {
+      event.preventDefault();
+      handleSequencePaste();
+    }
+  };
+
+  const menuSequence = sequences.find((sequence) => sequence.id === menuSequenceId);
+
   const renderChapterMenu = (entry: LibraryEntry) => (
     <div
       role="menu"
@@ -143,6 +187,7 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
         <div
           role="button"
           tabIndex={0}
+          data-sequence-id={id}
           aria-label={rowLabel}
           aria-pressed={selected}
           draggable
@@ -219,19 +264,33 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
         </div>
       </div>
 
-      <div
-        className="custom-scrollbar min-h-0 flex-1 overflow-y-auto py-1"
-        role="listbox"
-        aria-label="动作序列库列表"
+      <ClipboardContextMenu
+        copyLabel={menuSequence ? `复制「${menuSequence.name}」` : "复制"}
+        pasteLabel="粘贴为新序列"
+        canCopy={menuSequence !== undefined}
+        canPaste={canPasteSequence}
+        onCopy={() => {
+          if (menuSequence) handleSequenceCopy(menuSequence.id);
+        }}
+        onPaste={handleSequencePaste}
+        onContextMenu={handleListContextMenu}
       >
-        {entries.length === 0 ? (
-          <p className="px-3 py-6 text-center text-body-sm text-muted-foreground">
-            {search ? "没有匹配的内容" : "暂无内容，选中物体后从右上角新建"}
-          </p>
-        ) : (
-          entries.map(renderRow)
-        )}
-      </div>
+        <div
+          className="custom-scrollbar min-h-0 flex-1 overflow-y-auto py-1 outline-none"
+          role="listbox"
+          aria-label="动作序列库列表"
+          tabIndex={-1}
+          onKeyDown={handleListKeyDown}
+        >
+          {entries.length === 0 ? (
+            <p className="px-3 py-6 text-center text-body-sm text-muted-foreground">
+              {search ? "没有匹配的内容" : "暂无内容，选中物体后从右上角新建"}
+            </p>
+          ) : (
+            entries.map(renderRow)
+          )}
+        </div>
+      </ClipboardContextMenu>
     </aside>
   );
 };

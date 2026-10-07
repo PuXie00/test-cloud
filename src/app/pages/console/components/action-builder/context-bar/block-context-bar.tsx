@@ -121,6 +121,8 @@ type BlockContextBarProps = {
   onReplaceBlock?: (block: TimelineBlock) => void;
   segmentDurationMs?: number;
   onDelete?: () => void;
+  /** 复制选中的动作块；不传时不显示“复制” */
+  onCopy?: () => void;
   children?: ReactNode;
 };
 
@@ -132,6 +134,7 @@ export const BlockContextBar = ({
   onReplaceBlock,
   segmentDurationMs,
   onDelete,
+  onCopy,
   children,
 }: BlockContextBarProps) => {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -238,24 +241,34 @@ export const BlockContextBar = ({
         </button>
       ) : null}
 
-      <div className="relative shrink-0">
-        <button
-          type="button"
-          aria-label="更多设置"
-          aria-expanded={menuOpen}
-          onClick={() => setMenuOpen((current) => !current)}
-          className="flex h-14 w-10 items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          <MoreHorizontal className="h-4 w-4" aria-hidden />
-        </button>
-        {menuOpen && (
-          <div className="absolute bottom-full right-0 z-50 mb-1 min-w-40 rounded-md bg-card py-1 shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
-            <button type="button" className="flex w-full px-3 py-1.5 text-left text-body-sm hover:bg-muted">
-              复制
-            </button>
-          </div>
-        )}
-      </div>
+      {/* 更多设置目前只有“复制”；没有可用项时（如运动区间）不显示 */}
+      {onCopy ? (
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            aria-label="更多设置"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((current) => !current)}
+            className="flex h-14 w-10 items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <MoreHorizontal className="h-4 w-4" aria-hidden />
+          </button>
+          {menuOpen && (
+            <div className="absolute bottom-full right-0 z-50 mb-1 min-w-40 rounded-md bg-card py-1 shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
+              <button
+                type="button"
+                onClick={() => {
+                  onCopy();
+                  setMenuOpen(false);
+                }}
+                className="flex w-full px-3 py-1.5 text-left text-body-sm hover:bg-muted"
+              >
+                复制
+              </button>
+            </div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 };

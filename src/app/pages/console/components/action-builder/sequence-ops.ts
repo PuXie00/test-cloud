@@ -8,6 +8,7 @@ import {
 } from "@/app/project/action-sequence/resolve-sequence";
 import type {
   ActionSequenceConfig,
+  MotionSegmentConfig,
   MotionSegmentSettings,
   TimelineBlock,
 } from "@/app/project/action-sequence/types";
@@ -25,8 +26,23 @@ export type EditResult =
   | { ok: false; reason: SequenceEditError };
 
 export type PasteResult =
-  | { ok: true; sequence: ActionSequenceConfig; createdIds: string[] }
+  | {
+      ok: true;
+      sequence: ActionSequenceConfig;
+      createdIds: string[];
+      /** 物体映射不到而没有粘贴的块数 */
+      droppedBlocks: number;
+    }
   | { ok: false; reason: SequenceEditError };
+
+/** 复制下来的一组块，连同两端都在这组块里的运动区间设置 */
+export type TimelineClipboard = {
+  blocks: TimelineBlock[];
+  segments: MotionSegmentConfig[];
+};
+
+/** 源物体 id → 目标物体 id；不在表里的物体上的块不粘贴 */
+export type ObjectIdMap = ReadonlyMap<number, number>;
 
 export type SequenceEditOptions = ReconcileSegmentOptions;
 
@@ -365,40 +381,144 @@ export const deleteTimelineBlocks = (
   return finalize(next, options);
 };
 
+const PRESET_REF_PREFIX = "preset:";
+
+type SegmentRef = { blockId: string; objectId?: number; rest?: string };
+
+/** 运动区间端点：位姿块是块 id；预设关键点是 preset:<块 id>:<物体 id>:<序号> */
+const parseSegmentRef = (ref: string): SegmentRef => {
+  if (!ref.startsWith(PRESET_REF_PREFIX)) return { blockId: ref };
+  const [blockId = "", objectId, ...rest] = ref.slice(PRESET_REF_PREFIX.length).split(":");
+  return { blockId, objectId: Number(objectId), rest: rest.join(":") };
+};
+
+const formatSegmentRef = (ref: SegmentRef): string =>
+  ref.objectId === undefined
+    ? ref.blockId
+    : `${PRESET_REF_PREFIX}${ref.blockId}:${ref.objectId}:${ref.rest ?? ""}`;
+
+const blockObjectIds = (block: TimelineBlock): number[] =>
+  block.kind === "pose" || block.kind === "instruction" ? [block.objectId] : block.orderedObjectIds;
+
+/** 块用到的全部物体 id，按出现顺序去重 */
+export const timelineClipboardObjectIds = (clipboard: TimelineClipboard): number[] =>
+  uniqueIds(clipboard.blocks.flatMap(blockObjectIds));
+
 export const copyTimelineBlocks = (
   sequence: ActionSequenceConfig,
   blockIds: string[],
-): TimelineBlock[] => {
+): TimelineClipboard => {
   const ids = new Set(blockIds);
-  return sequence.blocks.filter((block) => ids.has(block.id)).map(cloneBlock);
+  const blocks = sequence.blocks.filter((block) => ids.has(block.id)).map(cloneBlock);
+  const copied = new Set(blocks.map((block) => block.id));
+  // 两端都在复制范围内的区间（相连的两个块之间）一起带走
+  const segments = sequence.segments
+    .filter(
+      (segment) =>
+        copied.has(parseSegmentRef(segment.fromRef).blockId) &&
+        copied.has(parseSegmentRef(segment.toRef).blockId),
+    )
+    .map((segment) => ({ ...segment, settings: cloneSettings(segment.settings) }));
+  return { blocks, segments };
 };
 
+/**
+ * 把一组块换到新的块 id 和物体上，区间端点跟着改写。
+ * 物体映射不到的块不要；预设块只要有一个物体映射不到就整块不要（预设的效果依赖整组物体）。
+ */
+export const remapTimelineClipboard = (
+  clipboard: TimelineClipboard,
+  objectMap: ObjectIdMap,
+  blockIdFor: (sourceId: string) => string,
+): { clipboard: TimelineClipboard; droppedBlocks: number } => {
+  const blockIds = new Map<string, string>();
+  const blocks: TimelineBlock[] = [];
+  for (const source of clipboard.blocks) {
+    const objectIds = blockObjectIds(source).map((objectId) => objectMap.get(objectId));
+    if (objectIds.some((objectId) => objectId === undefined)) continue;
+    const id = blockIdFor(source.id);
+    blockIds.set(source.id, id);
+    const block = cloneBlock(source);
+    if (block.kind === "pose" || block.kind === "instruction") {
+      blocks.push({ ...block, id, objectId: objectIds[0]! });
+    } else {
+      blocks.push({ ...block, id, orderedObjectIds: objectIds as number[] });
+    }
+  }
+  const remapRef = (ref: string): string | null => {
+    const parsed = parseSegmentRef(ref);
+    const blockId = blockIds.get(parsed.blockId);
+    if (blockId === undefined) return null;
+    if (parsed.objectId === undefined) return formatSegmentRef({ blockId });
+    const objectId = objectMap.get(parsed.objectId);
+    if (objectId === undefined) return null;
+    return formatSegmentRef({ ...parsed, blockId, objectId });
+  };
+  const segments = clipboard.segments.flatMap((segment) => {
+    const fromRef = remapRef(segment.fromRef);
+    const toRef = remapRef(segment.toRef);
+    if (fromRef === null || toRef === null) return [];
+    return [{ fromRef, toRef, settings: cloneSettings(segment.settings) }];
+  });
+  return {
+    clipboard: { blocks, segments },
+    droppedBlocks: clipboard.blocks.length - blocks.length,
+  };
+};
+
+/** 重新对齐运动区间设置（新增区间补默认值、已有区间按行程同步） */
+export const finalizeSequenceSegments = (
+  sequence: ActionSequenceConfig,
+  options?: SequenceEditOptions,
+): ActionSequenceConfig => finalize(sequence, options);
+
+/**
+ * 粘贴到播放头位置：整组块平移，最早的块对齐播放头。
+ * objectMaps 每一项粘贴一份（比如粘贴到多个选中的物体上）；不传时粘贴回原来的物体。
+ */
 export const pasteTimelineBlocks = (
   sequence: ActionSequenceConfig,
-  clipboard: TimelineBlock[],
+  clipboard: TimelineClipboard,
   playheadMs: number,
   options?: SequenceEditOptions,
+  objectMaps?: readonly ObjectIdMap[],
 ): PasteResult => {
-  if (clipboard.length === 0) {
-    return { ok: true, sequence: finalize(cloneSequence(sequence), options), createdIds: [] };
+  if (clipboard.blocks.length === 0) {
+    return {
+      ok: true,
+      sequence: finalize(cloneSequence(sequence), options),
+      createdIds: [],
+      droppedBlocks: 0,
+    };
   }
-  const originMs = Math.min(...clipboard.map(blockTimeMs));
+  const maps = objectMaps ?? [
+    new Map(timelineClipboardObjectIds(clipboard).map((objectId) => [objectId, objectId])),
+  ];
+  const originMs = Math.min(...clipboard.blocks.map(blockTimeMs));
   const deltaMs = playheadMs - originMs;
   const existingIds = new Set(sequence.blocks.map((block) => block.id));
   const createdIds: string[] = [];
+  let droppedBlocks = 0;
   const next = cloneSequence(sequence);
-  for (const source of clipboard) {
-    const shifted = snapBlockTimes(shiftBlock(cloneBlock(source), deltaMs));
-    const error = blockError(shifted);
-    if (error) return { ok: false, reason: error };
-    const id = nextBlockId(existingIds);
-    existingIds.add(id);
-    createdIds.push(id);
-    next.blocks.push({ ...shifted, id });
+  for (const objectMap of maps) {
+    const remapped = remapTimelineClipboard(clipboard, objectMap, () => {
+      const id = nextBlockId(existingIds);
+      existingIds.add(id);
+      return id;
+    });
+    droppedBlocks += remapped.droppedBlocks;
+    for (const source of remapped.clipboard.blocks) {
+      const shifted = snapBlockTimes(shiftBlock(source, deltaMs));
+      const error = blockError(shifted);
+      if (error) return { ok: false, reason: error };
+      createdIds.push(shifted.id);
+      next.blocks.push(shifted);
+    }
+    next.segments.push(...remapped.clipboard.segments);
   }
   const committed = commitBlocks(next, options);
   if (!committed.ok) return committed;
-  return { ok: true, sequence: committed.sequence, createdIds };
+  return { ok: true, sequence: committed.sequence, createdIds, droppedBlocks };
 };
 
 export const updateSegmentSettings = (

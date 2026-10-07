@@ -21,6 +21,7 @@ import { validateActionSequence } from "@/app/project/action-sequence/validate-s
 import type { SequenceIssue } from "@/app/project/action-sequence/validate-sequence";
 import { sequenceValidationContextFromSetup } from "@/app/project/project-motion-readiness";
 import { allocateSequenceIdsInProject } from "@/app/project/action-sequence/sequence-id";
+import { sequenceObjectIds } from "@/app/project/action-sequence/sequence-object-ids";
 import {
   nextNewSequenceName,
   normalizeSequenceName,
@@ -39,14 +40,26 @@ import {
   nextId,
 } from "./action-builder-ops";
 import {
+  actionClipboard,
+  buildPastedSequence,
+  matchClipboardObjects,
+  retargetToSelectedObjects,
+  useActionClipboard,
+  type ClipboardObject,
+} from "./action-clipboard";
+import {
   applyPoseAxisWrite,
   copyTimelineBlocks,
   deleteTimelineBlocks,
   insertTimelineBlock,
+  type ObjectIdMap,
+  type PasteResult,
   type PoseAxisWrite,
+  type SequenceEditError,
   type SequenceEditOptions,
   moveTimelineBlock,
   pasteTimelineBlocks,
+  timelineClipboardObjectIds,
   replaceTimelineBlock,
   resizeDynamicPreset,
   shiftTimelineBlocks,
@@ -80,6 +93,13 @@ import type { ActionRightTab } from "./right-panel/action-right-panel";
 
 export { useActionBuilder } from "./use-action-builder";
 
+const PASTE_ERROR_MESSAGE: Record<SequenceEditError, string> = {
+  "motion-overlap": "粘贴位置和已有动作重叠，请换个时间或物体再粘贴",
+  "invalid-time-range": "粘贴后的时间不合法",
+  "invalid-preset": "预设不适用于目标物体",
+  "missing-block": "粘贴失败",
+};
+
 type MotionProjection = {
   sequences: ActionSequenceConfig[];
   programs: ProgramNode[];
@@ -99,7 +119,9 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   const [timelineObjects, setTimelineObjects] = useState<TimelineControlledObject[]>([]);
   const [sequenceMissingHint, setSequenceMissingHint] = useState(false);
   const [timelinePxPerSecond, setTimelinePxPerSecond] = useState(TIMELINE_PX_PER_SECOND_DEFAULT);
-  const [clipboardBlocks, setClipboardBlocks] = useState<TimelineBlock[]>([]);
+  const clipboard = useActionClipboard();
+  /** 物体选择每变一次加一；用来判断复制之后用户有没有重新选物体 */
+  const objectSelectionVersionRef = useRef(0);
   const [lastPersistError, setLastPersistError] = useState<string | null>(null);
   const [isShiftingBlocks, setIsShiftingBlocks] = useState(false);
   const [sequenceIssues, setSequenceIssues] = useState<SequenceIssue[]>([]);
@@ -218,6 +240,39 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     hydratedMotionRef.current = document.motion;
     hydratingRef.current = false;
   }, [currentProject?.id, currentProject?.document, documentRevision]);
+
+  useEffect(() => {
+    objectSelectionVersionRef.current += 1;
+  }, [selectedObjectIds]);
+
+  /** 当前工程的物体，按时间轴轨道顺序 */
+  const projectClipboardObjects = useCallback(
+    (): ClipboardObject[] =>
+      (currentProject?.document?.setup.controlledObjects ?? []).map((object) => ({
+        id: object.id,
+        name: object.name,
+        controlType: object.controlType,
+      })),
+    [currentProject?.document],
+  );
+
+  const describeClipboardObjects = useCallback(
+    (objectIds: Iterable<number>): ClipboardObject[] => {
+      const known = projectClipboardObjects();
+      const order = new Map(known.map((object, index) => [object.id, index]));
+      return [...new Set(objectIds)]
+        .map(
+          (id) =>
+            known.find((object) => object.id === id) ?? { id, name: `物体 ${id}`, controlType: -1 },
+        )
+        .sort(
+          (left, right) =>
+            (order.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
+            (order.get(right.id) ?? Number.MAX_SAFE_INTEGER),
+        );
+    },
+    [projectClipboardObjects],
+  );
 
   const getTimelineObject = useCallback(
     (objectId: number): TimelineControlledObject | undefined =>
@@ -671,25 +726,128 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
 
   const handleBlockCopy = useCallback(() => {
     if (selectedBlockIds.length === 0 || !sequence) return;
-    setClipboardBlocks(copyTimelineBlocks(sequence, selectedBlockIds));
-  }, [selectedBlockIds, sequence]);
-
-  const handleBlockPaste = useCallback(() => {
-    if (clipboardBlocks.length === 0 || !selectedSequenceId) return;
-    let createdIds: string[] = [];
-    const ok = updateSelectedSequence((current) => {
-      const pasted = pasteTimelineBlocks(current, clipboardBlocks, cursorMs, sequenceEditOptions);
-      if (!pasted.ok) return null;
-      createdIds = pasted.createdIds;
-      return pasted.sequence;
+    const copied = copyTimelineBlocks(sequence, selectedBlockIds);
+    if (copied.blocks.length === 0) return;
+    actionClipboard.setBlocks({
+      ...copied,
+      projectId: currentProject?.id ?? null,
+      objectSelectionVersion: objectSelectionVersionRef.current,
+      objects: describeClipboardObjects(timelineClipboardObjectIds(copied)),
     });
-    if (!ok || createdIds.length === 0) return;
+    toast.success(`已复制 ${copied.blocks.length} 个动作块`);
+  }, [selectedBlockIds, sequence, currentProject?.id, describeClipboardObjects]);
+
+  /**
+   * 粘贴到播放头位置。复制后重新选了物体（或换了工程且选了物体）就粘贴到选中的物体上；
+   * 否则粘贴回原来的物体，换了工程时按 id / 名称找对应物体。
+   */
+  const handleBlockPaste = useCallback(() => {
+    const copied = actionClipboard.get().blocks;
+    if (!copied || copied.blocks.length === 0 || !selectedSequenceId) return;
+    const sameProject = copied.projectId === (currentProject?.id ?? null);
+    const reselected =
+      !sameProject || copied.objectSelectionVersion !== objectSelectionVersionRef.current;
+
+    let objectMaps: ObjectIdMap[] | undefined;
+    if (selectedObjectIds.length > 0 && reselected) {
+      const trackOrder = new Map(timelineObjects.map((object, index) => [object.id, index]));
+      const targetIds = [...selectedObjectIds].sort(
+        (left, right) => (trackOrder.get(left) ?? 0) - (trackOrder.get(right) ?? 0),
+      );
+      const retargeted = retargetToSelectedObjects(copied.objects, targetIds);
+      if (!retargeted.ok) {
+        toast.warning(retargeted.message);
+        return;
+      }
+      objectMaps = retargeted.maps;
+    } else if (!sameProject) {
+      objectMaps = [matchClipboardObjects(copied.objects, projectClipboardObjects())];
+    }
+
+    let result: PasteResult | null = null;
+    updateSelectedSequence((current) => {
+      const pasted = pasteTimelineBlocks(current, copied, cursorMs, sequenceEditOptions, objectMaps);
+      result = pasted;
+      return pasted.ok && pasted.createdIds.length > 0 ? pasted.sequence : null;
+    });
+    const outcome = result as PasteResult | null;
+    if (!outcome) return;
+    if (!outcome.ok) {
+      toast.warning(PASTE_ERROR_MESSAGE[outcome.reason]);
+      return;
+    }
+    if (outcome.droppedBlocks > 0) {
+      toast.warning(`${outcome.droppedBlocks} 个动作块在当前工程里找不到对应物体，未粘贴`);
+    }
+    const createdIds = outcome.createdIds;
+    if (createdIds.length === 0) return;
     setSelection(
       createdIds.length === 1
         ? { kind: "block", blockId: createdIds[0]! }
         : { kind: "multi-block", blockIds: createdIds },
     );
-  }, [clipboardBlocks, selectedSequenceId, cursorMs, updateSelectedSequence, sequenceEditOptions]);
+  }, [
+    selectedSequenceId,
+    currentProject?.id,
+    selectedObjectIds,
+    timelineObjects,
+    projectClipboardObjects,
+    updateSelectedSequence,
+    cursorMs,
+    sequenceEditOptions,
+  ]);
+
+  const handleSequenceCopy = useCallback(
+    (sequenceId: number) => {
+      const source = motionRef.current.sequences.find((item) => item.id === sequenceId);
+      if (!source) return;
+      actionClipboard.setSequence({
+        projectId: currentProject?.id ?? null,
+        sequence: source,
+        objects: describeClipboardObjects(sequenceObjectIds(source)),
+      });
+      toast.success(`已复制动作序列「${source.name}」`);
+    },
+    [currentProject?.id, describeClipboardObjects],
+  );
+
+  /** 粘贴成一条新序列（可来自别的工程），粘贴后选中它 */
+  const handleSequencePaste = useCallback(() => {
+    const copied = actionClipboard.get().sequence;
+    if (!copied || !currentProject?.document) return;
+    let id: number;
+    try {
+      [id] = allocateSequenceIdsInProject(motionRef.current.sequences, 1);
+    } catch (error) {
+      setLastPersistError(error instanceof Error ? error.message : "动作序列 id 已满（1~65535）");
+      return;
+    }
+    const pasted = buildPastedSequence(
+      copied,
+      {
+        id,
+        existingNames: motionRef.current.sequences.map((item) => item.name),
+        objects: projectClipboardObjects(),
+      },
+      sequenceEditOptions,
+    );
+    const reconciled = reconcileSequenceLoop(pasted.sequence);
+    const nextSequences = [...motionRef.current.sequences, reconciled.sequence];
+    if (!commitMotionProjection({ ...motionRef.current, sequences: nextSequences })) return;
+    handleSequenceSelect(id);
+    if (pasted.unmatchedObjectNames.length > 0) {
+      toast.warning(
+        `当前工程里找不到物体：${pasted.unmatchedObjectNames.join("、")}，相关的 ${pasted.droppedBlocks} 个动作块未粘贴`,
+      );
+    }
+    if (reconciled.cleared) toast.warning(SEQUENCE_LOOP_CLEARED_TOAST);
+  }, [
+    currentProject?.document,
+    projectClipboardObjects,
+    sequenceEditOptions,
+    commitMotionProjection,
+    handleSequenceSelect,
+  ]);
 
   const handleTimelinePxPerSecondChange = useCallback((pxPerSecond: number) => {
     setTimelinePxPerSecond(clampTimelinePxPerSecond(pxPerSecond));
@@ -808,7 +966,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       sequenceMissingHint,
       dockMode,
       timelinePxPerSecond,
-      canPasteBlock: clipboardBlocks.length > 0,
+      canPasteBlock: (clipboard.blocks?.blocks.length ?? 0) > 0,
+      canPasteSequence: clipboard.sequence !== null,
       setActiveRightTab,
       handleSequenceSelect,
       handleSelectionChange,
@@ -829,6 +988,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleLoopChange,
       handleBlockCopy,
       handleBlockPaste,
+      handleSequenceCopy,
+      handleSequencePaste,
       handleTimelinePxPerSecondChange,
       handleTimelineZoomIn,
       handleTimelineZoomOut,
@@ -864,7 +1025,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       sequenceMissingHint,
       dockMode,
       timelinePxPerSecond,
-      clipboardBlocks,
+      clipboard,
       lastPersistError,
       sequenceIssues,
       getTimelineObject,
@@ -887,6 +1048,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleLoopChange,
       handleBlockCopy,
       handleBlockPaste,
+      handleSequenceCopy,
+      handleSequencePaste,
       handleTimelinePxPerSecondChange,
       handleTimelineZoomIn,
       handleTimelineZoomOut,
