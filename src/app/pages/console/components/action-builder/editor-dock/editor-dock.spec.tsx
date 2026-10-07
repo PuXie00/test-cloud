@@ -22,7 +22,13 @@ const { builderState, capturedEditor } = vi.hoisted(() => ({
 vi.mock("../timeline/timeline-editor", () => ({
   TimelineEditor: (props: TimelineEditorProps) => {
     capturedEditor.current = props;
-    return <div data-testid="timeline-editor" />;
+    return (
+      <div data-testid="timeline-editor">
+        <button type="button" data-block-id="pose-1">
+          位姿 pose-1
+        </button>
+      </div>
+    );
   },
 }));
 
@@ -430,5 +436,71 @@ describe("editor dock sequence editor", () => {
     fireEvent.keyDown(screen.getByLabelText("到达时间"), { key: " " });
     expect(screen.getByRole("button", { name: "播放" })).toBeTruthy();
     expect(capturedEditor.current?.isPlaying).toBe(false);
+  });
+});
+
+describe("timeline copy / paste", () => {
+  const handleBlockCopy = vi.fn();
+  const handleBlockPaste = vi.fn();
+
+  beforeEach(() => {
+    handleBlockCopy.mockClear();
+    handleBlockPaste.mockClear();
+    handleSelectionChange.mockClear();
+  });
+
+  it("selects an unselected block on right-click and copies it from the menu", async () => {
+    mockBuilder({ handleBlockCopy, handleBlockPaste, canPasteBlock: false });
+    render(<EditorDock />);
+    fireEvent.contextMenu(screen.getByRole("button", { name: "位姿 pose-1" }));
+    expect(handleSelectionChange).toHaveBeenCalledWith({ kind: "block", blockId: "pose-1" });
+    await screen.findByRole("menu");
+    expect(
+      screen.getByRole("menuitem", { name: /粘贴到播放头/ }).getAttribute("aria-disabled"),
+    ).toBe("true");
+  });
+
+  it("copies and pastes the selected blocks from the menu", async () => {
+    mockBuilder({
+      handleBlockCopy,
+      handleBlockPaste,
+      canPasteBlock: true,
+      selection: { kind: "block", blockId: "pose-1" },
+    });
+    render(<EditorDock />);
+    fireEvent.contextMenu(screen.getByRole("button", { name: "位姿 pose-1" }));
+    expect(handleSelectionChange).not.toHaveBeenCalled();
+    await screen.findByRole("menu");
+    fireEvent.click(screen.getByRole("menuitem", { name: /复制动作块/ }));
+    expect(handleBlockCopy).toHaveBeenCalledTimes(1);
+    fireEvent.contextMenu(screen.getByTestId("timeline-editor"));
+    await screen.findByRole("menu");
+    fireEvent.click(screen.getByRole("menuitem", { name: /粘贴到播放头/ }));
+    expect(handleBlockPaste).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables copy when no block is selected", async () => {
+    mockBuilder({ handleBlockCopy, handleBlockPaste, canPasteBlock: true });
+    render(<EditorDock />);
+    fireEvent.contextMenu(screen.getByTestId("timeline-editor"));
+    await screen.findByRole("menu");
+    expect(
+      screen.getByRole("menuitem", { name: /复制动作块/ }).getAttribute("aria-disabled"),
+    ).toBe("true");
+  });
+
+  it("copies and pastes with Ctrl/⌘+C and V", () => {
+    mockBuilder({
+      handleBlockCopy,
+      handleBlockPaste,
+      canPasteBlock: true,
+      selection: { kind: "block", blockId: "pose-1" },
+    });
+    render(<EditorDock />);
+    const block = screen.getByRole("button", { name: "位姿 pose-1" });
+    fireEvent.keyDown(block, { key: "c", ctrlKey: true });
+    fireEvent.keyDown(block, { key: "v", metaKey: true });
+    expect(handleBlockCopy).toHaveBeenCalledTimes(1);
+    expect(handleBlockPaste).toHaveBeenCalledTimes(1);
   });
 });

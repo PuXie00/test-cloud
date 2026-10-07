@@ -46,7 +46,7 @@ export const SelectionContextBar = ({
   onUpdateSegment,
   onDeleteBlock,
 }: SelectionContextBarProps) => {
-  const { getTimelineObject } = useActionBuilder();
+  const { getTimelineObject, handleBlockCopy } = useActionBuilder();
   const lookup =
     sequence === null
       ? null
@@ -58,6 +58,7 @@ export const SelectionContextBar = ({
         block={lookup.block}
         onReplaceBlock={onReplaceBlock}
         onDelete={() => onDeleteBlock(lookup.block.id)}
+        onCopy={handleBlockCopy}
       />
     );
   }

@@ -38,7 +38,10 @@ export type ActionBuilderContextValue = {
   dockMode: EditorDockMode;
   /** 时间轴比例尺（像素/秒）；刻度间隔自适应；有 min/max */
   timelinePxPerSecond: number;
+  /** 剪贴板里有动作块（可来自别的序列或工程） */
   canPasteBlock: boolean;
+  /** 剪贴板里有整条动作序列（可来自别的工程） */
+  canPasteSequence: boolean;
   setActiveRightTab: (tab: ActionRightTab) => void;
   handleSequenceSelect: (sequenceId: number | null) => void;
   handleSelectionChange: (selection: SequenceSelection) => void;
@@ -63,6 +66,8 @@ export type ActionBuilderContextValue = {
   handleLoopChange: (loop: boolean) => void;
   handleBlockCopy: () => void;
   handleBlockPaste: () => void;
+  handleSequenceCopy: (sequenceId: number) => void;
+  handleSequencePaste: () => void;
   handleTimelinePxPerSecondChange: (pxPerSecond: number) => void;
   handleTimelineZoomIn: () => void;
   handleTimelineZoomOut: () => void;

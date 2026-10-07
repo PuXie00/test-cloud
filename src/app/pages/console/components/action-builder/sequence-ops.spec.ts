@@ -538,3 +538,128 @@ describe("applyPoseAxisWrite", () => {
     expect(poseOf(result.sequence, "pose-b").pose.v3).toBe(9);
   });
 });
+
+describe("block copy / paste with motion segments", () => {
+  const twoPoses: ActionSequenceConfig = {
+    id: 3,
+    name: "Poses",
+    trajectoryMode: false,
+    blocks: [
+      { id: "pose-a", kind: "pose", objectId: 7, atMs: 1000, pose: origin },
+      { id: "pose-b", kind: "pose", objectId: 7, atMs: 3000, pose: { v1: 100, v2: 0, v3: 0 } },
+    ],
+    segments: [],
+  };
+  const tuned = updateSegmentSettings(twoPoses, "pose-a", "pose-b", {
+    profiles: movingV1IdleOthers(400, 300),
+  });
+  const tunedSettings = tuned.segments.find(
+    (segment) => segment.fromRef === "pose-a" && segment.toRef === "pose-b",
+  )?.settings;
+
+  const pastedSegment = (sequence: ActionSequenceConfig, createdIds: string[]) =>
+    sequence.segments.find(
+      (segment) => segment.fromRef === createdIds[0] && segment.toRef === createdIds[1],
+    );
+
+  it("copies the motion segment between two connected blocks", () => {
+    const clipboard = copyTimelineBlocks(tuned, ["pose-a", "pose-b"]);
+    expect(clipboard.segments).toEqual([
+      { fromRef: "pose-a", toRef: "pose-b", settings: tunedSettings },
+    ]);
+    expect(copyTimelineBlocks(tuned, ["pose-a"]).segments).toEqual([]);
+  });
+
+  it("pastes the copied segment settings onto the new blocks", () => {
+    const pasted = pasteTimelineBlocks(tuned, copyTimelineBlocks(tuned, ["pose-a", "pose-b"]), 10_000);
+    expect(pasted.ok).toBe(true);
+    if (!pasted.ok) return;
+    expect(pasted.createdIds).toHaveLength(2);
+    expect(pastedSegment(pasted.sequence, pasted.createdIds)?.settings).toEqual(tunedSettings);
+    expect(pasted.droppedBlocks).toBe(0);
+  });
+
+  it("pastes onto other objects, one copy per object map", () => {
+    const pasted = pasteTimelineBlocks(
+      tuned,
+      copyTimelineBlocks(tuned, ["pose-a", "pose-b"]),
+      1000,
+      undefined,
+      [new Map([[7, 8]]), new Map([[7, 9]])],
+    );
+    expect(pasted.ok).toBe(true);
+    if (!pasted.ok) return;
+    const created = pasted.sequence.blocks.filter((block) => pasted.createdIds.includes(block.id));
+    expect(created.map((block) => (block.kind === "pose" ? block.objectId : null))).toEqual([
+      8, 8, 9, 9,
+    ]);
+    expect(pastedSegment(pasted.sequence, pasted.createdIds.slice(0, 2))?.settings).toEqual(
+      tunedSettings,
+    );
+    expect(pastedSegment(pasted.sequence, pasted.createdIds.slice(2))?.settings).toEqual(
+      tunedSettings,
+    );
+  });
+
+  it("rewrites preset segment refs to the new block and object", () => {
+    const withPreset: ActionSequenceConfig = {
+      ...sequenceWithStaticPreset,
+      blocks: [
+        ...sequenceWithStaticPreset.blocks,
+        { id: "pose-after", kind: "pose", objectId: 7, atMs: 3000, pose: { v1: 50, v2: 0, v3: 0 } },
+      ],
+    };
+    const source = resolveActionSequence(withPreset).segments.find(
+      (segment) => segment.objectId === 7 && segment.toRef === "pose-after",
+    );
+    expect(source?.fromRef.startsWith("preset:preset-1:7:")).toBe(true);
+    const tunedPreset = updateSegmentSettings(withPreset, source!.fromRef, "pose-after", {
+      profiles: movingV1IdleOthers(200, 200),
+    });
+    const pasted = pasteTimelineBlocks(
+      tunedPreset,
+      copyTimelineBlocks(tunedPreset, ["preset-1", "pose-after"]),
+      10_000,
+      undefined,
+      [new Map([[9, 19], [7, 17], [8, 18]])],
+    );
+    expect(pasted.ok).toBe(true);
+    if (!pasted.ok) return;
+    const [presetId, poseId] = pasted.createdIds;
+    const segment = pasted.sequence.segments.find((item) => item.toRef === poseId);
+    expect(segment?.fromRef).toBe(source!.fromRef.replace("preset:preset-1:7:", `preset:${presetId}:17:`));
+    expect(segment?.settings.profiles.v1).toEqual(
+      tunedPreset.segments.find((item) => item.toRef === "pose-after")?.settings.profiles.v1,
+    );
+  });
+
+  it("skips blocks whose objects have no mapping and reports them", () => {
+    const withPreset: ActionSequenceConfig = {
+      ...sequenceWithStaticPreset,
+      blocks: [
+        ...sequenceWithStaticPreset.blocks,
+        { id: "pose-after", kind: "pose", objectId: 7, atMs: 3000, pose: origin },
+      ],
+    };
+    const pasted = pasteTimelineBlocks(
+      withPreset,
+      copyTimelineBlocks(withPreset, ["preset-1", "pose-after"]),
+      10_000,
+      undefined,
+      [new Map([[7, 7]])],
+    );
+    expect(pasted.ok).toBe(true);
+    if (!pasted.ok) return;
+    expect(pasted.droppedBlocks).toBe(1);
+    expect(pasted.createdIds).toHaveLength(1);
+  });
+
+  it("refuses a paste that overlaps motion on the target object", () => {
+    const pasted = pasteTimelineBlocks(
+      sequenceWithDynamicPreset,
+      copyTimelineBlocks(tuned, ["pose-a"]),
+      1500,
+    );
+    expect(pasted).toEqual({ ok: false, reason: "motion-overlap" });
+  });
+});
