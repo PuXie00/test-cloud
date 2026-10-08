@@ -43,7 +43,7 @@ export type MotorDeletePayload = {
   parentId: number;
   deviceId: number;
   deviceType: number;
-  deviceIndex: number;
+  axisIndex: number;
   busNo: number;
 };
 
@@ -68,7 +68,7 @@ export type MotorSyncPayload = {
   parentId: number;
   deviceId: number;
   deviceType: number;
-  deviceIndex: number;
+  axisIndex: number;
   busNo: number;
 };
 
@@ -79,7 +79,7 @@ export const buildMotorSyncPayload = (
   parentId: motor.plcId,
   deviceId: motor.id,
   deviceType: motor.axisType === 1 ? 1 : 0,
-  deviceIndex: getMotorDisplayIndex(motors, motor.id),
+  axisIndex: getMotorDisplayIndex(motors, motor.id),
   busNo: motor.busNo,
 });
 

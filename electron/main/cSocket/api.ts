@@ -435,6 +435,7 @@ export class CsocketApiService {
     const isTMapedHeadRelease: {
       actionId: number,
       startFlag: number,
+      startTimestamp: number,
       deviceCount: number,
     }[] = []
     const isTMaped:{
@@ -459,6 +460,7 @@ export class CsocketApiService {
         isTMapedHeadRelease.push({
           actionId: item.actionId,
           startFlag: 1,
+          startTimestamp: Date.now() + 100,
           deviceCount: item.deviceId.length,
         })
         item.deviceId.forEach(deviceId => {
@@ -959,7 +961,7 @@ export class CsocketApiService {
       parentId: number,// 对应PLC的设备ID
       deviceId: number,// 电机id
       deviceType: number,// 电机类型
-      deviceIndex: number,// 电机索引
+      axisIndex: number,// 电机索引
       busNo: number,// 从站口
     }[],
     opts?: CsocketSendOpts,
@@ -972,7 +974,7 @@ export class CsocketApiService {
       parentId: number,// 对应PLC的设备ID
       deviceId: number,// 电机id
       deviceType: number,// 电机类型
-      deviceIndex: number,// 电机索引
+      axisIndex: number,// 电机索引
       busNo: number,// 从站口
     }[],
     opts?: CsocketSendOpts,
