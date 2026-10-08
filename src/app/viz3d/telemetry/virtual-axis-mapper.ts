@@ -49,9 +49,12 @@ type PoseInput = { config: SceneObjectConfig; kinematics: VirtualAxisKinematics;
 
 type PoseResolver = (input: PoseInput) => KinematicPose;
 
-/** 方向 1：v1 为下放绳长（增大下降）；方向 2：v1 为上升高度（增大上升） */
+/** 方向 1：v1 为下放绳长（增大下降）；方向 2：v1 为上升高度（增大上升）；返回竖直位移（米，向上为正） */
+export const liftMetersOf = (runDirection: 1 | 2, v1: number): number =>
+  (runDirection === 2 ? v1 : -v1) * MM_TO_M;
+
 const liftOf = ({ kinematics, values }: PoseInput): number =>
-  (kinematics.runDirection === 2 ? values.v1 : -values.v1) * MM_TO_M;
+  liftMetersOf(kinematics.runDirection, values.v1);
 
 /** 吊点贴物体顶面，PLC 绕吊点平面旋转 */
 const hoistPlanePivot = (config: SceneObjectConfig, x: number, z: number): Vec3 => ({
@@ -64,11 +67,14 @@ const restPose = (): KinematicPose => ({ lift: 0, rotation: IDENTITY_MAT3, pivot
 
 const liftPose: PoseResolver = (input) => ({ ...restPose(), lift: liftOf(input) });
 
-/** 从上往下看顺时针为正；方向 2 反向 */
-const rotationPose: PoseResolver = ({ kinematics, values }) => {
-  const angleDeg = kinematics.runDirection === 2 ? -values.v1 : values.v1;
-  return { ...restPose(), rotation: axisAngleMat3(UP, angleDeg * DEG_TO_RAD) };
-};
+/** 绕竖直轴旋转 angleDeg：从上往下看顺时针为正；方向 2 反向 */
+export const yawMat3Of = (runDirection: 1 | 2, angleDeg: number): Mat3 =>
+  axisAngleMat3(UP, (runDirection === 2 ? -angleDeg : angleDeg) * DEG_TO_RAD);
+
+const rotationPose: PoseResolver = ({ kinematics, values }) => ({
+  ...restPose(),
+  rotation: yawMat3Of(kinematics.runDirection, values.v1),
+});
 
 /**
  * 两点/四点摆单向摆动（YXZ liangdian / sidian 正解）：θ>0 时 −u 端抬高 sinθ·half，

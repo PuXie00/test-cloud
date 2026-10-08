@@ -27,6 +27,7 @@ import { Viz3DObjectSync } from "./3d/Viz3DObjectSync";
 import { Viz3DProjectModelsSync } from "./3d/Viz3DProjectModelsSync";
 import { Viz3DMotorSelectionSync } from "./3d/Viz3DMotorSelectionSync";
 import { Viz3DTelemetrySync } from "./3d/Viz3DTelemetrySync";
+import { Viz3DHoistTravelSync } from "./3d/Viz3DHoistTravelSync";
 import { Viz3DVirtualAxisLabelSync } from "./3d/Viz3DVirtualAxisLabelSync";
 import { Viz3DGoShadowSync } from "./3d/Viz3DGoShadowSync";
 import { Viz3DSequencePreviewSync } from "./3d/Viz3DSequencePreviewSync";
@@ -213,6 +214,7 @@ const ConsoleInner = () => {
               <Viz3DMotorSelectionSync />
               <Viz3DConsoleNavSync />
               <Viz3DTelemetrySync />
+              <Viz3DHoistTravelSync />
               <Viz3DSequencePreviewSync />
               <Viz3DActionPreviewSync />
               <Viz3DVirtualAxisLabelSync />

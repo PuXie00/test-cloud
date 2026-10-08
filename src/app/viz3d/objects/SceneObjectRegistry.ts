@@ -3,6 +3,7 @@ import type { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type {
   Disposable,
+  HoistTravelInput,
   RuntimeTransform,
   SceneObjectConfig,
   SceneObjectStatus,
@@ -34,6 +35,7 @@ export type SceneObjectHandle = {
   getHoistPointRoot: (motorId: string) => TransformNode | undefined;
   getHoistPointSelectionBoundsTarget: (motorId: string) => TransformNode | undefined;
   refreshHoistLabels: (mode: HoistLabelMode) => void;
+  applyHoistTravel: (byMotorId: ReadonlyMap<string, HoistTravelInput>) => void;
   dispose: () => void;
 };
 

@@ -191,6 +191,16 @@ export type TelemetrySnapshotInput = {
   virtualAxisValues?: VirtualAxisValues;
 };
 
+/** 吊点电机轴类型：线性显示粗线，无极旋转显示表盘指针 */
+export type HoistTravelAxisKind = "linear" | "rotary";
+
+/** 搭建调试：吊点电机实时位置（线性 mm，无极旋转 °；0 为原位） */
+export type HoistTravelInput = {
+  motorId: string;
+  axisKind: HoistTravelAxisKind;
+  position: number;
+};
+
 export type Quat = { x: number; y: number; z: number; w: number };
 
 export type RuntimeTransform = {
