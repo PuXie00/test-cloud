@@ -36,6 +36,8 @@ export type {
   MeasurePayload,
   PresetShape,
   HoistAxisConfig,
+  HoistTravelAxisKind,
+  HoistTravelInput,
   SceneObjectConfig,
   SceneObjectStatus,
   ScreenRect,

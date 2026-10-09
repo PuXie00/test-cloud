@@ -34,6 +34,7 @@ import type {
   TransformMode,
   Vec3,
   GridSizeM,
+  HoistTravelInput,
   SavedView,
   ViewPreset,
   ViewportLayout,
@@ -168,6 +169,8 @@ export class Viz3DEngine implements Disposable {
   private sequencePreviewController: SequencePreviewController | null = null;
   /** 动作页成员标识：非成员 visibility 0.7；跨 unmount 保留，dispose 时清空 */
   private readonly dimmedObjects = new DimmedObjects();
+  /** 搭建调试吊点位置（key = motorId）；跨 setObjects 保留，新建的吊点也立即显示 */
+  private hoistTravel: ReadonlyMap<string, HoistTravelInput> = new Map();
   /** Session display unit for telemetry labels; default mm until React injects. */
   private displayLengthUnit: DisplayLengthUnit = "mm";
   private slotElement: HTMLElement | null = null;
@@ -394,6 +397,7 @@ export class Viz3DEngine implements Disposable {
     const shouldReattach = this.releaseTransformAttachmentsForObjectSync();
     this.objectRegistry?.sync(configs);
     this.applyDimmedObjects();
+    this.applyHoistTravel();
     this.syncTransformRotationAxes();
     if (shouldReattach) {
       this.syncTransformAttachment();
@@ -404,6 +408,7 @@ export class Viz3DEngine implements Disposable {
     const shouldReattach = this.releaseTransformAttachmentsForObjectSync();
     this.objectRegistry?.get(id)?.applyConfig(config);
     this.applyDimmedObjects();
+    this.applyHoistTravel();
     this.syncTransformRotationAxes();
     if (shouldReattach) {
       this.syncTransformAttachment();
@@ -1025,6 +1030,22 @@ export class Viz3DEngine implements Disposable {
     this.dimmedObjects.apply(this.objectRegistry?.list() ?? []);
   }
 
+  /** 搭建调试：按电机实时位置显示吊点粗线（线性）/ 表盘指针（无极旋转）；未列出的吊点隐藏 */
+  setHoistTravel(inputs: readonly HoistTravelInput[]): void {
+    this.hoistTravel = new Map(inputs.map((input) => [input.motorId, input]));
+    this.applyHoistTravel();
+  }
+
+  clearHoistTravel(): void {
+    this.setHoistTravel([]);
+  }
+
+  private applyHoistTravel(): void {
+    for (const handle of this.objectRegistry?.list() ?? []) {
+      handle.applyHoistTravel(this.hoistTravel);
+    }
+  }
+
   showDriveUnitLabel(id: string, fields: DriveUnitLabelFields | null): void {
     this.telemetryController?.showDriveUnitLabel(id, fields);
   }
@@ -1266,6 +1287,7 @@ export class Viz3DEngine implements Disposable {
   dispose(): void {
     this.unmount();
     this.dimmedObjects.clear();
+    this.hoistTravel = new Map();
     this.videoRecorder?.dispose();
     this.videoRecorder = null;
     this.events.clear();

@@ -4,6 +4,7 @@ import type { Scene } from "@babylonjs/core/scene";
 import type { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import type {
   Disposable,
+  HoistTravelInput,
   RuntimeTransform,
   SceneObjectConfig,
   SceneObjectStatus,
@@ -42,6 +43,7 @@ import {
 } from "../hoist-label-mode";
 import { applyVisibility, DIMMED_VISIBILITY } from "./scene-object-dim";
 import { applyRuntimePivot, resetRuntimePivot } from "./runtime-pivot";
+import { resolveHoistTravel } from "../telemetry/hoist-travel";
 
 export type ModelTemplateProvider = (id: string) => TransformNode | undefined;
 
@@ -436,6 +438,19 @@ export class SceneObject implements Disposable {
       }
     }
     this.applyDimState();
+  }
+
+  /** 搭建调试：按电机位置显示吊点粗线 / 表盘；表中没有的吊点隐藏 */
+  applyHoistTravel(byMotorId: ReadonlyMap<string, HoistTravelInput>): void {
+    const runDirection = this.config.kinematics?.runDirection ?? 1;
+    for (const axis of this.config.hoistAxes ?? []) {
+      const visual = this.hoistPoints.get(axis.key);
+      if (!visual) continue;
+      const input = axis.motorId ? byMotorId.get(axis.motorId) : undefined;
+      visual.setTravel(
+        input ? resolveHoistTravel(input.axisKind, input.position, runDirection) : null,
+      );
+    }
   }
 
   refreshHoistLabels(mode: HoistLabelMode): void {
