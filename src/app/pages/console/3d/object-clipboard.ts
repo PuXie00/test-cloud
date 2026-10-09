@@ -33,7 +33,16 @@ export const bumpObjectClipboardPasteCount = (): number => {
   return state.pasteCount;
 };
 
-export const computeSourceAnchorMm = (objects: readonly ControlledObject[]): Vec3Mm => {
+/** 父物体也在剪贴板里的子物体：position 是相对父物体的局部值，粘贴时不平移 */
+const isCopiedChild = (
+  snapshot: ControlledObject,
+  copiedIds: ReadonlySet<number>,
+): boolean => snapshot.parentId != null && copiedIds.has(snapshot.parentId);
+
+/** 剪贴板根物体（世界坐标）的包围中心 */
+export const computeSourceAnchorMm = (snapshots: readonly ControlledObject[]): Vec3Mm => {
+  const copiedIds = new Set(snapshots.map((snapshot) => snapshot.id));
+  const objects = snapshots.filter((snapshot) => !isCopiedChild(snapshot, copiedIds));
   if (objects.length === 0) return { x: 0, y: 0, z: 0 };
   let minX = Infinity;
   let minY = Infinity;
@@ -74,11 +83,16 @@ export const computePastePositionsMm = (
           y: 0,
           z: targetAnchorXZ.z - anchor.z,
         };
-  return snapshots.map((snapshot) => ({
-    x: snapshot.position.x + delta.x,
-    y: snapshot.position.y + delta.y,
-    z: snapshot.position.z + delta.z,
-  }));
+  const copiedIds = new Set(snapshots.map((snapshot) => snapshot.id));
+  return snapshots.map((snapshot) =>
+    isCopiedChild(snapshot, copiedIds)
+      ? { ...snapshot.position }
+      : {
+          x: snapshot.position.x + delta.x,
+          y: snapshot.position.y + delta.y,
+          z: snapshot.position.z + delta.z,
+        },
+  );
 };
 
 const COPY_SUFFIX_RE = /\s+副本(?:\s+\d+)?$/;

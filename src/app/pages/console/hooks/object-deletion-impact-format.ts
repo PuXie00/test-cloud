@@ -23,6 +23,11 @@ export const formatObjectDeletionImpact = (
       : `将删除 ${count} 个受控物体：${formatQuotedNames(names)}。`;
 
   const detailLines: string[] = [];
+  if (impact.detachedChildNames.length > 0) {
+    detailLines.push(
+      `将解除 ${impact.detachedChildNames.length} 个子物体的挂载（保持当前位置）：${formatQuotedNames(impact.detachedChildNames)}。`,
+    );
+  }
   if (impact.motorBindingCount > 0) {
     detailLines.push(`将解绑 ${impact.motorBindingCount} 个电机。`);
   }

@@ -43,7 +43,8 @@ const sceneConfigsEqual = (a: SceneObjectConfig, b: SceneObjectConfig): boolean 
   a.selectedMotorId === b.selectedMotorId &&
   (a.selectedMotorIds?.join(",") ?? "") === (b.selectedMotorIds?.join(",") ?? "") &&
   hoistAxesEqual(a.hoistAxes, b.hoistAxes) &&
-  sceneKinematicsEqual(a.kinematics, b.kinematics);
+  sceneKinematicsEqual(a.kinematics, b.kinematics) &&
+  (a.parentId ?? null) === (b.parentId ?? null);
 
 export const Viz3DObjectSync = () => {
   const engine = useViz3DContext();
@@ -97,6 +98,7 @@ export const Viz3DObjectSync = () => {
       selectedMotorIds: selectedMotorIds?.map(String),
       showHoistPoints,
       kinematics: sceneKinematicsForObject(object),
+      parentId: object.parentId != null ? String(object.parentId) : null,
     };
     });
 

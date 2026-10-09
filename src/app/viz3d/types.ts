@@ -94,6 +94,11 @@ export type SceneObjectConfig = {
   showHoistPoints?: boolean;
   /** 虚轴 → 3D 姿态的 PLC 运动学参数；缺省表示无虚轴，走遥测 deviceType 映射 */
   kinematics?: VirtualAxisKinematics;
+  /**
+   * 挂载的父物体 id：根节点挂到父物体运动枢轴下，自动叠加父物体实时姿态；
+   * 此时 position / rotation 为相对父物体的局部值
+   */
+  parentId?: string | null;
 };
 
 /** 与汇川 PLC 正解一致的虚轴解释参数；吊点坐标取自 hoistAxes */

@@ -110,6 +110,7 @@ import { applyControlTypeChange } from "./control-type-change";
 import { applyReconciliation, type ReconciliationPatch } from "./plc-reconciliation";
 import type { DiscoveredMotor, ScannedAxis } from "./plc-runtime-types";
 import { cloneObjectsAt as cloneObjectsAtPure } from "./clone-objects";
+import { applyObjectMount } from "./mount-objects";
 import type { Vec3Mm } from "../3d/object-clipboard";
 
 const resolveMasterTypeId = (masterTypeId: string) => resolvePlcMasterTypeId(masterTypeId);
@@ -266,6 +267,8 @@ export type ProjectStoreContextValue = {
   removeObjects: (objectIds: readonly number[]) => ProjectUpdateResult;
   updateObject: (id: number, patch: Partial<ControlledObject>) => void;
   updateObjectsBatch: (updates: Array<{ id: number; patch: Partial<ControlledObject> }>) => void;
+  /** 挂载到 parentId（null = 解除挂载），保持世界位置；有变化时返回 true */
+  mountObjects: (objectIds: readonly number[], parentId: number | null) => boolean;
   changeObjectControlType: (
     objectIds: readonly number[],
     controlType: ControlType,
@@ -678,6 +681,20 @@ export const ProjectStoreProvider = ({ children }: { children: ReactNode }) => {
 
         return { ...prev, objects };
       });
+    },
+    [patchSetup],
+  );
+
+  const mountObjects = useCallback(
+    (objectIds: readonly number[], parentId: number | null): boolean => {
+      let changed = false;
+      patchSetup(parentId == null ? "解除挂载" : "挂载物体", (prev) => {
+        const objects = applyObjectMount(prev.objects, objectIds, parentId);
+        if (objects === prev.objects) return prev;
+        changed = true;
+        return { ...prev, objects: [...objects] };
+      });
+      return changed;
     },
     [patchSetup],
   );
@@ -1392,6 +1409,7 @@ export const ProjectStoreProvider = ({ children }: { children: ReactNode }) => {
       removeObjects,
       updateObject,
       updateObjectsBatch,
+      mountObjects,
       changeObjectControlType,
       addObjectAxis,
       insertObjectAxisRelative,
@@ -1442,6 +1460,7 @@ export const ProjectStoreProvider = ({ children }: { children: ReactNode }) => {
       removeObjects,
       updateObject,
       updateObjectsBatch,
+      mountObjects,
       changeObjectControlType,
       addObjectAxis,
       insertObjectAxisRelative,

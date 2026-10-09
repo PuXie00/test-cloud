@@ -156,7 +156,11 @@ export type ControlledObjectConfig = {
   /** 模型朝向欧拉角，单位 deg，0–360 */
   rotation: { x: number; y: number; z: number };
   color: string;
-  parentId?: string | null;
+  /**
+   * 挂载的父物体 id（物理挂载，PLC 不感知）；有父物体时 position / rotation
+   * 为相对父物体（父物体虚轴全 0）的局部值。见 object-mount.ts
+   */
+  parentId?: number | null;
   /** 原点到滑轮距离（轴链条最短长度），单位 mm */
   pulleyDistance: number;
   /** 模型运行方向：1 正向，2 反向 */
