@@ -78,6 +78,7 @@ export class SceneObjectRegistry implements Disposable {
 
     this.handles.forEach((handle, id) => {
       if (!nextIds.has(id)) {
+        this.detachMountChildren(handle);
         removeFromContainer(this.container, handle.object3d);
         handle.dispose();
         this.handles.delete(id);
@@ -97,6 +98,48 @@ export class SceneObjectRegistry implements Disposable {
       this.handles.set(config.id, handle);
       addToContainer(this.container, handle.object3d);
     });
+    this.syncMountParents();
+  }
+
+  /**
+   * 挂载：子物体根节点挂到父物体 attachmentPivot 下，Babylon 层级自动叠加父物体实时姿态。
+   * 父物体缺失或成环时按顶层处理；挂在其它节点（会话组合）下的顶层物体不动。
+   */
+  syncMountParents(): void {
+    const pivots = new Set<TransformNode>([...this.handles.values()].map((h) => h.attachmentPivot));
+    for (const handle of this.handles.values()) {
+      const target = this.resolveMountParent(handle)?.attachmentPivot ?? null;
+      const node = handle.object3d;
+      if (node.parent === target) continue;
+      if (target === null && node.parent !== null && !pivots.has(node.parent as TransformNode)) {
+        continue;
+      }
+      node.parent = target;
+    }
+  }
+
+  /** 有效的挂载父物体（沿父链检测成环） */
+  getMountParent(id: string): SceneObjectHandle | undefined {
+    const handle = this.handles.get(id);
+    return handle ? this.resolveMountParent(handle) : undefined;
+  }
+
+  private resolveMountParent(handle: SceneObjectHandle): SceneObjectHandle | undefined {
+    const parentIdOf = (h: SceneObjectHandle) => h.getConfig().parentId ?? null;
+    const first = this.handles.get(parentIdOf(handle) ?? "");
+    const seen = new Set([handle.id]);
+    for (let current = first; current; current = this.handles.get(parentIdOf(current) ?? "")) {
+      if (seen.has(current.id)) return undefined;
+      seen.add(current.id);
+    }
+    return first;
+  }
+
+  /** 父物体销毁前先摘下子物体根节点，避免随父节点递归 dispose */
+  private detachMountChildren(parent: SceneObjectHandle): void {
+    for (const handle of this.handles.values()) {
+      if (handle.object3d.parent === parent.attachmentPivot) handle.object3d.parent = null;
+    }
   }
 
   get(id: string): SceneObjectHandle | undefined {
@@ -108,6 +151,7 @@ export class SceneObjectRegistry implements Disposable {
     if (!handle) {
       return;
     }
+    this.detachMountChildren(handle);
     removeFromContainer(this.container, handle.object3d);
     handle.dispose();
     this.handles.delete(id);
@@ -122,6 +166,9 @@ export class SceneObjectRegistry implements Disposable {
   }
 
   clear(): void {
+    this.handles.forEach((handle) => {
+      handle.object3d.parent = null;
+    });
     this.handles.forEach((handle) => {
       removeFromContainer(this.container, handle.object3d);
       handle.dispose();

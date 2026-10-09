@@ -23,6 +23,8 @@ export const computeSelectionCentroid = (positions: Vec3[]): Vec3 => {
 export class MultiTransformPivot {
   readonly pivot: TransformNode;
   private members: TransformNode[] = [];
+  /** 拖拽结束放回原父节点（挂载子物体回到父物体运动枢轴下） */
+  private originalParents = new Map<TransformNode, TransformNode["parent"]>();
   private scene: Scene | null = null;
 
   constructor(scene: Scene) {
@@ -43,6 +45,7 @@ export class MultiTransformPivot {
     this.pivot.computeWorldMatrix(true);
 
     for (const object of objects) {
+      this.originalParents.set(object, object.parent);
       object.setParent(this.pivot, true);
       this.members.push(object);
     }
@@ -51,13 +54,15 @@ export class MultiTransformPivot {
   release(): void {
     if (!this.scene) {
       this.members = [];
+      this.originalParents.clear();
       return;
     }
 
     for (const object of [...this.members]) {
-      object.setParent(null, true);
+      object.setParent(this.originalParents.get(object) ?? null, true);
     }
     this.members = [];
+    this.originalParents.clear();
   }
 
   dispose(): void {

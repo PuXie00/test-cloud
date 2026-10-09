@@ -33,6 +33,9 @@ import type { VirtualAxisId } from "@/app/project/project-document-types";
 import { motionAxisIdForKind } from "@/app/project/virtual-axis-mapping";
 import { getVirtualAxisMeta } from "@/app/pages/console/components/action-builder/virtual-axis-display";
 import { mmVec3ToM } from "@/app/project/length-units";
+import { formatLengthFamily } from "@/app/project/display-length-units";
+import { useSessionDisplayLengthUnit } from "@/app/project/display-length-unit-provider";
+import { canMountTo, objectWorldPose, orderByMountTree } from "@/app/project/object-mount";
 import { useProject } from "@/app/project/use-project";
 import { useViz3DContext } from "@/app/pages/console/3d/Viz3DProvider";
 import { loadProjectModel } from "@/app/pages/console/3d/ensure-project-models";
@@ -65,6 +68,9 @@ import { ShapeDimensionFields } from "./shape-dimension-fields";
 
 type ControlledObjectFormProps = { objectId: number };
 
+/** Radix Select 不接受空字符串 value */
+const NO_MOUNT_VALUE = "none";
+
 const VECTOR_PREFIX_COLORS = {
   x: "var(--destructive)",
   y: "var(--show)",
@@ -85,8 +91,10 @@ const modelFileName = (modelId?: string | null): string => {
 
 export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) => {
   const {
+    objects,
     findObject,
     updateObject,
+    mountObjects,
     changeObjectControlType,
     getObjectBoundPlcId,
     findPlc,
@@ -100,6 +108,20 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
   const [pendingControlType, setPendingControlType] = useState<ControlType | null>(null);
   const [pendingImpact, setPendingImpact] = useState<ControlTypeChangeImpact | null>(null);
   const [modelLibraryOpen, setModelLibraryOpen] = useState(false);
+  const displayLengthUnit = useSessionDisplayLengthUnit();
+
+  const mountOptions = useMemo(
+    () => [
+      { label: "不挂载", value: NO_MOUNT_VALUE },
+      ...orderByMountTree(objects)
+        .filter(({ object: candidate }) => canMountTo(objects, objectId, candidate.id))
+        .map(({ object: candidate, depth }) => ({
+          label: `${"\u3000".repeat(depth)}${candidate.name}`,
+          value: String(candidate.id),
+        })),
+    ],
+    [objectId, objects],
+  );
 
   const shapeOptions = useMemo(
     () =>
@@ -381,6 +403,8 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
 
   const externalFileName = modelFileName(object.modelId);
   const rotationAxes = modelRotationAxesForControlType(object.controlType);
+  const mounted = object.parentId != null;
+  const worldPose = mounted ? objectWorldPose(objects, object.id) : null;
 
   return (
     <div className="min-w-0 space-y-2 p-3">
@@ -402,6 +426,16 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
             </Form.Item>
             <Form.Item label="关联主控">
               <p className="truncate pt-2 text-body-sm text-muted-foreground">{boundPlcName}</p>
+            </Form.Item>
+            <Form.Item label="挂载到">
+              <Select
+                options={mountOptions}
+                value={mounted ? String(object.parentId) : NO_MOUNT_VALUE}
+                onValueChange={(value) =>
+                  mountObjects([objectId], value === NO_MOUNT_VALUE ? null : Number(value))
+                }
+                aria-label="挂载到"
+              />
             </Form.Item>
           </div>
         </CollapsePanel>
@@ -586,7 +620,22 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
               />
             </Form.Item>
 
-            <Form.Item label="坐标">
+            <Form.Item
+              label={mounted ? "相对坐标" : "坐标"}
+              extra={
+                worldPose ? (
+                  <span className="font-mono tabular-nums">
+                    世界{" "}
+                    {(["x", "y", "z"] as const)
+                      .map(
+                        (key) =>
+                          `${key.toUpperCase()} ${formatLengthFamily(worldPose.position[key], "mm", displayLengthUnit, { canonicalPrecision: 1 })}`,
+                      )
+                      .join("  ")}
+                  </span>
+                ) : undefined
+              }
+            >
               <NumericInputGroup>
                 {(["x", "y", "z"] as const).map((key) => (
                   <Form.Item key={key} name={["position", key]} noStyle>
@@ -605,7 +654,7 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
 
             
 
-            <Form.Item label="旋转">
+            <Form.Item label={mounted ? "相对旋转" : "旋转"}>
               <NumericInputGroup>
                 {rotationAxes.map((axis) => (
                   <Form.Item key={axis} name={["rotation", axis]} noStyle>

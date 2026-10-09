@@ -374,6 +374,7 @@ describe("formatObjectDeletionImpact", () => {
       stateId: "s1",
       objectIds: [1, 2],
       objectNames: ["甲", "乙"],
+      detachedChildNames: ["丙"],
       motorBindingCount: 2,
       alignmentCount: 1,
       sceneGroupCount: 1,
@@ -390,6 +391,7 @@ describe("formatObjectDeletionImpact", () => {
     expect(view.summary).toMatch(/受控物体/);
     expect(view.summary).toContain("甲");
     expect(view.summary).toContain("乙");
+    expect(view.detailLines.join("\n")).toMatch(/解除 1 个子物体的挂载.*「丙」/);
     expect(view.detailLines.join("\n")).toMatch(/电机/);
     expect(view.detailLines.join("\n")).toMatch(/alignment|对齐/i);
     expect(view.detailLines.join("\n")).toMatch(/场景组/);
@@ -403,6 +405,7 @@ describe("formatObjectDeletionImpact", () => {
       stateId: "s1",
       objectIds: [1],
       objectNames: ["甲"],
+      detachedChildNames: [],
       motorBindingCount: 0,
       alignmentCount: 0,
       sceneGroupCount: 0,
@@ -424,6 +427,7 @@ describe("formatObjectDeletionImpact", () => {
       stateId: "s1",
       objectIds: ["lone"],
       objectNames: ["孤立物体"],
+      detachedChildNames: [],
       motorBindingCount: 0,
       alignmentCount: 0,
       sceneGroupCount: 0,

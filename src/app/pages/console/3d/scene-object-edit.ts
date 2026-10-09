@@ -1,3 +1,8 @@
+import {
+  mountDescendantIds,
+  objectWorldPose,
+  orderByMountTree,
+} from "@/app/project/object-mount";
 import type { ControlledObject } from "../components/right-sidebar/config-wizard/config-wizard-types";
 import type { DeleteTarget } from "../components/right-sidebar/project-structure-tree-data";
 import {
@@ -19,6 +24,29 @@ export const pickObjectsInSelectionOrder = (
     if (object) ordered.push(object);
   }
   return ordered;
+};
+
+/**
+ * 复制选中物体及其全部子物体（父物体在前）。父物体不在剪贴板里的物体
+ * 换成世界坐标，保留 parentId 以便粘贴时挂回原父物体。
+ */
+export const buildObjectClipboardSnapshots = (
+  objects: readonly ControlledObject[],
+  ids: readonly number[],
+): ControlledObject[] => {
+  const selected = pickObjectsInSelectionOrder(objects, ids);
+  const selectedIds = new Set(selected.map((object) => object.id));
+  const descendants = mountDescendantIds(objects, selectedIds);
+  const descendantObjects = orderByMountTree(objects)
+    .map(({ object }) => object)
+    .filter((object) => descendants.has(object.id));
+  const copied = [...selected, ...descendantObjects];
+  const copiedIds = new Set(copied.map((object) => object.id));
+  return copied.map((object) => {
+    if (object.parentId == null || copiedIds.has(object.parentId)) return object;
+    const world = objectWorldPose(objects, object.id);
+    return world ? { ...object, position: world.position, rotation: world.rotation } : object;
+  });
 };
 
 export const buildObjectDeleteTarget = (ids: readonly number[]): DeleteTarget | null => {

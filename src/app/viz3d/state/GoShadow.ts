@@ -76,6 +76,16 @@ export class GoShadow {
     this.updateConnector();
   }
 
+  /** 挂载子物体的残影挂在父物体残影（或父物体本身）的运动枢轴下 */
+  get attachmentPivot(): TransformNode {
+    return this.pivot;
+  }
+
+  setParentNode(parent: TransformNode | null): void {
+    if (this.disposed || this.root.parent === parent) return;
+    this.root.parent = parent;
+  }
+
   updateConnector(): void {
     if (this.disposed) return;
     const sourceCenter = centerOf(getWorldBounds(this.handle.selectionBoundsTarget));

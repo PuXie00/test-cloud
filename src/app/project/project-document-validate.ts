@@ -1,3 +1,4 @@
+import { mountAncestorIds } from "./object-mount";
 import { isSequenceProgramItemRef, type ProjectDocument } from "./project-document-types";
 
 export type ValidationResult = { ok: boolean; errors: string[] };
@@ -21,6 +22,18 @@ export const validateProjectDocument = (doc: ProjectDocument): ValidationResult 
       errors.push(
         `motor ${motor.id} axisKey "${motor.axisKey}" not on object ${obj.id}`,
       );
+    }
+  }
+
+  for (const object of doc.setup.controlledObjects) {
+    const parentId = object.parentId;
+    if (parentId == null) continue;
+    if (parentId === object.id) {
+      errors.push(`object ${object.id}: mounted on itself`);
+    } else if (!objectById.has(parentId)) {
+      errors.push(`object ${object.id}: unknown parentId ${parentId}`);
+    } else if (mountAncestorIds(doc.setup.controlledObjects, parentId).includes(object.id)) {
+      errors.push(`object ${object.id}: mount cycle via parentId ${parentId}`);
     }
   }
 

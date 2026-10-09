@@ -188,6 +188,37 @@ describe("validateProjectDocument sequence refs", () => {
 
 });
 
+describe("object mount parentId", () => {
+  it("accepts a numeric parent and rejects a string one structurally", () => {
+    const document = documentOf();
+    document.setup.controlledObjects[1] = makeObject(OBJECT_B, "B", { parentId: OBJECT_A });
+    expect(() => assertProjectDocumentStructure(document)).not.toThrow();
+    expect(validateProjectDocument(document).ok).toBe(true);
+
+    document.setup.controlledObjects[1] = makeObject(OBJECT_B, "B", {
+      parentId: String(OBJECT_A) as never,
+    });
+    expect(() => assertProjectDocumentStructure(document)).toThrow(/parentId/);
+  });
+
+  it("reports unknown parents, self mounts and cycles", () => {
+    const unknown = documentOf();
+    unknown.setup.controlledObjects[0] = makeObject(OBJECT_A, "A", { parentId: 99 });
+    expect(validateProjectDocument(unknown).errors).toEqual([`object ${OBJECT_A}: unknown parentId 99`]);
+
+    const self = documentOf();
+    self.setup.controlledObjects[0] = makeObject(OBJECT_A, "A", { parentId: OBJECT_A });
+    expect(validateProjectDocument(self).errors).toEqual([`object ${OBJECT_A}: mounted on itself`]);
+
+    const cycle = documentOf();
+    cycle.setup.controlledObjects = [
+      makeObject(OBJECT_A, "A", { parentId: OBJECT_B }),
+      makeObject(OBJECT_B, "B", { parentId: OBJECT_A }),
+    ];
+    expect(validateProjectDocument(cycle).errors).toHaveLength(2);
+  });
+});
+
 describe("project-motion-readiness sequence gate", () => {
   it("blocks a missing sequence or a sequence with error issues", () => {
     const document = documentOf({

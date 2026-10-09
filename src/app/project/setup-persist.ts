@@ -128,6 +128,7 @@ export const wizardControlledObjectToConfig = (object: ControlledObject): Contro
     centerOffset: roundProjectVec3(object.centerOffset),
     rotation: roundProjectVec3(normalizeObjectRotationDeg(object.rotation, controlType)),
     color: object.color,
+    ...(typeof object.parentId === "number" ? { parentId: object.parentId } : {}),
     pulleyDistance:
       typeof object.pulleyDistance === "number" &&
       Number.isFinite(object.pulleyDistance) &&

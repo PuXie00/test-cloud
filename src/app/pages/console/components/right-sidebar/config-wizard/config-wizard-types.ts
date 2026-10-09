@@ -48,13 +48,15 @@ export type ControlledObject = {
   shapeDimensions: ShapeDimensions;
   /** 包围盒尺寸，单位 mm */
   dimensions: { w: number; h: number; d: number };
-  /** 世界坐标，单位 mm */
+  /** 世界坐标，单位 mm；有父物体时为相对父物体的局部坐标 */
   position: { x: number; y: number; z: number };
   /** 3D 模型变换中心相对几何中心的局部偏移，单位 mm；不改变吊点/运动基准 */
   centerOffset: { x: number; y: number; z: number };
-  /** 模型朝向欧拉角，单位 deg，0–360；Babylon 顺序 XYZ */
+  /** 模型朝向欧拉角，单位 deg，0–360；Babylon 顺序 XYZ；有父物体时相对父物体 */
   rotation: { x: number; y: number; z: number };
   color: string;
+  /** 挂载的父物体 id；缺省 / null 表示不挂载 */
+  parentId?: number | null;
   motionParams?: MotionParamsByAxis;
   motionSpeedControl?: MotionSpeedControl;
   /** 最大轴速度，速度比例基准；不是虚轴 1 运行上限 */

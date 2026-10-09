@@ -44,7 +44,8 @@ import { useProjectStore } from "@/app/pages/console/hooks/use-project-store";
 import { objectHasUnboundAxes } from "@/app/pages/console/hooks/binding-utils";
 import { idsInRange, resolveSelectionMode } from "@/app/pages/console/hooks/selection-range";
 import { useSelection } from "@/app/pages/console/hooks/use-selection";
-import type { PlcScanResult } from "./config-wizard/config-wizard-types";
+import { orderByMountTree, resolveMountParentId } from "@/app/project/object-mount";
+import type { ControlledObject, PlcScanResult } from "./config-wizard/config-wizard-types";
 import { MotorAddDialog } from "./config-wizard/dialogs/motor-add-dialog";
 import { PlcAddDialog } from "./config-wizard/dialogs/plc-add-dialog";
 import { PlcScanDialog } from "./config-wizard/dialogs/plc-scan-dialog";
@@ -162,6 +163,7 @@ export const ProjectStructurePanel = () => {
     removeMotors,
     bindAxis,
     addMotorsFromScannedAxes,
+    mountObjects,
   } = useProjectStore();
   const objectDeletion = useObjectDeletion();
   const { getPlcRuntime, scanAll } = usePlcRuntime();
@@ -191,6 +193,8 @@ export const ProjectStructurePanel = () => {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(
     () => new Set(plcs.map((plc) => String(plc.id))),
   );
+  /** 受控物体视图按挂载树显示；记录用户折叠的父物体 */
+  const [collapsedObjectIds, setCollapsedObjectIds] = useState<Set<string>>(() => new Set());
   const [dropHighlight, setDropHighlight] = useState<TreeDropHighlight>(null);
   const [activeDragNode, setActiveDragNode] = useState<StructurePanelNode | null>(null);
   const [deleteImpact, setDeleteImpact] = useState<DeleteImpact | null>(null);
@@ -242,9 +246,22 @@ export const ProjectStructurePanel = () => {
     () => pendingObjects.map((object) => ({ kind: "pending-co", object })),
     [pendingObjects],
   );
+  const mountTreeOrder = useMemo(() => orderByMountTree(objects), [objects]);
+  const mountChildrenById = useMemo(() => {
+    const map = new Map<number, ControlledObject[]>();
+    for (const { object, depth } of mountTreeOrder) {
+      const parentId = depth > 0 ? resolveMountParentId(objects, object.id) : null;
+      if (parentId == null) continue;
+      map.set(parentId, [...(map.get(parentId) ?? []), object]);
+    }
+    return map;
+  }, [mountTreeOrder, objects]);
   const allObjectNodes = useMemo<PendingCoNode[]>(
-    () => objects.map((object) => ({ kind: "pending-co", object })),
-    [objects],
+    () =>
+      mountTreeOrder
+        .filter(({ depth }) => depth === 0)
+        .map(({ object }) => ({ kind: "pending-co", object })),
+    [mountTreeOrder],
   );
   const plcNodes = useMemo<PlcTreeNode[]>(
     () => plcs.map((plc) => ({ kind: "plc", plc })),
@@ -257,6 +274,32 @@ export const ProjectStructurePanel = () => {
     structureView === "objects" ? "暂无受控物体" : "暂无待绑定受控物体";
   const objectSectionTitle = structureView === "objects" ? "受控物体" : "待绑定受控物体";
   const objectSectionAriaLabel = objectSectionTitle;
+  const showMountTree = structureView === "objects";
+  const getObjectSectionChildren = useCallback(
+    (node: PendingCoNode): PendingCoNode[] | undefined => {
+      if (!showMountTree) return undefined;
+      const children = mountChildrenById.get(node.object.id);
+      return children?.map((object) => ({ kind: "pending-co", object }));
+    },
+    [mountChildrenById, showMountTree],
+  );
+  const objectSectionExpandedIds = useMemo(
+    () =>
+      new Set(
+        [...mountChildrenById.keys()]
+          .map(String)
+          .filter((id) => !collapsedObjectIds.has(id)),
+      ),
+    [collapsedObjectIds, mountChildrenById],
+  );
+  const handleObjectSectionExpandedChange = useCallback(
+    (ids: Set<string>) => {
+      setCollapsedObjectIds(
+        new Set([...mountChildrenById.keys()].map(String).filter((id) => !ids.has(id))),
+      );
+    },
+    [mountChildrenById],
+  );
 
   const selectedIds = useMemo(
     () => new Set([...multiSelectedIds, ...multiSelectedMotorIds].map((id) => String(id))),
@@ -351,8 +394,10 @@ export const ProjectStructurePanel = () => {
       ids.push(id);
     };
     if (showObjectsSection) {
-      for (const node of objectSectionNodes) {
-        push(node.object.id);
+      if (showMountTree) {
+        for (const { object } of mountTreeOrder) push(object.id);
+      } else {
+        for (const node of objectSectionNodes) push(node.object.id);
       }
     }
     if (showMastersSection) {
@@ -368,9 +413,11 @@ export const ProjectStructurePanel = () => {
     return ids;
   }, [
     getStructureChildren,
+    mountTreeOrder,
     objectSectionNodes,
     plcNodes,
     showMastersSection,
+    showMountTree,
     showObjectsSection,
   ]);
 
@@ -1021,8 +1068,9 @@ export const ProjectStructurePanel = () => {
                 <TreeView
                   nodes={objectSectionNodes}
                   getNodeId={getStructureNodeId}
-                  expandedIds={new Set()}
-                  onExpandedChange={() => {}}
+                  getChildren={getObjectSectionChildren}
+                  expandedIds={showMountTree ? objectSectionExpandedIds : new Set()}
+                  onExpandedChange={showMountTree ? handleObjectSectionExpandedChange : () => {}}
                   selectedIds={selectedIds}
                   focusedId={focusedId}
                   onSelect={(node, event) =>
@@ -1045,6 +1093,11 @@ export const ProjectStructurePanel = () => {
                   renderIcon={() => <Box className="h-3.5 w-3.5" aria-hidden />}
                   renderContextMenu={(node) => (
                     <ContextMenuContent>
+                      {node.object.parentId != null ? (
+                        <ContextMenuItem onSelect={() => mountObjects([node.object.id], null)}>
+                          解除挂载
+                        </ContextMenuItem>
+                      ) : null}
                       <ContextMenuItem
                         variant="destructive"
                         onSelect={() => requestObjectDelete(node.object.id)}

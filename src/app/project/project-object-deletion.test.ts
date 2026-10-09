@@ -330,6 +330,42 @@ describe("analyzeObjectDeletion / applyObjectDeletion", () => {
     expect(validateProjectDocument(next).ok).toBe(true);
   });
 
+  it("detaches children of a deleted parent and keeps their world placement", () => {
+    const parent = makeObject(OBJECT_A, "Truss", {
+      position: { x: 1000, y: 6000, z: 0 },
+      rotation: { x: 0, y: 90, z: 0 },
+    });
+    const child = makeObject(OBJECT_B, "Small truss", {
+      parentId: OBJECT_A,
+      position: { x: 500, y: -1000, z: 0 },
+      rotation: { x: 0, y: 0, z: 0 },
+    });
+    const grandchild = makeObject(OBJECT_C, "Lamp", {
+      parentId: OBJECT_B,
+      position: { x: 0, y: -500, z: 0 },
+      rotation: { x: 0, y: 0, z: 0 },
+    });
+    const document: ProjectDocument = {
+      ...cascadeDocument(),
+      setup: { plcs: [], motors: [], controlledObjects: [parent, child, grandchild], alignment: {} },
+      motion: { actionSequences: [], programs: [] },
+    };
+
+    expect(analyzeObjectDeletion(document, [OBJECT_A], "s").detachedChildNames).toEqual([
+      "Small truss",
+    ]);
+
+    const next = applyObjectDeletion(document, [OBJECT_A]);
+    const detached = next.setup.controlledObjects.find((object) => object.id === OBJECT_B)!;
+    expect(detached).not.toHaveProperty("parentId");
+    expect(detached.position.x).toBeCloseTo(1000);
+    expect(detached.position.y).toBeCloseTo(5000);
+    expect(detached.position.z).toBeCloseTo(-500);
+    expect(detached.rotation.y).toBeCloseTo(90);
+    expect(next.setup.controlledObjects.find((object) => object.id === OBJECT_C)).toBe(grandchild);
+    expect(validateProjectDocument(next).ok).toBe(true);
+  });
+
   it("returns the same document reference for semantic no-op", () => {
     const document = cascadeDocument();
     expect(applyObjectDeletion(document, [])).toBe(document);

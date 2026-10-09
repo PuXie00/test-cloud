@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ToolMode, TransformCenterPreset } from "@/app/viz3d";
 import { isBuildMenuToolMode } from "@/app/viz3d";
 import {
@@ -9,6 +9,8 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 } from "@/app/components/ui/dropdown-menu";
+import { canMountTo, orderByMountTree } from "@/app/project/object-mount";
+import { useProjectStore } from "../../hooks/use-project-store";
 import { useViz3DContext } from "../Viz3DProvider";
 import { SCENE_ALIGN_ACTIONS, useSceneBuildActions } from "../use-scene-build-actions";
 import type { SceneObjectEditActions } from "../use-scene-object-edit-actions";
@@ -20,6 +22,8 @@ const subMenuContentClass =
   "z-[9999] min-w-[8rem] border border-border bg-card p-1 text-foreground shadow-[0_4px_24px_rgba(0,0,0,0.4)]";
 
 const menuItemClass = "text-body-sm";
+
+const mountListClass = `${subMenuContentClass} max-h-72 overflow-y-auto`;
 
 const TRANSFORM_CENTER_PRESETS: Array<{
   label: string;
@@ -87,6 +91,21 @@ export const SceneBuildContextMenuContent = (props: SceneBuildContextMenuContent
     groupSelection,
     ungroupSelection,
   } = useSceneBuildActions();
+  const { objects, mountObjects } = useProjectStore();
+  const selectedObjectIds = useMemo(() => selection.map(Number), [selection]);
+  /** 所有选中物体都能挂上去的候选父物体（挂载树顺序） */
+  const mountTargets = useMemo(
+    () =>
+      selectedObjectIds.length === 0
+        ? []
+        : orderByMountTree(objects).filter(({ object }) =>
+            selectedObjectIds.every((id) => canMountTo(objects, id, object.id)),
+          ),
+    [objects, selectedObjectIds],
+  );
+  const canUnmount = objects.some(
+    (object) => selectedObjectIds.includes(object.id) && object.parentId != null,
+  );
 
   useEffect(() => {
     const handleMode = (next: ToolMode) => setMode(next);
@@ -163,6 +182,36 @@ export const SceneBuildContextMenuContent = (props: SceneBuildContextMenuContent
           ))}
         </DropdownMenuSubContent>
       </DropdownMenuSub>
+
+      <DropdownMenuSeparator className="bg-border" />
+
+      <DropdownMenuSub>
+        <DropdownMenuSubTrigger
+          disabled={mountTargets.length === 0}
+          className={menuItemClass}
+        >
+          挂载到
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent className={mountListClass}>
+          {mountTargets.map(({ object, depth }) => (
+            <DropdownMenuItem
+              key={object.id}
+              className={menuItemClass}
+              style={{ paddingLeft: `${8 + depth * 12}px` }}
+              onSelect={() => mountObjects(selectedObjectIds, object.id)}
+            >
+              {object.name}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
+      <DropdownMenuItem
+        disabled={!canUnmount}
+        className={menuItemClass}
+        onSelect={() => mountObjects(selectedObjectIds, null)}
+      >
+        解除挂载
+      </DropdownMenuItem>
 
       <DropdownMenuSeparator className="bg-border" />
 

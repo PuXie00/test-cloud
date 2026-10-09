@@ -9,7 +9,7 @@ import {
   type Vec3Mm,
 } from "./object-clipboard";
 import {
-  pickObjectsInSelectionOrder,
+  buildObjectClipboardSnapshots,
   resolvePastePositionsForMode,
   type PasteMode,
 } from "./scene-object-edit";
@@ -50,7 +50,7 @@ export const useSceneObjectEditActions = ({
   const copySelection = useCallback(() => {
     const ids = multiSelectedIds;
     if (ids.length === 0) return;
-    const selectedObjects = pickObjectsInSelectionOrder(objects, ids);
+    const selectedObjects = buildObjectClipboardSnapshots(objects, ids);
     if (selectedObjects.length === 0) return;
     setObjectClipboard(selectedObjects);
     setClipEpoch((epoch) => epoch + 1);

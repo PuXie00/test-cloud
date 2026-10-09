@@ -75,7 +75,12 @@ import {
 import { MultiTransformPivot, computeSelectionCentroid } from "../tools/multi-transform-pivot";
 import { SingleTransformPivot } from "../tools/single-transform-pivot";
 import { shouldAbortFailedTransformCommit } from "../tools/transform-commit-guard";
-import { applyWorldTransform, readWorldTransform } from "../tools/read-world-transform";
+import {
+  applyWorldTransform,
+  applyWorldTransformUnderParent,
+  readWorldTransform,
+  refreshWorldMatrixChain,
+} from "../tools/read-world-transform";
 import {
   resolveTransformCenterOffset,
   type TransformCenterPreset,
@@ -409,6 +414,7 @@ export class Viz3DEngine implements Disposable {
   updateObject(id: string, config: SceneObjectConfig): void {
     const shouldReattach = this.releaseTransformAttachmentsForObjectSync();
     this.objectRegistry?.get(id)?.applyConfig(config);
+    this.objectRegistry?.syncMountParents();
     this.applyDimmedObjects();
     this.applyHoistTravel();
     this.syncTransformRotationAxes();
@@ -810,7 +816,8 @@ export class Viz3DEngine implements Disposable {
       if (!handle) {
         return [];
       }
-      return [{ id, position: handle.getTransform().position }];
+      const world = asTransformNode(handle.object3d).getAbsolutePosition();
+      return [{ id, position: { x: world.x, y: world.y, z: world.z } }];
     });
     const distributed = distributePositions(items, axis);
     return editableIds.flatMap((id) => {
@@ -1501,12 +1508,14 @@ export class Viz3DEngine implements Disposable {
       scene,
       (id) => registry.get(id),
       this.colors,
+      (id) => registry.getMountParent(id),
     );
 
     this.sequencePreviewController = new SequencePreviewController(
       scene,
       (id) => registry.get(id),
       this.colors,
+      (id) => registry.getMountParent(id),
     );
 
     this.motorSelectionManager = new MotorSelectionManager((motorIds) => {
@@ -1650,7 +1659,7 @@ export class Viz3DEngine implements Disposable {
           this.commitSingleTransform();
           return;
         }
-        // Single: object is attached directly (not under multi-pivot), so local === world.
+        // Single: object is attached directly (not under multi-pivot); bake handles mounts.
         const id = this.getTransformTargetId();
         const handle = id ? this.objectRegistry?.get(id) : undefined;
         if (
@@ -1701,12 +1710,29 @@ export class Viz3DEngine implements Disposable {
     );
   }
 
+  /** 同时选中父子物体时只拖父物体，子物体随挂载层级移动 */
+  private topmostMountSelection(ids: string[]): string[] {
+    const selected = new Set(ids);
+    return ids.filter((id) => {
+      const seen = new Set([id]);
+      for (
+        let parent = this.objectRegistry?.getMountParent(id);
+        parent && !seen.has(parent.id);
+        parent = this.objectRegistry?.getMountParent(parent.id)
+      ) {
+        if (selected.has(parent.id)) return false;
+        seen.add(parent.id);
+      }
+      return true;
+    });
+  }
+
   private syncTransformAttachment(): void {
     if (!this.transformController) {
       return;
     }
 
-    const ids = this.getEditableSelection();
+    const ids = this.topmostMountSelection(this.getEditableSelection());
     if (ids.length === 0) {
       this.releaseSingleTransform();
       this.releaseMultiTransform();
@@ -1831,10 +1857,10 @@ export class Viz3DEngine implements Disposable {
     this.transformController?.detach();
     this.singleTransformPivot?.release();
     this.singleTransformMemberId = null;
-    this.bakeObjectWorldPose(handle!, pose);
+    const committed = this.bakeObjectWorldPose(handle!, pose);
 
     this.refreshBoundingBox(id!);
-    this.events.emit("transformEnd", pose);
+    this.events.emit("transformEnd", committed);
     this.syncTransformAttachment();
   }
 
@@ -1887,9 +1913,8 @@ export class Viz3DEngine implements Disposable {
       if (!handle) {
         continue;
       }
-      this.bakeObjectWorldPose(handle, pose);
+      payloads.push(this.bakeObjectWorldPose(handle, pose));
       this.refreshBoundingBox(pose.id);
-      payloads.push(pose);
     }
 
     if (
@@ -1933,32 +1958,44 @@ export class Viz3DEngine implements Disposable {
     return { id: handle.id, ...world };
   }
 
+  /**
+   * 释放 Gizmo 后把世界姿态写回节点，返回要落盘的姿态：顶层物体为世界值，
+   * 挂载子物体为相对父物体的局部值；其它父节点（会话组合）保持原样。
+   */
   private bakeObjectWorldPose(
-    handle: { object3d: unknown },
+    handle: { id: string; object3d: unknown },
     pose: TransformEndPayload,
-  ): void {
+  ): TransformEndPayload {
     const node = asTransformNode(handle.object3d);
+    const mountParent = this.objectRegistry?.getMountParent(handle.id);
+    if (mountParent && node.parent === mountParent.attachmentPivot) {
+      return { id: pose.id, ...applyWorldTransformUnderParent(node, pose) };
+    }
     if (node.parent) {
-      return;
+      return pose;
     }
     applyWorldTransform(node, pose);
+    return pose;
   }
 
   private captureAndBakeObjectPose(handle: {
     id: string;
     object3d: unknown;
   }): TransformEndPayload {
-    const pose = this.captureObjectWorldPose(handle);
-    this.bakeObjectWorldPose(handle, pose);
-    return pose;
+    return this.bakeObjectWorldPose(handle, this.captureObjectWorldPose(handle));
   }
 
+  /** 写入世界坐标；挂载子物体换算成相对父物体的局部坐标，payload 为局部值 */
   private applyPosition(id: string, position: Vec3): TransformEndPayload | null {
     const handle = this.objectRegistry?.get(id);
     if (!handle) {
       return null;
     }
-    asTransformNode(handle.object3d).position.set(position.x, position.y, position.z);
+    const node = asTransformNode(handle.object3d);
+    if (node.parent) {
+      refreshWorldMatrixChain(node.parent as TransformNode);
+    }
+    node.setAbsolutePosition(new Vector3(position.x, position.y, position.z));
     this.refreshBoundingBox(id);
     const transform = handle.getTransform();
     return { id, ...transform };
@@ -1977,6 +2014,11 @@ export class Viz3DEngine implements Disposable {
     const handle = this.objectRegistry?.get(childId);
     const scene = this.sceneManager?.scene;
     if (!handle || !scene) {
+      return;
+    }
+
+    // 挂载子物体始终跟随父物体，不进会话组合
+    if (this.objectRegistry?.getMountParent(childId)) {
       return;
     }
 

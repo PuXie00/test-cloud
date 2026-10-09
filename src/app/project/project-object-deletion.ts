@@ -4,8 +4,10 @@ import {
   reconcileSegmentConfigs,
   resolveActionSequence,
 } from "./action-sequence/resolve-sequence";
+import { remountPose } from "./object-mount";
 import type {
   ActionSequenceConfig,
+  ControlledObjectConfig,
   MotorConfig,
   ProgramConfig,
   ProjectDocument,
@@ -18,6 +20,8 @@ export type ObjectDeletionImpact = {
   stateId: string;
   objectIds: number[];
   objectNames: string[];
+  /** 父物体被删、将解除挂载（保持世界位置）的子物体名称 */
+  detachedChildNames: string[];
   motorBindingCount: number;
   alignmentCount: number;
   sceneGroupCount: number;
@@ -57,6 +61,10 @@ export const analyzeObjectDeletion = (
   const { deletedIds, objectIds: resolvedIds, objectNames } = resolveDeletedIds(
     document,
     objectIds,
+  );
+
+  const detachedChildNames = orphanedChildren(document.setup.controlledObjects, deletedIds).map(
+    (object) => object.name,
   );
 
   let motorBindingCount = 0;
@@ -106,6 +114,7 @@ export const analyzeObjectDeletion = (
     stateId,
     objectIds: resolvedIds,
     objectNames,
+    detachedChildNames,
     motorBindingCount,
     alignmentCount,
     sceneGroupCount,
@@ -116,6 +125,31 @@ export const analyzeObjectDeletion = (
     emptySequenceIds,
     affectedRuleIds: [],
   };
+};
+
+/** 父物体被删、自身保留的子物体 */
+const orphanedChildren = (
+  objects: readonly ControlledObjectConfig[],
+  deletedIds: Set<number>,
+): ControlledObjectConfig[] =>
+  objects.filter(
+    (object) =>
+      !deletedIds.has(object.id) && object.parentId != null && deletedIds.has(object.parentId),
+  );
+
+/** 删除父物体：子物体解除挂载，按删除前的挂载链换算回世界坐标 */
+const detachOrphanedChildren = (
+  objects: readonly ControlledObjectConfig[],
+  deletedIds: Set<number>,
+): Map<number, ControlledObjectConfig> => {
+  const detached = new Map<number, ControlledObjectConfig>();
+  for (const child of orphanedChildren(objects, deletedIds)) {
+    const pose = remountPose(objects, child.id, null);
+    if (!pose) continue;
+    const { parentId: _parentId, ...rest } = child;
+    detached.set(child.id, { ...rest, position: pose.position, rotation: pose.rotation });
+  }
+  return detached;
 };
 
 const unbindMotor = (motor: MotorConfig, deletedIds: Set<number>): MotorConfig => {
@@ -218,9 +252,10 @@ const applySetupDeletion = (
   setup: ProjectSetup,
   deletedIds: Set<number>,
 ): ProjectSetup => {
-  const controlledObjects = setup.controlledObjects.filter(
-    (object) => !deletedIds.has(object.id),
-  );
+  const detached = detachOrphanedChildren(setup.controlledObjects, deletedIds);
+  const controlledObjects = setup.controlledObjects
+    .filter((object) => !deletedIds.has(object.id))
+    .map((object) => detached.get(object.id) ?? object);
   const objectsChanged = controlledObjects.length !== setup.controlledObjects.length;
 
   let motorsChanged = false;

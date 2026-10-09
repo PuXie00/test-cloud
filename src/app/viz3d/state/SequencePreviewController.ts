@@ -6,7 +6,7 @@ import { GreasedLineMeshMaterialType } from "@babylonjs/core/Materials/GreasedLi
 import { hexToColor3 } from "../babylon/utils";
 import type { SceneObjectHandle } from "../objects/SceneObjectRegistry";
 import type { VirtualAxisValues, Viz3DColorMap } from "../types";
-import { previewPathPoints } from "./preview-path-points";
+import { attachmentFrameMatrix, previewPathPoints, type ParentFrameAt } from "./preview-path-points";
 
 export type SequencePreviewPath = {
   objectId: string;
@@ -28,6 +28,7 @@ export class SequencePreviewController {
     private readonly scene: Scene,
     private readonly getHandle: (id: string) => SceneObjectHandle | undefined,
     private readonly colors: Viz3DColorMap,
+    private readonly getMountParent: (id: string) => SceneObjectHandle | undefined = () => undefined,
   ) {}
 
   set(entries: SequencePreviewEntries): void {
@@ -51,12 +52,22 @@ export class SequencePreviewController {
       this.paths.get(id)?.dispose(false, true);
       this.paths.delete(id);
     }
+    const posesByTone = new Map<string, Map<string, VirtualAxisValues[]>>();
+    for (const path of paths) {
+      const tone = path.tone ?? "program";
+      const family = posesByTone.get(tone) ?? new Map<string, VirtualAxisValues[]>();
+      family.set(path.objectId, path.poses);
+      posesByTone.set(tone, family);
+    }
     for (const path of paths) {
       const handle = this.getHandle(path.objectId);
       if (!handle) continue;
-      const points = previewPathPoints(handle.getConfig(), path.poses).map(
-        (point) => new Vector3(point.x, point.y, point.z),
-      );
+      const family = posesByTone.get(path.tone ?? "program")!;
+      const points = previewPathPoints(
+        handle.getConfig(),
+        path.poses,
+        this.parentFrames(path.objectId, family, path.poses.length),
+      ).map((point) => new Vector3(point.x, point.y, point.z));
       if (points.length < 2) continue;
       const key = keyOf(path);
       const name = `viz3d-seq-preview-path-${key}`;
@@ -82,5 +93,31 @@ export class SequencePreviewController {
       line.renderingGroupId = 1;
       this.paths.set(key, line);
     }
+  }
+
+  /**
+   * 挂载子物体轨迹叠加父物体姿态：父物体在同一组采样里（同序列、同时刻采样）
+   * 时逐点用父物体的预览姿态，否则用父物体当前姿态。
+   */
+  private parentFrames(
+    objectId: string,
+    family: ReadonlyMap<string, VirtualAxisValues[]>,
+    count: number,
+    seen: ReadonlySet<string> = new Set([objectId]),
+  ): ParentFrameAt {
+    const parent = this.getMountParent(objectId);
+    if (!parent || seen.has(parent.id)) return () => null;
+    const parentPoses = family.get(parent.id);
+    if (!parentPoses || parentPoses.length !== count) {
+      const live = parent.attachmentPivot.computeWorldMatrix(true).clone();
+      return () => live;
+    }
+    const grandparent = this.parentFrames(parent.id, family, count, new Set([...seen, parent.id]));
+    const config = parent.getConfig();
+    return (index) => {
+      const frame = attachmentFrameMatrix(config, parentPoses[index]!);
+      const above = grandparent(index);
+      return above ? frame.multiply(above) : frame;
+    };
   }
 }

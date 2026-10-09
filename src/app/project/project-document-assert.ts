@@ -328,7 +328,9 @@ const validateObjectBase = (
   validateVector(object.position, `${path}.position`, a);
   validateVector(object.centerOffset, `${path}.centerOffset`, a);
   a.string(object.color, `${path}.color`);
-  a.optionalNullableString(object.parentId, `${path}.parentId`);
+  if (object.parentId !== undefined && object.parentId !== null) {
+    validateSetupEntityId(object.parentId, `${path}.parentId`, a);
+  }
   validateDriveAxes(object.driveAxes, `${path}.driveAxes`, a, options.requireMount ?? false);
   return object;
 };
