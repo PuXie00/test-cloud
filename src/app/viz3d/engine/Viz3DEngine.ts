@@ -27,6 +27,7 @@ import type {
   ScreenRect,
   PickTarget,
   SelectionMode,
+  PickMode,
   SlotRect,
   TelemetrySnapshotInput,
   ToolMode,
@@ -126,7 +127,7 @@ export type Viz3DEventMap = {
   ready: void;
   resize: SlotRect;
   selectionChange: string[];
-  motorSelectionChange: string | null;
+  motorSelectionChange: string[];
   objectClick: { id: string | null; mode: SelectionMode };
   pickClick: { target: PickTarget | null; mode: SelectionMode };
   viewChange: ViewPreset;
@@ -181,6 +182,7 @@ export class Viz3DEngine implements Disposable {
   private modelLoader: ModelLoader | null = null;
   private measureMarkers: MeasureMarkers | null = null;
   private boxSelectEnabled = true;
+  private pickMode: PickMode = "object";
   /** 搭建界面专属：变换中心标记等场景编辑可视化 */
   private sceneEditEnabled = false;
   private selectionBoxManager: SelectionBoxManager | null = null;
@@ -447,15 +449,24 @@ export class Viz3DEngine implements Disposable {
     this.selectionManager?.clear();
   }
 
+  /** 首个选中电机；无选中为 null */
   getMotorSelection(): string | null {
-    return this.motorSelectionManager?.getSelection() ?? null;
+    return this.motorSelectionManager?.getSelection()[0] ?? null;
+  }
+
+  getMotorSelectionIds(): string[] {
+    return this.motorSelectionManager?.getSelection() ?? [];
   }
 
   setMotorSelection(id: string | null): void {
-    if (id) {
+    this.setMotorSelectionIds(id ? [id] : []);
+  }
+
+  setMotorSelectionIds(ids: readonly string[]): void {
+    if (ids.length > 0) {
       this.selectionManager?.clear();
     }
-    this.motorSelectionManager?.set(id);
+    this.motorSelectionManager?.set(ids);
   }
 
   clearMotorSelection(): void {
@@ -1062,6 +1073,15 @@ export class Viz3DEngine implements Disposable {
     return this.boxSelectEnabled;
   }
 
+  /** 物体模式点选 / 框选物体；电机模式只选吊点电机，点到物体无效 */
+  setPickMode(mode: PickMode): void {
+    this.pickMode = mode;
+  }
+
+  getPickMode(): PickMode {
+    return this.pickMode;
+  }
+
   setSceneEditEnabled(enabled: boolean): void {
     this.sceneEditEnabled = enabled;
     if (!enabled) {
@@ -1077,19 +1097,34 @@ export class Viz3DEngine implements Disposable {
       return [];
     }
 
-    this.clearMotorSelection();
-
     const camera = this.viewportManager.getPrimaryCamera();
     const projectionRect = this.getLocalSlotRect();
-
-    const items = this.objectRegistry.list().map((handle) => {
-      const box = readObjectBounds(handle);
-      const corners = boundsCorners(box).flatMap((corner) => {
+    const projectCorners = (box: WorldBounds) =>
+      boundsCorners(box).flatMap((corner) => {
         const projected = projectBoundsCorner(corner, camera, projectionRect);
         return projected ? [projected] : [];
       });
-      return { id: handle.id, corners };
-    });
+
+    if (this.pickMode === "motor") {
+      const items = this.objectRegistry.list().flatMap((handle) =>
+        handle.listHoistPointSelectionTargets().map(({ motorId, target }) => ({
+          id: motorId,
+          corners: projectCorners(getWorldBounds(target)),
+        })),
+      );
+      const ids = selectIdsInScreenRect(screenRect, items);
+      const next =
+        selectionMode === "additive" ? [...this.getMotorSelectionIds(), ...ids] : ids;
+      this.setMotorSelectionIds(next);
+      return this.getMotorSelectionIds();
+    }
+
+    this.clearMotorSelection();
+
+    const items = this.objectRegistry.list().map((handle) => ({
+      id: handle.id,
+      corners: projectCorners(readObjectBounds(handle)),
+    }));
 
     const ids = selectIdsInScreenRect(screenRect, items);
     if (selectionMode === "additive") {
@@ -1224,6 +1259,10 @@ export class Viz3DEngine implements Disposable {
       .map((handle) => asTransformNode(handle.object3d));
     const pickTarget = this.pickController.pick(canvasX, canvasY, target.camera, targets);
 
+    if (this.pickMode === "motor") {
+      return this.pickMotorTarget(pickTarget, mode, clearOnMiss);
+    }
+
     if (pickTarget?.kind === "motor") {
       this.setMotorSelection(pickTarget.id);
     } else if (pickTarget?.kind === "hoist-axis") {
@@ -1249,6 +1288,36 @@ export class Viz3DEngine implements Disposable {
           ? pickTarget.objectId
           : null;
     this.events.emit("objectClick", { id: hitId, mode });
+    return pickTarget;
+  }
+
+  /** 电机模式：点吊点电机选中，点物体或未绑定吊点无效，点空白清空 */
+  private pickMotorTarget(
+    pickTarget: PickTarget | null,
+    mode: SelectionMode,
+    clearOnMiss: boolean,
+  ): PickTarget | null {
+    const motorId =
+      pickTarget?.kind === "motor"
+        ? pickTarget.id
+        : pickTarget?.kind === "hoist-axis"
+          ? (pickTarget.motorId ?? null)
+          : null;
+
+    if (motorId) {
+      const current = this.getMotorSelectionIds();
+      this.setMotorSelectionIds(
+        mode === "toggle"
+          ? current.includes(motorId)
+            ? current.filter((id) => id !== motorId)
+            : [...current, motorId]
+          : [motorId],
+      );
+    } else if (!pickTarget && mode === "single" && clearOnMiss) {
+      this.clearMotorSelection();
+    }
+
+    this.events.emit("pickClick", { target: pickTarget, mode });
     return pickTarget;
   }
 
@@ -1440,8 +1509,7 @@ export class Viz3DEngine implements Disposable {
       this.colors,
     );
 
-    this.motorSelectionManager = new MotorSelectionManager((id) => {
-      const motorIds = id ? [id] : [];
+    this.motorSelectionManager = new MotorSelectionManager((motorIds) => {
       this.selectionBoxManager?.syncMotors(motorIds, (motorId) => {
         for (const handle of this.objectRegistry?.list() ?? []) {
           const root = handle.getHoistPointSelectionBoundsTarget(motorId);
@@ -1451,7 +1519,7 @@ export class Viz3DEngine implements Disposable {
         }
         return undefined;
       });
-      this.events.emit("motorSelectionChange", id);
+      this.events.emit("motorSelectionChange", motorIds);
     });
 
     this.measureMarkers = new MeasureMarkers(

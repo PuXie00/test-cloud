@@ -1,19 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { ControlType } from "@/app/project/configuration-types";
-import type { Quat, SceneObjectConfig } from "../types";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { HoistTravelDirection, Quat } from "../types";
 import { resolveHoistTravel } from "./hoist-travel";
-import { resolveVirtualAxisTransform } from "./virtual-axis-mapper";
-
-const configOf = (controlType: ControlType, runDirection: 1 | 2): SceneObjectConfig => ({
-  id: "co-1",
-  shape: "cube",
-  dimensions: { w: 1, h: 1, d: 1 },
-  position: { x: 0, y: 4, z: 0 },
-  centerOffset: { x: 0, y: 0, z: 0 },
-  rotation: { x: 0, y: 0, z: 0 },
-  color: "#4cd6fb",
-  kinematics: { controlType, runDirection, pulleyDistance: 100, maxHeight: 3000, betaInit: 0 },
-});
 
 const expectQuatClose = (actual: Quat, expected: Quat): void => {
   // q 与 −q 表示同一旋转
@@ -25,46 +13,50 @@ const expectQuatClose = (actual: Quat, expected: Quat): void => {
   expect(actual.w * sign).toBeCloseTo(expected.w, 9);
 };
 
-const liftOf = (position: number, runDirection: 1 | 2): number => {
-  const travel = resolveHoistTravel("linear", position, runDirection);
+const liftOf = (position: number, direction: HoistTravelDirection): number => {
+  const travel = resolveHoistTravel("linear", position, direction);
   if (travel.kind !== "linear") throw new Error("expected linear travel");
   return travel.lift;
 };
 
-const rotationOf = (position: number, runDirection: 1 | 2): Quat => {
-  const travel = resolveHoistTravel("rotary", position, runDirection);
+const rotationOf = (position: number, direction: HoistTravelDirection): Quat => {
+  const travel = resolveHoistTravel("rotary", position, direction);
   if (travel.kind !== "rotary") throw new Error("expected rotary travel");
   return travel.rotation;
 };
 
+/** 物体正前方 +Z 指针转过后的朝向 */
+const pointerOf = (rotation: Quat): Vector3 =>
+  new Vector3(0, 0, 1).applyRotationQuaternion(
+    new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w),
+  );
+
 describe("resolveHoistTravel", () => {
   it("位置 0 为原位", () => {
-    expect(liftOf(0, 1)).toBeCloseTo(0, 12);
-    expect(liftOf(0, 2)).toBeCloseTo(0, 12);
-    expectQuatClose(rotationOf(0, 1), { x: 0, y: 0, z: 0, w: 1 });
+    expect(liftOf(0, "forward")).toBeCloseTo(0, 12);
+    expect(liftOf(0, "reverse")).toBeCloseTo(0, 12);
+    expectQuatClose(rotationOf(0, "forward"), { x: 0, y: 0, z: 0, w: 1 });
   });
 
   it("线性：正向时位置增大向下，反向时向上，mm 换算为米", () => {
-    expect(liftOf(1500, 1)).toBeCloseTo(-1.5, 12);
-    expect(liftOf(1500, 2)).toBeCloseTo(1.5, 12);
-    expect(liftOf(-200, 1)).toBeCloseTo(0.2, 12);
+    expect(liftOf(1500, "forward")).toBeCloseTo(-1.5, 12);
+    expect(liftOf(1500, "reverse")).toBeCloseTo(1.5, 12);
+    expect(liftOf(-200, "forward")).toBeCloseTo(0.2, 12);
   });
 
-  it.each([1, 2] as const)("线性与控制页单点升降一致（方向 %i）", (runDirection) => {
-    const config = configOf("singlePointMove", runDirection);
-    const control = resolveVirtualAxisTransform(config, { v1: 820 });
-    expect(liftOf(820, runDirection)).toBeCloseTo(control.position.y - config.position.y, 12);
+  it("无极旋转：正向时位置增大俯视顺时针，反向时逆时针", () => {
+    // 俯视（+Y 向下看，+X 在右、+Z 在上）顺时针 90°：+Z → +X
+    const forward = pointerOf(rotationOf(90, "forward"));
+    expect(forward.x).toBeCloseTo(1, 9);
+    expect(forward.z).toBeCloseTo(0, 9);
+    const reverse = pointerOf(rotationOf(90, "reverse"));
+    expect(reverse.x).toBeCloseTo(-1, 9);
+    expect(reverse.z).toBeCloseTo(0, 9);
   });
 
-  it.each([1, 2] as const)("无极旋转与控制页旋转一致（方向 %i）", (runDirection) => {
-    const control = resolveVirtualAxisTransform(configOf("continuousRotation", runDirection), { v1: 135 });
-    expectQuatClose(rotationOf(135, runDirection), control.rotationQuaternion!);
-  });
-
-  it("无极旋转：反向时角度取反，多圈与取模后等价", () => {
-    const forward = rotationOf(30, 1);
-    const reverse = rotationOf(-30, 2);
-    expectQuatClose(reverse, forward);
-    expectQuatClose(rotationOf(30 + 720, 1), forward);
+  it("无极旋转：反向等于角度取反，多圈与取模后等价", () => {
+    const forward = rotationOf(30, "forward");
+    expectQuatClose(rotationOf(-30, "reverse"), forward);
+    expectQuatClose(rotationOf(30 + 720, "forward"), forward);
   });
 });

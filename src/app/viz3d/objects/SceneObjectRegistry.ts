@@ -34,6 +34,8 @@ export type SceneObjectHandle = {
   setDimmed: (dimmed: boolean) => void;
   getHoistPointRoot: (motorId: string) => TransformNode | undefined;
   getHoistPointSelectionBoundsTarget: (motorId: string) => TransformNode | undefined;
+  /** 可见且已绑定电机的吊点（电机框选用） */
+  listHoistPointSelectionTargets: () => { motorId: string; target: TransformNode }[];
   refreshHoistLabels: (mode: HoistLabelMode) => void;
   applyHoistTravel: (byMotorId: ReadonlyMap<string, HoistTravelInput>) => void;
   dispose: () => void;

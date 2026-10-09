@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { hoistTravelInputs } from "./hoist-travel-inputs";
 
-const motor = (id: number, axisType: 0 | 1, controlledObjectId: number | null = 10) => ({
+const motor = (
+  id: number,
+  axisType: 0 | 1,
+  controlledObjectId: number | null = 10,
+  params: Record<string, number | boolean | string> = { axisDirection: 0 },
+) => ({
   id,
   axisType,
   controlledObjectId,
+  params,
 });
 
 const snapshot = (id: number, actualPosition: number | null, live = true) => ({
@@ -18,14 +24,23 @@ describe("hoistTravelInputs", () => {
     expect(
       hoistTravelInputs([motor(1, 0), motor(2, 1)], [snapshot(1, 1250.5), snapshot(2, -90)]),
     ).toEqual([
-      { motorId: "1", axisKind: "linear", position: 1250.5 },
-      { motorId: "2", axisKind: "rotary", position: -90 },
+      { motorId: "1", axisKind: "linear", direction: "forward", position: 1250.5 },
+      { motorId: "2", axisKind: "rotary", direction: "forward", position: -90 },
     ]);
+  });
+
+  it("轴方向 1 为反向，缺省或其他值按正向", () => {
+    expect(
+      hoistTravelInputs(
+        [motor(1, 0, 10, { axisDirection: 1 }), motor(2, 1, 10, { axisDirection: "1" }), motor(3, 0, 10, {})],
+        [snapshot(1, 5), snapshot(2, 5), snapshot(3, 5)],
+      ).map((input) => input.direction),
+    ).toEqual(["reverse", "reverse", "forward"]);
   });
 
   it("位置 0 仍显示（原位）", () => {
     expect(hoistTravelInputs([motor(1, 0)], [snapshot(1, 0)])).toEqual([
-      { motorId: "1", axisKind: "linear", position: 0 },
+      { motorId: "1", axisKind: "linear", direction: "forward", position: 0 },
     ]);
   });
 

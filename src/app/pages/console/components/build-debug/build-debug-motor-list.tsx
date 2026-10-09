@@ -364,13 +364,16 @@ export const BuildDebugMotorList = () => {
                         )}
                         style={rowGridStyle(row.variableAttrs.length)}
                       >
+                        {/* 复选框追加 / 移出选中；点整行仍为单选 */}
                         <input
                           type="checkbox"
                           checked={selected}
-                          readOnly
+                          disabled={!selectable}
                           tabIndex={-1}
-                          aria-hidden
-                          className="accent-primary"
+                          aria-label={`${selected ? "移出" : "追加"}选中 ${formatMotorDisplayName(motors, row.motor)}`}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={() => handleSelectMotor(row.motor.id, selectable, "toggle")}
+                          className={cn("accent-primary", selectable && "cursor-pointer")}
                         />
                         <span className="truncate font-mono text-body-sm tabular-nums text-foreground">
                           {formatMotorDisplayName(motors, row.motor)}

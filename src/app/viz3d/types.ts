@@ -111,6 +111,9 @@ export type VirtualAxisKinematics = {
 
 export type SelectionMode = "single" | "toggle";
 
+/** 3D 点选 / 框选对象：物体，或吊点电机（搭建调试） */
+export type PickMode = "object" | "motor";
+
 export type ViewPreset = "top" | "front" | "back" | "side" | "left" | "persp" | "iso";
 
 /** 工程落盘 / 视口恢复用的主相机状态 */
@@ -194,10 +197,14 @@ export type TelemetrySnapshotInput = {
 /** 吊点电机轴类型：线性显示粗线，无极旋转显示表盘指针 */
 export type HoistTravelAxisKind = "linear" | "rotary";
 
+/** 电机轴方向：正向时位置增大向下 / 俯视顺时针，反向时向上 / 逆时针 */
+export type HoistTravelDirection = "forward" | "reverse";
+
 /** 搭建调试：吊点电机实时位置（线性 mm，无极旋转 °；0 为原位） */
 export type HoistTravelInput = {
   motorId: string;
   axisKind: HoistTravelAxisKind;
+  direction: HoistTravelDirection;
   position: number;
 };
 

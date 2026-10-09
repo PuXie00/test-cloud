@@ -442,13 +442,12 @@ export class SceneObject implements Disposable {
 
   /** 搭建调试：按电机位置显示吊点粗线 / 表盘；表中没有的吊点隐藏 */
   applyHoistTravel(byMotorId: ReadonlyMap<string, HoistTravelInput>): void {
-    const runDirection = this.config.kinematics?.runDirection ?? 1;
     for (const axis of this.config.hoistAxes ?? []) {
       const visual = this.hoistPoints.get(axis.key);
       if (!visual) continue;
       const input = axis.motorId ? byMotorId.get(axis.motorId) : undefined;
       visual.setTravel(
-        input ? resolveHoistTravel(input.axisKind, input.position, runDirection) : null,
+        input ? resolveHoistTravel(input.axisKind, input.position, input.direction) : null,
       );
     }
   }
@@ -466,6 +465,15 @@ export class SceneObject implements Disposable {
       }
     }
     return undefined;
+  }
+
+  listHoistPointSelectionTargets(): { motorId: string; target: TransformNode }[] {
+    return [...this.hoistPoints.values()].flatMap((visual) => {
+      const motorId = getNodeMetadata(visual.root, "viz3dMotorId");
+      return typeof motorId === "string" && visual.root.isEnabled()
+        ? [{ motorId, target: visual.selectionBoundsTarget }]
+        : [];
+    });
   }
 
   getHoistPointSelectionBoundsTarget(motorId: string): TransformNode | undefined {

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/app/components/ui/utils";
 import { formatMotorDisplayName } from "@/app/pages/console/hooks/motor-mid";
-import { idsInRange, resolveSelectionMode } from "@/app/pages/console/hooks/selection-range";
 import { useProjectStore } from "@/app/pages/console/hooks/use-project-store";
 import { useViz3DContext } from "@/app/pages/console/3d/Viz3DProvider";
 import { useSessionDisplayLengthUnit } from "@/app/project/display-length-unit-provider";
@@ -35,16 +34,15 @@ const shouldAggregateObject = (anchors: ScreenAnchor[], cameraDist: number | nul
   return false;
 };
 
-/** 武装后视口：吊点徽章（详情看右侧列表） */
+/** 武装后视口：吊点徽章，只显示不响应鼠标（选电机在 3D 吊点或右侧列表） */
 export const MotorTelemetryOverlay = () => {
   const engine = useViz3DContext();
   const buildDebug = useBuildDebugOptional();
   const displayUnit = useSessionDisplayLengthUnit();
-  const { findMotor, getObjectMotors, motors } = useProjectStore();
+  const { findMotor, motors } = useProjectStore();
   const hostRef = useRef<HTMLDivElement>(null);
   const [anchors, setAnchors] = useState<ScreenAnchor[]>([]);
   const [cameraDist, setCameraDist] = useState<number | null>(null);
-  const [expandedObjectIds, setExpandedObjectIds] = useState<Set<string>>(() => new Set());
 
   const armed = buildDebug?.armed ?? false;
 
@@ -89,9 +87,6 @@ export const MotorTelemetryOverlay = () => {
   const {
     primaryMotorId,
     selectedMotorIds,
-    selectMotors,
-    toggleMotor,
-    clearSelection,
     telemetryOf,
     displayPositionOf,
     imbalancedInObject,
@@ -104,8 +99,7 @@ export const MotorTelemetryOverlay = () => {
   > = [];
 
   for (const [objectId, list] of byObject) {
-    const expanded = expandedObjectIds.has(objectId);
-    const aggregate = !expanded && shouldAggregateObject(list, cameraDist);
+    const aggregate = shouldAggregateObject(list, cameraDist);
     if (aggregate) {
       const x = list.reduce((s, a) => s + a.x, 0) / list.length;
       const y = list.reduce((s, a) => s + a.y, 0) / list.length;
@@ -117,37 +111,18 @@ export const MotorTelemetryOverlay = () => {
     }
   }
 
-  const orderedOnlineMotorIds = badges.flatMap((item) =>
-    item.kind === "motor" && isMotorOnline(Number(item.anchor.motorId))
-      ? [Number(item.anchor.motorId)]
-      : [],
-  );
-
   return (
     <div ref={hostRef} className="pointer-events-none absolute inset-0 z-30 overflow-hidden">
       {badges.map((item) => {
         if (item.kind === "cluster") {
           return (
-            <button
+            <div
               key={`cluster-${item.objectId}`}
-              type="button"
-              aria-label={`${item.count} 轴聚合`}
-              onClick={() => {
-                setExpandedObjectIds((prev) => {
-                  const next = new Set(prev);
-                  next.add(item.objectId);
-                  return next;
-                });
-                const motors = getObjectMotors(Number(item.objectId));
-                if (motors[0]) {
-                  buildDebug.selectMotors([motors[0].id], motors[0].id);
-                }
-              }}
-              className="pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-card px-2 py-1 font-mono text-mono-sm text-foreground shadow-sm hover:bg-accent"
+              className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-card px-2 py-1 font-mono text-mono-sm text-foreground shadow-sm"
               style={{ left: item.x, top: item.y }}
             >
               {item.count} 轴
-            </button>
+            </div>
           );
         }
 
@@ -166,40 +141,11 @@ export const MotorTelemetryOverlay = () => {
         const online = isMotorOnline(motorId);
 
         return (
-          <button
+          <div
             key={anchor.motorId}
-            type="button"
-            aria-label={`吊点 ${motor ? formatMotorDisplayName(motors, motor) : anchor.motorId}${online ? "" : " 未连接"}`}
-            aria-pressed={selected}
-            onClick={(event) => {
-              if (!online) return;
-              const mode = resolveSelectionMode(event);
-              if (mode === "toggle") {
-                toggleMotor(motorId, true);
-                return;
-              }
-              if (mode === "range") {
-                const anchorId =
-                  primaryMotorId ?? [...selectedMotorIds].at(-1) ?? null;
-                selectMotors(
-                  idsInRange(orderedOnlineMotorIds, anchorId, motorId),
-                  motorId,
-                );
-                return;
-              }
-              if (selected && selectedMotorIds.size === 1) {
-                clearSelection();
-                return;
-              }
-              if (selected) {
-                toggleMotor(motorId, true);
-                return;
-              }
-              selectMotors([motorId], motorId);
-            }}
             className={cn(
-              "pointer-events-auto absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-full bg-card/95 px-1.5 py-0.5 font-mono text-mono-sm tabular-nums shadow-sm",
-              online ? "" : "cursor-not-allowed opacity-50",
+              "absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-full bg-card/95 px-1.5 py-0.5 font-mono text-mono-sm tabular-nums shadow-sm",
+              online ? "" : "opacity-50",
               primary
                 ? "ring-1 ring-primary"
                 : selected
@@ -227,7 +173,7 @@ export const MotorTelemetryOverlay = () => {
                   })
                 : "离线"}
             </span>
-          </button>
+          </div>
         );
       })}
     </div>
