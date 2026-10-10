@@ -5,6 +5,7 @@ import type {
   TimelineBlock,
 } from "@/app/project/action-sequence/types";
 import type { SequenceIssue } from "@/app/project/action-sequence/validate-sequence";
+import type { CapturedPoseRequest } from "@/app/project/capture-pose-sequence";
 import type { ContextSelection } from "./context-bar/selection-context-bar";
 import type { ActionRightTab } from "./right-panel/action-right-panel";
 import type { PoseAxisWrite } from "./sequence-ops";
@@ -74,6 +75,8 @@ export type ActionBuilderContextValue = {
   handleCreatePose: (objectIds: number[]) => void;
   handleCreateSetEnabled: (objectIds: number[], enabled: boolean) => void;
   handleCreateSequence: (objectIds: number[]) => void;
+  /** 保存当前位姿：有选中序列则在播放头加位姿，否则新建序列（不加入节目） */
+  handleSaveCurrentPose: (request: CapturedPoseRequest) => void;
   /** 返回错误文案；成功或名称未变化时返回 null */
   handleRenameSequence: (name: string) => string | null;
   handleDeleteSequence: () => void;

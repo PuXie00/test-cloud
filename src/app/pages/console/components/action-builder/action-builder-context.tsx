@@ -13,6 +13,10 @@ import {
   setupObjectToTimelineObject,
 } from "@/app/project/motion-adapters";
 import { actionBuilderStateToMotion } from "@/app/project/motion-persist";
+import {
+  buildCapturedPoseSequence,
+  type CapturedPoseRequest,
+} from "@/app/project/capture-pose-sequence";
 import { useProject } from "@/app/project/use-project";
 import { createDefaultAxisProfiles } from "@/app/project/action-sequence/motion-profile";
 import { fitPresetParams } from "@/app/project/action-sequence/preset-defaults";
@@ -383,10 +387,11 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     setSequenceMissingHint(false);
   }, []);
 
+  // Picking objects keeps the manual-control tab: it acts on the selection.
   const handleObjectSelect = useCallback((objectId: number) => {
     setSelectedObjectIds([objectId]);
     setSelection(null);
-    setActiveRightTab("selection");
+    setActiveRightTab((tab) => (tab === "manual" ? tab : "selection"));
     setSequenceMissingHint(false);
   }, []);
 
@@ -398,7 +403,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       return objectIds;
     });
     setSelection(null);
-    setActiveRightTab("selection");
+    setActiveRightTab((tab) => (tab === "manual" ? tab : "selection"));
     setSequenceMissingHint(false);
   }, []);
 
@@ -640,6 +645,57 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleSequenceSelect(next.id);
     },
     [commitMotionProjection, handleSequenceSelect],
+  );
+
+  /** 保存当前位姿：有选中序列则在播放头加位姿；否则新建序列（不加入节目）并选中 */
+  const handleSaveCurrentPose = useCallback(
+    ({ objectIds, poseForObject: livePoseFor }: CapturedPoseRequest) => {
+      if (selectedSequenceId && sequence) {
+        const poses = new Map<number, ModelPose>();
+        for (const objectId of objectIds) {
+          const pose = livePoseFor(objectId);
+          if (pose) poses.set(objectId, pose);
+        }
+        if (poses.size === 0) return;
+        const outcome = upsertForObjects([...poses.keys()], (current, objectId) =>
+          upsertPoseBlock(
+            current,
+            { id: nextId("blk"), kind: "pose", objectId, atMs: cursorMs, pose: poses.get(objectId)! },
+            sequenceEditOptions,
+          ),
+        );
+        reportUpsert(outcome, "位姿");
+        return;
+      }
+      let id: number;
+      try {
+        [id] = allocateSequenceIdsInProject(motionRef.current.sequences, 1);
+      } catch (error) {
+        setLastPersistError(error instanceof Error ? error.message : "动作序列 id 已满（1~65535）");
+        return;
+      }
+      const created = buildCapturedPoseSequence({
+        id,
+        name: nextNewSequenceName(motionRef.current.sequences.map((item) => item.name)),
+        objectIds,
+        poseForObject: livePoseFor,
+      });
+      if (!created) return;
+      const nextSequences = [...motionRef.current.sequences, created];
+      if (!commitMotionProjection({ ...motionRef.current, sequences: nextSequences })) return;
+      handleSequenceSelect(created.id);
+      toast.success(`已新建动作序列「${created.name}」`);
+    },
+    [
+      selectedSequenceId,
+      sequence,
+      cursorMs,
+      sequenceEditOptions,
+      upsertForObjects,
+      reportUpsert,
+      commitMotionProjection,
+      handleSequenceSelect,
+    ],
   );
 
   const handleRenameSequence = useCallback(
@@ -1081,6 +1137,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleCreatePose,
       handleCreateSetEnabled,
       handleCreateSequence,
+      handleSaveCurrentPose,
       handleRenameSequence,
       handleDeleteSequence,
       handleApplyStaticPreset,
@@ -1141,6 +1198,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleCreatePose,
       handleCreateSetEnabled,
       handleCreateSequence,
+      handleSaveCurrentPose,
       handleRenameSequence,
       handleDeleteSequence,
       handleApplyStaticPreset,
