@@ -11,5 +11,6 @@ declare namespace NodeJS {
     YZ_PROJECT_ROOT?: string
     YZ_CPP_RUNTIME_PATH?: string
     YZ_CPP_RUNTIME_EXE?: string
+    YZ_AI_HTTP_PORT?: string
   }
 }

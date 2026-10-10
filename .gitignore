@@ -62,6 +62,9 @@ docs
 !test/plc-master-status.test.ts
 !test/model-info.test.ts
 !test/axis-info.test.ts
+!test/ai-status-forwarder.test.ts
+!test/ai-server-http.test.ts
+!test/ai-console-view.test.ts
 !src/app/pages/console/components/action-builder/virtual-axis-display.test.ts
 !src/app/pages/console/3d/virtual-axis-label-values.test.ts
 !src/app/pages/console/3d/viewport-pointer-gestures.test.ts

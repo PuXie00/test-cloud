@@ -30,6 +30,7 @@ import type {
 export type { CppAckResult };
 import type { ConfigResult, DeviceConfigCatalog } from '../../shared/config'
 import type { KinematicsSolveResult } from '../../shared/kinematics/types'
+import type { AiRendererMessage } from '../../shared/ai-bridge/types'
 
 export type {
   CreateProjectParams,
@@ -191,6 +192,11 @@ export type ConfirmToolParams = {
   danger?: boolean
 }
 
+/** 本地 AI 只读服务：渲染进程推送界面状态与工程配置（window.aiBridgeApi） */
+export type AiBridgeAPI = {
+  publish: (message: AiRendererMessage) => void
+}
+
 /** 工具域门面：window.toolAPI */
 export type ToolAPI = {
   confirm: (params: ConfirmToolParams) => Promise<boolean>
@@ -203,6 +209,8 @@ declare global {
     kinematicsApi: KinematicsAPI
     configAPI: ConfigAPI
     toolAPI: ToolAPI
+    /** 测试 / 纯浏览器环境下不存在 */
+    aiBridgeApi?: AiBridgeAPI
     /** @deprecated 新域请用 xxxAPI；仅兼容尚未迁移的通道 */
     ipcRenderer: {
       on: (
