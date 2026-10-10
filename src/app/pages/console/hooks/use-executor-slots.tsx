@@ -3,17 +3,15 @@ import { PROGRAM_SLOTS_PER_PAGE } from "../components/program-panel/program-data
 import type { PageItems } from "./program-context";
 import type { PreparedPoses } from "@/app/project/action-sequence/initial-pose-gate";
 import type { NearestStartPlan } from "@/app/project/action-sequence/nearest-start";
+import {
+  resolveSlotRunOptions,
+  type SlotRunOptions,
+} from "@/app/project/program-item-run-options";
 import type { ActionSequence } from "../components/program-panel/program-data";
 
+export { DEFAULT_SLOT_RUN_OPTIONS, type SlotRunOptions } from "@/app/project/program-item-run-options";
+
 export type FaderSlotPhase = "idle" | "ready" | "running";
-
-export type SlotRunOptions = { nearest: boolean; reverse: boolean; safeGroup: boolean };
-
-export const DEFAULT_SLOT_RUN_OPTIONS: SlotRunOptions = {
-  nearest: false,
-  reverse: false,
-  safeGroup: false,
-};
 
 export type FaderSlotState = {
   index: number;
@@ -33,8 +31,6 @@ type SlotReadyRecord = {
   startPlan: NearestStartPlan | null;
   preparedPoses: PreparedPoses;
 };
-
-type SlotRunOptionsRecord = SlotRunOptions & { sequenceId: number };
 
 type ExecutorSlotsValue = {
   faderSlots: FaderSlotState[];
@@ -58,6 +54,8 @@ type ExecutorSlotsProviderProps = {
   children: ReactNode;
   pageItems: PageItems;
   sequenceFingerprints: Readonly<Record<number, string>>;
+  /** 运行选项存于节目条目；改动交给节目写回工程 */
+  onSlotRunOptionsChange?: (index: number, runOptions: SlotRunOptions) => void;
 };
 
 export const deriveFaderSlotPhase = (args: {
@@ -79,24 +77,16 @@ export const deriveFaderSlotPhase = (args: {
   return "idle";
 };
 
-const runOptionsFor = (
-  record: SlotRunOptionsRecord | undefined,
-  sequenceId: number | null,
-): SlotRunOptions =>
-  record && sequenceId !== null && record.sequenceId === sequenceId
-    ? { nearest: record.nearest, reverse: record.reverse, safeGroup: record.safeGroup }
-    : DEFAULT_SLOT_RUN_OPTIONS;
-
 export const ExecutorSlotsProvider = ({
   children,
   pageItems,
   sequenceFingerprints,
+  onSlotRunOptionsChange,
 }: ExecutorSlotsProviderProps) => {
   const [faderValues, setFaderValues] = useState<Record<number, number>>({});
   const [runningFaders, setRunningFaders] = useState<Set<number>>(new Set());
   const [busyBySlot, setBusyBySlot] = useState<Record<number, number>>({});
   const [readyBySlot, setReadyBySlot] = useState<Record<number, SlotReadyRecord>>({});
-  const [runOptionsBySlot, setRunOptionsBySlot] = useState<Record<number, SlotRunOptionsRecord>>({});
 
   const faderSlots = useMemo<FaderSlotState[]>(
     () =>
@@ -119,7 +109,7 @@ export const ExecutorSlotsProvider = ({
           faderValue: faderValues[idx] ?? 100,
           phase,
           isBusy: sequence !== null && busyBySlot[idx] === sequence.id,
-          runOptions: runOptionsFor(runOptionsBySlot[idx], sequence?.id ?? null),
+          runOptions: resolveSlotRunOptions(item?.runOptions),
           startPlan: phase === "ready" && ready ? ready.startPlan : null,
           preparedPoses: phase === "ready" && ready ? ready.preparedPoses : null,
         };
@@ -131,7 +121,6 @@ export const ExecutorSlotsProvider = ({
       runningFaders,
       busyBySlot,
       readyBySlot,
-      runOptionsBySlot,
     ],
   );
 
@@ -168,14 +157,11 @@ export const ExecutorSlotsProvider = ({
 
   const setSlotRunOptions = useCallback(
     (index: number, patch: Partial<SlotRunOptions>) => {
-      const sequenceId = pageItems.sequences[index]?.sequence.id;
-      if (sequenceId === undefined) return;
-      setRunOptionsBySlot((current) => ({
-        ...current,
-        [index]: { ...runOptionsFor(current[index], sequenceId), ...patch, sequenceId },
-      }));
+      const item = pageItems.sequences[index];
+      if (!item) return;
+      onSlotRunOptionsChange?.(index, { ...resolveSlotRunOptions(item.runOptions), ...patch });
     },
-    [pageItems.sequences],
+    [pageItems.sequences, onSlotRunOptionsChange],
   );
 
   const markSlotReady = useCallback(

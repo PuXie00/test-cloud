@@ -11,11 +11,14 @@ import type {
 const programNodeToChapter = (node: ProgramNode): ProgramChapterConfig => ({
   id: node.id,
   name: node.name,
+  ...(node.note !== undefined ? { note: node.note } : {}),
   items: (node.children ?? []).flatMap((child): ProgramItemRef[] => {
     if (child.type === "sequence") {
       const refId = Number(child.id);
       if (!Number.isInteger(refId)) return [];
-      return [{ kind: "sequence", refId }];
+      return [
+        { kind: "sequence", refId, ...(child.runOptions ? { runOptions: child.runOptions } : {}) },
+      ];
     }
     return [];
   }),
@@ -24,6 +27,7 @@ const programNodeToChapter = (node: ProgramNode): ProgramChapterConfig => ({
 const programNodeToConfig = (node: ProgramNode): ProgramConfig => ({
   id: node.id,
   name: node.name,
+  ...(node.note !== undefined ? { note: node.note } : {}),
   chapters: (node.children ?? [])
     .filter((child) => child.type === "chapter")
     .map(programNodeToChapter),
@@ -40,6 +44,7 @@ const programToConfig = (program: Program): ProgramConfig => ({
     items: ch.items.map((item): ProgramItemRef => ({
       kind: "sequence",
       refId: item.sequence.id,
+      ...(item.runOptions ? { runOptions: item.runOptions } : {}),
     })),
   })),
 });

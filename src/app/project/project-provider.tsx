@@ -103,6 +103,7 @@ type ProjectContextValue = {
     updater: (document: ProjectDocument) => ProjectDocument,
     origin?: Extract<DocumentMutationOrigin, "setup" | "project-command">,
   ) => ProjectUpdateResult;
+  /** 写入点动参数并标记未保存；不自动存盘，由用户手动保存工程 */
   persistManualJog: (jog: ManualJogSettings) => Promise<void>;
   beginTrackedEdit: (owner: string, label: string) => boolean;
   commitTrackedEdit: (owner: string) => ProjectUpdateResult;
@@ -495,11 +496,10 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
         createConfigurationStateId(),
         nextDoc,
       );
-      // 不 pushProjectHistory —— 点动参数不进入撤销栈
+      // 不 pushProjectHistory —— 点动参数不进入撤销栈；也不自动存盘，工程变为未保存
       replaceCurrentDocument(nextDoc, "setup", nextState, true);
-      await saveCurrentProject({});
     },
-    [replaceCurrentDocument, saveCurrentProject],
+    [replaceCurrentDocument],
   );
 
   const saveProjectAs = useCallback(

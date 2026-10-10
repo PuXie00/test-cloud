@@ -3,12 +3,16 @@ import { nextNewSequenceName } from "@/app/project/action-sequence/sequence-name
 import { allocateSequenceIdsInProject } from "@/app/project/action-sequence/sequence-id";
 import type { ActionSequenceConfig, ModelPose } from "@/app/project/action-sequence/types";
 import { buildCapturedPoseSequence } from "@/app/project/capture-pose-sequence";
-import type { ProjectDocument, ProjectMotion } from "@/app/project/project-document-types";
+import type {
+  ProgramItemRunOptions,
+  ProjectDocument,
+  ProjectMotion,
+} from "@/app/project/project-document-types";
 import { legacyProgramToMotion } from "@/app/project/motion-persist";
 import { useProject } from "@/app/project/use-project";
 import { motionProgramToLegacyProgram } from "../components/program-panel/resolve-program-motion";
 import { isControlProgramEmpty, programPageCount, sliceProgramPage } from "../components/program-panel/program-utils";
-import { type Program } from "../components/program-panel/program-data";
+import { type ChapterItem, type Program } from "../components/program-panel/program-data";
 import { ProgramContext, type ProgramContextValue } from "./program-context";
 
 export type { PageItems } from "./program-context";
@@ -404,6 +408,27 @@ export const ProgramProvider = ({ children }: ProgramProviderProps) => {
     [mutateProgram],
   );
 
+  const setItemRunOptions = useCallback(
+    (chapterId: string, index: number, runOptions: ProgramItemRunOptions | undefined) => {
+      mutateProgram((current) => {
+        const item = current.chapters.find((chapter) => chapter.id === chapterId)?.items[index];
+        if (!item) return current;
+        const { runOptions: _previous, ...rest } = item;
+        const nextItem: ChapterItem = runOptions ? { ...rest, runOptions } : rest;
+        return {
+          ...current,
+          chapters: current.chapters.map((chapter) => {
+            if (chapter.id !== chapterId) return chapter;
+            const items = chapter.items.slice();
+            items[index] = nextItem;
+            return { ...chapter, items };
+          }),
+        };
+      });
+    },
+    [mutateProgram],
+  );
+
   const value = useMemo(
     (): ProgramContextValue => ({
       program,
@@ -422,6 +447,7 @@ export const ProgramProvider = ({ children }: ProgramProviderProps) => {
       addSequence,
       addCapturedPoseSequence,
       removeItem,
+      setItemRunOptions,
       isProgramEmpty,
       lastPersistError,
     }),
@@ -443,6 +469,7 @@ export const ProgramProvider = ({ children }: ProgramProviderProps) => {
       addSequence,
       addCapturedPoseSequence,
       removeItem,
+      setItemRunOptions,
       lastPersistError,
     ]
   );

@@ -24,10 +24,12 @@ export const motionToProgramNodes = (motion: ProjectMotion): ProgramNode[] => {
     id: program.id,
     name: program.name,
     type: "program" as const,
+    ...(program.note !== undefined ? { note: program.note } : {}),
     children: program.chapters.map((chapter) => ({
       id: chapter.id,
       name: chapter.name,
       type: "chapter" as const,
+      ...(chapter.note !== undefined ? { note: chapter.note } : {}),
       children: chapter.items.flatMap((item) => {
         if (!isSequenceProgramItemRef(item)) return [];
         const sequence = seqById.get(item.refId);
@@ -36,6 +38,7 @@ export const motionToProgramNodes = (motion: ProjectMotion): ProgramNode[] => {
             id: String(item.refId),
             name: sequence?.name ?? String(item.refId),
             type: "sequence" as const,
+            ...(item.runOptions ? { runOptions: item.runOptions } : {}),
           },
         ];
       }),

@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 import { act, renderHook } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { NearestStartPlan } from "@/app/project/action-sequence/nearest-start";
+import { compactSlotRunOptions } from "@/app/project/program-item-run-options";
 import type { PageItems } from "./program-context";
 import {
   deriveFaderSlotPhase,
   ExecutorSlotsProvider,
   useExecutorSlots,
+  type SlotRunOptions,
 } from "./use-executor-slots";
 
 describe("deriveFaderSlotPhase", () => {
@@ -156,12 +158,23 @@ describe("ExecutorSlotsProvider", () => {
     expect(result.current.faderSlots[0]?.preparedPoses).toBeNull();
   });
 
-  it("keeps nearest and reverse per slot sequence and resets them when the sequence changes", () => {
+  it("reads run options from the program item and reports changes back to the program", () => {
     let pageItems = pageItemsFor([15, 16]);
+    const onSlotRunOptionsChange = vi.fn((index: number, runOptions: SlotRunOptions) => {
+      pageItems = {
+        sequences: pageItems.sequences.map((item, at) =>
+          at === index ? { ...item, runOptions: compactSlotRunOptions(runOptions) } : item,
+        ),
+      };
+    });
     const wrapper = ({ children }: { children: ReactNode }) =>
       createElement(
         ExecutorSlotsProvider,
-        { pageItems, sequenceFingerprints: { 15: "fp-15", 16: "fp-16", 99: "fp-99" } },
+        {
+          pageItems,
+          sequenceFingerprints: { 15: "fp-15", 16: "fp-16", 99: "fp-99" },
+          onSlotRunOptionsChange,
+        },
         children,
       );
     const { result, rerender } = renderHook(() => useExecutorSlots(), { wrapper });
@@ -174,12 +187,20 @@ describe("ExecutorSlotsProvider", () => {
     act(() => {
       result.current.setSlotRunOptions(0, { nearest: true });
     });
+    rerender();
     act(() => {
       result.current.setSlotRunOptions(0, { reverse: true });
+    });
+    rerender();
+    expect(onSlotRunOptionsChange).toHaveBeenLastCalledWith(0, {
+      nearest: true,
+      reverse: true,
+      safeGroup: false,
     });
     act(() => {
       result.current.setSlotRunOptions(0, { safeGroup: true });
     });
+    rerender();
     expect(result.current.faderSlots[0]?.runOptions).toEqual({
       nearest: true,
       reverse: true,

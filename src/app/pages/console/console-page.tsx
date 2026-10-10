@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ActionBuilderProvider } from "./components/action-builder/action-builder-context";
 import { ActionBuilderRightSidebar } from "./components/action-builder/action-builder-right-sidebar";
 import { ActionBuilderSelectionSync } from "./components/action-builder/action-builder-selection-sync";
@@ -12,7 +12,9 @@ import { ControlledObjectsProvider } from "./hooks/use-controlled-objects";
 import { LogStreamProvider } from "./hooks/use-log-stream";
 import { useActionCardSeed } from "./hooks/action-card-seed";
 import { ExecCardsProvider, useExecCards } from "./hooks/use-exec-cards";
-import { ExecutorSlotsProvider } from "./hooks/use-executor-slots";
+import { ExecutorSlotsProvider, type SlotRunOptions } from "./hooks/use-executor-slots";
+import { PROGRAM_SLOTS_PER_PAGE } from "./components/program-panel/program-data";
+import { compactSlotRunOptions } from "@/app/project/program-item-run-options";
 import { sequenceReadyFingerprint } from "./hooks/sequence-execution";
 import { ProgramProvider, useProgram } from "./hooks/use-program";
 import { useProject } from "@/app/project/use-project";
@@ -59,7 +61,7 @@ const ProjectExecCardsProvider = ({ children }: { children: ReactNode }) => {
 };
 
 const ProgramScopedProviders = ({ children }: { children: ReactNode }) => {
-  const { pageItems } = useProgram();
+  const { pageItems, currentChapterId, currentPageIndex, setItemRunOptions } = useProgram();
   const { currentProject } = useProject();
   const sequenceFingerprints = useMemo(() => {
     const fingerprints: Record<number, string> = {};
@@ -68,8 +70,23 @@ const ProgramScopedProviders = ({ children }: { children: ReactNode }) => {
     }
     return fingerprints;
   }, [currentProject?.document.motion.actionSequences]);
+  const handleSlotRunOptionsChange = useCallback(
+    (slotIndex: number, runOptions: SlotRunOptions) => {
+      // Slot index is per page; the program item index is across the chapter.
+      setItemRunOptions(
+        currentChapterId,
+        currentPageIndex * PROGRAM_SLOTS_PER_PAGE + slotIndex,
+        compactSlotRunOptions(runOptions),
+      );
+    },
+    [currentChapterId, currentPageIndex, setItemRunOptions],
+  );
   return (
-    <ExecutorSlotsProvider pageItems={pageItems} sequenceFingerprints={sequenceFingerprints}>
+    <ExecutorSlotsProvider
+      pageItems={pageItems}
+      sequenceFingerprints={sequenceFingerprints}
+      onSlotRunOptionsChange={handleSlotRunOptionsChange}
+    >
       {children}
     </ExecutorSlotsProvider>
   );

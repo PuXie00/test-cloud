@@ -1,5 +1,6 @@
 import { createContext, useContext } from "react";
 import type { ModelPose } from "@/app/project/action-sequence/types";
+import type { ProgramItemRunOptions } from "@/app/project/project-document-types";
 import type { ChapterItem, Program } from "../components/program-panel/program-data";
 
 export type PageItems = {
@@ -31,6 +32,12 @@ export type ProgramContextValue = {
     poseForObject: (objectId: number) => ModelPose | null;
   }) => void;
   removeItem: (chapterId: string, index: number) => void;
+  /** 写入条目的推子槽运行选项（undefined 为全关），随工程保存 */
+  setItemRunOptions: (
+    chapterId: string,
+    index: number,
+    runOptions: ProgramItemRunOptions | undefined,
+  ) => void;
   /** 工程尚无节目/章节，控制界面应显示编排指引 */
   isProgramEmpty: boolean;
   /** 最近一次非跟踪 program 写回失败原因；成功后清空 */
