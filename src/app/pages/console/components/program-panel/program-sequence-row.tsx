@@ -3,6 +3,14 @@ import { useEffect, useRef, type DragEvent, type PointerEvent } from "react";
 import { cn } from "@/app/components/ui/utils";
 import { ForcedTrajectoryBadge } from "../forced-trajectory-badge";
 import { LoopBadge } from "../loop-badge";
+import {
+  NEAREST_LABEL,
+  NearestBadge,
+  REVERSE_LABEL,
+  ReverseBadge,
+  SAFE_GROUP_LABEL,
+  SafeGroupBadge,
+} from "../run-option-badges";
 
 const LONG_PRESS_MS = 400;
 const LONG_PRESS_MOVE_PX = 8;
@@ -14,6 +22,10 @@ export type ProgramSequenceRowProps = {
   repairMessage?: string | null;
   forced?: boolean;
   loop?: boolean;
+  /** 推子槽运行选项（存于节目条目） */
+  safeGroup?: boolean;
+  nearest?: boolean;
+  reverse?: boolean;
   draggable?: boolean;
   dropActive?: boolean;
   striped?: boolean;
@@ -37,6 +49,9 @@ export const ProgramSequenceRow = ({
   repairMessage,
   forced = false,
   loop = false,
+  safeGroup = false,
+  nearest = false,
+  reverse = false,
   draggable = false,
   dropActive = false,
   striped = false,
@@ -53,7 +68,15 @@ export const ProgramSequenceRow = ({
   onRemove,
 }: ProgramSequenceRowProps) => {
   const warning = repairMessage ?? undefined;
-  const accessibleLabel = [name, forced ? "强制轨迹" : null, loop ? "循环" : null, warning]
+  const accessibleLabel = [
+    name,
+    forced ? "强制轨迹" : null,
+    loop ? "循环" : null,
+    safeGroup ? SAFE_GROUP_LABEL : null,
+    nearest ? NEAREST_LABEL : null,
+    reverse ? REVERSE_LABEL : null,
+    warning,
+  ]
     .filter(Boolean)
     .join("，");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -159,6 +182,9 @@ export const ProgramSequenceRow = ({
       <span className="min-w-0 flex-1 truncate text-body-sm text-foreground">{name}</span>
       {forced ? <ForcedTrajectoryBadge /> : null}
       {loop ? <LoopBadge /> : null}
+      {safeGroup ? <SafeGroupBadge /> : null}
+      {nearest ? <NearestBadge /> : null}
+      {reverse ? <ReverseBadge /> : null}
       {warning ? (
         <span className="shrink-0 text-body-sm text-warning">待修复</span>
       ) : null}

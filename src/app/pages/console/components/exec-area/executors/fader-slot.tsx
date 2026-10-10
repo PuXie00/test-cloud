@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeftRight, Loader2, Locate, Play, Plus, Shield } from "lucide-react";
+import { Loader2, Play, Plus, Shield } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/app/components/ui/popover";
 import { cn } from "@/app/components/ui/utils";
 import { useConsoleMode } from "../../../hooks/use-console-mode";
@@ -7,6 +7,7 @@ import type { FaderSlotState, SlotRunOptions } from "../../../hooks/use-executor
 import { VerticalFader } from "./vertical-fader";
 import { ForcedTrajectoryBadge, isForcedTrajectory } from "../../forced-trajectory-badge";
 import { LoopBadge } from "../../loop-badge";
+import { NearestBadge, ReverseBadge } from "../../run-option-badges";
 
 const LONG_PRESS_MS = 400;
 const LONG_PRESS_MOVE_PX = 8;
@@ -198,18 +199,8 @@ export const FaderSlot = ({
                 <Shield className="h-3.5 w-3.5" aria-hidden />
                 <span className="sr-only">{safetyGroupOn ? "安全组开启" : "安全组关闭"}</span>
               </span>
-              {nearestOn ? (
-                <span className="inline-flex text-foreground" title="就近">
-                  <Locate className="h-3.5 w-3.5" aria-hidden />
-                  <span className="sr-only">就近</span>
-                </span>
-              ) : null}
-              {reverseOn ? (
-                <span className="inline-flex text-foreground" title="反向">
-                  <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden />
-                  <span className="sr-only">反向</span>
-                </span>
-              ) : null}
+              {nearestOn ? <NearestBadge /> : null}
+              {reverseOn ? <ReverseBadge /> : null}
               {slot.sequence?.loop ? <LoopBadge /> : null}
             </button>
           </PopoverTrigger>

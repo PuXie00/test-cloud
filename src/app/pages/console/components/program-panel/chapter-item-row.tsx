@@ -1,3 +1,4 @@
+import { formatDurationSeconds } from "../action-builder/timeline/timeline-data";
 import type { ChapterItem } from "./program-data";
 import { ProgramSequenceRow } from "./program-sequence-row";
 import { isForcedTrajectory } from "../forced-trajectory-badge";
@@ -37,10 +38,13 @@ export const ChapterItemRow = ({
     <ProgramSequenceRow
       role="treeitem"
       name={name}
-      durationLabel={(durationMs / 1000).toFixed(1)}
+      durationLabel={formatDurationSeconds(durationMs)}
       repairMessage={repairMessage}
       forced={isForcedTrajectory(item.sequence.trajectoryMode)}
       loop={item.sequence.loop === true}
+      safeGroup={item.runOptions?.safeGroup === true}
+      nearest={item.runOptions?.nearest === true}
+      reverse={item.runOptions?.reverse === true}
       draggable={draggable}
       striped={striped}
       ariaSelected={isActive}

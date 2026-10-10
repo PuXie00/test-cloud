@@ -18,9 +18,11 @@ import { useProject } from "@/app/project/use-project";
 import type { ProjectDocument } from "@/app/project/project-document-types";
 import {
   countSequenceBlocks,
-  formatTime,
+  formatDurationSeconds,
   type ProgramNode,
 } from "../timeline/timeline-data";
+import { ForcedTrajectoryBadge, isForcedTrajectory } from "../../forced-trajectory-badge";
+import { LoopBadge } from "../../loop-badge";
 import { writeLibraryDrag } from "./library-dnd";
 import { ClipboardContextMenu, clipboardShortcutOf } from "../action-clipboard-menu";
 
@@ -180,7 +182,16 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
     const id = entry.sequence.id;
     const needsRepair = sequenceNeedsRepair(entry.sequence, document);
     const selected = dockMode === "sequence" && selectedSequenceId === id;
-    const rowLabel = needsRepair ? `${entry.sequence.name}，待修复` : entry.sequence.name;
+    const forced = isForcedTrajectory(entry.sequence.trajectoryMode);
+    const loop = entry.sequence.loop === true;
+    const rowLabel = [
+      entry.sequence.name,
+      forced ? "强制轨迹" : null,
+      loop ? "循环" : null,
+      needsRepair ? "待修复" : null,
+    ]
+      .filter(Boolean)
+      .join("，");
 
     return (
       <div key={`${entry.kind}:${id}`} className="relative">
@@ -212,16 +223,20 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
           <ListClock className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
 
           <div className="min-w-0 flex-1">
-            <p
-              className={cn(
-                "truncate text-body-sm",
-                selected ? "font-medium text-primary" : "text-foreground/90",
-              )}
-            >
-              {entry.sequence.name}
-            </p>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <p
+                className={cn(
+                  "min-w-0 truncate text-body-sm",
+                  selected ? "font-medium text-primary" : "text-foreground/90",
+                )}
+              >
+                {entry.sequence.name}
+              </p>
+              {forced ? <ForcedTrajectoryBadge /> : null}
+              {loop ? <LoopBadge /> : null}
+            </div>
             <p className="font-mono text-[10px] tabular-nums text-muted-foreground">
-              {`${formatTime(sequenceDurationMs(entry.sequence))} · ${countSequenceBlocks(entry.sequence)} 块`}
+              {`${formatDurationSeconds(sequenceDurationMs(entry.sequence))} · ${countSequenceBlocks(entry.sequence)} 块`}
               {needsRepair ? (
                 <span className="ml-1.5 font-sans text-body-sm text-warning">待修复</span>
               ) : null}

@@ -74,6 +74,9 @@ export const secondsToMs = (seconds: number): number => snapTimeMs(seconds * 100
 
 export const formatTime = (ms: number): string => msToSeconds(ms).toFixed(1);
 
+/** 列表里的时长：秒，一位小数，带单位 */
+export const formatDurationSeconds = (ms: number): string => `${formatTime(ms)} s`;
+
 export const msToPx = (ms: number, pxPerSecond: number = PIXELS_PER_SECOND): number =>
   (ms / 1000) * pxPerSecond;
 

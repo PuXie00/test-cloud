@@ -14,7 +14,7 @@ import {
   MAX_PROJECT_COORDINATE_DECIMALS,
   roundProjectCoordinate,
 } from "@/app/project/project-quantity";
-import { VIRTUAL_AXIS_IDS, formatTime } from "../timeline/timeline-data";
+import { VIRTUAL_AXIS_IDS, formatDurationSeconds } from "../timeline/timeline-data";
 import { getVirtualAxisCanonicalUnit } from "../virtual-axis-display";
 import { PROFILE_KIND_OPTIONS, profileKindMeta } from "./profile-kind";
 import {
@@ -68,8 +68,6 @@ const formatQuantity = (
   `${formatQuantityValue(value, canonicalUnit, display)} ${getDisplayLengthFamilyUnit(canonicalUnit, display)}`;
 
 const axisName = (axis: VirtualAxisId): string => axis.toUpperCase();
-
-const formatDurationSec = (durationMs: number): string => `${formatTime(durationMs)} s`;
 
 const formatTravel = (value: number, unit: string, display: DisplayLengthUnit): string => {
   const prefix = value > 0 ? "+" : "";
@@ -408,7 +406,7 @@ export const MotionProfileEditor = ({
                 aria-readonly="true"
                 className="mt-0.5 font-mono text-mono-sm tabular-nums text-foreground"
               >
-                {formatDurationSec(axisContext.durationMs)}
+                {formatDurationSeconds(axisContext.durationMs)}
               </p>
             </div>
           </div>
