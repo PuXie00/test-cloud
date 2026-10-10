@@ -26,7 +26,7 @@ describe("persistManualJog", () => {
     uninstallMemoryProjectAPI();
   });
 
-  it("persists without pushing history or writing cover", async () => {
+  it("updates the document as unsaved without pushing history or writing cover", async () => {
     const { result } = renderHook(() => useProject(), { wrapper });
     await waitFor(() => expect(result.current.loading).toBe(false));
     await act(async () => {
@@ -54,8 +54,14 @@ describe("persistManualJog", () => {
     });
     // 撤销栈未增长（仍只有 1 条，来自上面的普通编辑）
     expect(result.current.canUndo).toBe(true);
-    expect(result.current.isDirty).toBe(false);
+    // 不自动存盘：等用户手动保存
+    expect(result.current.isDirty).toBe(true);
     // 内存 projectAPI 仅在显式传 coverPngBase64 时置 hasCover
     expect(result.current.currentProject?.hasCover).toBeFalsy();
+
+    await act(async () => {
+      await result.current.saveCurrentProject({});
+    });
+    expect(result.current.isDirty).toBe(false);
   });
 });
