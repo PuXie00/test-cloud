@@ -1,9 +1,9 @@
 import { NumericInput, type NumericInputProps } from "./numeric-input";
+import { normalizeNumeric } from "./numeric-input-utils";
 import { useSessionDisplayLengthUnit } from "@/app/project/display-length-unit-provider";
 import {
   getDisplayLengthFamilyUnit,
   isLengthFamilyUnit,
-  normalizeCanonicalLengthValue,
   resolveCanonicalPrecision,
   resolveDisplayPrecision,
   scaleBound,
@@ -24,6 +24,7 @@ export const UnitAwareNumericInput = (props: UnitAwareNumericInputProps) => {
     max,
     step,
     precision,
+    snapToStep = true,
     ...rest
   } = props;
 
@@ -36,12 +37,15 @@ export const UnitAwareNumericInput = (props: UnitAwareNumericInputProps) => {
   const cPrec = resolveCanonicalPrecision(precision, step);
   const dPrec = resolveDisplayPrecision(cPrec, display);
 
+  // Snap to the canonical step like a plain mm NumericInput; display-side snapping is only
+  // for the scrub readout and is re-done here to drop the display→mm round-trip error.
   const toCanonical = (v: number) =>
-    normalizeCanonicalLengthValue(toCanonicalLengthValue(v, display), {
+    normalizeNumeric(toCanonicalLengthValue(v, display), {
       min,
       max,
+      step: canonicalStep,
       precision: cPrec,
-      step,
+      snapToStep,
     });
 
   return (
@@ -53,7 +57,7 @@ export const UnitAwareNumericInput = (props: UnitAwareNumericInputProps) => {
       step={toDisplayLengthValue(canonicalStep, display)}
       precision={dPrec}
       unit={getDisplayLengthFamilyUnit(unit, display)}
-      snapToStep={false}
+      snapToStep={snapToStep}
       onChange={onChange ? (v) => onChange(toCanonical(v)) : undefined}
       onCommit={onCommit ? (v) => onCommit(toCanonical(v)) : undefined}
     />

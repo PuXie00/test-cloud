@@ -24,7 +24,6 @@ import {
   getDisplayLengthFamilyUnit,
   isLengthFamilyUnit,
   normalizeLengthFamilyUnit,
-  toCanonicalLengthValue,
   toDisplayLengthValue,
   type DisplayLengthUnit,
 } from "@/app/project/display-length-units";
@@ -36,13 +35,18 @@ import {
   variableOperationsForModel,
 } from "./build-debug-dynamic-ops";
 import {
+  DEBUG_MOTION_PARAM_PRECISION,
+  DEBUG_POSITION_PRECISION,
+  RELATIVE_MOVE_QUICK_DELTAS_MM,
   debugAccelDisplayUnit,
+  debugDisplayPrecision,
   debugPositionDisplayUnit,
   debugSpeedDisplayUnit,
+  formatDebugDisplayValue,
   formatRelativeQuickLabel,
-  relativeMoveQuickDeltas,
   toDebugCanonicalValue,
   toDebugDisplayValue,
+  toRoundedDebugCanonicalValue,
 } from "./build-debug-display";
 import {
   applyClear731AlarmMotor,
@@ -99,6 +103,8 @@ type ParamsPopoverProps = {
   strokeUnit: string;
   displayStep: number;
   positionStep: number;
+  /** Display-unit decimals per field. */
+  paramPrecision: Record<keyof DebugMotionParams, number>;
   applying: boolean;
   loading: boolean;
   onDefaultVelocityChange: (value: string) => void;
@@ -127,6 +133,7 @@ const MotionParamsPopover = ({
   strokeUnit,
   displayStep,
   positionStep,
+  paramPrecision,
   applying,
   loading,
   onDefaultVelocityChange,
@@ -182,6 +189,7 @@ const MotionParamsPopover = ({
             showStepper
             min={0}
             step={displayStep}
+            precision={paramPrecision.defaultVelocity}
             value={mixedInputValue(defaultVelocity)}
             placeholder={mixedInputPlaceholder(defaultVelocity)}
             disabled={applying || loading}
@@ -197,6 +205,7 @@ const MotionParamsPopover = ({
             showStepper
             min={0}
             step={displayStep}
+            precision={paramPrecision.defaultAcceleration}
             value={mixedInputValue(defaultAcceleration)}
             placeholder={mixedInputPlaceholder(defaultAcceleration)}
             disabled={applying || loading}
@@ -212,6 +221,7 @@ const MotionParamsPopover = ({
             showStepper
             min={0}
             step={displayStep}
+            precision={paramPrecision.defaultDeceleration}
             value={mixedInputValue(defaultDeceleration)}
             placeholder={mixedInputPlaceholder(defaultDeceleration)}
             disabled={applying || loading}
@@ -227,6 +237,7 @@ const MotionParamsPopover = ({
             showStepper
             min={0}
             step={positionStep}
+            precision={paramPrecision.maximumStroke}
             value={mixedInputValue(maximumStroke)}
             placeholder={mixedInputPlaceholder(maximumStroke)}
             disabled={applying || loading}
@@ -313,6 +324,9 @@ const DirectDynamicOpButton = ({ operation, disabled, mid }: DynamicOpButtonProp
   );
 };
 
+/** Op params stay whole mm in canonical, matching the integer-only mm-mode input. */
+const OP_FIELD_CANONICAL_PRECISION = 0;
+
 const toDisplayOpDefaults = (
   fields: OperationField[],
   display: DisplayLengthUnit,
@@ -325,7 +339,7 @@ const toDisplayOpDefaults = (
     if (!unit || !isLengthFamilyUnit(unit)) continue;
     const canonical = parseFloat(defaults[field.id] ?? "0");
     if (!Number.isFinite(canonical)) continue;
-    next[field.id] = String(toDisplayLengthValue(canonical, display));
+    next[field.id] = formatDebugDisplayValue(canonical, display, OP_FIELD_CANONICAL_PRECISION);
   }
   return next;
 };
@@ -342,7 +356,9 @@ const toCanonicalOpValues = (
     if (!unit || !isLengthFamilyUnit(unit)) continue;
     const shown = parseFloat(displayValues[field.id] ?? "0");
     if (!Number.isFinite(shown)) continue;
-    next[field.id] = String(toCanonicalLengthValue(shown, display));
+    next[field.id] = String(
+      toRoundedDebugCanonicalValue(shown, display, OP_FIELD_CANONICAL_PRECISION),
+    );
   }
   return next;
 };
@@ -356,6 +372,7 @@ const FormDynamicOpButton = ({
 }: DynamicOpButtonProps) => {
   const display = useSessionDisplayLengthUnit();
   const displayStep = toDisplayLengthValue(1, display);
+  const displayPrecision = debugDisplayPrecision(OP_FIELD_CANONICAL_PRECISION, display);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [values, setValues] = useState<Record<string, string>>(() =>
@@ -468,6 +485,7 @@ const FormDynamicOpButton = ({
                       : field.max
                   }
                   step={lengthFamily ? displayStep : 1}
+                  precision={lengthFamily ? displayPrecision : undefined}
                   value={values[field.id] ?? "0"}
                   disabled={busy}
                   aria-label={label}
@@ -518,7 +536,25 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
   const positionUnit = debugPositionDisplayUnit(display);
   const displayStep = toDebugDisplayValue(1, display);
   const positionStep = toDebugDisplayValue(0.1, display);
-  const formatMotionDisplay = (canonical: number) => String(toDebugDisplayValue(canonical, display));
+  const positionPrecision = debugDisplayPrecision(DEBUG_POSITION_PRECISION, display);
+  const paramPrecision: Record<keyof DebugMotionParams, number> = {
+    defaultVelocity: debugDisplayPrecision(DEBUG_MOTION_PARAM_PRECISION.defaultVelocity, display),
+    defaultAcceleration: debugDisplayPrecision(
+      DEBUG_MOTION_PARAM_PRECISION.defaultAcceleration,
+      display,
+    ),
+    defaultDeceleration: debugDisplayPrecision(
+      DEBUG_MOTION_PARAM_PRECISION.defaultDeceleration,
+      display,
+    ),
+    maximumStroke: debugDisplayPrecision(DEBUG_MOTION_PARAM_PRECISION.maximumStroke, display),
+  };
+  const formatMotionDisplay = (key: keyof DebugMotionParams) =>
+    formatDebugDisplayValue(
+      DEFAULT_DEBUG_MOTION_PARAMS[key],
+      display,
+      DEBUG_MOTION_PARAM_PRECISION[key],
+    );
   const { findMotor, motors } = useProjectStore();
   const {
     primaryMotorId,
@@ -538,16 +574,16 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
   const [setPositionValue, setSetPositionValue] = useState("0");
   const [setPositionApplying, setSetPositionApplying] = useState(false);
   const [defaultVelocity, setDefaultVelocity] = useState(() =>
-    formatMotionDisplay(DEFAULT_DEBUG_MOTION_PARAMS.defaultVelocity),
+    formatMotionDisplay("defaultVelocity"),
   );
   const [defaultAcceleration, setDefaultAcceleration] = useState(() =>
-    formatMotionDisplay(DEFAULT_DEBUG_MOTION_PARAMS.defaultAcceleration),
+    formatMotionDisplay("defaultAcceleration"),
   );
   const [defaultDeceleration, setDefaultDeceleration] = useState(() =>
-    formatMotionDisplay(DEFAULT_DEBUG_MOTION_PARAMS.defaultDeceleration),
+    formatMotionDisplay("defaultDeceleration"),
   );
   const [maximumStroke, setMaximumStroke] = useState(() =>
-    formatMotionDisplay(DEFAULT_DEBUG_MOTION_PARAMS.maximumStroke),
+    formatMotionDisplay("maximumStroke"),
   );
   const [paramsApplying, setParamsApplying] = useState(false);
   const [paramsLoading, setParamsLoading] = useState(false);
@@ -645,8 +681,10 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
     }
     const ids = batchKey.length === 0 ? [] : batchKey.split(",").map(Number);
     const shared = mergeDebugMotionParams(ids, allMotionParams);
-    const formatShared = (value: number | null) =>
-      value === null ? MIXED_DEBUG_PARAM : String(toDebugDisplayValue(value, display));
+    const formatShared = (value: number | null, key: keyof DebugMotionParams) =>
+      value === null
+        ? MIXED_DEBUG_PARAM
+        : formatDebugDisplayValue(value, display, DEBUG_MOTION_PARAM_PRECISION[key]);
     if (!shared) {
       setDefaultVelocity(MIXED_DEBUG_PARAM);
       setDefaultAcceleration(MIXED_DEBUG_PARAM);
@@ -654,10 +692,10 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
       setMaximumStroke(MIXED_DEBUG_PARAM);
       return;
     }
-    setDefaultVelocity(formatShared(shared.defaultVelocity));
-    setDefaultAcceleration(formatShared(shared.defaultAcceleration));
-    setDefaultDeceleration(formatShared(shared.defaultDeceleration));
-    setMaximumStroke(formatShared(shared.maximumStroke));
+    setDefaultVelocity(formatShared(shared.defaultVelocity, "defaultVelocity"));
+    setDefaultAcceleration(formatShared(shared.defaultAcceleration, "defaultAcceleration"));
+    setDefaultDeceleration(formatShared(shared.defaultDeceleration, "defaultDeceleration"));
+    setMaximumStroke(formatShared(shared.maximumStroke, "maximumStroke"));
   }, [paramsOpen, paramsLoading, allMotionParams, batchKey, display]);
 
   useEffect(() => {
@@ -708,8 +746,6 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
     requestAnimationFrame(() => setSetPositionOpen(false));
   };
 
-  const relativeQuickDeltas = relativeMoveQuickDeltas(display);
-
   const executeMove = (displayValue: number, options?: { close?: boolean }) => {
     if (setPositionTargetIds.length === 0) return false;
     if (!Number.isFinite(displayValue)) {
@@ -736,8 +772,8 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
     executeMove(parseFloat(targetValue));
   };
 
-  const handleRelativeQuickMove = (deltaDisplay: number) => {
-    setTargetValue(String(deltaDisplay));
+  const handleRelativeQuickMove = (deltaMm: number) => {
+    setTargetValue(formatDebugDisplayValue(deltaMm, display, DEBUG_POSITION_PRECISION));
   };
 
   const handleSetOrigin = async () => {
@@ -790,7 +826,7 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
       if (!Number.isFinite(displayVal) || displayVal < 0) {
         return allMotionParams.get(motorId)?.[key] ?? null;
       }
-      return toDebugCanonicalValue(displayVal, display);
+      return toRoundedDebugCanonicalValue(displayVal, display, DEBUG_MOTION_PARAM_PRECISION[key]);
     };
 
     const items: { motorId: number; params: DebugMotionParams }[] = [];
@@ -915,6 +951,7 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
           strokeUnit={positionUnit}
           displayStep={displayStep}
           positionStep={positionStep}
+          paramPrecision={paramPrecision}
           applying={paramsApplying}
           loading={paramsLoading}
           onDefaultVelocityChange={setDefaultVelocity}
@@ -1050,7 +1087,7 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
                 <div className="flex flex-col gap-1.5">
                   <span className="text-body-sm text-muted-foreground">快捷位移 ({positionUnit})</span>
                   <div className="grid grid-cols-4 gap-1">
-                    {relativeQuickDeltas.map((delta) => (
+                    {RELATIVE_MOVE_QUICK_DELTAS_MM.map((delta) => (
                       <button
                         key={delta}
                         type="button"
@@ -1074,6 +1111,7 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
                   type="number"
                   showStepper
                   step={positionStep}
+                  precision={positionPrecision}
                   value={targetValue}
                   aria-label={
                     moveMode === "absolute"
@@ -1186,6 +1224,7 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
                       type="number"
                       showStepper
                       step={positionStep}
+                      precision={positionPrecision}
                       value={setPositionValue}
                       disabled={setPositionApplying}
                       aria-label={`设定位移 ${positionUnit}`}

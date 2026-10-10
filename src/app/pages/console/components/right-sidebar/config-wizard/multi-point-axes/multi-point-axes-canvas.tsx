@@ -331,6 +331,9 @@ export const MultiPointAxesCanvas = ({
     typeof totalChordErrorMm === "number" && Number.isFinite(totalChordErrorMm);
   const totalErrorWarn =
     showTotalError && totalChordErrorMm > CIRCLE_CHORD_ERROR_WARN_MM;
+  const totalErrorText = showTotalError
+    ? formatLengthFamily(totalChordErrorMm, "mm", display, { canonicalPrecision: 0 })
+    : "";
 
   return (
     <div className="relative h-full min-h-0 w-full bg-canvas">
@@ -612,9 +615,9 @@ export const MultiPointAxesCanvas = ({
             "font-mono text-mono-sm tabular-nums",
             totalErrorWarn ? "text-warning" : "text-muted-foreground",
           )}
-          aria-label={`总误差 ${Math.round(totalChordErrorMm!)} 毫米`}
+          aria-label={`总误差 ${totalErrorText}`}
         >
-          总误差 {Math.round(totalChordErrorMm!)} mm
+          总误差 {totalErrorText}
         </div>
       ) : null}
     </div>

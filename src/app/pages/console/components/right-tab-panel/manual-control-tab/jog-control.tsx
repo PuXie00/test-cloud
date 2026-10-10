@@ -4,6 +4,8 @@ import { toast } from "sonner";
 import { Checkbox } from "@/app/components/ui/checkbox";
 import { Slider } from "@/app/components/ui/slider";
 import { NumericInput } from "@/app/components/ics/numeric-input";
+import { useSessionDisplayLengthUnit } from "@/app/project/display-length-unit-provider";
+import { formatLengthFamily } from "@/app/project/display-length-units";
 import { useProject } from "@/app/project/use-project";
 import { useProjectDocument } from "@/app/project/use-project-document";
 import {
@@ -105,6 +107,7 @@ export const JogControl = ({ dimensions }: JogControlProps) => {
   const { selectedId, multiSelectedIds } = useSelection();
   const { getById } = useControlledObjects();
   const { objects, motors } = useProjectStore();
+  const display = useSessionDisplayLengthUnit();
   const jogHoldRef = useRef<JogHoldSnapshot | null>(null);
 
   const selectedIds =
@@ -257,8 +260,12 @@ export const JogControl = ({ dimensions }: JogControlProps) => {
                             void commit(nextDraft);
                           }}
                         />
-                        <span className="w-14 shrink-0 text-right font-mono text-mono-sm tabular-nums text-muted-foreground">
-                          {displayVelocity} {dim.mixed ? "--" : speedUnit(dim.unit)}
+                        <span className="w-20 shrink-0 text-right font-mono text-mono-sm tabular-nums text-muted-foreground">
+                          {dim.mixed
+                            ? `${displayVelocity} --`
+                            : formatLengthFamily(displayVelocity, speedUnit(dim.unit), display, {
+                                canonicalPrecision: 1,
+                              })}
                         </span>
                       </div>
                       <div className="flex items-center gap-3">
