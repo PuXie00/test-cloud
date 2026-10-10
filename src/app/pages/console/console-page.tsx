@@ -16,6 +16,7 @@ import { ExecutorSlotsProvider } from "./hooks/use-executor-slots";
 import { sequenceReadyFingerprint } from "./hooks/sequence-execution";
 import { ProgramProvider, useProgram } from "./hooks/use-program";
 import { useProject } from "@/app/project/use-project";
+import { AiConsoleViewSync } from "@/app/ai-bridge/ai-console-view-sync";
 import { SelectionProvider } from "./hooks/selection-provider";
 import { AlignmentChecklistProvider } from "./components/drive-debug/alignment-checklist/alignment-checklist-provider";
 import { LeftSidebar, type LeftNavId } from "./components/LeftSidebar";
@@ -225,6 +226,7 @@ const ConsoleInner = () => {
               <ActionBuilderSelectionSync />
               <StructureSelectionBridge />
               <BuildDebugLifecycle />
+              <AiConsoleViewSync devicesTab={devicesRightTab} />
             </div>
               </ViewportSlotProvider>
             </GoReadyProvider>

@@ -9,6 +9,7 @@ import { registerKinematicsHandlers, shutdownKinematics } from './kinematics'
 import { registerToolHandlers } from './tool'
 import { registerConfigHandlers } from './getConfig'
 import { registerProjectHandlers } from './project'
+import { attachAiBridgeWindow, registerAiBridgeHandlers, shutdownAiBridge } from './ai-bridge'
 // import { update } from './update'
 
 const require = createRequire(import.meta.url)
@@ -77,6 +78,7 @@ async function createWindow() {
     },
   })
   win.setMenuBarVisibility(false)
+  attachAiBridgeWindow(win)
 
   // ── 渲染进程崩溃 / 白屏自动恢复 ──
   // const reloadPage = () => {
@@ -130,6 +132,7 @@ app.whenReady().then(() => {
   registerKinematicsHandlers()
   registerConfigHandlers()
   registerToolHandlers()
+  registerAiBridgeHandlers()
   // 然后创建主窗口（在后台加载）
   createWindow()
 })
@@ -137,11 +140,13 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   shutdownCppSocket()
   shutdownKinematics()
+  shutdownAiBridge()
 })
 
 app.on('will-quit', () => {
   shutdownCppSocket()
   shutdownKinematics()
+  shutdownAiBridge()
 })
 
 app.on('window-all-closed', () => {

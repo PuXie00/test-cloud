@@ -33,7 +33,11 @@ export default defineConfig(({ command }) => {
       tailwindcss(),
       electron({
         main: {
-          entry: 'electron/main/index.ts',
+          // ai-server：本地 AI 只读 HTTP 服务，由 main 以 utilityProcess 拉起
+          entry: {
+            index: 'electron/main/index.ts',
+            'ai-server': 'electron/ai-server/index.ts',
+          },
           onstart(args) {
             if (process.env.VSCODE_DEBUG) {
               console.log(/* For `.vscode/.debug.script.mjs` */'[startup] Electron App')

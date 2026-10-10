@@ -16,8 +16,8 @@ import {
   shouldClearPlcMasterStatus,
   type PlcMasterStatus,
 } from '../../../shared/csocket/plc-master-status'
-import { AxisInfoStore } from '../../../shared/csocket/axis-info'
-import { ModelInfoStore } from '../../../shared/csocket/model-info'
+import { AxisInfoStore, type AxisInfo } from '../../../shared/csocket/axis-info'
+import { ModelInfoStore, type ModelInfo } from '../../../shared/csocket/model-info'
 import type { CppSocketClient } from './client'
 import { BrowserWindow, ipcMain } from 'electron'
 import { CSOCKET_CHANNELS } from '../../../shared/csocket/channels'
@@ -95,16 +95,29 @@ const broadcast = (channel: string, payload: unknown) => {
 
 const EMPTY_POLLING_ACK: CppAckResult = { success: true, data: [] }
 
+/** 设备状态旁路订阅（本地 AI 服务用）；只在数据变化时调用 */
+export type CsocketStatusSink = {
+  connection: (state: CsocketConnectionState['state']) => void
+  plcs: (snapshot: PlcMasterStatus[]) => void
+  models: (items: ModelInfo[]) => void
+  axes: (items: AxisInfo[]) => void
+  actions: (result: unknown) => void
+  clear: (kind: 'objects' | 'motors') => void
+}
+
 export class CsocketApiService {
   private ctx: CsocketConfigureContext = {}
   private wired = false
   private readonly plcMasterStatus = new PlcMasterStatusStore()
   private readonly broadcast: (channel: string, payload: unknown) => void = broadcast
+  private statusSink: CsocketStatusSink | null = null
   private readonly modelInfo = new ModelInfoStore(() => {
     this.broadcast(CSOCKET_CHANNELS.readModelInfoPolling, EMPTY_POLLING_ACK)
+    this.statusSink?.clear('objects')
   })
   private readonly axisInfo = new AxisInfoStore(() => {
     this.broadcast(CSOCKET_CHANNELS.readAxisInfoPolling, EMPTY_POLLING_ACK)
+    this.statusSink?.clear('motors')
   })
 
 
@@ -118,6 +131,7 @@ export class CsocketApiService {
       success: true,
       data,
     })
+    this.statusSink?.plcs(data)
   }
 
   private clearPlcMasterStatus(): void {
@@ -128,6 +142,14 @@ export class CsocketApiService {
   private clearAxisModelInfo(): void {
     this.modelInfo.clear()
     this.axisInfo.clear()
+    this.statusSink?.clear('objects')
+    this.statusSink?.clear('motors')
+  }
+
+  setStatusSink(sink: CsocketStatusSink): void {
+    this.statusSink = sink
+    sink.connection(this.client.getStatus().state)
+    sink.plcs(this.plcMasterStatus.snapshot())
   }
 
   getMasterStatusSnapshot(): CppAckResult {
@@ -165,15 +187,19 @@ export class CsocketApiService {
       }
       if (optCmd === 'Info|model') {
         //console.log('Info|model', JSON.stringify(msg));
-        if (this.modelInfo.ingest(msg)) {
+        const models = this.modelInfo.ingest(msg)
+        if (models) {
           // console.log('Info|model ingest>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>');
           this.broadcast(CSOCKET_CHANNELS.readModelInfoPolling, msg)
+          this.statusSink?.models(models)
         }
       }
       if (optCmd === 'Info|axis') {
-        if (this.axisInfo.ingest(msg)) {
+        const axes = this.axisInfo.ingest(msg)
+        if (axes) {
           // console.log('Info|axis', JSON.stringify(msg));
           this.broadcast(CSOCKET_CHANNELS.readAxisInfoPolling, msg)
+          this.statusSink?.axes(axes)
         }
       }
 
@@ -200,6 +226,7 @@ export class CsocketApiService {
           loopCountSet: number, // 设定循环次数
           runTime: number, // 轨迹运行的当前帧
         }>)
+        this.statusSink?.actions(msg)
       }
       // if (optCmd === 'Info|actionRun') {
       //   this.broadcast(CSOCKET_CHANNELS.readActionRun, msg as CppAckResult<{
@@ -213,6 +240,7 @@ export class CsocketApiService {
     })
 
     this.client.onStatus((status) => {
+      this.statusSink?.connection(status.state)
       if (shouldClearPlcMasterStatus(status.state)) {
         this.clearPlcMasterStatus()
         this.clearAxisModelInfo()
