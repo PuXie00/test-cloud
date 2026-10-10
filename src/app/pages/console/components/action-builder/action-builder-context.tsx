@@ -16,7 +16,11 @@ import { actionBuilderStateToMotion } from "@/app/project/motion-persist";
 import { useProject } from "@/app/project/use-project";
 import { createDefaultAxisProfiles } from "@/app/project/action-sequence/motion-profile";
 import { fitPresetParams } from "@/app/project/action-sequence/preset-defaults";
-import { dynamicPresetProfileDurationMs, presetLabelOf } from "@/app/project/action-sequence/preset-registry";
+import {
+  dynamicPresetProfileDurationMs,
+  presetLabelOf,
+  presetObjectConditionMessage,
+} from "@/app/project/action-sequence/preset-registry";
 import { validateActionSequence } from "@/app/project/action-sequence/validate-sequence";
 import type { SequenceIssue } from "@/app/project/action-sequence/validate-sequence";
 import { sequenceValidationContextFromSetup } from "@/app/project/project-motion-readiness";
@@ -671,6 +675,22 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     handleSequenceSelect(remaining[0]?.id ?? null);
   }, [selectedSequenceId, commitMotionProjection, handleSequenceSelect]);
 
+  /** 物体不符合预设条件时按该条件提示，返回 true 表示不能添加 */
+  const warnPresetObjectCondition = useCallback(
+    (presetId: string, objectIds: readonly number[]): boolean => {
+      const message = presetObjectConditionMessage(
+        presetId,
+        objectIds.map((id) => {
+          const object = getTimelineObject(id);
+          return { id, name: object?.name, controlType: object?.controlType };
+        }),
+      );
+      if (message) toast.warning(message);
+      return message !== null;
+    },
+    [getTimelineObject],
+  );
+
   const handleApplyStaticPreset = useCallback(
     (presetId: string, objectIds: number[]) => {
       if (!selectedSequenceId || !sequence) {
@@ -678,6 +698,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         return;
       }
       if (objectIds.length < 2) return;
+      if (warnPresetObjectCondition(presetId, objectIds)) return;
       const fitted = fitPresetParams(
         presetId,
         objectIds.map((objectId) => {
@@ -704,7 +725,14 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       setSelection({ kind: "block", blockId: block.id });
       setSequenceMissingHint(false);
     },
-    [selectedSequenceId, sequence, cursorMs, handleInsertTimelineBlock, getTimelineObject],
+    [
+      selectedSequenceId,
+      sequence,
+      cursorMs,
+      handleInsertTimelineBlock,
+      getTimelineObject,
+      warnPresetObjectCondition,
+    ],
   );
 
   const handleApplyDynamicPreset = useCallback(
@@ -714,6 +742,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         return;
       }
       if (objectIds.length < 2) return;
+      if (warnPresetObjectCondition(presetId, objectIds)) return;
       const participants = objectIds.map((objectId) => {
         const object = getTimelineObject(objectId);
         return {
@@ -760,7 +789,14 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       setSelection({ kind: "block", blockId: block.id });
       setSequenceMissingHint(false);
     },
-    [selectedSequenceId, sequence, cursorMs, handleInsertTimelineBlock, getTimelineObject],
+    [
+      selectedSequenceId,
+      sequence,
+      cursorMs,
+      handleInsertTimelineBlock,
+      getTimelineObject,
+      warnPresetObjectCondition,
+    ],
   );
 
   const handleBlockCopy = useCallback(() => {
@@ -799,6 +835,15 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       toast.warning(retargeted.message);
       return;
     }
+    for (const objectMap of retargeted.maps) {
+      for (const block of copied.blocks) {
+        if (block.kind !== "static-preset" && block.kind !== "dynamic-preset") continue;
+        const targets = block.orderedObjectIds.map((objectId) => objectMap.get(objectId));
+        // Unmapped blocks are dropped by the paste itself.
+        if (targets.some((objectId) => objectId === undefined)) continue;
+        if (warnPresetObjectCondition(block.presetId, targets as number[])) return;
+      }
+    }
 
     let result: PasteResult | null = null;
     updateSelectedSequence((current) => {
@@ -830,6 +875,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     updateSelectedSequence,
     cursorMs,
     sequenceEditOptions,
+    warnPresetObjectCondition,
   ]);
 
   const handleSequenceCopy = useCallback(

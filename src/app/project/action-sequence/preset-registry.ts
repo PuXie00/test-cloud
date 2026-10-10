@@ -1,3 +1,5 @@
+import { CONTROL_TYPE_RULES } from "../configuration-rules";
+import type { ControlType, MotionAxisKind } from "../configuration-types";
 import type { VirtualAxisId } from "../project-document-types";
 import type {
   DynamicPresetBlock,
@@ -32,6 +34,13 @@ export type PresetParamField = {
   options?: readonly PresetParamChoice[];
 };
 
+/** 预设能添加到哪些物体：所选物体须全部属于 controlTypes */
+export type PresetObjectCondition = {
+  controlTypes: readonly ControlType[];
+  /** 不符合时的提示，随条件而不同，如“仅适用于升降类物体” */
+  hint: string;
+};
+
 export type PresetDefinition = {
   id: string;
   kind: "static" | "dynamic";
@@ -39,6 +48,7 @@ export type PresetDefinition = {
   description: string;
   minObjects: number;
   maxObjects?: number;
+  objectCondition: PresetObjectCondition;
   ownedAxes: readonly VirtualAxisId[];
   paramFields: readonly PresetParamField[];
   resolve: (block: StaticPresetBlock | DynamicPresetBlock) => ResolvedPresetPose[];
@@ -53,6 +63,17 @@ const asStatic = (block: PresetBlock): StaticPresetBlock => block as StaticPrese
 const asDynamic = (block: PresetBlock): DynamicPresetBlock => block as DynamicPresetBlock;
 
 const OWNED_V1: readonly VirtualAxisId[] = ["v1"];
+
+const controlTypesWithAxis = (kind: MotionAxisKind): ControlType[] =>
+  (Object.keys(CONTROL_TYPE_RULES) as ControlType[]).filter((type) =>
+    (CONTROL_TYPE_RULES[type].motionAxes as readonly MotionAxisKind[]).includes(kind),
+  );
+
+/** 升降类：带移动轴的物体（单点移动、多级升降及各类摆） */
+const LIFT_OBJECTS: PresetObjectCondition = {
+  controlTypes: controlTypesWithAxis("move"),
+  hint: "仅适用于升降类物体",
+};
 const LEGACY_UNOWNED_PARAM_KEYS = new Set(["v2", "v3", "intervalDeg", "sampleIntervalMs"]);
 
 const poseOf = (v1: number): ModelPose => ({ v1, v2: 0, v3: 0 });
@@ -185,6 +206,7 @@ const staticFlat: PresetDefinition = {
   label: "平面",
   description: "同一时刻全体同一位姿",
   minObjects: 2,
+  objectCondition: LIFT_OBJECTS,
   ownedAxes: OWNED_V1,
   paramFields: STATIC_FLAT_FIELDS,
   validateParams: (params) => numericParams(params, fieldKeys(STATIC_FLAT_FIELDS)),
@@ -200,6 +222,7 @@ const staticSlope: PresetDefinition = {
   label: "斜面",
   description: "沿参与顺序按级差排布升降",
   minObjects: 2,
+  objectCondition: LIFT_OBJECTS,
   ownedAxes: OWNED_V1,
   paramFields: STATIC_SLOPE_FIELDS,
   validateParams: (params) => numericParams(params, fieldKeys(STATIC_SLOPE_FIELDS)),
@@ -215,6 +238,7 @@ const staticArc: PresetDefinition = {
   label: "弧形",
   description: "沿参与顺序形成拱形",
   minObjects: 2,
+  objectCondition: LIFT_OBJECTS,
   ownedAxes: OWNED_V1,
   paramFields: STATIC_ARC_FIELDS,
   validateParams: (params) => numericParams(params, fieldKeys(STATIC_ARC_FIELDS)),
@@ -233,6 +257,7 @@ const staticWave: PresetDefinition = {
   label: "静态波浪",
   description: "沿参与顺序按相位采样正弦",
   minObjects: 2,
+  objectCondition: LIFT_OBJECTS,
   ownedAxes: OWNED_V1,
   paramFields: STATIC_WAVE_FIELDS,
   validateParams: (params) => numericParams(params, fieldKeys(STATIC_WAVE_FIELDS)),
@@ -252,6 +277,7 @@ const dynamicLevel: PresetDefinition = {
   label: "水平升降",
   description: "全体从起点升降到终点",
   minObjects: 2,
+  objectCondition: LIFT_OBJECTS,
   ownedAxes: OWNED_V1,
   paramFields: DYNAMIC_LEVEL_FIELDS,
   validateParams: (params) => numericParams(params, fieldKeys(DYNAMIC_LEVEL_FIELDS)),
@@ -327,6 +353,7 @@ const dynamicWave: PresetDefinition = {
   label: "行进波浪",
   description: "沿参与顺序错开的升—降起伏",
   minObjects: 2,
+  objectCondition: LIFT_OBJECTS,
   ownedAxes: OWNED_V1,
   paramFields: DYNAMIC_WAVE_FIELDS,
   validateParams: (params) => {
@@ -398,6 +425,34 @@ export const listPresetDefinitions = (kind?: "static" | "dynamic"): PresetDefini
   PRESET_ORDER.filter((definition) => kind === undefined || definition.kind === kind);
 
 export const presetLabelOf = (presetId: string): string => getPresetDefinition(presetId)?.label ?? presetId;
+
+export type PresetTargetObject = {
+  id: number;
+  name?: string;
+  controlType?: ControlType;
+};
+
+const MAX_LISTED_OBJECTS = 3;
+
+/** 物体不全符合预设条件时返回提示文案；全部符合（或预设未知）返回 null */
+export const presetObjectConditionMessage = (
+  presetId: string,
+  objects: readonly PresetTargetObject[],
+): string | null => {
+  const definition = getPresetDefinition(presetId);
+  if (!definition) return null;
+  const { controlTypes, hint } = definition.objectCondition;
+  const rejected = objects.filter(
+    (object) => object.controlType === undefined || !controlTypes.includes(object.controlType),
+  );
+  if (rejected.length === 0) return null;
+  const names = rejected.map((object) => object.name ?? `物体 ${object.id}`);
+  const listed =
+    names.length > MAX_LISTED_OBJECTS
+      ? `${names.slice(0, MAX_LISTED_OBJECTS).join("、")} 等 ${names.length} 个物体`
+      : names.join("、");
+  return `「${definition.label}」${hint}，${listed} 不符合`;
+};
 
 export const presetParamLabelOf = (presetId: string, key: string): string => {
   const field = getPresetDefinition(presetId)?.paramFields.find((item) => item.key === key);
