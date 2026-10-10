@@ -130,6 +130,31 @@ describe("motion-persist authored sequences", () => {
     expect(hydrated.sequences[0]).not.toHaveProperty("tracks");
   });
 
+  it("action builder round trip keeps program/chapter notes and item run options", () => {
+    const motion: ProjectMotion = {
+      actionSequences: [{ id: 1, name: "Seq", trajectoryMode: false, blocks: [], segments: [] }],
+      programs: [
+        {
+          id: "prog",
+          name: "Prog",
+          note: "主体 90 分钟",
+          chapters: [
+            {
+              id: "ch",
+              name: "Ch",
+              note: "开场",
+              items: [{ kind: "sequence", refId: 1, runOptions: { reverse: true } }],
+            },
+            { id: "ch-2", name: "Ch2", items: [{ kind: "sequence", refId: 1 }] },
+          ],
+        },
+      ],
+    };
+    const { sequences, programs } = hydrateMotionForActionBuilder(motion, { 7: "Obj" });
+    const persisted = actionBuilderStateToMotion({ sequences, programs }, motion);
+    expect(persisted.programs).toStrictEqual(motion.programs);
+  });
+
   it("legacy program persist clones existing sequences and does not synthesize tracks", () => {
     const sequence: ActionSequenceConfig = {
       id: 1,

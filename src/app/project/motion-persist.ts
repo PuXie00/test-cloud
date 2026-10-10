@@ -11,6 +11,7 @@ import type {
 const programNodeToChapter = (node: ProgramNode): ProgramChapterConfig => ({
   id: node.id,
   name: node.name,
+  ...(node.note !== undefined ? { note: node.note } : {}),
   items: (node.children ?? []).flatMap((child): ProgramItemRef[] => {
     if (child.type === "sequence") {
       const refId = Number(child.id);
@@ -26,6 +27,7 @@ const programNodeToChapter = (node: ProgramNode): ProgramChapterConfig => ({
 const programNodeToConfig = (node: ProgramNode): ProgramConfig => ({
   id: node.id,
   name: node.name,
+  ...(node.note !== undefined ? { note: node.note } : {}),
   chapters: (node.children ?? [])
     .filter((child) => child.type === "chapter")
     .map(programNodeToChapter),

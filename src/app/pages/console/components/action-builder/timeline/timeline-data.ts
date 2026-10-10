@@ -31,6 +31,8 @@ export type ProgramNode = {
   name: string;
   type?: "program" | "chapter" | "sequence";
   children?: ProgramNode[];
+  /** program / chapter 节点的备注，动作页改节目时原样带回 */
+  note?: string;
   /** sequence 节点：节目条目的推子槽运行选项，动作页改节目时原样带回 */
   runOptions?: ProgramItemRunOptions;
 };
