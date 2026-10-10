@@ -16,6 +16,8 @@ export type VelocityChartProps = {
   /** When omitted, Y is 0–100% of peak (relative). */
   velocityUnit?: string;
   limits?: VelocityChartLimits;
+  /** Formats canonical `limits` values for labels (e.g. into the display length unit). */
+  formatVelocity?: (value: number) => string;
   disabled?: boolean;
   compact?: boolean;
   minAccelMs?: number;
@@ -163,6 +165,7 @@ export const VelocityChart = ({
   durationMs,
   velocityUnit,
   limits,
+  formatVelocity = formatNumber,
   disabled,
   compact = false,
   minAccelMs,
@@ -284,7 +287,7 @@ export const VelocityChart = ({
     limits.peakVelocity > 0;
 
   const maxLabel =
-    limits?.maxVelocity != null ? formatNumber(limits.maxVelocity) : null;
+    limits?.maxVelocity != null ? formatVelocity(limits.maxVelocity) : null;
 
   const tickLabelClass =
     "pointer-events-none absolute font-mono text-mono-sm tabular-nums text-muted-foreground";

@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultAxisProfiles } from "@/app/project/action-sequence/motion-profile";
 import type { AxisMotionProfiles, MotionProfile } from "@/app/project/action-sequence/types";
+import { DisplayLengthUnitProvider } from "@/app/project/display-length-unit-provider";
 import {
   MotionProfileEditor,
   type MotionProfileAxisContext,
@@ -27,12 +28,14 @@ const renderEditor = (
 ) => {
   const onChange = vi.fn();
   const view = render(
-    <MotionProfileEditor
-      value={profiles1000()}
-      onChange={onChange}
-      axisContext={axisContext()}
-      {...overrides}
-    />,
+    <DisplayLengthUnitProvider initialUnit="mm">
+      <MotionProfileEditor
+        value={profiles1000()}
+        onChange={onChange}
+        axisContext={axisContext()}
+        {...overrides}
+      />
+    </DisplayLengthUnitProvider>,
   );
   return { onChange, ...view };
 };
@@ -155,7 +158,7 @@ describe("MotionProfileEditor", () => {
       }),
     });
 
-    expect(screen.getByText("超过上限 100")).not.toBeNull();
+    expect(screen.getByText("超过上限 100 mm/s")).not.toBeNull();
   });
 
   it("does not show 超过上限 for acceleration or deceleration", () => {

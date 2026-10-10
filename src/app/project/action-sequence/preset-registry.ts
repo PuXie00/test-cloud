@@ -24,6 +24,8 @@ export type PresetParamField = {
   label: string;
   kind: "number" | "choice";
   unit?: string;
+  /** Value is a position on this virtual axis; unit comes from the block's objects (mm / °). */
+  axis?: VirtualAxisId;
   step?: number;
   min?: number;
   max?: number;
@@ -103,34 +105,34 @@ const numbers = (params: Record<string, PresetParamValue>): Record<string, numbe
   params as Record<string, number>;
 
 const STATIC_FLAT_FIELDS: readonly PresetParamField[] = [
-  { key: "v1", label: "升降", kind: "number", unit: "mm", step: 1 },
+  { key: "v1", label: "升降", kind: "number", axis: "v1", step: 1 },
 ];
 
 const STATIC_SLOPE_FIELDS: readonly PresetParamField[] = [
-  { key: "baseV1", label: "起点升降", kind: "number", unit: "mm", step: 1 },
-  { key: "stepV1", label: "级差", kind: "number", unit: "mm", step: 1 },
+  { key: "baseV1", label: "起点升降", kind: "number", axis: "v1", step: 1 },
+  { key: "stepV1", label: "级差", kind: "number", axis: "v1", step: 1 },
 ];
 
 const STATIC_ARC_FIELDS: readonly PresetParamField[] = [
-  { key: "baseV1", label: "基准升降", kind: "number", unit: "mm", step: 1 },
-  { key: "amplitude", label: "拱高", kind: "number", unit: "mm", step: 1 },
+  { key: "baseV1", label: "基准升降", kind: "number", axis: "v1", step: 1 },
+  { key: "amplitude", label: "拱高", kind: "number", axis: "v1", step: 1 },
 ];
 
 const STATIC_WAVE_FIELDS: readonly PresetParamField[] = [
-  { key: "baseV1", label: "基准升降", kind: "number", unit: "mm", step: 1 },
-  { key: "amplitude", label: "振幅", kind: "number", unit: "mm", step: 1 },
+  { key: "baseV1", label: "基准升降", kind: "number", axis: "v1", step: 1 },
+  { key: "amplitude", label: "振幅", kind: "number", axis: "v1", step: 1 },
   { key: "phaseDeg", label: "相位", kind: "number", unit: "°", step: 1 },
   { key: "intervalDeg", label: "间隔", kind: "number", unit: "°", step: 1 },
 ];
 
 const DYNAMIC_LEVEL_FIELDS: readonly PresetParamField[] = [
-  { key: "startV1", label: "起点升降", kind: "number", unit: "mm", step: 1 },
-  { key: "targetV1", label: "终点升降", kind: "number", unit: "mm", step: 1 },
+  { key: "startV1", label: "起点升降", kind: "number", axis: "v1", step: 1 },
+  { key: "targetV1", label: "终点升降", kind: "number", axis: "v1", step: 1 },
 ];
 
 const DYNAMIC_WAVE_FIELDS: readonly PresetParamField[] = [
-  { key: "baseV1", label: "基准升降", kind: "number", unit: "mm", step: 1 },
-  { key: "amplitude", label: "振幅", kind: "number", unit: "mm", step: 1 },
+  { key: "baseV1", label: "基准升降", kind: "number", axis: "v1", step: 1 },
+  { key: "amplitude", label: "振幅", kind: "number", axis: "v1", step: 1 },
   { key: "staggerMs", label: "错开间隔", kind: "number", unit: "s", step: 0.1, min: 0 },
   { key: "cycles", label: "周期数", kind: "number", step: 1, min: 1 },
   {
