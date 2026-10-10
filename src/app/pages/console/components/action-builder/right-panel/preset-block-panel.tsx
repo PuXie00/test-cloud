@@ -22,6 +22,7 @@ import {
   type MotionProfileAxisContext,
 } from "../motion-profile/motion-profile-editor";
 import { useActionBuilder } from "../use-action-builder";
+import { getVirtualAxisCanonicalUnit } from "../virtual-axis-display";
 import { RepairBand } from "./repair-band";
 import {
   VIRTUAL_AXIS_IDS,
@@ -80,12 +81,28 @@ const axisContextFromObject = (
   minAccelTimeByAxis: object?.minAccelTimeByAxis,
 });
 
+/** Axis-bound params follow the objects' axis unit; mixed units show no unit (no conversion). */
+const presetFieldUnit = (
+  field: PresetParamField,
+  objects: readonly (ControlledObject | undefined)[],
+): string | undefined => {
+  const axis = field.axis;
+  if (!axis) return field.unit;
+  if (objects.length === 0) return getVirtualAxisCanonicalUnit(axis);
+  const units = new Set(
+    objects.map((object) => getVirtualAxisCanonicalUnit(axis, object?.controlType)),
+  );
+  return units.size === 1 ? [...units][0] : undefined;
+};
+
 const PresetParamControl = ({
   field,
+  unit,
   value,
   onChange,
 }: {
   field: PresetParamField;
+  unit: string | undefined;
   value: PresetParamValue | undefined;
   onChange: (value: PresetParamValue) => void;
 }) => {
@@ -117,7 +134,7 @@ const PresetParamControl = ({
     <UnitAwareNumericInput
       aria-label={field.label}
       value={presetParamDisplayNumber(field, numeric)}
-      unit={field.unit}
+      unit={unit}
       step={field.step ?? 1}
       precision={1}
       min={field.min}
@@ -194,6 +211,7 @@ export const PresetBlockFields = ({
 }: PresetBlockFieldsProps) => {
   const { getTimelineObject, sequenceIssues } = usePresetBuilder();
   const definition = getPresetDefinition(block.presetId);
+  const objects = block.orderedObjectIds.map((objectId) => getTimelineObject(objectId));
   const poses = generatedPosesFor(resolved, block);
   const counts = block.orderedObjectIds.map(
     (objectId) => poses.filter((point) => point.objectId === objectId).length,
@@ -236,6 +254,7 @@ export const PresetBlockFields = ({
             <Field key={field.key} label={field.label}>
               <PresetParamControl
                 field={field}
+                unit={presetFieldUnit(field, objects)}
                 value={block.params[field.key]}
                 onChange={(value) => handleParam(field.key, value)}
               />

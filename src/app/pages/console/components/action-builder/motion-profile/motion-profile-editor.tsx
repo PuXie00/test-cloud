@@ -1,9 +1,19 @@
 import { useState } from "react";
 import { cn } from "@/app/components/ui/utils";
+import { useSessionDisplayLengthUnit } from "@/app/project/display-length-unit-provider";
+import {
+  formatLengthFamilyValue,
+  getDisplayLengthFamilyUnit,
+  isLengthFamilyUnit,
+  type DisplayLengthUnit,
+} from "@/app/project/display-length-units";
 import type { MotionProfileKinematics } from "@/app/project/action-sequence/motion-profile";
 import type { AxisMotionProfiles, ModelPose, MotionProfile } from "@/app/project/action-sequence/types";
 import type { VirtualAxisId } from "@/app/project/project-document-types";
-import { roundProjectCoordinate } from "@/app/project/project-quantity";
+import {
+  MAX_PROJECT_COORDINATE_DECIMALS,
+  roundProjectCoordinate,
+} from "@/app/project/project-quantity";
 import { VIRTUAL_AXIS_IDS, formatTime } from "../timeline/timeline-data";
 import { getVirtualAxisCanonicalUnit } from "../virtual-axis-display";
 import { PROFILE_KIND_OPTIONS, profileKindMeta } from "./profile-kind";
@@ -38,13 +48,32 @@ const formatNumber = (value: number): string => {
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 };
 
+/** Length-family values follow the display unit; angles keep their canonical unit. */
+const formatQuantityValue = (
+  value: number,
+  canonicalUnit: string,
+  display: DisplayLengthUnit,
+): string =>
+  isLengthFamilyUnit(canonicalUnit)
+    ? formatLengthFamilyValue(roundProjectCoordinate(value), canonicalUnit, display, {
+        canonicalPrecision: MAX_PROJECT_COORDINATE_DECIMALS,
+      })
+    : formatNumber(value);
+
+const formatQuantity = (
+  value: number,
+  canonicalUnit: string,
+  display: DisplayLengthUnit,
+): string =>
+  `${formatQuantityValue(value, canonicalUnit, display)} ${getDisplayLengthFamilyUnit(canonicalUnit, display)}`;
+
 const axisName = (axis: VirtualAxisId): string => axis.toUpperCase();
 
 const formatDurationSec = (durationMs: number): string => `${formatTime(durationMs)} s`;
 
-const formatTravel = (value: number, unit: string): string => {
+const formatTravel = (value: number, unit: string, display: DisplayLengthUnit): string => {
   const prefix = value > 0 ? "+" : "";
-  return `${prefix}${formatNumber(value)} ${unit}`;
+  return `${prefix}${formatQuantity(value, unit, display)}`;
 };
 
 const pickDefaultAxis = (
@@ -74,8 +103,8 @@ const toChartLimits = (
   maxVelocity: axisContext.maxSpeedByAxis?.[axis],
 });
 
-const OverLimitWarning = ({ max }: { max: number }) => (
-  <p className="text-body-sm text-warning">超过上限 {formatNumber(max)}</p>
+const OverLimitWarning = ({ text }: { text: string }) => (
+  <p className="text-body-sm text-warning">超过上限 {text}</p>
 );
 
 const PhaseFloorWarnings = ({
@@ -103,13 +132,13 @@ const PhaseFloorWarnings = ({
 const MetricReadout = ({
   label,
   value,
-  unit,
+  format,
   max,
   actual,
 }: {
   label: string;
   value: number;
-  unit: string;
+  format: (value: number) => string;
   max?: number;
   actual: number | undefined;
 }) => (
@@ -120,10 +149,10 @@ const MetricReadout = ({
       aria-readonly="true"
       className="rounded-md bg-input-background px-3 py-2 font-mono text-mono-sm tabular-nums text-foreground"
     >
-      {formatNumber(value)} {unit}
+      {format(value)}
     </p>
     {max !== undefined && actual !== undefined && actual > max ? (
-      <OverLimitWarning max={max} />
+      <OverLimitWarning text={format(max)} />
     ) : null}
   </div>
 );
@@ -137,7 +166,10 @@ const AxisMetrics = ({
   profile: MotionProfile;
   axisContext: MotionProfileAxisContext;
 }) => {
+  const display = useSessionDisplayLengthUnit();
   const unit = getVirtualAxisCanonicalUnit(axis, axisContext.controlType);
+  const formatSpeed = (speed: number) => formatQuantity(speed, `${unit}/s`, display);
+  const formatAccel = (accel: number) => formatQuantity(accel, `${unit}/s²`, display);
   const kinematics = tryKinematics(
     profile,
     Math.abs(axisContext.travel[axis] ?? 0),
@@ -149,20 +181,20 @@ const AxisMetrics = ({
       <MetricReadout
         label="峰值速度"
         value={kinematics?.peakVelocity ?? 0}
-        unit={`${unit}/s`}
+        format={formatSpeed}
         max={axisContext.maxSpeedByAxis?.[axis]}
         actual={kinematics?.peakVelocity}
       />
       <MetricReadout
         label="加速度"
         value={kinematics?.acceleration ?? 0}
-        unit={`${unit}/s²`}
+        format={formatAccel}
         actual={kinematics?.acceleration}
       />
       <MetricReadout
         label="减速度"
         value={kinematics?.deceleration ?? 0}
-        unit={`${unit}/s²`}
+        format={formatAccel}
         actual={kinematics?.deceleration}
       />
     </div>
@@ -292,6 +324,7 @@ export const MotionProfileEditor = ({
   const [selectedAxis, setSelectedAxis] = useState<VirtualAxisId>(() =>
     axisContext ? pickDefaultAxis(enabledAxes, axisContext.travel) : "v1",
   );
+  const display = useSessionDisplayLengthUnit();
 
   const handleAxisClick = (axis: VirtualAxisId) => {
     setSelectedAxis(axis);
@@ -322,6 +355,10 @@ export const MotionProfileEditor = ({
   const currentProfile = value[currentAxis];
   const otherAxes = enabledAxes.filter((axis) => axis !== currentAxis);
   const unit = getVirtualAxisCanonicalUnit(currentAxis, axisContext.controlType);
+  const speedUnit = `${unit}/s`;
+  const accelUnit = `${unit}/s²`;
+  const speedDisplayUnit = getDisplayLengthFamilyUnit(speedUnit, display);
+  const formatSpeedValue = (speed: number) => formatQuantityValue(speed, speedUnit, display);
   const travelDistance = Math.abs(axisContext.travel[currentAxis] ?? 0);
   const displayProfile: MotionProfile =
     travelDistance === 0 || currentProfile.kind === "idle" ? { kind: "idle" } : currentProfile;
@@ -345,12 +382,12 @@ export const MotionProfileEditor = ({
 
   if (segmentContext) {
     const peakVelocityText = kinematics
-      ? `${formatNumber(kinematics.peakVelocity)} ${unit}/s`
+      ? formatQuantity(kinematics.peakVelocity, speedUnit, display)
       : "—";
     const maxVelocityText =
       currentMaxSpeed === undefined
         ? "未配置"
-        : `${formatNumber(currentMaxSpeed)} ${unit}/s`;
+        : formatQuantity(currentMaxSpeed, speedUnit, display);
 
     return (
       <div className="flex flex-col gap-2.5">
@@ -393,7 +430,7 @@ export const MotionProfileEditor = ({
               <button
                 key={axis}
                 type="button"
-                aria-label={`${axisName(axis)} ${formatTravel(axisContext.travel[axis] ?? 0, axisUnit)}`}
+                aria-label={`${axisName(axis)} ${formatTravel(axisContext.travel[axis] ?? 0, axisUnit, display)}`}
                 aria-pressed={pressed}
                 onClick={() => handleAxisClick(axis)}
                 className={cn(
@@ -408,7 +445,7 @@ export const MotionProfileEditor = ({
                   {axisWarning ? <span className="ml-1 text-warning">●</span> : null}
                 </span>
                 <span className="block truncate font-mono text-[10px] leading-3 tabular-nums">
-                  {formatTravel(axisContext.travel[axis] ?? 0, axisUnit)}
+                  {formatTravel(axisContext.travel[axis] ?? 0, axisUnit, display)}
                 </span>
               </button>
             );
@@ -419,7 +456,8 @@ export const MotionProfileEditor = ({
           <VelocityChart
             profile={displayProfile}
             durationMs={axisContext.durationMs}
-            velocityUnit={`${unit}/s`}
+            velocityUnit={speedDisplayUnit}
+            formatVelocity={formatSpeedValue}
             limits={limits}
             disabled={disabled || displayProfile.kind === "idle"}
             compact
@@ -459,7 +497,7 @@ export const MotionProfileEditor = ({
           <div className="rounded-md bg-warning-surface px-3 py-2" role="status">
             {currentOverSpeed && currentMaxSpeed !== undefined ? (
               <p className="text-body-sm text-warning">
-                峰值速度超过上限 {formatNumber(currentMaxSpeed)} {unit}/s
+                峰值速度超过上限 {formatQuantity(currentMaxSpeed, speedUnit, display)}
               </p>
             ) : null}
             {currentWarnings.map((message) => (
@@ -493,7 +531,7 @@ export const MotionProfileEditor = ({
               label="加速度"
               value={
                 kinematics
-                  ? `${formatNumber(kinematics.acceleration)} ${unit}/s²`
+                  ? formatQuantity(kinematics.acceleration, accelUnit, display)
                   : "—"
               }
             />
@@ -501,7 +539,7 @@ export const MotionProfileEditor = ({
               label="减速度"
               value={
                 kinematics
-                  ? `${formatNumber(kinematics.deceleration)} ${unit}/s²`
+                  ? formatQuantity(kinematics.deceleration, accelUnit, display)
                   : "—"
               }
             />
@@ -530,8 +568,8 @@ export const MotionProfileEditor = ({
                     ? "无位移"
                     : axisKinematics
                       ? axisMaxSpeed === undefined
-                        ? `${formatNumber(axisKinematics.peakVelocity)} ${axisUnit}/s`
-                        : `${formatNumber(axisKinematics.peakVelocity)} / ${formatNumber(axisMaxSpeed)} ${axisUnit}/s`
+                        ? formatQuantity(axisKinematics.peakVelocity, `${axisUnit}/s`, display)
+                        : `${formatQuantityValue(axisKinematics.peakVelocity, `${axisUnit}/s`, display)} / ${formatQuantity(axisMaxSpeed, `${axisUnit}/s`, display)}`
                       : "无法计算";
 
                 return (
@@ -572,7 +610,8 @@ export const MotionProfileEditor = ({
         <VelocityChart
           profile={displayProfile}
           durationMs={axisContext.durationMs}
-          velocityUnit={`${unit}/s`}
+          velocityUnit={speedDisplayUnit}
+          formatVelocity={formatSpeedValue}
           limits={limits}
           disabled={disabled || displayProfile.kind === "idle"}
           minAccelMs={minAccelMs}
