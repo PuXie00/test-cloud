@@ -15,8 +15,9 @@ import {
   sequenceProgramItemFromLibrary,
   writeProgramItemDrag,
 } from "../action-builder/content-library/library-dnd";
-import { formatTime, type ProgramNode } from "../action-builder/timeline/timeline-data";
+import { formatDurationSeconds, type ProgramNode } from "../action-builder/timeline/timeline-data";
 import { useActionBuilder } from "../action-builder/use-action-builder";
+import { isForcedTrajectory } from "../forced-trajectory-badge";
 import { PROGRAM_SLOTS_PER_PAGE } from "./program-data";
 import { ProgramPageHeader } from "./program-page-header";
 import { ProgramSequenceRow } from "./program-sequence-row";
@@ -27,6 +28,7 @@ type ItemMeta = {
   refId: number;
   name: string;
   durationMs: number | null;
+  forced: boolean;
   loop: boolean;
 };
 
@@ -101,9 +103,13 @@ const AuthoredPageSection = ({
               name={name}
               indexLabel={String(index + 1)}
               durationLabel={
-                meta && meta.durationMs !== null ? formatTime(meta.durationMs) : null
+                meta && meta.durationMs !== null ? formatDurationSeconds(meta.durationMs) : null
               }
+              forced={meta?.forced === true}
               loop={meta?.loop === true}
+              safeGroup={item.runOptions?.safeGroup === true}
+              nearest={item.runOptions?.nearest === true}
+              reverse={item.runOptions?.reverse === true}
               draggable
               dropActive={dragOverIndex === index}
               striped={pageItemIndex % 2 !== 0}
@@ -278,6 +284,7 @@ export const AuthoringProgramPanel = ({ className }: AuthoringProgramPanelProps)
         refId: sequence.id,
         name: sequence.name,
         durationMs,
+        forced: isForcedTrajectory(sequence.trajectoryMode),
         loop: sequence.loop === true,
       });
     }
