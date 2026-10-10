@@ -44,6 +44,7 @@ import { useProjectStore } from "@/app/pages/console/hooks/use-project-store";
 import { objectHasUnboundAxes } from "@/app/pages/console/hooks/binding-utils";
 import { idsInRange, resolveSelectionMode } from "@/app/pages/console/hooks/selection-range";
 import { useSelection } from "@/app/pages/console/hooks/use-selection";
+import { resolveMountDropParent } from "@/app/pages/console/hooks/mount-objects";
 import { orderByMountTree, resolveMountParentId } from "@/app/project/object-mount";
 import type { ControlledObject, PlcScanResult } from "./config-wizard/config-wizard-types";
 import { MotorAddDialog } from "./config-wizard/dialogs/motor-add-dialog";
@@ -574,23 +575,58 @@ export const ProjectStructurePanel = () => {
     [addMotorsFromScannedAxes],
   );
 
-  const handleCanDrop = useCallback(
+  /** 拖动已多选的物体时整组挂载，否则只挂被拖的那个 */
+  const mountDragIds = useCallback(
+    (objectId: number): number[] =>
+      multiSelectedIds.includes(objectId) ? multiSelectedIds : [objectId],
+    [multiSelectedIds],
+  );
+
+  /** 受控物体视图：拖到物体中部 = 挂载到它；拖到上下沿 = 与它同级（根层即解除挂载） */
+  const resolveObjectDropParent = useCallback(
     ({ dragNode, dropNode, dropPosition }: TreeDropArgs<StructurePanelNode>) => {
+      if (!showMountTree || !isPendingCo(dragNode) || !isPendingCo(dropNode)) return undefined;
+      return resolveMountDropParent(
+        objects,
+        mountDragIds(dragNode.object.id),
+        dropNode.object.id,
+        dropPosition,
+      );
+    },
+    [mountDragIds, objects, showMountTree],
+  );
+
+  const handleCanDrop = useCallback(
+    (args: TreeDropArgs<StructurePanelNode>) => {
+      const { dragNode, dropNode, dropPosition } = args;
       if (isPendingCo(dragNode) && isPlcNode(dropNode) && dropPosition === "inside") {
         return true;
       }
-      return false;
+      return resolveObjectDropParent(args) !== undefined;
     },
-    [],
+    [resolveObjectDropParent],
   );
 
   const handleDrop = useCallback(
-    ({ dragNode, dropNode, dropPosition }: TreeDropArgs<StructurePanelNode>) => {
+    (args: TreeDropArgs<StructurePanelNode>) => {
+      const { dragNode, dropNode, dropPosition } = args;
       if (isPendingCo(dragNode) && isPlcNode(dropNode) && dropPosition === "inside") {
         setTreeFocus({ kind: "master", id: dropNode.plc.id });
+        return;
+      }
+      const parentId = resolveObjectDropParent(args);
+      if (parentId === undefined || !isPendingCo(dragNode)) return;
+      mountObjects(mountDragIds(dragNode.object.id), parentId);
+      if (parentId != null) {
+        setCollapsedObjectIds((current) => {
+          if (!current.has(String(parentId))) return current;
+          const next = new Set(current);
+          next.delete(String(parentId));
+          return next;
+        });
       }
     },
-    [setTreeFocus],
+    [mountDragIds, mountObjects, resolveObjectDropParent, setTreeFocus],
   );
 
   const getMotorRowProps = useCallback(
@@ -1108,7 +1144,8 @@ export const ProjectStructurePanel = () => {
                   )}
                   dndIdPrefix="pending-co"
                   dndContext="none"
-                  draggable={structureView === "all"}
+                  draggable
+                  droppable={showMountTree}
                   dropHighlight={dropHighlight}
                   aria-label={objectSectionAriaLabel}
                 />

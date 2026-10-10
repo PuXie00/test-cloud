@@ -4,7 +4,7 @@ import type { ControlledObject } from "../components/right-sidebar/config-wizard
 import { computePastePositionsMm } from "../3d/object-clipboard";
 import { buildObjectClipboardSnapshots } from "../3d/scene-object-edit";
 import { cloneObjectsAt } from "./clone-objects";
-import { applyObjectMount } from "./mount-objects";
+import { applyObjectMount, resolveMountDropParent } from "./mount-objects";
 
 const object = (
   id: number,
@@ -100,5 +100,32 @@ describe("copy / paste with mounts", () => {
     const [copy] = cloneObjectsAt(snapshots, positions, objects, () => 200);
     expect(copy).toMatchObject({ parentId: 1, position: { x: 1500, y: 1000, z: 0 } });
     expect(objectWorldPose([...objects, copy!], 200)!.position).toEqual({ x: 3500, y: 1000, z: 0 });
+  });
+});
+
+describe("resolveMountDropParent", () => {
+  const mountedLift = { ...lift, parentId: 1, position: { x: 500, y: 1000, z: 0 } };
+  const lamp = object(4, { parentId: 2, position: { x: 0, y: -500, z: 0 } });
+  const objects = [railCar, mountedLift, truss, lamp];
+
+  it("mounts on the target when dropped inside it", () => {
+    expect(resolveMountDropParent(objects, [3], 1, "inside")).toBe(1);
+  });
+
+  it("takes the target's parent when dropped before / after it", () => {
+    expect(resolveMountDropParent(objects, [3], 2, "after")).toBe(1);
+    // 目标在根层：解除挂载
+    expect(resolveMountDropParent(objects, [4], 3, "before")).toBeNull();
+  });
+
+  it("refuses self, descendants and no-op drops", () => {
+    expect(resolveMountDropParent(objects, [1], 1, "inside")).toBeUndefined();
+    expect(resolveMountDropParent(objects, [1], 4, "inside")).toBeUndefined();
+    expect(resolveMountDropParent(objects, [2], 1, "inside")).toBeUndefined();
+    expect(resolveMountDropParent(objects, [3], 1, "before")).toBeUndefined();
+  });
+
+  it("moves only the topmost of a dragged parent + child selection", () => {
+    expect(resolveMountDropParent(objects, [2, 4], 3, "inside")).toBe(3);
   });
 });

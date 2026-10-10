@@ -1,6 +1,7 @@
 import {
   canMountTo,
   remountPose,
+  resolveMountParentId,
   topmostMountIds,
   type MountPose,
 } from "@/app/project/object-mount";
@@ -43,4 +44,26 @@ export const applyObjectMount = (
     next = next.map((object) => (object.id === id ? withMountPose(object, parentId, pose) : object));
   }
   return next;
+};
+
+/**
+ * 物体树拖放的目标父物体：inside → 挂到目标物体；before / after → 与目标同级
+ * （挂到目标的父物体，目标在根层即解除挂载）。不合法或无变化时返回 undefined。
+ */
+export const resolveMountDropParent = (
+  objects: readonly ControlledObject[],
+  dragIds: readonly number[],
+  targetId: number,
+  position: "before" | "inside" | "after",
+): number | null | undefined => {
+  const parentId = position === "inside" ? targetId : resolveMountParentId(objects, targetId);
+  const moving = parentId == null ? dragIds : topmostMountIds(objects, dragIds);
+  if (moving.length === 0) return undefined;
+  if (parentId != null && !moving.every((id) => canMountTo(objects, id, parentId))) {
+    return undefined;
+  }
+  const changed = moving.some(
+    (id) => (objects.find((object) => object.id === id)?.parentId ?? null) !== parentId,
+  );
+  return changed ? parentId : undefined;
 };
