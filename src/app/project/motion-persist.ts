@@ -15,7 +15,9 @@ const programNodeToChapter = (node: ProgramNode): ProgramChapterConfig => ({
     if (child.type === "sequence") {
       const refId = Number(child.id);
       if (!Number.isInteger(refId)) return [];
-      return [{ kind: "sequence", refId }];
+      return [
+        { kind: "sequence", refId, ...(child.runOptions ? { runOptions: child.runOptions } : {}) },
+      ];
     }
     return [];
   }),
@@ -40,6 +42,7 @@ const programToConfig = (program: Program): ProgramConfig => ({
     items: ch.items.map((item): ProgramItemRef => ({
       kind: "sequence",
       refId: item.sequence.id,
+      ...(item.runOptions ? { runOptions: item.runOptions } : {}),
     })),
   })),
 });

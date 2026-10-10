@@ -687,6 +687,13 @@ const validateProgram = (value: unknown, path: string, a: StructuralAssertions):
       const reference = a.record(chapterItem, itemPath);
       a.enum(reference.kind, ["sequence"], `${itemPath}.kind`);
       validateSetupEntityId(reference.refId, `${itemPath}.refId`, a);
+      if (reference.runOptions !== undefined) {
+        const runOptionsPath = `${itemPath}.runOptions`;
+        const runOptions = a.record(reference.runOptions, runOptionsPath);
+        a.optionalBoolean(runOptions.nearest, `${runOptionsPath}.nearest`);
+        a.optionalBoolean(runOptions.reverse, `${runOptionsPath}.reverse`);
+        a.optionalBoolean(runOptions.safeGroup, `${runOptionsPath}.safeGroup`);
+      }
     });
   });
 };

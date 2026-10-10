@@ -1,5 +1,6 @@
 import type {
   ControlType,
+  ProgramItemRunOptions,
   VirtualAxisId,
 } from "@/app/project/project-document-types";
 
@@ -30,6 +31,8 @@ export type ProgramNode = {
   name: string;
   type?: "program" | "chapter" | "sequence";
   children?: ProgramNode[];
+  /** sequence 节点：节目条目的推子槽运行选项，动作页改节目时原样带回 */
+  runOptions?: ProgramItemRunOptions;
 };
 
 export const PIXELS_PER_SECOND = 16;

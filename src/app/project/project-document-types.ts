@@ -236,9 +236,17 @@ export type {
   TrapezoidAxisProfile,
 };
 
+/** 推子槽运行选项（就近 / 反向 / 安全组），随节目条目保存；只写开启的项，全关时省略 */
+export type ProgramItemRunOptions = {
+  nearest?: boolean;
+  reverse?: boolean;
+  safeGroup?: boolean;
+};
+
 export type ProgramItemRef = {
   kind: "sequence";
   refId: number;
+  runOptions?: ProgramItemRunOptions;
 };
 
 export const isSequenceProgramItemRef = (item: unknown): item is ProgramItemRef => {

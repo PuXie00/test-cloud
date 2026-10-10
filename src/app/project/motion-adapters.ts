@@ -36,6 +36,7 @@ export const motionToProgramNodes = (motion: ProjectMotion): ProgramNode[] => {
             id: String(item.refId),
             name: sequence?.name ?? String(item.refId),
             type: "sequence" as const,
+            ...(item.runOptions ? { runOptions: item.runOptions } : {}),
           },
         ];
       }),

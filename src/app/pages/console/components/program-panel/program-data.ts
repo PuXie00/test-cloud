@@ -1,4 +1,5 @@
 import type { TrajectoryMode } from "@shared/action-sequence";
+import type { ProgramItemRunOptions } from "@/app/project/project-document-types";
 
 export const PROGRAM_SLOTS_PER_PAGE = 12;
 
@@ -17,6 +18,8 @@ export type ActionSequence = {
 export type ChapterItem = {
   kind: "sequence";
   sequence: ActionSequence;
+  /** 推子槽运行选项，随条目保存与移动 */
+  runOptions?: ProgramItemRunOptions;
 };
 
 export type Chapter = {

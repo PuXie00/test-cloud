@@ -3,11 +3,16 @@ import {
   isSequenceProgramItemRef,
   type ActionSequenceConfig,
   type ProgramItemRef,
+  type ProgramItemRunOptions,
   type ProjectMotion,
 } from "@/app/project/project-document-types";
 import type { Chapter, ChapterItem, Program } from "./program-data";
 
-export type ResolvedChapterItem = { kind: "sequence"; sequence: ActionSequenceConfig };
+export type ResolvedChapterItem = {
+  kind: "sequence";
+  sequence: ActionSequenceConfig;
+  runOptions?: ProgramItemRunOptions;
+};
 
 export const resolveProgramChapterItems = (
   motion: ProjectMotion,
@@ -17,7 +22,14 @@ export const resolveProgramChapterItems = (
   return items.flatMap((item): ResolvedChapterItem[] => {
     if (!isSequenceProgramItemRef(item)) return [];
     const sequence = seqById.get(item.refId);
-    return sequence ? [{ kind: "sequence" as const, sequence }] : [];
+    if (!sequence) return [];
+    return [
+      {
+        kind: "sequence" as const,
+        sequence,
+        ...(item.runOptions ? { runOptions: item.runOptions } : {}),
+      },
+    ];
   });
 };
 
@@ -40,6 +52,7 @@ const resolvedToChapterItems = (resolved: ResolvedChapterItem[]): ChapterItem[] 
       trajectoryMode: item.sequence.trajectoryMode,
       ...(item.sequence.loop ? { loop: true } : {}),
     },
+    ...(item.runOptions ? { runOptions: item.runOptions } : {}),
   }));
 
 /** 将 document.motion 中首个（或指定）节目转为嵌入式 Program */
