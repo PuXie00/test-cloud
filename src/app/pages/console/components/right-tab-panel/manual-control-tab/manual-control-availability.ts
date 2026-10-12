@@ -25,8 +25,6 @@ const BLOCKED_OPERATIONS_BY_STATUS: Partial<
 
 export const NO_SELECTION_NOTICE = "请先选择受控物体";
 
-const MAX_LISTED_NAMES = 3;
-
 export type ManualControlTarget = {
   name: string;
   status: ControlledObjectStatus;
@@ -38,10 +36,11 @@ export type ManualControlAvailability = {
   allowed: (operation: ManualOperation) => boolean;
 };
 
-const listNames = (names: readonly string[]): string =>
-  names.length > MAX_LISTED_NAMES
-    ? `${names.slice(0, MAX_LISTED_NAMES).join("、")} 等 ${names.length} 个物体`
-    : names.join("、");
+const formatStatusReason = (status: ControlledObjectStatus, names: readonly string[]): string => {
+  const label = OBJECT_STATUS_LABEL[status];
+  if (names.length > 1) return `${names.length} 个物体${label}`;
+  return `${names[0]} ${label}`;
+};
 
 /** 多选时任一物体不满足即整体禁用该操作，避免一组物体只动了一部分 */
 export const resolveManualControlAvailability = (
@@ -59,9 +58,7 @@ export const resolveManualControlAvailability = (
     namesByStatus.set(target.status, [...(namesByStatus.get(target.status) ?? []), target.name]);
   }
   if (blocked.size === 0) return { notice: null, allowed: () => true };
-  const reasons = [...namesByStatus].map(
-    ([status, names]) => `${listNames(names)} ${OBJECT_STATUS_LABEL[status]}`,
-  );
+  const reasons = [...namesByStatus].map(([status, names]) => formatStatusReason(status, names));
   const effect = blocked.size === MANUAL_OPERATIONS.length ? "无法操作" : "部分操作不可用";
   return {
     notice: `${reasons.join("；")}，${effect}`,

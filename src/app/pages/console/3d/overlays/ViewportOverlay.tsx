@@ -15,6 +15,7 @@ import type { ToolMode } from "@/app/viz3d";
 import { pendingGoEntries } from "../../hooks/go-ready";
 import { useGoReady } from "../../hooks/go-ready-provider";
 import { useSequencePreview } from "../../hooks/use-sequence-preview";
+import { useConsoleMode } from "../../hooks/use-console-mode";
 import { useConsoleNav } from "../../hooks/use-console-nav";
 import { useControlLayout } from "../../hooks/use-control-layout";
 import { useActionBuilder } from "../../components/action-builder/use-action-builder";
@@ -77,14 +78,18 @@ const ViewportGoControls = () => {
 };
 
 const ControlPanelToggles = () => {
+  const { mode } = useConsoleMode();
   const {
     monitorPanelVisible,
     rightPanelVisible,
+    manualPanelVisible,
     programPanelVisible,
     toggleMonitorPanel,
     toggleRightPanel,
+    toggleManualPanel,
     toggleProgramPanel,
   } = useControlLayout();
+  const manualAvailable = mode !== "show";
 
   const toggles = [
     {
@@ -98,8 +103,8 @@ const ControlPanelToggles = () => {
       id: "operate",
       icon: SlidersHorizontal,
       label: "操作",
-      pressed: rightPanelVisible,
-      onToggle: toggleRightPanel,
+      pressed: manualAvailable ? manualPanelVisible : rightPanelVisible,
+      onToggle: manualAvailable ? toggleManualPanel : toggleRightPanel,
     },
     {
       id: "program",

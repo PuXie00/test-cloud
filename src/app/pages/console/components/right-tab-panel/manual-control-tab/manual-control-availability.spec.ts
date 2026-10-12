@@ -31,10 +31,10 @@ describe("resolveManualControlAvailability", () => {
     expect(MANUAL_OPERATIONS.some((operation) => availability.allowed(operation))).toBe(false);
   });
 
-  it("lists at most three offline names", () => {
+  it("shows only the count when more than one object is offline", () => {
     const availability = resolveManualControlAvailability(
       ["A", "B", "C", "D"].map((name) => ({ name, status: "offline" as const })),
     );
-    expect(availability.notice).toBe("A、B、C 等 4 个物体 离线，无法操作");
+    expect(availability.notice).toBe("4 个物体离线，无法操作");
   });
 });
