@@ -10,6 +10,7 @@ import { DimensionControl } from "./dimension-control";
 import { QuickActions } from "./quick-actions";
 import { poseFromControlSnapshot } from "./pose-from-control-snapshot";
 import { sharedDimensions } from "./shared-dimensions";
+import { resolveManualControlAvailability } from "./manual-control-availability";
 import { resolveObjectStatusLabel } from "../../monitor-grid/object-status-badge";
 import {
   AlertDialog,
@@ -43,7 +44,14 @@ export const ManualControlPanel = ({
     return snapshot ? [snapshot] : [];
   });
   const couple = useCoupleFlow(selectedIds);
-  const canSave = !saveDisabled && selectedIds.length > 0;
+  // 未选物体、或任一所选物体状态不满足（如离线）时禁用对应操作
+  const availability = resolveManualControlAvailability(
+    snapshots.map((snapshot) => ({
+      name: snapshot.descriptor.name,
+      status: snapshot.descriptor.status,
+    })),
+  );
+  const canSave = !saveDisabled && availability.allowed("savePose");
 
   const handleSaveCurrentPose = () => {
     onSaveCurrentPose({
@@ -56,14 +64,6 @@ export const ManualControlPanel = ({
     });
   };
 
-  if (snapshots.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center px-6 text-center text-body-sm text-muted-foreground">
-        请在监控网格或 3D 视图中选择受控物体
-      </div>
-    );
-  }
-
   const primary = snapshots[0];
   const dimensions = sharedDimensions(snapshots.map((snapshot) => snapshot.descriptor.dimensions));
   const statusKeys = [...new Set(snapshots.map((snapshot) => snapshot.descriptor.status))];
@@ -74,10 +74,14 @@ export const ManualControlPanel = ({
       ),
     ),
   ];
-  const objectLabel =
-    snapshots.length === 1 ? primary.descriptor.name : `${primary.descriptor.name} +${snapshots.length - 1}`;
-  const objectSummary =
-    snapshots.length === 1
+  const objectLabel = !primary
+    ? null
+    : snapshots.length === 1
+      ? primary.descriptor.name
+      : `${primary.descriptor.name} +${snapshots.length - 1}`;
+  const objectSummary = !primary
+    ? ""
+    : snapshots.length === 1
       ? `将对「${primary.descriptor.name}」执行此操作。`
       : `将对「${primary.descriptor.name}」等 ${snapshots.length} 个受控物体执行此操作。`;
 
@@ -110,14 +114,20 @@ export const ManualControlPanel = ({
         objectSummary={objectSummary}
         status={statusLabels.join(" / ")}
         objectStatus={statusKeys.length === 1 ? (statusKeys[0] ?? "offline") : "offline"}
+        notice={primary ? availability.notice : null}
+        allowed={availability.allowed}
         coupleBusy={couple.busy}
         onCoupleChoice={handleCoupleChoice}
         onEnableChoice={handleEnableChoice}
         onReset={handleReset}
         onHome={handleHome}
       />
-      <JogControl dimensions={dimensions} />
-      <DimensionControl dimensions={dimensions} />
+      <JogControl
+        dimensions={dimensions}
+        disabled={!availability.allowed("jog")}
+        settingsDisabled={!availability.allowed("jogSettings")}
+      />
+      <DimensionControl dimensions={dimensions} disabled={!availability.allowed("dimension")} />
       <QuickActions canSave={canSave} onSave={handleSaveCurrentPose} />
       <AlertDialog open={couple.phase === "solving"}>
         <AlertDialogContent className="bg-card">

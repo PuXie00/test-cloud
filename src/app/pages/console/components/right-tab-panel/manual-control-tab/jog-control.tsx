@@ -24,6 +24,10 @@ import { buildJogModelItems, sendJogModel } from "../../../hooks/manual-commands
 
 type JogControlProps = {
   dimensions: DimensionDescriptor[];
+  /** 禁用点动按钮 */
+  disabled?: boolean;
+  /** 禁用默认速度、速度、加减速时间设置 */
+  settingsDisabled?: boolean;
 };
 
 type AxisJogParams = {
@@ -51,11 +55,15 @@ const axisFor = (dim: DimensionDescriptor): VirtualAxisId =>
 
 type JogButtonsProps = {
   dimKey: string;
+  disabled: boolean;
   onJogStart: (dimKey: string, dir: 1 | -1) => void;
   onJogStop: (dimKey: string) => void;
 };
 
-const JogButtons = ({ dimKey, onJogStart, onJogStop }: JogButtonsProps) => (
+const jogButtonClass =
+  "inline-flex h-9 flex-1 items-center justify-center rounded-sm text-background bg-foreground hover:bg-foreground/80 disabled:pointer-events-none disabled:opacity-40";
+
+const JogButtons = ({ dimKey, disabled, onJogStart, onJogStop }: JogButtonsProps) => (
   <div className="flex min-w-0 flex-1 gap-2">
     <button
       type="button"
@@ -64,7 +72,8 @@ const JogButtons = ({ dimKey, onJogStart, onJogStop }: JogButtonsProps) => (
       onPointerUp={() => onJogStop(dimKey)}
       onPointerCancel={() => onJogStop(dimKey)}
       onPointerLeave={() => onJogStop(dimKey)}
-      className="inline-flex h-9 flex-1 items-center justify-center rounded-sm text-background bg-foreground hover:bg-foreground/80"
+      disabled={disabled}
+      className={jogButtonClass}
     >
       <ChevronLeft className="h-5 w-5" aria-hidden />
     </button>
@@ -75,14 +84,19 @@ const JogButtons = ({ dimKey, onJogStart, onJogStop }: JogButtonsProps) => (
       onPointerUp={() => onJogStop(dimKey)}
       onPointerCancel={() => onJogStop(dimKey)}
       onPointerLeave={() => onJogStop(dimKey)}
-      className="inline-flex h-9 flex-1 items-center justify-center rounded-sm text-background bg-foreground hover:bg-foreground/80"
+      disabled={disabled}
+      className={jogButtonClass}
     >
       <ChevronRight className="h-5 w-5" aria-hidden />
     </button>
   </div>
 );
 
-export const JogControl = ({ dimensions }: JogControlProps) => {
+export const JogControl = ({
+  dimensions,
+  disabled = false,
+  settingsDisabled = false,
+}: JogControlProps) => {
   const { persistManualJog } = useProject();
   const document = useProjectDocument();
   const dimensionKey = dimensions.map((dim) => dim.key).join(",");
@@ -172,6 +186,11 @@ export const JogControl = ({ dimensions }: JogControlProps) => {
     };
   }, [stopHoldingJog]);
 
+  // 点动中物体变为不可操作（如离线）时按钮会被禁用、收不到松开，主动停下
+  useEffect(() => {
+    if (disabled) stopHoldingJog();
+  }, [disabled, stopHoldingJog]);
+
   useEffect(() => {
     setDraft(buildDraft());
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -199,6 +218,7 @@ export const JogControl = ({ dimensions }: JogControlProps) => {
           <span>点动控制</span>
           <Checkbox
             checked={useDefaultSpeed}
+            disabled={settingsDisabled}
             onCheckedChange={(checked) => setUseDefaultSpeed(checked === true)}
           >
             默认速度
@@ -232,7 +252,12 @@ export const JogControl = ({ dimensions }: JogControlProps) => {
                     <span className="w-28 shrink-0 text-body-sm text-foreground">
                       虚轴{index + 1} {dim.label}
                     </span>
-                    <JogButtons dimKey={dim.key} onJogStart={handleJogStart} onJogStop={handleJogStop} />
+                    <JogButtons
+                      dimKey={dim.key}
+                      disabled={disabled}
+                      onJogStart={handleJogStart}
+                      onJogStop={handleJogStop}
+                    />
                   </div>
                   {!useDefaultSpeed ? (
                     <>
@@ -243,6 +268,7 @@ export const JogControl = ({ dimensions }: JogControlProps) => {
                           min={range.min}
                           max={range.max}
                           step={1}
+                          disabled={settingsDisabled}
                           aria-label={`虚轴${index + 1} ${dim.label} 速度`}
                           className="flex-1"
                           onValueChange={(next) =>
@@ -276,6 +302,7 @@ export const JogControl = ({ dimensions }: JogControlProps) => {
                           step={0.5}
                           precision={1}
                           unit="s"
+                          disabled={settingsDisabled}
                           aria-label={`虚轴${index + 1} ${dim.label} 加减速时间`}
                           onChange={(next) =>
                             setDraft((prev) => ({
