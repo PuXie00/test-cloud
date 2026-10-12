@@ -46,6 +46,7 @@ export const SegmentBand = ({
       data-invalid={invalid ? "true" : undefined}
       data-from-ref={fromRef}
       data-to-ref={toRef}
+      data-marquee-start=""
       tabIndex={0}
       onClick={handleClick}
       className={cn(

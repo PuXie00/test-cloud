@@ -9,6 +9,8 @@ import {
 import { sequencePathIsClosed, SEQUENCE_LOOP_DISABLED_HINT } from "@/app/project/action-sequence/sequence-loop";
 import { invalidTimelineTargets } from "@/app/project/action-sequence/validate-sequence";
 import { useActionBuilder } from "../use-action-builder";
+import { idsInRange, resolveSelectionMode } from "../../../hooks/selection-range";
+import { useSelection } from "../../../hooks/use-selection";
 import { ClipboardContextMenu, clipboardShortcutOf } from "../action-clipboard-menu";
 import { isBlockSelected, selectionBlockIds } from "../sequence-selection";
 import {
@@ -64,6 +66,25 @@ const SequenceEditor = () => {
     handleLoopChange,
     sequenceIssues,
   } = useActionBuilder();
+  const { multiSelectedIds, select, toggleMulti, replaceSelection } = useSelection();
+
+  // 左侧物体列表的点选与监控网格一致：单击选中、Ctrl/⌘ 切换、Shift 连选；经共享选中同步到 3D
+  const handleObjectClick = (
+    objectId: number,
+    event: MouseEvent<HTMLElement>,
+    rowObjectIds: readonly number[],
+  ) => {
+    const mode = resolveSelectionMode(event);
+    if (mode === "toggle") {
+      toggleMulti(objectId);
+      return;
+    }
+    if (mode === "range") {
+      replaceSelection(idsInRange(rowObjectIds, multiSelectedIds.at(-1), objectId));
+      return;
+    }
+    select(objectId);
+  };
   const rootRef = useRef<HTMLDivElement>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   const selectedBlockIds = selectionBlockIds(selection);
@@ -209,6 +230,8 @@ const SequenceEditor = () => {
             onDynamicPresetResize={handleResizeDynamicPreset}
             onTimelinePxPerSecondChange={handleTimelinePxPerSecondChange}
             invalidTargets={invalidTargets}
+            selectedObjectIds={multiSelectedIds}
+            onObjectClick={handleObjectClick}
           />
         </div>
       </ClipboardContextMenu>
