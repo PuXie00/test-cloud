@@ -1,12 +1,15 @@
 import { nextId } from "@/app/pages/console/components/action-builder/action-builder-ops";
 import type { ActionSequenceConfig, ModelPose, TimelineBlock } from "./action-sequence/types";
 
-export const buildCapturedPoseSequence = (args: {
-  id: number;
-  name: string;
+/** 「保存当前位姿」：所选物体及按实时位置取位姿的函数 */
+export type CapturedPoseRequest = {
   objectIds: readonly number[];
   poseForObject: (objectId: number) => ModelPose | null;
-}): ActionSequenceConfig | null => {
+};
+
+export const buildCapturedPoseSequence = (
+  args: CapturedPoseRequest & { id: number; name: string },
+): ActionSequenceConfig | null => {
   const blocks: TimelineBlock[] = [];
   for (const objectId of args.objectIds) {
     const pose = args.poseForObject(objectId);

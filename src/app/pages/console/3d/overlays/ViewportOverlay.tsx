@@ -1,4 +1,4 @@
-import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useState } from "react";
 import {
   Clapperboard,
   LayoutGrid,
@@ -17,7 +17,7 @@ import { useGoReady } from "../../hooks/go-ready-provider";
 import { useSequencePreview } from "../../hooks/use-sequence-preview";
 import { useConsoleNav } from "../../hooks/use-console-nav";
 import { useControlLayout } from "../../hooks/use-control-layout";
-import { setLivePoseHold, useLivePoseHold } from "../live-pose-hold";
+import { useActionBuilder } from "../../components/action-builder/use-action-builder";
 import { useViz3DContext } from "../Viz3DProvider";
 import { SequencePreviewBar } from "./sequence-preview-bar";
 import { ShapePresetPalette } from "./ShapePresetPalette";
@@ -133,34 +133,19 @@ const ControlPanelToggles = () => {
   );
 };
 
-const LivePoseHoldButton = () => {
-  const holding = useLivePoseHold();
-
-  useEffect(() => () => setLivePoseHold(false), []);
-
-  const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setLivePoseHold(true);
-  };
-
-  const handlePointerEnd = () => {
-    setLivePoseHold(false);
-  };
+/** 动作页：开关显示设备实时位置，与右侧「手动控制」tab 同步 */
+const CurrentPoseToggle = () => {
+  const { activeRightTab, setActiveRightTab } = useActionBuilder();
+  const showing = activeRightTab === "manual";
 
   return (
     <button
       type="button"
       aria-label="显示当前位置"
-      title="按住显示当前位置"
-      aria-pressed={holding}
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerEnd}
-      onPointerCancel={handlePointerEnd}
-      onLostPointerCapture={handlePointerEnd}
-      onContextMenu={(event) => event.preventDefault()}
-      className={cn(PANEL_TOGGLE_BTN, holding ? "text-primary" : "text-muted-foreground")}
+      title={showing ? "关闭当前位置" : "显示当前位置"}
+      aria-pressed={showing}
+      onClick={() => setActiveRightTab(showing ? "selection" : "manual")}
+      className={cn(PANEL_TOGGLE_BTN, showing ? "text-primary" : "text-muted-foreground")}
     >
       <Locate aria-hidden />
       当前位置
@@ -242,7 +227,7 @@ export const ViewportOverlay = () => {
         ) : null}
         {isSequences ? (
           <div className="ml-auto">
-            <LivePoseHoldButton />
+            <CurrentPoseToggle />
           </div>
         ) : null}
       </div>

@@ -8,12 +8,15 @@ import type {
 import type { EditorDockMode } from "../action-builder-context-types";
 import type { SequenceSelection } from "../sequence-selection";
 import { ProgramPanel } from "../../program-panel/program-panel";
+import { ActionManualControlTab } from "./action-manual-control-tab";
 import { SelectionTabContent } from "./selection-tab-content";
 
-export type ActionRightTab = "selection" | "program";
+/** "manual" 与视口「当前位置」同步：选中该 tab 即显示设备实时位置 */
+export type ActionRightTab = "selection" | "manual" | "program";
 
 const RIGHT_TABS = [
   { id: "selection" as const, label: "属性" },
+  { id: "manual" as const, label: "手动控制" },
   { id: "program" as const, label: "节目管理" },
 ];
 
@@ -79,6 +82,7 @@ export const ActionRightPanel = ({
           onApplyDynamicPreset={onApplyDynamicPreset}
         />
       )}
+      {activeTab === "manual" && <ActionManualControlTab />}
       {activeTab === "program" && <ProgramPanel variant="authoring" />}
     </div>
   </aside>

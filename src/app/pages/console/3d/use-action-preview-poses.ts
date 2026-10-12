@@ -4,15 +4,15 @@ import type { ModelPose } from "@/app/project/action-sequence/types";
 import { useActionBuilder } from "../components/action-builder/use-action-builder";
 import { useControlledObjects } from "../hooks/use-controlled-objects";
 import { useProjectStore } from "../hooks/use-project-store";
-import { useLivePoseHold } from "./live-pose-hold";
 import { mergeHoldPoses, resolveLivePoses } from "./resolve-live-poses";
 import { resolvePreviewPoses } from "./resolve-preview-poses";
 
 export const useActionPreviewPoses = (): Map<number, ModelPose> => {
-  const { dockMode, sequence, cursorMs } = useActionBuilder();
+  const { dockMode, sequence, cursorMs, activeRightTab } = useActionBuilder();
   const { snapshots } = useControlledObjects();
   const { objects } = useProjectStore();
-  const holdingLivePose = useLivePoseHold();
+  // 「当前位置」开启 ⇔ 手动控制 tab 选中
+  const showLivePose = activeRightTab === "manual";
 
   const virtualAxisObjectIds = useMemo(
     () =>
@@ -42,7 +42,7 @@ export const useActionPreviewPoses = (): Map<number, ModelPose> => {
   );
 
   return useMemo(
-    () => mergeHoldPoses(previewPoses, livePoses, holdingLivePose),
-    [previewPoses, livePoses, holdingLivePose],
+    () => mergeHoldPoses(previewPoses, livePoses, showLivePose),
+    [previewPoses, livePoses, showLivePose],
   );
 };
