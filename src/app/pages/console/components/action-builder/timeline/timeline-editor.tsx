@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { cn } from "@/app/components/ui/utils";
 import type {
   ActionSequenceConfig,
   DynamicPresetBlock,
@@ -60,9 +61,27 @@ export type TimelineEditorProps = {
   onDynamicPresetResize: (blockId: string, startMs: number, endMs: number) => void;
   onTimelinePxPerSecondChange: (pxPerSecond: number) => void;
   invalidTargets?: InvalidTimelineTargets;
+  /** 与 3D 同步的物体选中，左侧物体列表据此显示选中 */
+  selectedObjectIds?: readonly number[];
+  /** 点左侧物体名；rowObjectIds 为列表顺序，供 Shift 连选 */
+  onObjectClick?: (
+    objectId: number,
+    event: React.MouseEvent<HTMLElement>,
+    rowObjectIds: readonly number[],
+  ) => void;
 };
 
 const TRACK_ROW_HEIGHT = 36;
+
+/** 框选从运动区间开始并在它上面结束时，浏览器还会补一次 click，别让它把框选结果换成区间选中 */
+const suppressNextClick = () => {
+  const stop = (event: MouseEvent) => {
+    event.stopPropagation();
+    event.preventDefault();
+  };
+  window.addEventListener("click", stop, { capture: true, once: true });
+  setTimeout(() => window.removeEventListener("click", stop, { capture: true }), 0);
+};
 
 const collectSequenceObjectIds = (sequence: ActionSequenceConfig): number[] => {
   const objectIds = new Set<number>();
@@ -125,6 +144,8 @@ export const TimelineEditor = ({
   onDynamicPresetResize,
   onTimelinePxPerSecondChange,
   invalidTargets,
+  selectedObjectIds = [],
+  onObjectClick,
 }: TimelineEditorProps) => {
   const viewportRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -317,7 +338,10 @@ export const TimelineEditor = ({
 
   const handleTracksPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
-    if (event.target instanceof Element && event.target.closest("button")) return;
+    const button = event.target instanceof Element ? event.target.closest("button") : null;
+    // 运动区间也可以作为框选起点；位姿、预设等块有自己的拖动
+    if (button && !button.hasAttribute("data-marquee-start")) return;
+    const startedOnBand = button !== null;
     event.preventDefault();
     const start: MarqueeDrag = {
       startClientX: event.clientX,
@@ -349,10 +373,13 @@ export const TimelineEditor = ({
       const boxing = Math.hypot(dx, dy) >= MARQUEE_THRESHOLD_PX;
       setMarquee(null);
       if (!boxing) {
+        // 在运动区间上单击：交给它自己的 click 选中该区间
+        if (startedOnBand) return;
         onCursorChange(clientToMs(upEvent.clientX));
         onSelectionChange(null);
         return;
       }
+      if (startedOnBand) suppressNextClick();
       const hits = collectMarqueeBlockIds(
         sequence,
         objectIdsInRowOrder,
@@ -418,15 +445,26 @@ export const TimelineEditor = ({
       >
         <TimelineRulerReadout cursorMs={cursorMs} occupiedEndMs={occupiedEndMs} />
         <div ref={labelNamesRef} className="min-h-0 flex-1 overflow-hidden bg-card">
-          {rows.map((row) => (
-            <div
-              key={row.objectId}
-              className="flex h-9 shrink-0 items-center truncate bg-card px-3 text-left text-body-sm text-foreground/80"
-              title={row.objectName}
-            >
-              {row.objectName}
-            </div>
-          ))}
+          {rows.map((row) => {
+            const objectSelected = selectedObjectIds.includes(row.objectId);
+            return (
+              <button
+                key={row.objectId}
+                type="button"
+                aria-pressed={objectSelected}
+                onClick={(event) => onObjectClick?.(row.objectId, event, objectIdsInRowOrder)}
+                className={cn(
+                  "flex h-9 w-full shrink-0 items-center truncate border-l-2 px-3 text-left text-body-sm",
+                  objectSelected
+                    ? "border-l-primary bg-accent text-primary"
+                    : "border-l-transparent bg-card text-foreground/80 hover:bg-muted/40",
+                )}
+                title={row.objectName}
+              >
+                {row.objectName}
+              </button>
+            );
+          })}
         </div>
         <div
           className="shrink-0 bg-muted"

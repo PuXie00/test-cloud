@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Checkbox } from "@/app/components/ui/checkbox";
+import { cn } from "@/app/components/ui/utils";
 import { TabBar } from "@/app/components/ics/tab-bar";
 import type { DimensionDescriptor } from "../../monitor-grid/monitor-data";
 import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-input";
@@ -25,6 +26,7 @@ type DimensionMode = "abs" | "rel";
 
 type DimensionControlProps = {
   dimensions: DimensionDescriptor[];
+  disabled?: boolean;
 };
 
 const MODE_TABS = [
@@ -46,7 +48,7 @@ const draftsFromTargets = (
     }),
   );
 
-export const DimensionControl = ({ dimensions }: DimensionControlProps) => {
+export const DimensionControl = ({ dimensions, disabled = false }: DimensionControlProps) => {
   const { selectedId, multiSelectedIds } = useSelection();
   const { getById } = useControlledObjects();
   const { objects } = useProjectStore();
@@ -154,7 +156,7 @@ export const DimensionControl = ({ dimensions }: DimensionControlProps) => {
         </div>
         <div className="bg-background p-3">
           <div className="space-y-2">
-            <div className="flex justify-center">
+            <div className={cn("flex justify-center", disabled && "pointer-events-none opacity-40")}>
               <TabBar
                 tabs={MODE_TABS}
                 active={mode}
@@ -185,6 +187,7 @@ export const DimensionControl = ({ dimensions }: DimensionControlProps) => {
                     }
                     onCommit={(canonical) => handleCommit(dim, canonical)}
                     aria-label={`虚轴${index + 1}`}
+                    disabled={disabled}
                     className="w-full border-border border"
                   />
                 </div>
@@ -197,7 +200,7 @@ export const DimensionControl = ({ dimensions }: DimensionControlProps) => {
               <button
                 type="button"
                 aria-label="取消选中物体 GO"
-                disabled={!canCancelSelected}
+                disabled={disabled || !canCancelSelected}
                 onClick={handleCancel}
                 className="h-10 flex-1 rounded-sm border border-primary font-semibold text-primary hover:bg-primary/10 disabled:pointer-events-none disabled:opacity-40"
               >
@@ -206,7 +209,7 @@ export const DimensionControl = ({ dimensions }: DimensionControlProps) => {
               <button
                 type="button"
                 aria-label="选中物体 GO"
-                disabled={!canGoSelected}
+                disabled={disabled || !canGoSelected}
                 onClick={handleGo}
                 className="h-10 flex-1 rounded-sm bg-primary font-semibold text-primary-foreground disabled:pointer-events-none disabled:opacity-40"
               >

@@ -12,16 +12,21 @@ import {
 import { ObjectStatusBadge } from "../../monitor-grid/object-status-badge";
 import type { ControlledObjectStatus } from "../../monitor-grid/monitor-data";
 import { cn } from "@/app/components/ui/utils";
+import { NO_SELECTION_NOTICE, type ManualOperation } from "./manual-control-availability";
 
 type ChoiceActionId = "enable" | "couple";
 type SimpleActionId = "home" | "level" | "reset" | "clearAlarm";
 type MainActionId = ChoiceActionId | SimpleActionId;
 
 type StatusControlBarProps = {
-  objectLabel: string;
+  /** null：未选物体，头部显示「请先选择受控物体」 */
+  objectLabel: string | null;
   objectSummary: string;
   status: string;
   objectStatus: ControlledObjectStatus;
+  /** 物体状态不满足时的原因（如离线） */
+  notice?: string | null;
+  allowed: (operation: ManualOperation) => boolean;
   coupleBusy?: boolean;
   onCoupleChoice?: (coupleFlag: 0 | 1) => void;
   onEnableChoice?: (enableFlag: 0 | 1) => void;
@@ -29,7 +34,11 @@ type StatusControlBarProps = {
   onHome?: () => void;
 };
 
-const MAIN_ACTIONS: { id: MainActionId; label: string; tone: "primary" | "show" | "warning" | "default" }[] = [
+const MAIN_ACTIONS: {
+  id: Extract<MainActionId, ManualOperation>;
+  label: string;
+  tone: "primary" | "show" | "warning" | "default";
+}[] = [
   { id: "couple", label: "耦合", tone: "primary" },
   { id: "enable", label: "使能", tone: "primary" },
   { id: "reset", label: "复位", tone: "warning" },
@@ -82,6 +91,8 @@ export const StatusControlBar = ({
   objectSummary,
   status,
   objectStatus,
+  notice = null,
+  allowed,
   coupleBusy = false,
   onCoupleChoice,
   onEnableChoice,
@@ -111,9 +122,18 @@ export const StatusControlBar = ({
   return (
     <div className="space-y-3 px-3 py-3">
       <div className="flex items-center gap-2">
-        <h2 className="min-w-0 flex-1 truncate text-heading-md text-foreground">{objectLabel}</h2>
-        <ObjectStatusBadge status={objectStatus}>{status}</ObjectStatusBadge>
+        {objectLabel === null ? (
+          <h2 className="min-w-0 flex-1 truncate text-heading-md text-muted-foreground">
+            {NO_SELECTION_NOTICE}
+          </h2>
+        ) : (
+          <>
+            <h2 className="min-w-0 flex-1 truncate text-heading-md text-foreground">{objectLabel}</h2>
+            <ObjectStatusBadge status={objectStatus}>{status}</ObjectStatusBadge>
+          </>
+        )}
       </div>
+      {notice ? <p className="text-body-sm text-warning">{notice}</p> : null}
 
       <div className=" rounded-md overflow-hidden">
         <div className="px-3 h-9 flex items-center bg-muted">
@@ -125,9 +145,13 @@ export const StatusControlBar = ({
               <button
                 key={action.id}
                 type="button"
-                disabled={action.id === "couple" && coupleBusy}
+                disabled={!allowed(action.id) || (action.id === "couple" && coupleBusy)}
                 onClick={() => setPending(action.id)}
-                className={cn(actionButtonClassName, TONE_CLASS[action.tone], action.id === "couple" && coupleBusy && "opacity-40")}
+                className={cn(
+                  actionButtonClassName,
+                  TONE_CLASS[action.tone],
+                  "disabled:pointer-events-none disabled:opacity-40",
+                )}
               >
                 {action.label}
               </button>
