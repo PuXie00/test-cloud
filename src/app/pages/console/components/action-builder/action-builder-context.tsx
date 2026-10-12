@@ -383,7 +383,9 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
 
   const handleSelectionChange = useCallback((next: SequenceSelection) => {
     setSelection(next);
-    setActiveRightTab("selection");
+    // Clearing the selection (e.g. moving the playhead) keeps the manual-control tab;
+    // selecting blocks shows their properties.
+    setActiveRightTab((tab) => (next === null && tab === "manual" ? tab : "selection"));
     setSequenceMissingHint(false);
   }, []);
 

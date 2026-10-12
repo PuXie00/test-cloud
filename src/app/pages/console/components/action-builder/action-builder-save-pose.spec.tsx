@@ -107,13 +107,17 @@ describe("action builder save current pose", () => {
     expect(result.current.project.currentProject!.document!.motion.programs).toEqual(programsBefore);
   });
 
-  it("keeps the manual tab when objects are picked, and leaves it on a timeline selection", async () => {
+  it("keeps the manual tab on object picks and playhead moves, and leaves it on a block selection", async () => {
     const { result } = renderBuilder();
     await openFixtureProject(result);
     act(() => result.current.builder.setActiveRightTab("manual"));
     act(() => result.current.builder.handleObjectsSelect([7]));
     expect(result.current.builder.activeRightTab).toBe("manual");
     act(() => result.current.builder.handleObjectSelect(8));
+    expect(result.current.builder.activeRightTab).toBe("manual");
+
+    // moving the playhead clears the selection but stays in manual control
+    act(() => result.current.builder.handleSelectionChange(null));
     expect(result.current.builder.activeRightTab).toBe("manual");
 
     act(() => result.current.builder.handleSelectionChange({ kind: "block", blockId: "x" }));
