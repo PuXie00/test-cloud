@@ -44,9 +44,11 @@ type ClipboardContextMenuProps = {
   onPaste: () => void;
   /** 右键时先于菜单打开调用，用来记下右键点到的是哪一项 */
   onContextMenu?: (event: MouseEvent<HTMLElement>) => void;
+  /** 菜单项是否显示 Ctrl/⌘+C / V 提示；没有快捷键的列表传 false */
+  showShortcuts?: boolean;
 };
 
-/** 动作序列库、时间轴共用的右键“复制 / 粘贴”菜单 */
+/** 动作序列库、时间轴共用的右键“复制 / 粘贴”菜单；快捷键只作用于时间轴动作块 */
 export const ClipboardContextMenu = ({
   children,
   copyLabel,
@@ -56,6 +58,7 @@ export const ClipboardContextMenu = ({
   onCopy,
   onPaste,
   onContextMenu,
+  showShortcuts = true,
 }: ClipboardContextMenuProps) => (
   <ContextMenu>
     <ContextMenuTrigger asChild onContextMenu={onContextMenu}>
@@ -64,11 +67,11 @@ export const ClipboardContextMenu = ({
     <ContextMenuContent className="min-w-[11rem] border-border bg-card text-foreground shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
       <ContextMenuItem className="text-body-sm" disabled={!canCopy} onSelect={onCopy}>
         {copyLabel}
-        <ContextMenuShortcut>{shortcutHint("C")}</ContextMenuShortcut>
+        {showShortcuts ? <ContextMenuShortcut>{shortcutHint("C")}</ContextMenuShortcut> : null}
       </ContextMenuItem>
       <ContextMenuItem className="text-body-sm" disabled={!canPaste} onSelect={onPaste}>
         {pasteLabel}
-        <ContextMenuShortcut>{shortcutHint("V")}</ContextMenuShortcut>
+        {showShortcuts ? <ContextMenuShortcut>{shortcutHint("V")}</ContextMenuShortcut> : null}
       </ContextMenuItem>
     </ContextMenuContent>
   </ContextMenu>

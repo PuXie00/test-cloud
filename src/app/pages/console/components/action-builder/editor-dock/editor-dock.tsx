@@ -98,7 +98,7 @@ const SequenceEditor = () => {
   useEffect(() => {
     const onWindowKeyDown = (event: globalThis.KeyboardEvent) => {
       if (isEditableTarget(event.target)) return;
-      // 复制粘贴不论焦点在哪都作用于时间轴；动作序列库有焦点时由它自己处理（已 preventDefault）
+      // Ctrl/⌘+C / V 只作用于时间轴动作块，焦点在哪都一样；动作序列只能用序列库的右键菜单复制粘贴
       const shortcut = event.defaultPrevented ? null : clipboardShortcutOf(event);
       if (shortcut === "copy") {
         if (selectedBlockIds.length === 0) return;

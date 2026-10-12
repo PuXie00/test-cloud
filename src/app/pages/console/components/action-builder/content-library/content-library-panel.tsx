@@ -3,7 +3,6 @@ import {
   useRef,
   useState,
   type DragEvent,
-  type KeyboardEvent,
   type MouseEvent,
   type PointerEvent,
 } from "react";
@@ -24,7 +23,7 @@ import {
 import { ForcedTrajectoryBadge, isForcedTrajectory } from "../../forced-trajectory-badge";
 import { LoopBadge } from "../../loop-badge";
 import { writeLibraryDrag } from "./library-dnd";
-import { ClipboardContextMenu, clipboardShortcutOf } from "../action-clipboard-menu";
+import { ClipboardContextMenu } from "../action-clipboard-menu";
 
 type LibraryEntry = { kind: "sequence"; sequence: ActionSequenceConfig };
 
@@ -127,22 +126,6 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
   const handleListContextMenu = (event: MouseEvent<HTMLElement>) => {
     clearLongPress();
     setMenuSequenceId(sequenceIdAt(event.target));
-  };
-
-  /**
-   * 焦点在某一行时复制这一行，否则复制当前选中的序列；粘贴生成新序列。
-   * 按键一律拦下，时间轴挂在 window 上的复制粘贴就不会再处理一遍。
-   */
-  const handleListKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    const shortcut = clipboardShortcutOf(event);
-    if (!shortcut) return;
-    event.preventDefault();
-    if (shortcut === "copy") {
-      const id = sequenceIdAt(event.target) ?? selectedSequenceId;
-      if (id !== null) handleSequenceCopy(id);
-      return;
-    }
-    handleSequencePaste();
   };
 
   const menuSequence = sequences.find((sequence) => sequence.id === menuSequenceId);
@@ -289,13 +272,14 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
         }}
         onPaste={handleSequencePaste}
         onContextMenu={handleListContextMenu}
+        // 序列只走右键菜单；Ctrl+C / V 留给时间轴动作块
+        showShortcuts={false}
       >
         <div
           className="custom-scrollbar min-h-0 flex-1 overflow-y-auto py-1 outline-none"
           role="listbox"
           aria-label="动作序列库列表"
           tabIndex={-1}
-          onKeyDown={handleListKeyDown}
         >
           {entries.length === 0 ? (
             <p className="px-3 py-6 text-center text-body-sm text-muted-foreground">

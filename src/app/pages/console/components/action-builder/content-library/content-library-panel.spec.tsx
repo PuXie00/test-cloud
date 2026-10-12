@@ -186,23 +186,21 @@ describe("content library copy / paste", () => {
     expect(handleSequencePaste).toHaveBeenCalledTimes(1);
   });
 
-  it("copies the focused row with Ctrl+C and pastes with Ctrl+V", () => {
+  it("leaves Ctrl+C / V to the timeline even when a row has focus", () => {
     mockBuilder({ handleSequenceCopy, handleSequencePaste, canPasteSequence: true });
     render(<ContentLibraryPanel />);
     const row = screen.getByRole("button", { name: "共享斜面" });
-    fireEvent.keyDown(row, { key: "c", ctrlKey: true });
-    expect(handleSequenceCopy).toHaveBeenCalledWith(1);
-    fireEvent.keyDown(row, { key: "v", metaKey: true });
-    expect(handleSequencePaste).toHaveBeenCalledTimes(1);
+    expect(fireEvent.keyDown(row, { key: "c", ctrlKey: true })).toBe(true);
+    expect(fireEvent.keyDown(row, { key: "v", metaKey: true })).toBe(true);
+    expect(handleSequenceCopy).not.toHaveBeenCalled();
+    expect(handleSequencePaste).not.toHaveBeenCalled();
   });
 
-  it("claims Ctrl+C / V so the timeline's window shortcuts do not run too", () => {
-    mockBuilder({ handleSequenceCopy, handleSequencePaste, canPasteSequence: false });
+  it("shows no shortcut hints in the sequence menu", async () => {
+    mockBuilder({ handleSequenceCopy, handleSequencePaste, canPasteSequence: true });
     render(<ContentLibraryPanel />);
-    const row = screen.getByRole("button", { name: "共享斜面" });
-    expect(fireEvent.keyDown(row, { key: "c", ctrlKey: true })).toBe(false);
-    // 没复制过也交给 handleSequencePaste，由它提示
-    expect(fireEvent.keyDown(row, { key: "v", ctrlKey: true })).toBe(false);
-    expect(handleSequencePaste).toHaveBeenCalledTimes(1);
+    await openMenuOn(screen.getByRole("button", { name: "共享斜面" }));
+    expect(screen.getByRole("menuitem", { name: /^复制/ }).textContent).not.toMatch(/C$/);
+    expect(screen.getByRole("menuitem", { name: /粘贴为新序列/ }).textContent).toBe("粘贴为新序列");
   });
 });
