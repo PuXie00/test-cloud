@@ -1,11 +1,8 @@
-import {
-  AbstractMesh,
-  Color3,
-  Matrix,
-  TransformNode,
-  Vector3,
-  type Scene,
-} from "@babylonjs/core";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import type { Scene } from "@babylonjs/core/scene";
 import type { Vec3 } from "../types";
 
 export type WorldBounds = {

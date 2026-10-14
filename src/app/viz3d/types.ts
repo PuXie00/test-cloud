@@ -42,7 +42,7 @@ export type SceneObjectStatus =
 
 export type PresetShape = "cube" | "cyl" | "sphere" | "ring" | "sqRing" | "prism6";
 
-export type ModelFormat = "obj" | "gltf" | "glb" | "stl";
+export type ModelFormat = "obj" | "glb";
 
 export type ModelSource = { id: string };
 

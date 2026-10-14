@@ -1,10 +1,9 @@
-import "@babylonjs/loaders";
+import "@babylonjs/loaders/glTF/glTFFileLoader";
+import "@babylonjs/loaders/OBJ/objFileLoader";
 import { ImportMeshAsync, type ISceneLoaderAsyncResult } from "@babylonjs/core/Loading/sceneLoader";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
-import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import type { Node } from "@babylonjs/core/node";
 import type { Scene } from "@babylonjs/core/scene";
-import { createPbrStandardMaterial } from "../materials/pbr-material";
 import type { LoadModelOptions, ModelFormat } from "../types";
 import {
   getTemplateNativeSizeM,
@@ -40,14 +39,8 @@ export const detectFormat = (nameOrUrl: string, explicit?: ModelFormat): ModelFo
   if (lower.endsWith(".glb")) {
     return "glb";
   }
-  if (lower.endsWith(".gltf")) {
-    return "gltf";
-  }
   if (lower.endsWith(".obj")) {
     return "obj";
-  }
-  if (lower.endsWith(".stl")) {
-    return "stl";
   }
   throw new Error(`Unsupported model format: ${nameOrUrl}`);
 };
@@ -175,21 +168,15 @@ export class ModelLoader {
     name: string,
   ): Promise<TransformNode> {
     if (typeof input === "string") {
-      return this.loadFromUrl(input, format);
+      return this.loadFromUrl(input);
     }
     return this.loadFromFile(input, format, name);
   }
 
-  private async loadFromUrl(url: string, format: ModelFormat): Promise<TransformNode> {
+  private async loadFromUrl(url: string): Promise<TransformNode> {
     const result = await ImportMeshAsync(url, this.scene);
     stripImportedAnimations(result);
-    const root = wrapImportedContent(result, this.scene, "viz3d-model-content");
-    if (format === "stl" && root.getChildMeshes().length === 0) {
-      const mesh = MeshBuilder.CreateBox("viz3d-stl-fallback", { size: 1 }, this.scene);
-      mesh.material = createPbrStandardMaterial({ scene: this.scene });
-      mesh.parent = root;
-    }
-    return root;
+    return wrapImportedContent(result, this.scene, "viz3d-model-content");
   }
 
   /**
@@ -202,13 +189,7 @@ export class ModelLoader {
       pluginExtension: `.${format}`,
     });
     stripImportedAnimations(result);
-    const root = wrapImportedContent(result, this.scene, name);
-    if (format === "stl" && root.getChildMeshes().length === 0) {
-      const mesh = MeshBuilder.CreateBox("viz3d-stl-fallback", { size: 1 }, this.scene);
-      mesh.material = createPbrStandardMaterial({ scene: this.scene });
-      mesh.parent = root;
-    }
-    return root;
+    return wrapImportedContent(result, this.scene, name);
   }
 }
 

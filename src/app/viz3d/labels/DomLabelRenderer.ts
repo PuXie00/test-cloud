@@ -1,5 +1,6 @@
-import type { Camera, Scene } from "@babylonjs/core";
-import { Matrix, Vector3 } from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Scene } from "@babylonjs/core/scene";
 import type { SlotRect } from "../types";
 
 export type DomLabelEntry = {
