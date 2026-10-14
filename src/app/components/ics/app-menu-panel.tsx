@@ -98,6 +98,7 @@ type AppMenuPanelProps = {
   onCloseProject?: () => void;
   onVersionHistory?: () => void;
   onImportExport?: () => void;
+  onOperationLog?: () => void;
   showPermissions?: boolean;
   onPermissionsConfig?: () => void;
   onCollabManage?: () => void;
@@ -129,6 +130,7 @@ export const AppMenuPanel = ({
   onCloseProject,
   onVersionHistory,
   onImportExport,
+  onOperationLog,
   showPermissions = false,
   onPermissionsConfig,
   onCollabManage,
@@ -194,6 +196,10 @@ export const AppMenuPanel = ({
         return;
       case "import-export":
         onImportExport?.();
+        onClose();
+        return;
+      case "log":
+        onOperationLog?.();
         onClose();
         return;
       case "permissions":
