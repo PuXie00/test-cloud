@@ -34,6 +34,8 @@ import {
 } from "../timeline/timeline-data";
 import { useActionBuilder } from "../use-action-builder";
 import { getVirtualAxisCanonicalUnit } from "../virtual-axis-display";
+import { AXIS_MODE_TABS, intersectAxisRange, type AxisEditMode } from "../virtual-axis-edit";
+import { VirtualAxisRow } from "../virtual-axis-row";
 import type { VirtualAxisId } from "@/app/project/project-document-types";
 
 export type SequencePropertiesPanelProps = {
@@ -96,73 +98,10 @@ const Field = ({ label, children }: { label: string; children: ReactNode }) => (
   </div>
 );
 
-const poseAxisStep = (axis: (typeof VIRTUAL_AXIS_IDS)[number]): number =>
-  axis === "v1" ? 1 : 0.1;
-
-type PoseAxisMode = "abs" | "rel";
-
-const POSE_MODE_TABS = [
-  { id: "abs", label: "绝对" },
-  { id: "rel", label: "相对" },
-] as const;
-
 const ZERO_POSE: ModelPose = { v1: 0, v2: 0, v3: 0 };
-
-const poseAxisLabel = (axis: VirtualAxisId): string =>
-  `虚轴${VIRTUAL_AXIS_IDS.indexOf(axis) + 1}`;
 
 const poseSelectionKey = (poses: readonly PoseBlock[]): string =>
   poses.map((block) => `${block.id}:${block.pose.v1},${block.pose.v2},${block.pose.v3}`).join("|");
-
-const intersectAxisRange = (
-  ranges: readonly { min: number; max: number }[],
-): { min?: number; max?: number } => {
-  if (ranges.length === 0) return {};
-  const min = Math.max(...ranges.map((range) => range.min));
-  const max = Math.min(...ranges.map((range) => range.max));
-  if (min > max) return {};
-  return { min, max };
-};
-
-const PoseAxisRow = ({
-  axis,
-  value,
-  mixed = false,
-  unit,
-  min,
-  max,
-  onChange,
-  onCommit,
-}: {
-  axis: VirtualAxisId;
-  value: number;
-  mixed?: boolean;
-  unit?: string;
-  min?: number;
-  max?: number;
-  onChange: (value: number) => void;
-  onCommit: (value: number) => void;
-}) => {
-  const axisLabel = poseAxisLabel(axis);
-  return (
-    <div className="flex items-center gap-2">
-      <span className="w-12 shrink-0 text-body-sm text-foreground">{axisLabel}</span>
-      <UnitAwareNumericInput
-        aria-label={axisLabel}
-        value={value}
-        mixed={mixed}
-        unit={unit}
-        step={poseAxisStep(axis)}
-        precision={1}
-        min={min}
-        max={max}
-        onChange={onChange}
-        onCommit={onCommit}
-        className="w-full border-border border"
-      />
-    </div>
-  );
-};
 
 const axisContextFromObject = (
   object: ControlledObject | undefined,
@@ -188,14 +127,14 @@ const PoseAxesEditor = ({
 }) => {
   const { getTimelineObject } = useActionBuilder();
   const object = getTimelineObject(objectId);
-  const [mode, setMode] = useState<PoseAxisMode>("abs");
+  const [mode, setMode] = useState<AxisEditMode>("abs");
   const [drafts, setDrafts] = useState<ModelPose>(pose);
 
   useEffect(() => {
     setDrafts(mode === "rel" ? ZERO_POSE : { v1: pose.v1, v2: pose.v2, v3: pose.v3 });
   }, [mode, pose.v1, pose.v2, pose.v3]);
 
-  const handleModeChange = (next: PoseAxisMode) => {
+  const handleModeChange = (next: AxisEditMode) => {
     setMode(next);
   };
 
@@ -221,7 +160,7 @@ const PoseAxesEditor = ({
     <div className="mb-3 space-y-2">
       <div className="flex justify-center">
         <TabBar
-          tabs={POSE_MODE_TABS}
+          tabs={AXIS_MODE_TABS}
           active={mode}
           onChange={handleModeChange}
           className="h-7 w-44 border-b-0 bg-transparent"
@@ -230,7 +169,7 @@ const PoseAxesEditor = ({
       {enabledAxes.map((axis) => {
         const range = object?.rangeByAxis?.[axis];
         return (
-          <PoseAxisRow
+          <VirtualAxisRow
             key={axis}
             axis={axis}
             value={drafts[axis]}
@@ -248,7 +187,7 @@ const PoseAxesEditor = ({
 
 const MultiPoseAxesEditor = ({ poses }: { poses: PoseBlock[] }) => {
   const { getTimelineObject, handleApplyPoseAxisWrite } = useActionBuilder();
-  const [mode, setMode] = useState<PoseAxisMode>("abs");
+  const [mode, setMode] = useState<AxisEditMode>("abs");
   const [relDrafts, setRelDrafts] = useState<ModelPose>(ZERO_POSE);
   const [absDrafts, setAbsDrafts] = useState<Partial<ModelPose>>({});
 
@@ -290,7 +229,7 @@ const MultiPoseAxesEditor = ({ poses }: { poses: PoseBlock[] }) => {
     setAbsDrafts(next);
   }, [getTimelineObject, mode, selectionKey]);
 
-  const handleModeChange = (next: PoseAxisMode) => {
+  const handleModeChange = (next: AxisEditMode) => {
     setMode(next);
   };
 
@@ -308,7 +247,7 @@ const MultiPoseAxesEditor = ({ poses }: { poses: PoseBlock[] }) => {
     <div className="mb-3 space-y-2">
       <div className="flex justify-center">
         <TabBar
-          tabs={POSE_MODE_TABS}
+          tabs={AXIS_MODE_TABS}
           active={mode}
           onChange={handleModeChange}
           className="h-7 w-44 border-b-0 bg-transparent"
@@ -336,7 +275,7 @@ const MultiPoseAxesEditor = ({ poses }: { poses: PoseBlock[] }) => {
         const value =
           mode === "rel" ? relDrafts[axis] : (absDrafts[axis] ?? shared ?? 0);
         return (
-          <PoseAxisRow
+          <VirtualAxisRow
             key={axis}
             axis={axis}
             value={value}
