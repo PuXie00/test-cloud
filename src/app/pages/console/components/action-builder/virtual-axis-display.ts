@@ -108,26 +108,38 @@ export const formatVirtualAxisSpeed = (
   return `${formatPlainNumber(canonicalSpeed, axis)} ${unit}/s`;
 };
 
+/** 3D 标签用：虚轴 1、2、3 一律保留一位小数（不去零），如 1234.0mm / 5.0° */
+const COMPACT_OPTIONS: FormatLengthFamilyOptions = {
+  canonicalPrecision: 1,
+  trimTrailingZeros: false,
+};
+
+/** 四舍五入到 0 的负数不显示成 -0.0 */
+const withoutNegativeZero = (text: string): string =>
+  /^-0(\.0*)?$/.test(text) ? text.slice(1) : text;
+
 export const formatVirtualAxisCompact = (
   axis: VirtualAxisId,
   canonicalValue: number,
   display: DisplayLengthUnit,
-  options: FormatLengthFamilyOptions = { canonicalPrecision: 1 },
+  options: FormatLengthFamilyOptions = COMPACT_OPTIONS,
   controlType?: ControlType,
 ): string => {
   const unit = getVirtualAxisCanonicalUnit(axis, controlType);
   if (isLengthFamilyUnit(unit)) {
-    const value = formatLengthFamilyValue(canonicalValue, unit, display, options);
+    const value = withoutNegativeZero(
+      formatLengthFamilyValue(canonicalValue, unit, display, options),
+    );
     return `${value}${getDisplayLengthFamilyUnit(unit, display)}`;
   }
-  return `${formatPlainNumber(canonicalValue, axis)}${unit}`;
+  return `${withoutNegativeZero(canonicalValue.toFixed(1))}${unit}`;
 };
 
 export const formatVirtualAxesCompact = (
   axes: readonly VirtualAxisId[],
   values: VirtualAxisValues,
   display: DisplayLengthUnit,
-  options: FormatLengthFamilyOptions = { canonicalPrecision: 1 },
+  options: FormatLengthFamilyOptions = COMPACT_OPTIONS,
   controlType?: ControlType,
 ): string =>
   axes
