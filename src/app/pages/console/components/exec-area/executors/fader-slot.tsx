@@ -154,7 +154,7 @@ export const FaderSlot = ({
             : repairMessage
               ? "border-warning/50"
               : isReady
-                ? "border-primary/50"
+                ? "border-show/50"
                 : "border-border",
       )}
     >
@@ -291,7 +291,9 @@ export const FaderSlot = ({
             ? "bg-show text-background"
             : isBlocked
               ? "border border-border text-muted-foreground"
-              : "bg-primary text-primary-foreground hover:bg-primary/90",
+              : isReady
+                ? "bg-show text-background hover:bg-show/90"
+                : "bg-primary text-primary-foreground hover:bg-primary/90",
         )}
       >
         {slot.isBusy ? (
