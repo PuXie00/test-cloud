@@ -54,13 +54,18 @@ export const ControlledObjectsProvider = ({ children }: ControlledObjectsProvide
     axisLiveRef.current = pruneLiveMap(axisLiveRef.current, known);
     setTick((value) => value + 1);
   }, [motors]);
-
+  let n = 0, last = performance.now(), gaps: number[] = [];
+  const off = window.csocketApi?.onReadModelInfoPolling(() => { const t = performance.now(); gaps.push(t - last); last = t; n++; });
+  setTimeout(() => { off?.(); gaps.sort((a, b) => a - b); console.log(`${n / 5} 帧/秒，间隔中位数 ${Math.round(gaps[gaps.length >> 1])} ms`); }, 5000);
+  let last2 = performance.now()
   useEffect(() => {
     const api = window.csocketApi;
     if (!api?.onReadModelInfoPolling || !api?.onReadAxisInfoPolling) return;
     const bump = () => setTick((value) => value + 1);
     const offModel = api.onReadModelInfoPolling((msg) => {
-      console.log('msg', msg)
+      const t = performance.now();
+      console.log('msg', msg, t - last2)
+      last2 = t;
       const known = new Set(objectsRef.current.map((object) => object.id));
       modelLiveRef.current = ingestPollingFrame(
         modelLiveRef.current,
