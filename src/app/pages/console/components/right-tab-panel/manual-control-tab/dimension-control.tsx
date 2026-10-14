@@ -1,61 +1,47 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Checkbox } from "@/app/components/ui/checkbox";
 import { cn } from "@/app/components/ui/utils";
 import { TabBar } from "@/app/components/ics/tab-bar";
-import type { DimensionDescriptor } from "../../monitor-grid/monitor-data";
-import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-input";
+import type { VirtualAxisId, VirtualAxisValues } from "@/app/project/project-document-types";
 import { useSelection } from "../../../hooks/use-selection";
 import { useControlledObjects } from "../../../hooks/use-controlled-objects";
-import {
-  goEntriesForObjectIds,
-  pendingGoEntries,
-  resolveGoTargets,
-} from "../../../hooks/go-ready";
+import { goEntriesForObjectIds, pendingGoEntries } from "../../../hooks/go-ready";
 import { useGoReady } from "../../../hooks/go-ready-provider";
-import { DIMENSION_KEY_TO_VIRTUAL_AXIS } from "@/app/project/manual-jog";
-import type { VirtualAxisValues } from "@/app/project/project-document-types";
 import { useProjectStore } from "../../../hooks/use-project-store";
+import { AXIS_MODE_TABS, type AxisEditMode } from "../../action-builder/virtual-axis-edit";
+import { VirtualAxisRow } from "../../action-builder/virtual-axis-row";
 import {
-  axisRangesByObjectId,
-  clampDraftToCommandRange,
-  dimensionCommandRange,
-} from "./dimension-axis-range";
-
-type DimensionMode = "abs" | "rel";
+  axisInputRange,
+  axisUnit,
+  buildDimensionEntries,
+  buildDimensionParticipants,
+  sharedAxisValue,
+  unionAxes,
+} from "./dimension-edit";
 
 type DimensionControlProps = {
-  dimensions: DimensionDescriptor[];
   disabled?: boolean;
 };
 
-const MODE_TABS = [
-  { id: "abs", label: "绝对" },
-  { id: "rel", label: "相对" },
-] as const;
+/** 输入框里还没写入 GO 目标的值：绝对是输入的位置，相对是增量 */
+type AxisDrafts = Partial<Record<VirtualAxisId, number>>;
 
-const draftsFromTargets = (
-  dimensions: DimensionDescriptor[],
-  targets: VirtualAxisValues,
-  mode: DimensionMode,
-): Record<string, number> =>
-  Object.fromEntries(
-    dimensions.map((dim) => {
-      if (mode === "rel") return [dim.key, 0];
-      const axis = DIMENSION_KEY_TO_VIRTUAL_AXIS[dim.key];
-      const target = axis ? targets[axis] : undefined;
-      return [dim.key, target ?? 0];
-    }),
-  );
+const targetSignature = (target: VirtualAxisValues | undefined): string =>
+  target ? `${target.v1 ?? ""},${target.v2 ?? ""},${target.v3 ?? ""}` : "-";
 
-export const DimensionControl = ({ dimensions, disabled = false }: DimensionControlProps) => {
+/**
+ * 维度控制：虚轴的批量编辑规则和动作页「多选位姿」一致（见 dimension-edit.ts），
+ * 区别是写入先设为 GO 目标并显示影子模型，按 GO 才执行。
+ */
+export const DimensionControl = ({ disabled = false }: DimensionControlProps) => {
   const { selectedId, multiSelectedIds } = useSelection();
   const { getById } = useControlledObjects();
   const { objects } = useProjectStore();
   const { state, arm, go, cancel } = useGoReady();
 
-  const [mode, setMode] = useState<DimensionMode>("abs");
-  const [drafts, setDrafts] = useState<Record<string, number>>({});
+  const [mode, setMode] = useState<AxisEditMode>("abs");
+  const [drafts, setDrafts] = useState<AxisDrafts>({});
 
   const selectedIds =
     multiSelectedIds.length > 0 ? multiSelectedIds : selectedId != null ? [selectedId] : [];
@@ -63,72 +49,47 @@ export const DimensionControl = ({ dimensions, disabled = false }: DimensionCont
     const snapshot = getById(id);
     return snapshot ? [snapshot] : [];
   });
-  const primaryObjectId = snapshots[0] ? String(snapshots[0].descriptor.id) : null;
-
-  // 绝对模式仅回填已设 GO 目标值，无目标则为 0
-  const targets = useMemo(() => {
-    if (!primaryObjectId) return {};
-    return state.entries.find((entry) => entry.objectId === primaryObjectId)?.target ?? {};
-  }, [primaryObjectId, state.entries]);
-
-  const targetsRef = useRef(targets);
-  targetsRef.current = targets;
-  const dimensionsRef = useRef(dimensions);
-  dimensionsRef.current = dimensions;
-  const draftsRef = useRef(drafts);
-  draftsRef.current = drafts;
-  const dimensionKey = useMemo(
-    () => dimensions.map((dim) => dim.key).join(","),
-    [dimensions],
-  );
-  const targetSig = useMemo(
-    () =>
-      Object.entries(targets)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([axis, value]) => `${axis}:${value}`)
-        .join("|"),
-    [targets],
-  );
-
-  // 切物体 / 切模式 / 维度集合 / 选中目标被取消时回填。
-  // 不依赖 dimensions、entries 引用：遥测每帧都会换新对象，拖动时会把草稿打回旧目标。
-  useEffect(() => {
-    setDrafts(draftsFromTargets(dimensionsRef.current, targetsRef.current, mode));
-  }, [mode, dimensionKey, primaryObjectId, targetSig]);
-
-  const selectedObjects = selectedIds
-    .map((id) => objects.find((item) => item.id === id))
-    .filter((item): item is NonNullable<typeof item> => item != null);
+  const participants = buildDimensionParticipants(snapshots, objects);
+  const axes = unionAxes(participants);
   const armedTargetsByObjectId = Object.fromEntries(
     state.entries.map((entry) => [entry.objectId, entry.target]),
   );
 
-  const handleCommit = (dim: DimensionDescriptor, canonical: number) => {
-    const commandRange = dim.mixed
-      ? undefined
-      : dimensionCommandRange(dim.key, mode, snapshots, selectedObjects, armedTargetsByObjectId);
-    const clamped = clampDraftToCommandRange(canonical, commandRange);
-    const next = { ...draftsRef.current, [dim.key]: clamped };
-    setDrafts(next);
-    const entries = resolveGoTargets(
-      snapshots,
-      next,
-      mode,
+  // 切模式 / 换选择 / 所选物体的 GO 目标变了（写入、取消、到位）时清掉输入框里的草稿。
+  // 遥测每帧都会刷新，所以不能依赖 snapshots 的引用。
+  const resetKey = [
+    mode,
+    ...participants.map(
+      (item) => `${item.objectId}:${targetSignature(armedTargetsByObjectId[item.objectId])}`,
+    ),
+  ].join("|");
+  useEffect(() => {
+    setDrafts({});
+  }, [resetKey]);
+
+  const handleDraftChange = (axis: VirtualAxisId, value: number) => {
+    setDrafts((current) => ({ ...current, [axis]: value }));
+  };
+
+  const handleCommit = (axis: VirtualAxisId, value: number) => {
+    setDrafts((current) => {
+      const next = { ...current };
+      delete next[axis];
+      return next;
+    });
+    const { entries, missingPosition } = buildDimensionEntries(
+      participants,
+      { mode, axis, value },
       armedTargetsByObjectId,
-      axisRangesByObjectId(selectedObjects),
     );
     if (entries.length === 0) {
-      toast.error("所选物体无虚轴位置数据，无法进入 GO 准备");
+      if (missingPosition) toast.error("所选物体无虚轴位置数据，无法进入 GO 准备");
       return;
     }
     arm(entries, mode);
   };
 
-  const handleModeChange = (next: DimensionMode) => {
-    setMode(next);
-  };
-
-  const selectedObjectIds = selectedIds.map(String);
+  const selectedObjectIds = participants.map((item) => item.objectId);
   const selectedEntries = goEntriesForObjectIds(state.entries, selectedObjectIds);
   const canGoSelected = pendingGoEntries(selectedEntries).length > 0;
   const canCancelSelected = selectedEntries.length > 0;
@@ -158,44 +119,33 @@ export const DimensionControl = ({ dimensions, disabled = false }: DimensionCont
           <div className="space-y-2">
             <div className={cn("flex justify-center", disabled && "pointer-events-none opacity-40")}>
               <TabBar
-                tabs={MODE_TABS}
+                tabs={AXIS_MODE_TABS}
                 active={mode}
-                onChange={handleModeChange}
+                onChange={setMode}
                 className="h-7 w-44 border-b-0 bg-transparent"
               />
             </div>
-            {dimensions.map((dim, index) => (
-              <Fragment key={dim.key}>
-                <div className="flex items-center gap-2">
-                  <span className="w-12 shrink-0 text-body-sm text-foreground">虚轴{index + 1}</span>
-                  <UnitAwareNumericInput
-                    unit={dim.mixed ? "--" : dim.unit}
-                    {...(dim.mixed
-                      ? {}
-                      : dimensionCommandRange(
-                          dim.key,
-                          mode,
-                          snapshots,
-                          selectedObjects,
-                          armedTargetsByObjectId,
-                        ))}
-                    step={index === 0 ? 1 : 0.1}
-                    precision={1}
-                    value={drafts[dim.key] ?? 0}
-                    onChange={(canonical) =>
-                      setDrafts((current) => ({ ...current, [dim.key]: canonical }))
-                    }
-                    onCommit={(canonical) => handleCommit(dim, canonical)}
-                    aria-label={`虚轴${index + 1}`}
-                    disabled={disabled}
-                    className="w-full border-border border"
-                  />
-                </div>
-                {dim.mixed && (
-                  <p className="text-body-sm text-warning">单位不一致，按 mm 处理</p>
-                )}
-              </Fragment>
-            ))}
+            {axes.map((axis) => {
+              const range = axisInputRange(participants, axis);
+              const shared = sharedAxisValue(participants, axis, armedTargetsByObjectId);
+              const draft = drafts[axis];
+              const value = mode === "rel" ? (draft ?? 0) : (draft ?? shared ?? 0);
+              const mixed = mode === "abs" && draft === undefined && shared === undefined;
+              return (
+                <VirtualAxisRow
+                  key={axis}
+                  axis={axis}
+                  value={value}
+                  mixed={mixed}
+                  unit={axisUnit(participants, axis)}
+                  min={mode === "abs" ? range.min : undefined}
+                  max={mode === "abs" ? range.max : undefined}
+                  disabled={disabled}
+                  onChange={(next) => handleDraftChange(axis, next)}
+                  onCommit={(next) => handleCommit(axis, next)}
+                />
+              );
+            })}
             <div className="flex gap-2">
               <button
                 type="button"

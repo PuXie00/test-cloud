@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Layers } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,6 +23,8 @@ type StatusControlBarProps = {
   /** null：未选物体，头部显示「请先选择受控物体」 */
   objectLabel: string | null;
   objectSummary: string;
+  /** 所选物体的名称；多于 1 个时头部显示「批量操作中（数量）」 */
+  batchNames?: readonly string[];
   status: string;
   objectStatus: ControlledObjectStatus;
   /** 物体状态不满足时的原因（如离线） */
@@ -89,6 +92,7 @@ const actionButtonClassName =
 export const StatusControlBar = ({
   objectLabel,
   objectSummary,
+  batchNames = [],
   status,
   objectStatus,
   notice = null,
@@ -118,6 +122,8 @@ export const StatusControlBar = ({
   const simple = pending && !isChoiceAction(pending) ? SIMPLE_DIALOG[pending] : null;
   const title = choice?.title ?? simple?.title ?? "";
   const confirmTone = pending === "reset" || pending === "clearAlarm" ? "warning" : "primary";
+  const batchCount = batchNames.length;
+  const batchText = batchNames.join("、");
 
   return (
     <div className="space-y-3 px-3 py-3">
@@ -126,6 +132,19 @@ export const StatusControlBar = ({
           <h2 className="min-w-0 flex-1 truncate text-heading-md text-muted-foreground">
             {NO_SELECTION_NOTICE}
           </h2>
+        ) : batchCount > 1 ? (
+          <div className="min-w-0 flex-1 rounded-md border border-primary/60 bg-primary/10 px-3 py-2">
+            <div className="flex items-center gap-2">
+              <Layers className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+              <h2 className="min-w-0 flex-1 truncate text-heading-md font-semibold text-primary">
+                {`批量操作中（${batchCount}）`}
+              </h2>
+              <ObjectStatusBadge status={objectStatus}>{status}</ObjectStatusBadge>
+            </div>
+            <p className="mt-1 truncate text-body-sm text-muted-foreground" title={batchText}>
+              {batchText}
+            </p>
+          </div>
         ) : (
           <>
             <h2 className="min-w-0 flex-1 truncate text-heading-md text-foreground">{objectLabel}</h2>

@@ -9,7 +9,7 @@ import { JogControl } from "./jog-control";
 import { DimensionControl } from "./dimension-control";
 import { QuickActions } from "./quick-actions";
 import { poseFromControlSnapshot } from "./pose-from-control-snapshot";
-import { sharedDimensions } from "./shared-dimensions";
+import { unionDimensions } from "./shared-dimensions";
 import { resolveManualControlAvailability } from "./manual-control-availability";
 import { resolveObjectStatusLabel } from "../../monitor-grid/object-status-badge";
 import {
@@ -65,7 +65,7 @@ export const ManualControlPanel = ({
   };
 
   const primary = snapshots[0];
-  const dimensions = sharedDimensions(snapshots.map((snapshot) => snapshot.descriptor.dimensions));
+  const dimensions = unionDimensions(snapshots.map((snapshot) => snapshot.descriptor.dimensions));
   const statusKeys = [...new Set(snapshots.map((snapshot) => snapshot.descriptor.status))];
   const statusLabels = [
     ...new Set(
@@ -112,6 +112,7 @@ export const ManualControlPanel = ({
       <StatusControlBar
         objectLabel={objectLabel}
         objectSummary={objectSummary}
+        batchNames={snapshots.map((snapshot) => snapshot.descriptor.name)}
         status={statusLabels.join(" / ")}
         objectStatus={statusKeys.length === 1 ? (statusKeys[0] ?? "offline") : "offline"}
         notice={primary ? availability.notice : null}
@@ -127,7 +128,7 @@ export const ManualControlPanel = ({
         disabled={!availability.allowed("jog")}
         settingsDisabled={!availability.allowed("jogSettings")}
       />
-      <DimensionControl dimensions={dimensions} disabled={!availability.allowed("dimension")} />
+      <DimensionControl disabled={!availability.allowed("dimension")} />
       <QuickActions canSave={canSave} onSave={handleSaveCurrentPose} />
       <AlertDialog open={couple.phase === "solving"}>
         <AlertDialogContent className="bg-card">

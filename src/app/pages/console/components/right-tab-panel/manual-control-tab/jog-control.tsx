@@ -21,6 +21,8 @@ import { useSelection } from "../../../hooks/use-selection";
 import { useControlledObjects } from "../../../hooks/use-controlled-objects";
 import { useProjectStore } from "../../../hooks/use-project-store";
 import { buildJogModelItems, sendJogModel } from "../../../hooks/manual-commands";
+import { virtualAxisLabel } from "../../action-builder/virtual-axis-edit";
+import { dimensionAxis } from "./shared-dimensions";
 
 type JogControlProps = {
   dimensions: DimensionDescriptor[];
@@ -126,7 +128,15 @@ export const JogControl = ({
 
   const selectedIds =
     multiSelectedIds.length > 0 ? multiSelectedIds : selectedId != null ? [selectedId] : [];
-  const deviceIds = selectedIds.flatMap((id) => (getById(id) ? [id] : []));
+  const snapshots = selectedIds.flatMap((id) => {
+    const snapshot = getById(id);
+    return snapshot ? [snapshot] : [];
+  });
+  /** 点动某根虚轴只发给有这根虚轴的物体，没有它的物体不动 */
+  const deviceIdsForAxis = (axis: VirtualAxisId): number[] =>
+    snapshots
+      .filter((snapshot) => snapshot.descriptor.dimensions.some((dim) => dimensionAxis(dim) === axis))
+      .map((snapshot) => snapshot.descriptor.id);
   const selectedObjects = selectedIds
     .map((id) => objects.find((item) => item.id === id))
     .filter((item): item is NonNullable<typeof item> => item != null);
@@ -152,7 +162,7 @@ export const JogControl = ({
     if (!dim) return;
     const params = draft[dimKey] ?? DEFAULT_MANUAL_JOG[axisFor(dim)]!;
     const snapshot: JogHoldSnapshot = {
-      deviceIds: [...deviceIds],
+      deviceIds: deviceIdsForAxis(axisFor(dim)),
       dimKey,
       useDefaultSpeed,
       velocity: params.velocity,
@@ -226,7 +236,8 @@ export const JogControl = ({
         </div>
         <div className="bg-background px-3 py-1">
           <div className="">
-            {dimensions.map((dim, index) => {
+            {dimensions.map((dim) => {
+              const axisLabel = virtualAxisLabel(axisFor(dim));
               const value = draft[dim.key] ?? DEFAULT_MANUAL_JOG[axisFor(dim)]!;
               const jogMax = resolveJogAxisMaxVelocity(
                 axisFor(dim),
@@ -250,7 +261,7 @@ export const JogControl = ({
                 >
                   <div className="flex items-center gap-2">
                     <span className="w-28 shrink-0 text-body-sm text-foreground">
-                      虚轴{index + 1} {dim.label}
+                      {axisLabel} {dim.label}
                     </span>
                     <JogButtons
                       dimKey={dim.key}
@@ -269,7 +280,7 @@ export const JogControl = ({
                           max={range.max}
                           step={1}
                           disabled={settingsDisabled}
-                          aria-label={`虚轴${index + 1} ${dim.label} 速度`}
+                          aria-label={`${axisLabel} ${dim.label} 速度`}
                           className="flex-1"
                           onValueChange={(next) =>
                             setDraft((prev) => ({
@@ -303,7 +314,7 @@ export const JogControl = ({
                           precision={1}
                           unit="s"
                           disabled={settingsDisabled}
-                          aria-label={`虚轴${index + 1} ${dim.label} 加减速时间`}
+                          aria-label={`${axisLabel} ${dim.label} 加减速时间`}
                           onChange={(next) =>
                             setDraft((prev) => ({
                               ...prev,
