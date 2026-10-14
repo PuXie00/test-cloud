@@ -1,6 +1,6 @@
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { DomLabelEntry } from "../labels/DomLabelRenderer";
-import type { Disposable, DriveUnitLabelFields } from "../types";
+import type { Disposable, DriveUnitLabelFields, SceneObjectStatus } from "../types";
 
 export class DriveUnitLabels implements Disposable {
   readonly entry: DomLabelEntry;
@@ -15,6 +15,15 @@ export class DriveUnitLabels implements Disposable {
       worldPosition: new Vector3(0, 1.2, 0),
       visible: false,
     };
+  }
+
+  /** 标签背景随物体状态变化：运行绿色、报警红色，其余状态用默认样式（样式见 theme.css） */
+  setStatus(status: SceneObjectStatus | undefined): void {
+    if (status === "running" || status === "alarm") {
+      this.element.dataset.status = status;
+      return;
+    }
+    delete this.element.dataset.status;
   }
 
   setWorldPosition(position: Vector3): void {

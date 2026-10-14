@@ -18,8 +18,8 @@ describe("collectActionPageDriveUnitLabels", () => {
       "mm",
       new Set([7, 8]),
     );
-    expect(labels.get("7")).toBe("1234mm/5°/-3°");
-    expect(labels.get("8")).toBe("0mm/0°/0°");
+    expect(labels.get("7")).toBe("1234.0mm/5.0°/-3.0°");
+    expect(labels.get("8")).toBe("0.0mm/0.0°/0.0°");
     expect(labels.has("9")).toBe(false);
   });
 
@@ -33,7 +33,7 @@ describe("collectActionPageDriveUnitLabels", () => {
       "mm",
       new Set([7]),
     );
-    expect(labels.get("7")).toBe("1234mm/0°/0°");
+    expect(labels.get("7")).toBe("1234.0mm/0.0°/0.0°");
     expect(labels.get("8")).toBeNull();
   });
 

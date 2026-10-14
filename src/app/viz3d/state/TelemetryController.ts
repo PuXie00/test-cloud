@@ -158,6 +158,7 @@ export class TelemetryController {
     handle.applyRuntimeTransform(transform);
 
     const visuals = this.ensureVisuals(handle.id);
+    visuals.labels.setStatus(snapshot.status);
 
     if (snapshot.status === "running") {
       visuals.labels.update(
