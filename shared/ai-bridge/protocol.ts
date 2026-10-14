@@ -3,8 +3,8 @@
 /** 可用环境变量 YZ_AI_HTTP_PORT 覆盖 */
 export const AI_HTTP_DEFAULT_PORT = 17890
 
-/** 只监听本机回环地址 */
-export const AI_HTTP_HOST = '127.0.0.1'
+/** 监听所有 IPv4 网卡，本机和局域网都能访问 */
+export const AI_HTTP_HOST = '0.0.0.0'
 
 /** main → renderer：把直连子进程的 MessagePort 交给 preload */
 export const AI_BRIDGE_PORT_CHANNEL = 'ai-bridge:port'

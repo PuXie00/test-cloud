@@ -83,16 +83,49 @@ const matchesEtag = (header: string | undefined, etag: string): boolean => {
   })
 }
 
-const allowedHosts = (port: number): Set<string> =>
-  new Set([`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`])
+const splitHost = (header: string): { name: string; port: string } | null => {
+  if (header.startsWith('[')) {
+    const end = header.indexOf(']')
+    if (end < 0) return null
+    const name = header.slice(1, end)
+    const rest = header.slice(end + 1)
+    if (rest === '') return { name, port: '' }
+    if (!rest.startsWith(':')) return null
+    return { name, port: rest.slice(1) }
+  }
+  const colon = header.lastIndexOf(':')
+  if (colon < 0) return { name: header, port: '' }
+  return { name: header.slice(0, colon), port: header.slice(colon + 1) }
+}
+
+const isPrivateIPv4 = (name: string): boolean => {
+  const parts = name.split('.')
+  if (parts.length !== 4) return false
+  const octets = parts.map((part) => (/^\d{1,3}$/.test(part) ? Number(part) : Number.NaN))
+  if (octets.some((octet) => !Number.isInteger(octet) || octet > 255)) return false
+  const [a, b] = octets
+  if (a === 10) return true
+  if (a === 172 && b >= 16 && b <= 31) return true
+  if (a === 192 && b === 168) return true
+  if (a === 169 && b === 254) return true
+  return false
+}
+
+/** 回环或局域网私有地址，且端口必须是服务实际端口。公网域名仍拒绝，避免 DNS 重绑定。 */
+export const isAllowedAiHost = (hostHeader: string, port: number): boolean => {
+  const parsed = splitHost(hostHeader.trim().toLowerCase())
+  if (!parsed || parsed.port !== String(port)) return false
+  if (parsed.name === '127.0.0.1' || parsed.name === 'localhost' || parsed.name === '::1') return true
+  return isPrivateIPv4(parsed.name)
+}
 
 /**
  * 只读 JSON 服务。请求只读子进程内存快照，同一 version + 过滤条件只序列化一次。
- * Host 必须是本机回环地址加实际端口，防止 DNS 重绑定。
+ * Host 必须是回环或局域网私有地址加实际端口。
  */
 export const createAiHttpServer = (store: AiBridgeStore): http.Server => {
   const cache = new Map<string, Buffer>()
-  let hosts: Set<string> | null = null
+  let listenPort: number | null = null
 
   const cached = (resource: AiResource, queryKey: string, build: () => unknown) => {
     const etag = `"${resource[0]}${store.version(resource)}-${fnv1a(queryKey)}"`
@@ -133,13 +166,13 @@ export const createAiHttpServer = (store: AiBridgeStore): http.Server => {
   }
 
   const server = http.createServer((req, res) => {
-    if (!hosts) {
+    if (listenPort === null) {
       const address = server.address()
-      if (address && typeof address === 'object') hosts = allowedHosts(address.port)
+      if (address && typeof address === 'object') listenPort = address.port
     }
-    const host = req.headers.host?.toLowerCase()
-    if (!host || !hosts?.has(host)) {
-      fail(req, res, 403, 'FORBIDDEN_HOST', 'Host must be 127.0.0.1 / localhost with this port')
+    const host = req.headers.host
+    if (listenPort === null || !host || !isAllowedAiHost(host, listenPort)) {
+      fail(req, res, 403, 'FORBIDDEN_HOST', 'Host must be loopback or a private LAN address with this port')
       return
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -172,14 +205,18 @@ export const createAiHttpServer = (store: AiBridgeStore): http.Server => {
         )
         return
       case '/api/view':
+        console.log('view');
         result = cached('view', '', () => buildViewBody(store))
         break
       case '/api/config': {
+        console.log('config');
+        
         const query = parseConfigQuery(url.searchParams)
         result = cached('config', configQueryKey(query), () => buildConfigBody(store, query))
         break
       }
       case '/api/status': {
+        console.log('status');
         const query = parseStatusQuery(url.searchParams)
         result = cached('status', statusQueryKey(query), () => buildStatusBody(store, query))
         break
