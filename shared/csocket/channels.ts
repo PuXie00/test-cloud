@@ -72,6 +72,12 @@ export const CSOCKET_CHANNELS = {
   readRuleListPlc: 'csocket:read-rule-list-plc',
   autoListReadPlc: 'csocket:auto-list-read-plc',
 
+  // 操作日志与报警记录（C++ 写入与查询）
+  logQuery: 'csocket:log-query',
+  logFilterOptions: 'csocket:log-filter-options',
+  logAlarmReview: 'csocket:log-alarm-review',
+  logWrite: 'csocket:log-write',
+
   // C++ 主动发送事件通道
   // connectStatus: 'csocket:event:connect-status',
   // deviceStatus: 'csocket:event:device-status',
@@ -85,4 +91,5 @@ export const CSOCKET_CHANNELS = {
   readActionRun: 'csocket:event:read-action-run',
   verifyProject: 'csocket:event:verify-project',
   clockSync: 'csocket:event:clock-sync',
+  logPush: 'csocket:event:log',
 } as const

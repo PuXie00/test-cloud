@@ -1,61 +1,56 @@
 import {
   createContext,
-  useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
-import {
-  INITIAL_LOGS,
-  generateLogEntry,
-  type LogEntry,
-  type LogLevel,
-} from "../components/right-tab-panel/log-tab/log-data";
-
-const MAX_LOGS = 500;
+import { mergeRecentLogs, type LogRecord } from "@shared/csocket/operation-log";
+import { getLastOpenProjectAck, subscribeLastOpenProjectAck } from "./project-verify";
 
 type LogStreamContextValue = {
-  logs: LogEntry[];
+  /** 当前工程打开后 C++ 推送的最新 RECENT_LOG_LIMIT 条（不含 debug），时间升序 */
+  logs: LogRecord[];
+  latest: LogRecord | null;
   liveTail: boolean;
   setLiveTail: (value: boolean) => void;
-  unreadCount: number;
-  markAllRead: () => void;
-  acceptedLevels: Set<LogLevel>;
-  setAcceptedLevels: (levels: Set<LogLevel>) => void;
 };
 
 const LogStreamContext = createContext<LogStreamContextValue | null>(null);
 
+const getCsocketApi = () => (typeof window !== "undefined" ? window.csocketApi : undefined);
+
 type LogStreamProviderProps = { children: ReactNode };
 
-const ALL_LEVELS: LogLevel[] = ["info", "operation", "warning", "alarm", "fault"];
-
 export const LogStreamProvider = ({ children }: LogStreamProviderProps) => {
-  const [logs, setLogs] = useState<LogEntry[]>(INITIAL_LOGS);
+  const [logs, setLogs] = useState<LogRecord[]>([]);
   const [liveTail, setLiveTail] = useState(true);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [acceptedLevels, setAcceptedLevels] = useState<Set<LogLevel>>(new Set(ALL_LEVELS));
+  // 日志按工程独立：每次打开工程都从空列表开始
+  const openAck = useSyncExternalStore(
+    subscribeLastOpenProjectAck,
+    getLastOpenProjectAck,
+    getLastOpenProjectAck,
+  );
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      const entry = generateLogEntry();
-      setLogs((current) => [...current.slice(-MAX_LOGS + 1), entry]);
-      if (entry.level === "alarm" || entry.level === "fault" || entry.level === "warning") {
-        setUnreadCount((current) => current + 1);
-      }
-    }, 3500);
-    return () => clearInterval(interval);
+    const api = getCsocketApi();
+    if (!api?.onLog) return;
+    return api.onLog((msg) => {
+      if (!msg?.success || !Array.isArray(msg.data) || msg.data.length === 0) return;
+      const incoming = msg.data;
+      setLogs((current) => mergeRecentLogs(current, incoming));
+    });
   }, []);
 
-  const markAllRead = useCallback(() => {
-    setUnreadCount(0);
-  }, []);
+  useEffect(() => {
+    setLogs([]);
+  }, [openAck]);
 
   const value = useMemo<LogStreamContextValue>(
-    () => ({ logs, liveTail, setLiveTail, unreadCount, markAllRead, acceptedLevels, setAcceptedLevels }),
-    [logs, liveTail, unreadCount, markAllRead, acceptedLevels]
+    () => ({ logs, latest: logs.at(-1) ?? null, liveTail, setLiveTail }),
+    [logs, liveTail],
   );
 
   return <LogStreamContext.Provider value={value}>{children}</LogStreamContext.Provider>;

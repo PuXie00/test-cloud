@@ -22,6 +22,15 @@ import type {
 } from '../../shared/project/types'
 import type { ActionDataSaveItem } from '../../shared/csocket/action-data-save'
 import type {
+  LogAlarmReview,
+  LogAlarmReviewParams,
+  LogFilterOptions,
+  LogQueryPage,
+  LogQueryParams,
+  LogRecord,
+  LogWriteParams,
+} from '../../shared/csocket/operation-log'
+import type {
   CsocketConfigureContext,
   CsocketMessageEvent,
   CppAckResult,
@@ -164,6 +173,16 @@ export type CsocketAPI = {
   readRuleListPlc: CsocketSendFn
   autoListReadPlc: CsocketSendFn
 
+  // 操作日志与报警记录（C++ 写入与查询，均针对当前打开的工程）
+  logQuery: (items: LogQueryParams[], opts?: CsocketSendOpts) => Promise<CppAckResult<LogQueryPage>>
+  logFilterOptions: (items?: unknown[], opts?: CsocketSendOpts) => Promise<CppAckResult<LogFilterOptions>>
+  logAlarmReview: (
+    items: LogAlarmReviewParams[],
+    opts?: CsocketSendOpts,
+  ) => Promise<CppAckResult<LogAlarmReview>>
+  /** 界面侧事件（如保存工程）交给 C++ 写入 */
+  logWrite: (items: LogWriteParams[], opts?: CsocketSendOpts) => Promise<CppAckResult<LogRecord>>
+
   getMasterStatusSnapshot: () => Promise<CppAckResult>
 
   onReadMasterStatusPolling: (cb: (msg: CppAckResult) => void) => () => void
@@ -172,6 +191,8 @@ export type CsocketAPI = {
   onReadActionRun: (cb: (msg: CppAckResult) => void) => () => void
   onVerifyProject: (cb: (msg: CppAckResult) => void) => () => void
   onClockSync: (cb: (msg: CppAckResult) => void) => () => void
+  /** C++ 新写入的日志（Info|log） */
+  onLog: (cb: (msg: CppAckResult<LogRecord>) => void) => () => void
 }
 
 type ConfigAPI = {

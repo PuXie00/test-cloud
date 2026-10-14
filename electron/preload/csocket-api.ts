@@ -104,6 +104,12 @@ export const createCsocketApi = () => ({
   readRuleListPlc: invokeOptionalSend(CSOCKET_CHANNELS.readRuleListPlc),
   autoListReadPlc: invokeOptionalSend(CSOCKET_CHANNELS.autoListReadPlc),
 
+  // 操作日志与报警记录
+  logQuery: invokeSend(CSOCKET_CHANNELS.logQuery),
+  logFilterOptions: invokeOptionalSend(CSOCKET_CHANNELS.logFilterOptions),
+  logAlarmReview: invokeSend(CSOCKET_CHANNELS.logAlarmReview),
+  logWrite: invokeSend(CSOCKET_CHANNELS.logWrite),
+
 
   getMasterStatusSnapshot: () =>
     ipcRenderer.invoke(CSOCKET_CHANNELS.getMasterStatusSnapshot) as Promise<CppAckResult>,
@@ -114,6 +120,7 @@ export const createCsocketApi = () => ({
   onReadActionRun: (cb: MsgHandler) => onChannel(CSOCKET_CHANNELS.readActionRun, cb),
   onVerifyProject: (cb: MsgHandler) => onChannel(CSOCKET_CHANNELS.verifyProject, cb),
   onClockSync: (cb: MsgHandler) => onChannel(CSOCKET_CHANNELS.clockSync, cb),
+  onLog: (cb: MsgHandler) => onChannel(CSOCKET_CHANNELS.logPush, cb),
 })
 
 export type CsocketApi = ReturnType<typeof createCsocketApi>

@@ -1,5 +1,10 @@
 import { ipcMain } from 'electron'
 import type { ActionDataSaveItem } from '../../../shared/csocket/action-data-save'
+import type {
+  LogAlarmReviewParams,
+  LogQueryParams,
+  LogWriteParams,
+} from '../../../shared/csocket/operation-log'
 import { CSOCKET_CHANNELS } from '../../../shared/csocket/channels'
 import type {
   CsocketConfigureContext,
@@ -283,6 +288,20 @@ export const registerCppSocketIpc = (api: CsocketApiService): void => {
   )
   handleOptionalItems(CSOCKET_CHANNELS.autoListReadPlc, (items, opts) =>
     api.autoListReadPlc(items, opts),
+  )
+
+  // 操作日志与报警记录
+  handleItems(CSOCKET_CHANNELS.logQuery, (items, opts) =>
+    api.logQuery(items as LogQueryParams[], opts),
+  )
+  handleOptionalItems(CSOCKET_CHANNELS.logFilterOptions, (items, opts) =>
+    api.logFilterOptions(items, opts),
+  )
+  handleItems(CSOCKET_CHANNELS.logAlarmReview, (items, opts) =>
+    api.logAlarmReview(items as LogAlarmReviewParams[], opts),
+  )
+  handleItems(CSOCKET_CHANNELS.logWrite, (items, opts) =>
+    api.logWrite(items as LogWriteParams[], opts),
   )
 
   ipcMain.handle(CSOCKET_CHANNELS.getMasterStatusSnapshot, () =>
