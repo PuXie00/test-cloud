@@ -1,4 +1,5 @@
 import { Circle, Pause } from "lucide-react";
+import { RECENT_LOG_LIMIT } from "@shared/csocket/operation-log";
 import { cn } from "@/app/components/ui/utils";
 
 type LogToolbarProps = {
@@ -22,5 +23,8 @@ export const LogToolbar = ({ liveTail, onToggleLiveTail }: LogToolbarProps) => (
       {liveTail ? <Circle className="h-2.5 w-2.5 fill-destructive" /> : <Pause className="h-3 w-3" />}
       {liveTail ? "实时" : "暂停"}
     </button>
+    <span className="ml-auto truncate text-label-caps text-muted-foreground">
+      本工程最新 {RECENT_LOG_LIMIT} 条
+    </span>
   </div>
 );

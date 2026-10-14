@@ -21,6 +21,18 @@ import { ModelInfoStore, type ModelInfo } from '../../../shared/csocket/model-in
 import type { CppSocketClient } from './client'
 import { BrowserWindow, ipcMain } from 'electron'
 import { CSOCKET_CHANNELS } from '../../../shared/csocket/channels'
+import type {
+  LogAlarmReviewParams,
+  LogQueryParams,
+  LogRecord,
+  LogWriteParams,
+} from '../../../shared/csocket/operation-log'
+import {
+  mockLogAlarmReview,
+  mockLogFilterOptions,
+  mockLogQuery,
+  mockLogWrite,
+} from './operation-log-mock'
 
 type SendData = CppAckResult
 
@@ -227,6 +239,10 @@ export class CsocketApiService {
           runTime: number, // 轨迹运行的当前帧
         }>)
         this.statusSink?.actions(msg)
+      }
+      // C++ 新写入的日志（操作 / 报警 / 系统）
+      if (optCmd === 'Info|log') {
+        this.broadcast(CSOCKET_CHANNELS.logPush, msg as CppAckResult<LogRecord>)
       }
       // if (optCmd === 'Info|actionRun') {
       //   this.broadcast(CSOCKET_CHANNELS.readActionRun, msg as CppAckResult<{
@@ -1076,6 +1092,36 @@ export class CsocketApiService {
   autoListReadPlc(items?: unknown[], opts?: CsocketSendOpts) {
     return this.sendBuilt('Information|autoListRead', '0x1052', items ?? [], opts)
   }
+
+  /*
+  * 操作日志与报警记录：C++ 写入、存储、查询（按当前打开的工程），界面只读
+  * C++ 未实现前先返回 mock（operation-log-mock.ts）；接好后放开 sendBuilt 并删掉 mock 那几行
+  */
+  // 日志查询：时间范围 / 类别 / 用户 / 设备 / 操作类型 / 报警级别 / 日志级别，分页
+  logQuery(items: LogQueryParams[], opts?: CsocketSendOpts): Promise<SendData> {
+    // return this.sendBuilt('Log|query', '', items, opts)
+    return Promise.resolve(mockLogQuery(items[0]))
+  }
+  // 筛选项：当前工程日志里出现过的用户、设备、操作类型及时间范围
+  logFilterOptions(items?: unknown[], opts?: CsocketSendOpts): Promise<SendData> {
+    // return this.sendBuilt('Log|filterOptions', '', items ?? [], opts)
+    return Promise.resolve(mockLogFilterOptions())
+  }
+  // 报警回看：报警快照（前 10s + 后 5s 状态曲线）及该时段内的操作、报警
+  logAlarmReview(items: LogAlarmReviewParams[], opts?: CsocketSendOpts): Promise<SendData> {
+    // return this.sendBuilt('Log|alarmReview', '', items, opts)
+    return Promise.resolve(mockLogAlarmReview(items[0]))
+  }
+  // 界面侧事件（如保存工程）交给 C++ 写入；C++ 写完后会通过 Info|log 推送
+  logWrite(items: LogWriteParams[], opts?: CsocketSendOpts): Promise<SendData> {
+    // return this.sendBuilt('Log|write', '', items, opts)
+    const written = items
+      .map((item) => mockLogWrite(item, this.ctx.user).data?.[0])
+      .filter((record): record is LogRecord => !!record)
+    this.broadcast(CSOCKET_CHANNELS.logPush, { success: true, data: written })
+    return Promise.resolve({ success: true, data: written })
+  }
+
   // 读取主控状态（轮询）
   // readMasterStatusPollingPlc(items?: unknown[], opts?: CsocketSendOpts) {
   //   return this.sendBuilt('Information|readMasterStatusPolling', '0x1053', items ?? [], opts)

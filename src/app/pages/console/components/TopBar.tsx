@@ -21,9 +21,11 @@ import { useConsoleMode } from "../hooks/use-console-mode";
 import { usePlcRuntime } from "../hooks/plc-runtime-provider";
 import { useProgram } from "../hooks/use-program";
 import { useProjectStore } from "../hooks/use-project-store";
+import { writeConfigOperationLog } from "../hooks/write-operation-log";
 import { ShowModeConfirmDialog } from "./show-mode-confirm/show-mode-confirm-dialog";
 import { ProjectMismatchDialog } from "./system-status/project-mismatch-dialog";
 import { CollabDialog } from "./collaboration/collab-dialog";
+import { OperationLogDialog } from "./operation-log/operation-log-dialog";
 import { CollabQuickPopover } from "./collaboration/collab-quick-popover";
 import { PermissionsDialog } from "./permissions/permissions-dialog";
 import { SystemSettingsDialog } from "./system-settings/system-settings-dialog";
@@ -51,6 +53,7 @@ export const TopBar = ({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [collabOpen, setCollabOpen] = useState(false);
+  const [operationLogOpen, setOperationLogOpen] = useState(false);
   const [projectCenterOpen, setProjectCenterOpen] = useState(false);
   const [saveAsOpen, setSaveAsOpen] = useState(false);
   const [confirmDirection, setConfirmDirection] = useState<"enter" | "exit">("enter");
@@ -134,8 +137,10 @@ export const TopBar = ({
       const view = engine.getSavedView() ?? createDefaultSavedView();
       const coverPngBase64 = engine.captureCoverPngBase64();
       await saveCurrentProject({ view, coverPngBase64 });
+      writeConfigOperationLog("saveProject", `保存工程「${projectName}」`);
       toast.success("工程已保存");
     } catch (err) {
+      writeConfigOperationLog("saveProject", `保存工程「${projectName}」`, err);
       toast.error(err instanceof Error ? err.message : "保存失败");
     }
   };
@@ -147,8 +152,10 @@ export const TopBar = ({
   const handleSaveAsConfirm = async (newName: string) => {
     try {
       await saveProjectAs(newName);
+      writeConfigOperationLog("saveProjectAs", `工程另存为「${newName}」`);
       toast.success(`已另存为「${newName}」`);
     } catch (err) {
+      writeConfigOperationLog("saveProjectAs", `工程另存为「${newName}」`, err);
       toast.error(err instanceof Error ? err.message : "另存为失败");
       throw err;
     }
@@ -341,6 +348,7 @@ export const TopBar = ({
         onCloseProject={() => void handleCloseProject()}
         onVersionHistory={handleProjectManage}
         onImportExport={() => void handleImportExport()}
+        onOperationLog={() => setOperationLogOpen(true)}
         showPermissions={isAdmin}
         onPermissionsConfig={() => setPermissionsOpen(true)}
         onCollabManage={() => setCollabOpen(true)}
@@ -365,6 +373,7 @@ export const TopBar = ({
       <SystemSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       <PermissionsDialog open={permissionsOpen} onOpenChange={setPermissionsOpen} />
       <CollabDialog open={collabOpen} onOpenChange={setCollabOpen} />
+      <OperationLogDialog open={operationLogOpen} onOpenChange={setOperationLogOpen} />
       <ProjectCenterDialog open={projectCenterOpen} onOpenChange={setProjectCenterOpen} />
       <NewProjectDialog
         open={saveAsOpen}

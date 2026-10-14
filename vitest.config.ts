@@ -27,6 +27,7 @@ export default defineConfig({
       'src/app/pages/console/components/build-debug/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       'src/app/pages/console/components/monitor-grid/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       'src/app/pages/console/components/right-tab-panel/**/*.{test,spec}.?(c|m)[jt]s?(x)',
+      'src/app/pages/console/components/operation-log/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       'src/app/pages/console/3d/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       'src/app/components/ics/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       'src/app/components/ui/input-numeric.test.ts',
