@@ -13,7 +13,6 @@ import type {
 } from "../types";
 import { createPresetMesh } from "./PresetGeometry";
 import { createPbrStandardMaterial, applyMaterialBaseColor } from "../materials/pbr-material";
-import { getStatusColor } from "../state/StatusColors";
 import {
   createFrontOrientationMarker,
   syncFrontOrientationMarker,
@@ -25,7 +24,6 @@ import {
   disposeNodeHierarchy,
   getNodeMetadata,
   getWorldBounds,
-  hexToColor3,
   hexStringToColor3,
   setNodeMetadata,
   type WorldBounds,
@@ -379,11 +377,8 @@ export class SceneObject implements Disposable {
   }
 
   private refreshColor(): void {
-    const status = this.config.status;
-    const base =
-      !status || status === "ready"
-        ? hexStringToColor3(this.config.color)
-        : hexToColor3(getStatusColor(status, this.colors));
+    // 模型保持自己的颜色；运行状态由驱动单元标签的颜色表达（见 DriveUnitLabels.setStatus）
+    const base = hexStringToColor3(this.config.color);
     this.forEachStandardMaterial((material) => {
       applyMaterialBaseColor(material, base);
     });

@@ -183,6 +183,16 @@
     white-space: pre;
     text-align: center;
   }
+
+  /* 标签背景随物体状态变化：运行绿色、报警红色，其余状态保持默认 */
+  .viz3d-drive-unit-label[data-status="running"] {
+    background-color: var(--show);
+    color: var(--background);
+  }
+  .viz3d-drive-unit-label[data-status="alarm"] {
+    background-color: var(--destructive);
+    color: var(--background);
+  }
 }
 
 @layer utilities {
