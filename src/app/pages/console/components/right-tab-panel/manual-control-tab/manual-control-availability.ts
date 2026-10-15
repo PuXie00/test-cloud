@@ -25,6 +25,15 @@ const BLOCKED_OPERATIONS_BY_STATUS: Partial<
 
 export const NO_SELECTION_NOTICE = "请先选择受控物体";
 
+/** 正在预览动作序列：预览接管 3D 里的物体，手动操作一律不可用 */
+export type ManualControlPreview = {
+  /** 预览的序列名，没有时只提示在预览 */
+  name?: string;
+};
+
+export const formatPreviewNotice = (name?: string): string =>
+  name ? `正在预览「${name}」，无法操作` : "正在预览动作序列，无法操作";
+
 export type ManualControlTarget = {
   name: string;
   status: ControlledObjectStatus;
@@ -45,7 +54,11 @@ const formatStatusReason = (status: ControlledObjectStatus, names: readonly stri
 /** 多选时任一物体不满足即整体禁用该操作，避免一组物体只动了一部分 */
 export const resolveManualControlAvailability = (
   targets: readonly ManualControlTarget[],
+  preview?: ManualControlPreview | null,
 ): ManualControlAvailability => {
+  if (preview) {
+    return { notice: formatPreviewNotice(preview.name), allowed: () => false };
+  }
   if (targets.length === 0) {
     return { notice: NO_SELECTION_NOTICE, allowed: () => false };
   }

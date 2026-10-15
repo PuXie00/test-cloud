@@ -1,6 +1,8 @@
 import type { CapturedPoseRequest } from "@/app/project/capture-pose-sequence";
 import { sendEnableModel, sendHomeModel, sendResetModel } from "../../../hooks/manual-commands";
 import { useSelection } from "../../../hooks/use-selection";
+import { useSequencePreview } from "../../../hooks/use-sequence-preview";
+import { useProject } from "@/app/project/use-project";
 import { useControlledObjects } from "../../../hooks/use-controlled-objects";
 import { useCoupleFlow } from "../../../hooks/use-couple-flow";
 import { StatusControlBar } from "./status-control-bar";
@@ -36,6 +38,14 @@ export const ManualControlPanel = ({
 }: ManualControlPanelProps) => {
   const { selectedId, multiSelectedIds } = useSelection();
   const { getById } = useControlledObjects();
+  const { sequenceId: previewSequenceId } = useSequencePreview();
+  const { currentProject } = useProject();
+  // 预览中：手动操作不可用，头部提示
+  const previewing = previewSequenceId !== null;
+  const previewName = previewing
+    ? currentProject?.document?.motion.actionSequences.find((sequence) => sequence.id === previewSequenceId)
+        ?.name
+    : undefined;
 
   const selectedIds =
     multiSelectedIds.length > 0 ? multiSelectedIds : selectedId != null ? [selectedId] : [];
@@ -50,6 +60,7 @@ export const ManualControlPanel = ({
       name: snapshot.descriptor.name,
       status: snapshot.descriptor.status,
     })),
+    previewing ? { name: previewName } : null,
   );
   const canSave = !saveDisabled && availability.allowed("savePose");
 
@@ -115,7 +126,7 @@ export const ManualControlPanel = ({
         batchNames={snapshots.map((snapshot) => snapshot.descriptor.name)}
         status={statusLabels.join(" / ")}
         objectStatus={statusKeys.length === 1 ? (statusKeys[0] ?? "offline") : "offline"}
-        notice={primary ? availability.notice : null}
+        notice={primary || previewing ? availability.notice : null}
         allowed={availability.allowed}
         coupleBusy={couple.busy}
         onCoupleChoice={handleCoupleChoice}
