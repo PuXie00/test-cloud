@@ -14,7 +14,17 @@ import { alarmReviewWindow } from "./alarm-review";
 import { isRaisedAlarm } from "./log-display";
 import { LogDetailPanel } from "./log-detail-panel";
 import { LogFilterBar } from "./log-filter-bar";
-import { DEFAULT_LOG_FILTERS, includesDebug, opTypeKey, type LogFilters } from "./log-filters";
+import {
+  DEFAULT_LOG_FILTERS,
+  includesDebug,
+  opTypeKey,
+  pageCount,
+  readStoredPageSize,
+  writeStoredPageSize,
+  type LogFilters,
+  type PageSize,
+} from "./log-filters";
+import { LogPager } from "./log-pager";
 import { LogRecordTable } from "./log-record-table";
 import { LogTimeline } from "./log-timeline";
 import {
@@ -32,10 +42,31 @@ const MIN_MAX_SPAN_MS = 10 * 60_000;
 
 const OperationLogBody = () => {
   const [filters, setFilters] = useState<LogFilters>(DEFAULT_LOG_FILTERS);
-  const [reloadToken, setReloadToken] = useState(0);
+  // 相对时间（最近 15 分钟等）的基准：改筛选、刷新时更新，翻页不变
+  const [queryNow, setQueryNow] = useState(() => Date.now());
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageSize, setPageSize] = useState<PageSize>(readStoredPageSize);
   const options = useLogFilterOptions();
-  const query = useLogQuery(filters, reloadToken);
+  const query = useLogQuery(filters, { index: pageIndex, size: pageSize }, queryNow);
   const { records } = query;
+  const totalPages = pageCount(query.total, pageSize);
+
+  // 刷新后总数变少时，停在最后一页
+  useEffect(() => {
+    if (query.status === "ready" && pageIndex > totalPages - 1) setPageIndex(totalPages - 1);
+  }, [query.status, pageIndex, totalPages]);
+
+  const handleFiltersChange = useCallback((next: LogFilters) => {
+    setFilters(next);
+    setPageIndex(0);
+    setQueryNow(Date.now());
+  }, []);
+
+  const handlePageSizeChange = useCallback((size: PageSize) => {
+    setPageSize(size);
+    writeStoredPageSize(size);
+    setPageIndex(0);
+  }, []);
 
   const opTypeLabels = useMemo(
     () => new Map((options?.opTypes ?? []).map((op) => [opTypeKey(op.group, op.code), op.label])),
@@ -71,24 +102,18 @@ const OperationLogBody = () => {
     );
   }, []);
 
-  const truncated = query.status === "ready" && records.length < query.total;
-
   return (
     <>
       <div className="flex h-12 shrink-0 items-center gap-3 bg-muted px-4">
         <DialogTitle className="text-heading-lg font-semibold text-foreground">操作日志与回放</DialogTitle>
         <span className="text-body-sm text-muted-foreground">
-          {query.status === "ready"
-            ? truncated
-              ? `共 ${query.total} 条，显示最新 ${records.length} 条，请缩小筛选范围`
-              : `共 ${query.total} 条`
-            : null}
+          {query.status === "ready" ? `共 ${query.total} 条` : null}
         </span>
         <div className="ml-auto flex items-center gap-1">
           <button
             type="button"
             aria-label="刷新"
-            onClick={() => setReloadToken((token) => token + 1)}
+            onClick={() => setQueryNow(Date.now())}
             className="flex h-8 w-8 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             {query.status === "loading" ? (
@@ -109,7 +134,7 @@ const OperationLogBody = () => {
         当前工程的操作、报警和状态快照统一时间线，支持多维筛选、报警前后回看和趋势分析
       </DialogDescription>
 
-      <LogFilterBar filters={filters} onChange={setFilters} options={options} />
+      <LogFilterBar filters={filters} onChange={handleFiltersChange} options={options} />
 
       <LogTimeline
         records={records}
@@ -137,6 +162,15 @@ const OperationLogBody = () => {
               onSelect={handleSelect}
               opTypeLabels={opTypeLabels}
               className={cn("min-h-0 flex-1", query.status === "loading" && "opacity-60")}
+            />
+          )}
+          {query.status !== "error" && (
+            <LogPager
+              pageIndex={pageIndex}
+              pageCount={totalPages}
+              pageSize={pageSize}
+              onPageChange={setPageIndex}
+              onPageSizeChange={handlePageSizeChange}
             />
           )}
         </div>

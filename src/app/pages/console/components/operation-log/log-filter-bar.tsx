@@ -1,5 +1,5 @@
 import { RotateCcw } from "lucide-react";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import {
   deviceKey,
   type LogCategory,
@@ -61,7 +61,7 @@ type LogFilterBarProps = {
   options: LogFilterOptions | null;
 };
 
-export const LogFilterBar = ({ filters, onChange, options }: LogFilterBarProps) => {
+export const LogFilterBar = memo(({ filters, onChange, options }: LogFilterBarProps) => {
   const patch = (next: Partial<LogFilters>) => onChange({ ...filters, ...next });
 
   const toggleCategory = (category: LogCategory) => {
@@ -195,4 +195,4 @@ export const LogFilterBar = ({ filters, onChange, options }: LogFilterBarProps) 
       </button>
     </div>
   );
-};
+});

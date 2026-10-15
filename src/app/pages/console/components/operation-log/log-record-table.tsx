@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import type { LogRecord } from "@shared/csocket/operation-log";
 import { cn } from "@/app/components/ui/utils";
 import { LogBadge } from "./log-badge";
@@ -33,7 +33,8 @@ type LogRecordTableProps = {
   className?: string;
 };
 
-export const LogRecordTable = ({
+/** memo：拖动时间线时列表的输入不变，不用重画（每页最多 500 行） */
+export const LogRecordTable = memo(({
   records,
   selectedId,
   onSelect,
@@ -46,6 +47,12 @@ export const LogRecordTable = ({
     [records],
   );
   const rowRefs = useRef(new Map<string, HTMLTableRowElement>());
+  const scrollerRef = useRef<HTMLDivElement>(null);
+
+  // 翻页 / 重新查询后回到列表顶部（最新的一条）
+  useEffect(() => {
+    if (scrollerRef.current) scrollerRef.current.scrollTop = 0;
+  }, [records]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -53,7 +60,7 @@ export const LogRecordTable = ({
   }, [selectedId]);
 
   return (
-    <div className={cn("custom-scrollbar overflow-auto bg-background", className)}>
+    <div ref={scrollerRef} className={cn("custom-scrollbar overflow-auto bg-background", className)}>
       <table className="w-full min-w-[800px] table-fixed text-body-sm">
         <colgroup>
           <col className={multiDay ? "w-[150px]" : "w-[104px]"} />
@@ -121,4 +128,4 @@ export const LogRecordTable = ({
       </table>
     </div>
   );
-};
+});
