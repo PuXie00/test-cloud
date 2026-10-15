@@ -23,7 +23,12 @@ const okSequence: ActionSequenceConfig = {
   segments: [],
 };
 
-const { programState, actionBuilderState, documentRef } = vi.hoisted(() => ({
+const { programState, programActions, actionBuilderState, documentRef } = vi.hoisted(() => ({
+  programActions: {
+    setCurrentChapter: vi.fn(),
+    nextPage: vi.fn(),
+    prevPage: vi.fn(),
+  },
   programState: {
     current: {
       id: "program-a",
@@ -61,9 +66,9 @@ vi.mock("../../hooks/use-program", () => ({
     program: programState.current,
     currentChapterId: programState.current.chapters[0]?.id ?? "ch-1",
     currentPageIndex: 0,
-    setCurrentChapter: vi.fn(),
-    nextPage: vi.fn(),
-    prevPage: vi.fn(),
+    setCurrentChapter: programActions.setCurrentChapter,
+    nextPage: programActions.nextPage,
+    prevPage: programActions.prevPage,
     addChapter: vi.fn(),
     addSequence: vi.fn(),
     isProgramEmpty: programState.current.chapters.length === 0,
@@ -126,6 +131,9 @@ const makeChapterItems = (count: number) =>
 
 afterEach(() => {
   cleanup();
+  programActions.setCurrentChapter.mockClear();
+  programActions.nextPage.mockClear();
+  programActions.prevPage.mockClear();
   togglePreviewMock.mockClear();
   startPreviewMock.mockClear();
   stopPreviewMock.mockClear();
@@ -285,5 +293,71 @@ describe("ProgramPanel variants", () => {
     fireEvent.click(row);
     expect(togglePreviewMock).not.toHaveBeenCalled();
     vi.useRealTimers();
+  });
+});
+
+describe("ProgramPanel chapter loading", () => {
+  const twoChapters = () => {
+    programState.current = {
+      id: "program-a",
+      name: "节目 A",
+      chapters: [
+        { id: "ch-1", name: "章节 1", items: makeChapterItems(13) },
+        { id: "ch-2", name: "章节 2", items: makeChapterItems(14) },
+      ],
+    };
+  };
+  const renderControl = () =>
+    render(
+      <ConsoleModeProvider>
+        <ProgramPanel variant="control" />
+      </ConsoleModeProvider>,
+    );
+
+  it("点章节名只展开 / 收起，不选中章节", () => {
+    twoChapters();
+    renderControl();
+    expect(screen.queryByText("页 1/2")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "章节 2" }));
+    expect(screen.getAllByText(/^页 \d\/2/).length).toBeGreaterThan(1);
+    expect(programActions.setCurrentChapter).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "章节 2" }));
+    expect(programActions.setCurrentChapter).not.toHaveBeenCalled();
+  });
+
+  it("点「加载」才选中章节并展开", () => {
+    twoChapters();
+    renderControl();
+    fireEvent.click(screen.getByRole("button", { name: "加载章节 章节 2" }));
+    expect(programActions.setCurrentChapter).toHaveBeenCalledTimes(1);
+    expect(programActions.setCurrentChapter).toHaveBeenCalledWith("ch-2");
+    expect(screen.getByRole("button", { name: "章节 2", expanded: true })).toBeTruthy();
+  });
+
+  it("已加载的章节显示「当前」，没有「加载」按钮", () => {
+    twoChapters();
+    renderControl();
+    expect(screen.getByText("当前")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "加载章节 章节 1" })).toBeNull();
+    expect(screen.getByRole("button", { name: "加载章节 章节 2" })).toBeTruthy();
+  });
+
+  it("没加载的章节点页标题不会切换章节", () => {
+    twoChapters();
+    renderControl();
+    fireEvent.click(screen.getByRole("button", { name: "章节 2" }));
+    const pageHeaders = screen.getAllByRole("button", { name: /^页 \d\/2/ });
+    fireEvent.click(pageHeaders[pageHeaders.length - 1]!);
+    expect(programActions.setCurrentChapter).not.toHaveBeenCalled();
+    expect(programActions.nextPage).not.toHaveBeenCalled();
+    expect(programActions.prevPage).not.toHaveBeenCalled();
+  });
+
+  it("已加载的章节点页标题仍然切页", () => {
+    twoChapters();
+    renderControl();
+    fireEvent.click(screen.getAllByRole("button", { name: /^页 2\/2/ })[0]!);
+    expect(programActions.nextPage).toHaveBeenCalledTimes(1);
+    expect(programActions.setCurrentChapter).not.toHaveBeenCalled();
   });
 });
