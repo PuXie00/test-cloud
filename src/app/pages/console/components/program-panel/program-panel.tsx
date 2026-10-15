@@ -49,8 +49,8 @@ const ControlProgramPanel = ({ className }: { className?: string }) => {
       event.dataTransfer.effectAllowed = "move";
     };
 
-  const handleSelectPage = (chapterId: string, pageIndex: number) => {
-    if (chapterId !== currentChapterId) setCurrentChapter(chapterId);
+  /** 只能在已加载的章节里切页，ChapterSection 不会为没加载的章节调用它 */
+  const handleSelectPage = (pageIndex: number) => {
     if (pageIndex > currentPageIndex) {
       for (let i = currentPageIndex; i < pageIndex; i += 1) nextPage();
     } else if (pageIndex < currentPageIndex) {
@@ -78,8 +78,8 @@ const ControlProgramPanel = ({ className }: { className?: string }) => {
               chapter={chapter}
               isCurrent={chapter.id === currentChapterId}
               currentPageIndex={currentPageIndex}
-              onSelectChapter={() => setCurrentChapter(chapter.id)}
-              onSelectPage={(pageIndex) => handleSelectPage(chapter.id, pageIndex)}
+              onLoadChapter={() => setCurrentChapter(chapter.id)}
+              onSelectPage={handleSelectPage}
               onItemDragStart={handleItemDragStart}
               onClickItem={(item) => togglePreview(item.sequence.id)}
               onPreviewHoldStart={(item) =>

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { LogAlarmReview, LogRecord } from "@shared/csocket/operation-log";
 import { alarmReviewWindow, pickTrendDevices } from "./alarm-review";
-import { DEFAULT_LOG_FILTERS, filtersToQuery, QUERY_LIMIT } from "./log-filters";
+import {
+  DEFAULT_LOG_FILTERS,
+  DEFAULT_PAGE_SIZE,
+  filtersToQuery,
+  pageCount,
+  parsePageSize,
+} from "./log-filters";
 import { formatRelativeSeconds } from "./log-display";
 import { sampleAt } from "./snapshot-table";
 import {
@@ -53,12 +59,12 @@ describe("timeline scale", () => {
 });
 
 describe("filtersToQuery", () => {
-  it("sends the newest page without debug by default", () => {
+  it("sends the newest page of 50 without debug by default", () => {
     expect(filtersToQuery(DEFAULT_LOG_FILTERS, 1_000)).toEqual({
       logLevels: ["info", "warning", "error"],
       order: "desc",
       offset: 0,
-      limit: QUERY_LIMIT,
+      limit: 50,
     });
     expect(filtersToQuery({ ...DEFAULT_LOG_FILTERS, logLevel: "all" }, 1_000).logLevels).toBeUndefined();
   });
@@ -156,5 +162,31 @@ describe("alarm review helpers", () => {
     expect(formatRelativeSeconds(-4_230)).toBe("−4.2s");
     expect(formatRelativeSeconds(1_000)).toBe("+1.0s");
     expect(formatRelativeSeconds(20)).toBe("0.0s");
+  });
+});
+
+describe("paging", () => {
+  it("turns a page into offset and limit, newest first", () => {
+    expect(filtersToQuery(DEFAULT_LOG_FILTERS, 0, { index: 2, size: 100 })).toMatchObject({
+      order: "desc",
+      offset: 200,
+      limit: 100,
+    });
+  });
+
+  it("counts pages and always has at least one", () => {
+    expect(pageCount(0, 50)).toBe(1);
+    expect(pageCount(50, 50)).toBe(1);
+    expect(pageCount(51, 50)).toBe(2);
+    expect(pageCount(1234, 500)).toBe(3);
+  });
+
+  it("only accepts 50 / 100 / 500 as a page size", () => {
+    expect(DEFAULT_PAGE_SIZE).toBe(50);
+    expect(parsePageSize("100")).toBe(100);
+    expect(parsePageSize(500)).toBe(500);
+    expect(parsePageSize("1000")).toBe(50);
+    expect(parsePageSize(null)).toBe(50);
+    expect(parsePageSize("abc")).toBe(50);
   });
 });

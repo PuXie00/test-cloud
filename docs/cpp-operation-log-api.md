@@ -131,12 +131,14 @@ C++ 每写入一条日志就主动推送（可以合并成一批），包括界�
   "alarmLevels": [2, 3],
   "logLevels": ["info", "warning", "error"],
   "order": "desc",
-  "offset": 0,
-  "limit": 2000
+  "offset": 50,
+  "limit": 50
 }]
 ```
 
-所有筛选字段都可缺省，缺省或空数组表示不限。前端默认会带 `logLevels: ["info","warning","error"]`（不含 debug）。`order` 缺省 `asc`；前端用 `desc` 取最新的 2000 条，`offset` / `limit` 按 `order` 的方向计算，返回的 `records` 也按 `order` 排序。
+所有筛选字段都可缺省，缺省或空数组表示不限。前端默认会带 `logLevels: ["info","warning","error"]`（不含 debug）。`order` 缺省 `asc`；`offset` / `limit` 按 `order` 的方向计算，返回的 `records` 也按 `order` 排序。
+
+**分页：** 前端按页取，最新的在第一页：`order` 固定 `desc`，`limit` = 每页条数（50 / 100 / 500，默认 50），`offset` = 页码（从 0 开始）× 每页条数。上面的示例是每页 50 条的第 2 页。翻页时其余参数不变，包括 `startTime` / `endTime`：用"最近 15 分钟"这类相对时间时，前端在改筛选或刷新时才重新计算时间，翻页沿用同一个时间范围。
 
 筛选语义（各维度之间为“且”，请保持一致，前端时间线依赖它）：
 
@@ -150,7 +152,7 @@ C++ 每写入一条日志就主动推送（可以合并成一批），包括界�
 "result": { "success": true, "data": [{ "total": 343, "records": [ /* LogRecord */ ] }] }
 ```
 
-`total` 为满足条件的总条数（不受分页影响），超出时前端提示「请缩小筛选范围」。
+`total` 为满足条件的总条数（不受 `offset` / `limit` 影响），前端用它算总页数，请保证准确。`offset` 超出总数时返回空的 `records`、`total` 照常给出，前端会退回到最后一页。
 
 ## Log|filterOptions：筛选项
 

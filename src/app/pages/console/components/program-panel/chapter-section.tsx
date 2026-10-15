@@ -7,9 +7,11 @@ import { PageSection } from "./page-section";
 
 type ChapterSectionProps = {
   chapter: Chapter;
+  /** 已加载的章节：推子槽里是它的内容 */
   isCurrent: boolean;
   currentPageIndex: number;
-  onSelectChapter: () => void;
+  /** 点「加载」才选中章节；点章节名只展开 / 收起 */
+  onLoadChapter: () => void;
   onSelectPage: (pageIndex: number) => void;
   onItemDragStart: (
     chapterId: string,
@@ -27,7 +29,7 @@ export const ChapterSection = ({
   chapter,
   isCurrent,
   currentPageIndex,
-  onSelectChapter,
+  onLoadChapter,
   onSelectPage,
   onItemDragStart,
   onDoubleClickItem,
@@ -44,40 +46,48 @@ export const ChapterSection = ({
 
   return (
     <div className="mb-1 rounded-md bg-muted/60">
-      <button
-        type="button"
-        onClick={() => {
-          onSelectChapter();
-          setExpanded(true);
-        }}
+      <div
         className={cn(
-          "flex h-9 w-full items-center gap-1.5 px-2 text-left transition-colors hover:bg-muted",
+          "flex h-9 w-full items-center gap-1.5 pr-2 transition-colors hover:bg-muted",
           isCurrent ? "bg-muted text-foreground" : "text-foreground/80",
         )}
       >
-        <span
-          onClick={(event) => {
-            event.stopPropagation();
-            setExpanded((current) => !current);
-          }}
-          className="flex h-4 w-4 items-center justify-center"
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((current) => !current)}
+          className="flex h-full min-w-0 flex-1 items-center gap-1.5 pl-2 text-left"
         >
-          {expanded ? (
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-          )}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-body-md font-medium">{chapter.name}</span>
-        {isCurrent && (
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+            {expanded ? (
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            )}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-body-md font-medium">{chapter.name}</span>
+        </button>
+        {isCurrent ? (
           <span className="shrink-0 rounded-sm bg-primary/20 px-1.5 py-0.5 text-label-caps text-primary">
             当前
           </span>
+        ) : (
+          <button
+            type="button"
+            aria-label={`加载章节 ${chapter.name}`}
+            onClick={() => {
+              onLoadChapter();
+              setExpanded(true);
+            }}
+            className="shrink-0 rounded-sm border border-primary/60 px-1.5 py-0.5 text-label-caps text-primary transition-colors hover:bg-primary/10"
+          >
+            加载
+          </button>
         )}
         <span className="shrink-0 font-mono text-mono-sm text-muted-foreground">
           {pages.length}页·{chapter.items.length}项
         </span>
-      </button>
+      </div>
 
       {expanded && chapter.note && (
         <p className="mx-2 my-2 rounded-sm bg-muted/30 px-2 py-1 text-body-sm text-muted-foreground">
@@ -95,7 +105,10 @@ export const ChapterSection = ({
               pageTotal={pages.length}
               isCurrent={isCurrent && currentPageIndex === pageIndex}
               sequences={sequences}
-              onClickHeader={() => onSelectPage(pageIndex)}
+              // 没加载的章节只能看，不能切页；加载后才能选页
+              onClickHeader={() => {
+                if (isCurrent) onSelectPage(pageIndex);
+              }}
               onItemDragStart={onItemDragStart}
               onDoubleClickItem={onDoubleClickItem}
               onClickItem={onClickItem}

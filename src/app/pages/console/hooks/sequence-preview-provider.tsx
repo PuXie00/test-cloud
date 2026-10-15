@@ -215,8 +215,9 @@ export const SequencePreviewProvider: FC<{ children: ReactNode }> = ({ children 
     };
   }, [state.isPlaying]);
 
+  // 预览属于当前页面：切到别的页面（搭建 / 动作 / 控制）都退出预览
   useEffect(() => {
-    if (activeNav !== "control" && activeNav !== "sequences") stopPreview();
+    stopPreview();
   }, [activeNav, stopPreview]);
 
   const prevProjectIdRef = useRef<string | undefined>(undefined);

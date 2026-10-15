@@ -37,8 +37,42 @@ export const TIME_PRESET_OPTIONS: { value: TimePreset; label: string }[] = [
   { value: "custom", label: "自定义" },
 ];
 
-/** 单次最多加载条数；超出提示缩小范围 */
-export const QUERY_LIMIT = 2000;
+/** 每页条数可选值，默认 50；最大 500，再多拖动时间线会卡 */
+export const PAGE_SIZE_OPTIONS = [50, 100, 500] as const;
+export type PageSize = (typeof PAGE_SIZE_OPTIONS)[number];
+export const DEFAULT_PAGE_SIZE: PageSize = 50;
+
+/** 第 index 页（从 0 开始），最新的在第一页 */
+export type LogPage = { index: number; size: number };
+
+export const pageCount = (total: number, size: number): number =>
+  Math.max(1, Math.ceil(total / size));
+
+export const parsePageSize = (raw: unknown): PageSize => {
+  const size = Number(raw);
+  return (PAGE_SIZE_OPTIONS as readonly number[]).includes(size)
+    ? (size as PageSize)
+    : DEFAULT_PAGE_SIZE;
+};
+
+const PAGE_SIZE_STORAGE_KEY = "yz.operationLog.pageSize";
+
+/** 每页条数只记在本机浏览器里，读写失败（如禁用存储）时用默认值 */
+export const readStoredPageSize = (): PageSize => {
+  try {
+    return parsePageSize(window.localStorage.getItem(PAGE_SIZE_STORAGE_KEY));
+  } catch {
+    return DEFAULT_PAGE_SIZE;
+  }
+};
+
+export const writeStoredPageSize = (size: PageSize): void => {
+  try {
+    window.localStorage.setItem(PAGE_SIZE_STORAGE_KEY, String(size));
+  } catch {
+    // 存不了只是下次回到默认值
+  }
+};
 
 export const DEFAULT_LOG_FILTERS: LogFilters = {
   timePreset: "all",
@@ -111,8 +145,12 @@ export const resolveTimeRange = (
   }
 };
 
-/** 取最新的 QUERY_LIMIT 条；空维度不下发，日志级别默认不含 debug */
-export const filtersToQuery = (filters: LogFilters, now: number): LogQueryParams => {
+/** 按页取，最新的在前；空维度不下发，日志级别默认不含 debug */
+export const filtersToQuery = (
+  filters: LogFilters,
+  now: number,
+  page: LogPage = { index: 0, size: DEFAULT_PAGE_SIZE },
+): LogQueryParams => {
   const { startTime, endTime } = resolveTimeRange(filters, now);
   const device = filters.device ? parseDeviceKey(filters.device) : null;
   const opType = filters.opType ? parseOpTypeFilter(filters.opType) : null;
@@ -130,8 +168,8 @@ export const filtersToQuery = (filters: LogFilters, now: number): LogQueryParams
     ...(filters.alarmLevel ? { alarmLevels: [Number(filters.alarmLevel) as AlarmLevel] } : {}),
     ...(logLevels ? { logLevels } : {}),
     order: "desc",
-    offset: 0,
-    limit: QUERY_LIMIT,
+    offset: Math.max(0, page.index) * page.size,
+    limit: page.size,
   };
 };
 

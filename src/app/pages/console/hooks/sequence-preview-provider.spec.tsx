@@ -294,7 +294,7 @@ describe("SequencePreviewProvider", () => {
     expect(result.current.totalMs).toBeCloseTo(timeline.transitionMs + 4000, 6);
   });
 
-  it("keeps preview on the sequences page and stops when leaving both pages", () => {
+  it.each(["sequences", "devices"])("exits the preview when switching to %s", (nav) => {
     const { result, rerender } = renderHook(() => useSequencePreview(), {
       wrapper: SequencePreviewProvider,
     });
@@ -304,12 +304,37 @@ describe("SequencePreviewProvider", () => {
     });
     expect(result.current.sequenceId).toBe(1);
 
-    navState.current.activeNav = "sequences";
-    rerender();
-    expect(result.current.sequenceId).toBe(1);
-
-    navState.current.activeNav = "devices";
+    navState.current.activeNav = nav;
     rerender();
     expect(result.current.sequenceId).toBeNull();
+    expect(result.current.isPlaying).toBe(false);
+  });
+
+  it("a preview started on another page also exits when going back to control", () => {
+    navState.current.activeNav = "sequences";
+    const { result, rerender } = renderHook(() => useSequencePreview(), {
+      wrapper: SequencePreviewProvider,
+    });
+
+    act(() => {
+      result.current.togglePreview(1);
+    });
+    expect(result.current.sequenceId).toBe(1);
+
+    navState.current.activeNav = "control";
+    rerender();
+    expect(result.current.sequenceId).toBeNull();
+  });
+
+  it("keeps the preview while staying on the same page", () => {
+    const { result, rerender } = renderHook(() => useSequencePreview(), {
+      wrapper: SequencePreviewProvider,
+    });
+
+    act(() => {
+      result.current.togglePreview(1);
+    });
+    rerender();
+    expect(result.current.sequenceId).toBe(1);
   });
 });

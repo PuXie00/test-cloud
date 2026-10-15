@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { LogRecord } from "@shared/csocket/operation-log";
 import { cn } from "@/app/components/ui/utils";
 import { AlarmReviewPanel } from "./alarm-review-panel";
@@ -85,7 +86,8 @@ type LogDetailPanelProps = {
   className?: string;
 };
 
-export const LogDetailPanel = ({
+/** memo：只在选中、回看数据或游标变化时重画，拖动时间线不重画曲线图 */
+export const LogDetailPanel = memo(({
   selected,
   review,
   showDebug,
@@ -111,4 +113,4 @@ export const LogDetailPanel = ({
       </p>
     )}
   </aside>
-);
+));
