@@ -9,9 +9,12 @@ import { axisKinematics, ZERO_AXIS_KINEMATICS } from "./axis-kinematics";
 import { finalizePlcTimeline, trapezoidToCurveSegments } from "./curve-segments";
 import { instructionToCompiledEvent } from "./instruction-registry";
 import {
+  objectAxisMotions,
   resolveActionSequence,
+  segmentAxisMotion,
   type ResolvedActionSequence,
   type ResolvedPosePoint,
+  uncontrolledAxesOf,
 } from "./resolve-sequence";
 import type { ActionSequenceConfig } from "./types";
 import {
@@ -85,13 +88,15 @@ const compileModels = (
           : undefined;
         return {
           time: pose.atMs,
+          // 位置按启用的轴排；这一帧不设定的轴放 null，C++ 按前后设定值之间的曲线继续运动
           virtualAxis: enabledAxes.map((axis) => {
+            if (pose.unsetAxes?.includes(axis)) return null;
             const pos = roundProjectCoordinate(pose.pose[axis]);
             if (!segment) return { pos, ...ZERO_AXIS_KINEMATICS };
-            const travel = segment.toPose[axis] - segment.fromPose[axis];
+            const motion = segmentAxisMotion(segment, axis);
             return {
               pos,
-              ...axisKinematics(segment.settings.profiles[axis], travel, segment.durationMs),
+              ...axisKinematics(motion.profile, motion.to - motion.from, motion.durationMs),
             };
           }),
         };
@@ -127,9 +132,12 @@ export const compilePlcAction = (
       const first = poses[0];
       if (!object || first === undefined) return [];
       const objectSegments = resolved.segments.filter((segment) => segment.objectId === modelId);
+      // 序列不控制的轴不下发曲线
+      const uncontrolled = uncontrolledAxesOf(resolved, modelId);
 
-      return object.enabledVirtualAxes.map((axis) => {
+      return object.enabledVirtualAxes.filter((axis) => !uncontrolled.includes(axis)).map((axis) => {
         const virtualAxisNo = VIRTUAL_AXIS_NO[axis];
+        // 轴在中间位姿不设定时，跨过的几段是同一条曲线，只写一次
         const segments =
           objectSegments.length === 0
             ? trapezoidToCurveSegments(
@@ -139,13 +147,13 @@ export const compilePlcAction = (
                 first.pose[axis],
                 0,
               )
-            : objectSegments.flatMap((segment) =>
+            : objectAxisMotions(objectSegments, axis).flatMap((motion) =>
                 trapezoidToCurveSegments(
-                  segment.settings.profiles[axis],
-                  segment.startMs,
-                  segment.fromPose[axis],
-                  segment.toPose[axis],
-                  segment.durationMs,
+                  motion.profile,
+                  motion.startMs,
+                  motion.from,
+                  motion.to,
+                  motion.durationMs,
                 ),
               );
         const endPose = poses[poses.length - 1]?.pose[axis] ?? first.pose[axis];

@@ -93,13 +93,72 @@ describe("inserting blocks at an occupied time", () => {
 
     const poses = result.current.builder.sequence!.blocks.filter((block) => block.kind === "pose");
     expect(poses.map((block) => block.id)).toEqual(["first", "existing"]);
-    // 新位姿取物体当前位置（夹具里为 0），覆盖原来的 500
-    expect(poses[1]).toMatchObject({ atMs: 2000, pose: { v1: 0, v2: 0, v3: 0 } });
+    // 指针处已有位姿时原样保留，不被默认值覆盖
+    expect(poses[1]).toMatchObject({ atMs: 2000, pose: { v1: 500, v2: 0, v3: 0 } });
     expect(result.current.builder.selection).toEqual({ kind: "block", blockId: "existing" });
     expect(toastSuccess).toHaveBeenCalledWith("已更新 1 个物体在 2.0s 的位姿");
     expect(result.current.builder.sequenceIssues.some((issue) => issue.code === "duplicate-pose-time")).toBe(
       false,
     );
+  });
+
+  it("defaults a new pose to the sequence value at the playhead and keeps unset axes", async () => {
+    const { result } = renderBuilder();
+    await openWithEmptySequence(result);
+    act(() => {
+      result.current.builder.handleInsertTimelineBlock(poseAt("first", 0, 0));
+      result.current.builder.handleInsertTimelineBlock(poseAt("last", 4000, 1000));
+      result.current.builder.handleInsertTimelineBlock({
+        id: "passing",
+        kind: "pose",
+        objectId: 7,
+        atMs: 3000,
+        pose: { v1: 750 },
+      });
+    });
+    act(() => result.current.builder.handleCursorChange(1500));
+    act(() => result.current.builder.handleCreatePose([7]));
+    act(() => result.current.builder.handleCursorChange(3000));
+    act(() => result.current.builder.handleCreatePose([7]));
+
+    const byId = new Map(
+      result.current.builder.sequence!.blocks.map((block) => [block.id, block] as const),
+    );
+    const created = [...byId.values()].find(
+      (block) => block.kind === "pose" && block.atMs === 1500,
+    );
+    // 0→750 的 0–3s 默认梯形曲线在 1.5s 走到一半
+    expect(created).toMatchObject({ pose: { v1: 375, v2: 0, v3: 0 } });
+    // 指针落在已有位姿上：原样保留，不设定的轴还是不设定
+    expect(byId.get("passing")).toEqual(expect.objectContaining({ pose: { v1: 750 } }));
+  });
+
+  it("leaves axes the sequence never sets unset on a new pose", async () => {
+    const { result } = renderBuilder();
+    await openWithEmptySequence(result);
+    act(() => {
+      result.current.builder.handleInsertTimelineBlock({
+        id: "first",
+        kind: "pose",
+        objectId: 7,
+        atMs: 0,
+        pose: { v1: 0 },
+      });
+      result.current.builder.handleInsertTimelineBlock({
+        id: "last",
+        kind: "pose",
+        objectId: 7,
+        atMs: 4000,
+        pose: { v1: 1000 },
+      });
+    });
+    act(() => result.current.builder.handleCursorChange(2000));
+    act(() => result.current.builder.handleCreatePose([7]));
+
+    const created = result.current.builder.sequence!.blocks.find(
+      (block) => block.kind === "pose" && block.atMs === 2000,
+    );
+    expect(created).toEqual(expect.objectContaining({ pose: { v1: 500 } }));
   });
 
   it("updates an existing enable command instead of adding another", async () => {

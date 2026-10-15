@@ -9,7 +9,11 @@ import { planNearestStart, type NearestStartMember, type NearestStartPlan } from
 import { memberTimeline, sharedKeyframes } from "./nearest-start-frames";
 import { buildNearestStartMember } from "./nearest-start-model";
 import type { HpyPose } from "./nearest-start-motion";
-import { resolveActionSequence, type ResolvedActionSequence } from "./resolve-sequence";
+import {
+  pinUncontrolledAxes,
+  resolveActionSequence,
+  type ResolvedActionSequence,
+} from "./resolve-sequence";
 
 export type { HpyPose } from "./nearest-start-motion";
 
@@ -153,14 +157,19 @@ export const planStartTransition = (input: {
   nearest: boolean;
   reverse: boolean;
 }): NearestStartPlan => {
+  // 序列不控制的轴就停在实时位置：起点按实时值算，接入时不动它
+  const resolved = pinUncontrolledAxes(input.resolved, (objectId, axis) => {
+    const current = input.telemetryByObjectId.get(objectId);
+    return current ? poseFromHpy(current)[axis] : undefined;
+  });
   const members: NearestStartMember[] = [];
   let offStart = false;
-  for (const objectId of input.resolved.posesByObject.keys()) {
+  for (const objectId of resolved.posesByObject.keys()) {
     const object = input.objects.find((item) => item.id === objectId);
     if (!object) throw new Error(`缺少受控物体 ${objectId}`);
     if (object.enabledVirtualAxes.length === 0) continue;
     const current = input.telemetryByObjectId.get(objectId) ?? { h: 0, p: 0, y: 0 };
-    const boundary = boundaryPoseAt(input.resolved, objectId, input.reverse);
+    const boundary = boundaryPoseAt(resolved, objectId, input.reverse);
     if (boundary && !enabledAxesMatchStart(object.enabledVirtualAxes, current, boundary)) {
       offStart = true;
     }
@@ -168,14 +177,14 @@ export const planStartTransition = (input: {
   }
   if (!offStart) {
     return atStartPlan({
-      resolved: input.resolved,
+      resolved,
       forced: input.sequence.trajectoryMode === true,
       nearest: input.nearest,
       reverse: input.reverse,
     });
   }
   return planNearestStart({
-    resolved: input.resolved,
+    resolved,
     members,
     forced: input.sequence.trajectoryMode === true,
     nearest: input.nearest,

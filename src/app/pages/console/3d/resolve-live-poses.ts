@@ -1,4 +1,5 @@
 import type { ModelPose } from "@/app/project/action-sequence/types";
+import type { VirtualAxisId } from "@/app/project/project-document-types";
 import type { MonitorPositions } from "../components/monitor-grid/monitor-data";
 
 export type LivePoseSource = {
@@ -34,6 +35,25 @@ export const resolveLivePoses = (
     );
   }
   return poses;
+};
+
+/** 序列不控制的轴显示实时位置 */
+export const pinLiveAxes = (
+  preview: Map<number, ModelPose>,
+  uncontrolledByObject: ReadonlyMap<number, readonly VirtualAxisId[]> | null,
+  live: ReadonlyMap<number, ModelPose>,
+): Map<number, ModelPose> => {
+  if (!uncontrolledByObject || uncontrolledByObject.size === 0) return preview;
+  const next = new Map(preview);
+  for (const [objectId, axes] of uncontrolledByObject) {
+    const pose = next.get(objectId);
+    const livePose = live.get(objectId);
+    if (!pose || !livePose) continue;
+    const pinned = { ...pose };
+    for (const axis of axes) pinned[axis] = livePose[axis];
+    next.set(objectId, pinned);
+  }
+  return next;
 };
 
 export const mergeHoldPoses = (

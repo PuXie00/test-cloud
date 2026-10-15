@@ -3,7 +3,7 @@ import { useState, type ReactNode } from "react";
 import { cn } from "@/app/components/ui/utils";
 import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-input";
 import { instructionBlockTitle } from "@/app/project/action-sequence/instruction-registry";
-import type { ModelPose, TimelineBlock } from "@/app/project/action-sequence/types";
+import type { KeyframePose, ModelPose, TimelineBlock } from "@/app/project/action-sequence/types";
 import type { VirtualAxisId } from "@/app/project/project-document-types";
 import { VIRTUAL_AXIS_IDS, msToSeconds, secondsToMs } from "../timeline/timeline-data";
 import { useActionBuilder } from "../use-action-builder";
@@ -80,9 +80,9 @@ const blockTitle = (block: TimelineBlock): string =>
   block.kind === "instruction" ? instructionBlockTitle(block) : BLOCK_TITLES[block.kind];
 
 type PoseCellsProps = {
-  pose: ModelPose;
+  pose: KeyframePose;
   objectId?: number;
-  onPoseChange: (pose: ModelPose) => void;
+  onPoseChange: (pose: KeyframePose) => void;
 };
 
 const poseAxisStep = (axis: VirtualAxisId): number => (axis === "v1" ? 1 : 0.1);
@@ -99,7 +99,8 @@ const PoseCells = ({ pose, objectId, onPoseChange }: PoseCellsProps) => {
           <ContextNumericCell
             key={axis}
             label={axis.toUpperCase()}
-            value={pose[axis]}
+            value={pose[axis] ?? 0}
+            readOnly={pose[axis] === undefined}
             unit={getVirtualAxisCanonicalUnit(axis, object?.controlType)}
             highlighted={axis === "v1"}
             min={range?.min}
@@ -157,7 +158,9 @@ export const BlockContextBar = ({
         />
       ) : null}
 
-      {pose && onPoseChange ? <PoseCells pose={pose} onPoseChange={onPoseChange} /> : null}
+      {pose && onPoseChange ? (
+        <PoseCells pose={pose} onPoseChange={(next) => onPoseChange({ ...pose, ...next })} />
+      ) : null}
 
       {block?.kind === "instruction" && block.presetId === "set-enabled" && onReplaceBlock ? (
         <>

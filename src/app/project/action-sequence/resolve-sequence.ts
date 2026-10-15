@@ -1,11 +1,20 @@
 import type { VirtualAxisId } from "../project-document-types";
-import { cloneAxisProfiles, createDefaultAxisProfiles, syncAxisProfileToTravel } from "./motion-profile";
+import { unsetAxesOf } from "./keyframe-pose";
+import {
+  cloneAxisProfiles,
+  cloneMotionProfile,
+  createDefaultAxisProfile,
+  createDefaultAxisProfiles,
+  evaluateMotionProfile,
+  syncAxisProfileToTravel,
+} from "./motion-profile";
 import { getPresetDefinition, resolvePreset } from "./preset-registry";
 import type {
   ActionSequenceConfig,
   DynamicPresetBlock,
   InstructionBlock,
   ModelPose,
+  MotionProfile,
   MotionSegmentConfig,
   MotionSegmentSettings,
 } from "./types";
@@ -19,6 +28,23 @@ export type ResolvedPosePoint = {
   pose: ModelPose;
   editable: boolean;
   visible: boolean;
+  /** 位姿块里不设定的轴；pose 里对应的值是按前后设定值之间的曲线算出的经过值 */
+  unsetAxes?: readonly VirtualAxisId[];
+};
+
+/** 一个轴在一段运动区间里跟随的曲线 */
+export type ResolvedAxisMotion = {
+  fromRef: string;
+  toRef: string;
+  startMs: number;
+  endMs: number;
+  durationMs: number;
+  from: number;
+  to: number;
+  profile: MotionProfile;
+  configurable: boolean;
+  /** 曲线覆盖的运动区间 key；轴在中间位姿不设定时不止一个 */
+  segmentKeys: readonly string[];
 };
 
 export type ResolvedMotionSegment = {
@@ -34,6 +60,8 @@ export type ResolvedMotionSegment = {
   settings: MotionSegmentSettings;
   configurable: boolean;
   ownerPresetBlockId?: string;
+  /** 各轴在本区间跟随的曲线；缺省时就是本区间自己的曲线 */
+  axes?: Record<VirtualAxisId, ResolvedAxisMotion>;
 };
 
 export type ResolvedActionSequence = {
@@ -44,9 +72,53 @@ export type ResolvedActionSequence = {
   segments: ResolvedMotionSegment[];
   commands: InstructionBlock[];
   totalMs: number;
+  /**
+   * 每个物体在所有位姿上都不设定的轴：这条序列不控制它们，停在哪就在哪。
+   * pose 里这些轴是占位值 0，预览和接入计划用 pinUncontrolledAxes 换成实时位置。
+   */
+  uncontrolledAxesByObject?: Map<number, readonly VirtualAxisId[]>;
 };
 
 const clonePose = (pose: ModelPose): ModelPose => ({ v1: pose.v1, v2: pose.v2, v3: pose.v3 });
+
+const ownAxisMotion = (segment: ResolvedMotionSegment, axis: VirtualAxisId): ResolvedAxisMotion => ({
+  fromRef: segment.fromRef,
+  toRef: segment.toRef,
+  startMs: segment.startMs,
+  endMs: segment.endMs,
+  durationMs: segment.durationMs,
+  from: segment.fromPose[axis],
+  to: segment.toPose[axis],
+  profile: segment.settings.profiles[axis],
+  configurable: segment.configurable,
+  segmentKeys: [segment.key],
+});
+
+export const segmentAxisMotion = (
+  segment: ResolvedMotionSegment,
+  axis: VirtualAxisId,
+): ResolvedAxisMotion => segment.axes?.[axis] ?? ownAxisMotion(segment, axis);
+
+/** 轴的曲线是否跨过了本区间的端点（轴在端点位姿上不设定） */
+export const isPassThroughMotion = (
+  segment: Pick<ResolvedMotionSegment, "fromRef" | "toRef">,
+  motion: Pick<ResolvedAxisMotion, "fromRef" | "toRef">,
+): boolean => motion.fromRef !== segment.fromRef || motion.toRef !== segment.toRef;
+
+/** 一个物体按时间排好的区间里，某轴依次跟随的曲线（跨区间的只出现一次） */
+export const objectAxisMotions = (
+  segments: readonly ResolvedMotionSegment[],
+  axis: VirtualAxisId,
+): ResolvedAxisMotion[] => {
+  const motions: ResolvedAxisMotion[] = [];
+  for (const segment of segments) {
+    const motion = segmentAxisMotion(segment, axis);
+    const previous = motions[motions.length - 1];
+    if (previous && previous.fromRef === motion.fromRef && previous.toRef === motion.toRef) continue;
+    motions.push(motion);
+  }
+  return motions;
+};
 
 const cloneCommand = (block: InstructionBlock): InstructionBlock => ({
   id: block.id,
@@ -87,52 +159,106 @@ export type ReconcileSegmentOptions = {
 
 const AXES = ["v1", "v2", "v3"] as const;
 
-const syncSettingsToTravel = (
+const syncProfilesToTravel = (
   settings: MotionSegmentSettings,
-  segment: ResolvedMotionSegment,
+  travelByAxis: Partial<Record<VirtualAxisId, number>>,
+  durationMs: number,
   minAccelTimeByAxis: Partial<Record<"v1" | "v2" | "v3", number>> | undefined,
 ): MotionSegmentSettings => {
   const profiles = { ...settings.profiles };
   for (const axis of AXES) {
-    const travel = Math.abs(segment.toPose[axis] - segment.fromPose[axis]);
     profiles[axis] = syncAxisProfileToTravel(
       profiles[axis],
-      travel,
-      segment.durationMs,
+      travelByAxis[axis] ?? 0,
+      durationMs,
       minAccelTimeByAxis?.[axis],
     );
   }
   return { profiles };
 };
 
+const segmentTravel = (segment: ResolvedMotionSegment): Record<VirtualAxisId, number> => ({
+  v1: Math.abs(segment.toPose.v1 - segment.fromPose.v1),
+  v2: Math.abs(segment.toPose.v2 - segment.fromPose.v2),
+  v3: Math.abs(segment.toPose.v3 - segment.fromPose.v3),
+});
+
+type SegmentConfigEntry = {
+  fromRef: string;
+  toRef: string;
+  objectId: number;
+  durationMs: number;
+  /** 这条设置实际管的轴及其行程；不管的轴同步成空闲 */
+  travelByAxis: Partial<Record<VirtualAxisId, number>>;
+  fallback: MotionSegmentSettings;
+};
+
+/**
+ * 每个可配置的运动区间一条设置；轴在中间位姿不设定时，跨过的整段曲线另有一条设置
+ * （fromRef/toRef 是曲线两端的位姿）。
+ */
 export const reconcileSegmentConfigs = (
   resolvedSegments: ResolvedMotionSegment[],
   existing: MotionSegmentConfig[],
   options?: ReconcileSegmentOptions,
-): MotionSegmentConfig[] =>
-  resolvedSegments.flatMap((segment) => {
-    if (!segment.configurable) return [];
-    const match = findSegmentConfig(existing, segment.fromRef, segment.toRef);
+): MotionSegmentConfig[] => {
+  const entries = new Map<string, SegmentConfigEntry>();
+  const entryOf = (entry: SegmentConfigEntry): SegmentConfigEntry => {
+    const key = `${entry.fromRef}=>${entry.toRef}`;
+    const found = entries.get(key);
+    if (found) return found;
+    entries.set(key, entry);
+    return entry;
+  };
+  for (const segment of resolvedSegments) {
+    if (!segment.configurable) continue;
+    const own = entryOf({
+      fromRef: segment.fromRef,
+      toRef: segment.toRef,
+      objectId: segment.objectId,
+      durationMs: segment.durationMs,
+      travelByAxis: {},
+      fallback: segment.settings,
+    });
+    for (const axis of AXES) {
+      const motion = segmentAxisMotion(segment, axis);
+      if (!motion.configurable) continue;
+      const travel = Math.abs(motion.to - motion.from);
+      if (!isPassThroughMotion(segment, motion)) {
+        own.travelByAxis[axis] = travel;
+        continue;
+      }
+      const span = entryOf({
+        fromRef: motion.fromRef,
+        toRef: motion.toRef,
+        objectId: segment.objectId,
+        durationMs: motion.durationMs,
+        travelByAxis: {},
+        fallback: defaultSettings(motion.durationMs),
+      });
+      span.travelByAxis[axis] = travel;
+    }
+  }
+  return [...entries.values()].map((entry) => {
+    const minAccelTimeByAxis = options?.minAccelTimeByObject?.(entry.objectId);
+    const match = findSegmentConfig(existing, entry.fromRef, entry.toRef);
     const settings = match
       ? cloneSettings(match.settings)
       : options?.minAccelTimeByObject
-        ? {
-            profiles: createDefaultAxisProfiles(
-              segment.durationMs,
-              options.minAccelTimeByObject(segment.objectId),
-            ),
-          }
-        : cloneSettings(segment.settings);
-    return [{
-      fromRef: segment.fromRef,
-      toRef: segment.toRef,
-      settings: syncSettingsToTravel(
+        ? { profiles: createDefaultAxisProfiles(entry.durationMs, minAccelTimeByAxis) }
+        : cloneSettings(entry.fallback);
+    return {
+      fromRef: entry.fromRef,
+      toRef: entry.toRef,
+      settings: syncProfilesToTravel(
         settings,
-        segment,
-        options?.minAccelTimeByObject?.(segment.objectId),
+        entry.travelByAxis,
+        entry.durationMs,
+        minAccelTimeByAxis,
       ),
-    }];
+    };
   });
+};
 
 const dynamicPresetBlocksById = (
   blocks: ActionSequenceConfig["blocks"],
@@ -168,11 +294,12 @@ const ownedAxesByBlockId = (
   return owned;
 };
 
+/** 预设不管的轴沿用该轴上一个设定值（位姿里不设定的轴不算） */
 const carryUnownedAxes = (
   timed: ResolvedPosePoint[],
   ownedByBlockId: ReadonlyMap<string, readonly VirtualAxisId[]>,
 ): void => {
-  const lastByObject = new Map<number, ModelPose>();
+  const lastByObject = new Map<number, Partial<ModelPose>>();
   let index = 0;
   while (index < timed.length) {
     const atMs = timed[index]?.atMs;
@@ -197,7 +324,11 @@ const carryUnownedAxes = (
     for (let cursor = index; cursor < end; cursor += 1) {
       const point = timed[cursor];
       if (point === undefined) continue;
-      lastByObject.set(point.objectId, point.pose);
+      const last = { ...lastByObject.get(point.objectId) };
+      for (const axis of AXES) {
+        if (!point.unsetAxes?.includes(axis)) last[axis] = point.pose[axis];
+      }
+      lastByObject.set(point.objectId, last);
     }
     index = end;
   }
@@ -254,6 +385,135 @@ const injectDynamicWaveBoundaryHolds = (
   }
 };
 
+type PassThroughSpan = {
+  fromIndex: number;
+  toIndex: number;
+  profile: MotionProfile;
+  configurable: boolean;
+};
+
+const isUnsetAt = (point: ResolvedPosePoint, axis: VirtualAxisId): boolean =>
+  point.unsetAxes?.includes(axis) ?? false;
+
+/** 轴跨过中间位姿时的曲线：同一动态预设内部跟预设，否则跟这段的区间设置，没有设置用默认 */
+const passThroughProfile = (
+  from: ResolvedPosePoint,
+  to: ResolvedPosePoint,
+  axis: VirtualAxisId,
+  sequence: ActionSequenceConfig,
+  owners: Map<string, DynamicPresetBlock>,
+): { profile: MotionProfile; configurable: boolean } => {
+  if (
+    from.sourceKind === "dynamic-preset" &&
+    to.sourceKind === "dynamic-preset" &&
+    from.sourceBlockId !== null &&
+    from.sourceBlockId === to.sourceBlockId
+  ) {
+    const owner = requireDynamicOwner(owners, from.sourceBlockId);
+    return { profile: cloneMotionProfile(owner.profiles[axis]), configurable: false };
+  }
+  const match = findSegmentConfig(sequence.segments, from.sourceRef, to.sourceRef);
+  return {
+    profile: match
+      ? cloneMotionProfile(match.settings.profiles[axis])
+      : createDefaultAxisProfile(to.atMs - from.atMs),
+    configurable: true,
+  };
+};
+
+const progressOf = (profile: MotionProfile, tNorm: number, durationMs: number): number => {
+  try {
+    return evaluateMotionProfile(profile, tNorm, durationMs);
+  } catch {
+    // 曲线参数不合法（校验另报）时按匀速估算经过值
+    return tNorm;
+  }
+};
+
+/**
+ * 补上不设定的轴：第一个设定值之前保持首值，最后一个之后保持末值，
+ * 两个设定值之间按整段曲线算经过值。返回各轴跨过中间位姿的曲线，以及一次都没设定的轴。
+ */
+const fillUnsetAxes = (
+  series: ResolvedPosePoint[],
+  sequence: ActionSequenceConfig,
+  owners: Map<string, DynamicPresetBlock>,
+): { spansByAxis: Map<VirtualAxisId, PassThroughSpan[]>; uncontrolled: VirtualAxisId[] } => {
+  const spansByAxis = new Map<VirtualAxisId, PassThroughSpan[]>();
+  const uncontrolled: VirtualAxisId[] = [];
+  for (const axis of AXES) {
+    const spans: PassThroughSpan[] = [];
+    spansByAxis.set(axis, spans);
+    const setIndices = series.flatMap((point, index) => (isUnsetAt(point, axis) ? [] : [index]));
+    const firstIndex = setIndices[0];
+    const lastIndex = setIndices[setIndices.length - 1];
+    // 一次都没设定的轴不受这条序列控制，留占位值 0
+    if (firstIndex === undefined || lastIndex === undefined) {
+      uncontrolled.push(axis);
+      continue;
+    }
+    const firstValue = series[firstIndex]!.pose[axis];
+    const lastValue = series[lastIndex]!.pose[axis];
+    for (let index = 0; index < firstIndex; index += 1) series[index]!.pose[axis] = firstValue;
+    for (let index = lastIndex + 1; index < series.length; index += 1) {
+      series[index]!.pose[axis] = lastValue;
+    }
+    for (let cursor = 0; cursor < setIndices.length - 1; cursor += 1) {
+      const fromIndex = setIndices[cursor]!;
+      const toIndex = setIndices[cursor + 1]!;
+      if (toIndex === fromIndex + 1) continue;
+      const from = series[fromIndex]!;
+      const to = series[toIndex]!;
+      const durationMs = to.atMs - from.atMs;
+      const { profile, configurable } = passThroughProfile(from, to, axis, sequence, owners);
+      const start = from.pose[axis];
+      const travel = to.pose[axis] - start;
+      for (let index = fromIndex + 1; index < toIndex; index += 1) {
+        const point = series[index]!;
+        const tNorm = durationMs > 0 ? (point.atMs - from.atMs) / durationMs : 1;
+        point.pose[axis] = travel === 0 ? start : start + travel * progressOf(profile, tNorm, durationMs);
+      }
+      spans.push({ fromIndex, toIndex, profile, configurable });
+    }
+  }
+  return { spansByAxis, uncontrolled };
+};
+
+/** objectSegments[i] 是 series[i] → series[i + 1] */
+const attachAxisMotions = (
+  series: readonly ResolvedPosePoint[],
+  objectSegments: readonly ResolvedMotionSegment[],
+  spansByAxis: ReadonlyMap<VirtualAxisId, readonly PassThroughSpan[]>,
+): void => {
+  for (const segment of objectSegments) {
+    segment.axes = {
+      v1: ownAxisMotion(segment, "v1"),
+      v2: ownAxisMotion(segment, "v2"),
+      v3: ownAxisMotion(segment, "v3"),
+    };
+  }
+  for (const axis of AXES) {
+    for (const span of spansByAxis.get(axis) ?? []) {
+      const from = series[span.fromIndex]!;
+      const to = series[span.toIndex]!;
+      const covered = objectSegments.slice(span.fromIndex, span.toIndex);
+      const motion: ResolvedAxisMotion = {
+        fromRef: from.sourceRef,
+        toRef: to.sourceRef,
+        startMs: from.atMs,
+        endMs: to.atMs,
+        durationMs: to.atMs - from.atMs,
+        from: from.pose[axis],
+        to: to.pose[axis],
+        profile: span.profile,
+        configurable: span.configurable,
+        segmentKeys: covered.map((segment) => segment.key),
+      };
+      for (const segment of covered) segment.axes![axis] = motion;
+    }
+  }
+};
+
 export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedActionSequence => {
   const timed: ResolvedPosePoint[] = [];
   const commands: InstructionBlock[] = [];
@@ -261,15 +521,17 @@ export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedA
 
   for (const block of sequence.blocks) {
     if (block.kind === "pose") {
+      const unsetAxes = unsetAxesOf(block.pose);
       timed.push({
         sourceRef: block.id,
         sourceBlockId: block.id,
         sourceKind: "pose",
         objectId: block.objectId,
         atMs: block.atMs,
-        pose: clonePose(block.pose),
+        pose: { v1: block.pose.v1 ?? 0, v2: block.pose.v2 ?? 0, v3: block.pose.v3 ?? 0 },
         editable: true,
         visible: true,
+        ...(unsetAxes.length > 0 ? { unsetAxes } : {}),
       });
       totalMs = Math.max(totalMs, block.atMs);
       continue;
@@ -342,11 +604,15 @@ export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedA
 
   const owners = dynamicPresetBlocksById(sequence.blocks);
   const segments: ResolvedMotionSegment[] = [];
+  const uncontrolledAxesByObject = new Map<number, readonly VirtualAxisId[]>();
   const objectIds = [...posesByObject.keys()].sort((a, b) => a - b);
 
   for (const objectId of objectIds) {
     const series = posesByObject.get(objectId);
     if (series === undefined) continue;
+    const { spansByAxis, uncontrolled } = fillUnsetAxes(series, sequence, owners);
+    if (uncontrolled.length > 0) uncontrolledAxesByObject.set(objectId, uncontrolled);
+    const objectSegments: ResolvedMotionSegment[] = [];
 
     for (let index = 0; index < series.length - 1; index += 1) {
       const from = series[index];
@@ -386,13 +652,18 @@ export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedA
           configurable: false,
           ownerPresetBlockId: block.id,
         };
-        draft.settings = syncSettingsToTravel(draft.settings, draft, undefined);
-        segments.push(draft);
+        draft.settings = syncProfilesToTravel(
+          draft.settings,
+          segmentTravel(draft),
+          draft.durationMs,
+          undefined,
+        );
+        objectSegments.push(draft);
         continue;
       }
 
       const match = findSegmentConfig(sequence.segments, fromRef, toRef);
-      segments.push({
+      objectSegments.push({
         key: `${fromRef}->${toRef}`,
         objectId,
         fromRef,
@@ -408,6 +679,8 @@ export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedA
         configurable: true,
       });
     }
+    attachAxisMotions(series, objectSegments, spansByAxis);
+    segments.push(...objectSegments);
   }
 
   return {
@@ -418,5 +691,72 @@ export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedA
     segments,
     commands,
     totalMs,
+    uncontrolledAxesByObject,
   };
+};
+
+export const uncontrolledAxesOf = (
+  resolved: Pick<ResolvedActionSequence, "uncontrolledAxesByObject">,
+  objectId: number,
+): readonly VirtualAxisId[] => resolved.uncontrolledAxesByObject?.get(objectId) ?? [];
+
+/**
+ * 把序列不控制的轴固定在给定位置（通常是实时位置）。
+ * valueOf 返回 undefined 时保留占位值；没有不控制的轴时原样返回。
+ */
+export const pinUncontrolledAxes = (
+  resolved: ResolvedActionSequence,
+  valueOf: (objectId: number, axis: VirtualAxisId) => number | undefined,
+): ResolvedActionSequence => {
+  const entries = [...(resolved.uncontrolledAxesByObject ?? [])];
+  if (entries.length === 0) return resolved;
+  const pinned = new Map<number, Partial<ModelPose>>();
+  for (const [objectId, axes] of entries) {
+    const values: Partial<ModelPose> = {};
+    for (const axis of axes) {
+      const value = valueOf(objectId, axis);
+      if (value !== undefined && Number.isFinite(value)) values[axis] = value;
+    }
+    pinned.set(objectId, values);
+  }
+  const pinPose = (objectId: number, pose: ModelPose): ModelPose => ({
+    ...pose,
+    ...pinned.get(objectId),
+  });
+
+  const pointByRef = new Map<ResolvedPosePoint, ResolvedPosePoint>();
+  const poses = resolved.poses.map((point) => {
+    const next = { ...point, pose: pinPose(point.objectId, point.pose) };
+    pointByRef.set(point, next);
+    return next;
+  });
+  const posesByObject = new Map(
+    [...resolved.posesByObject].map(([objectId, series]) => [
+      objectId,
+      series.map((point) => pointByRef.get(point) ?? point),
+    ]),
+  );
+  const initialPoseByObject = new Map(
+    [...resolved.initialPoseByObject].map(([objectId, point]) => [
+      objectId,
+      pointByRef.get(point) ?? point,
+    ]),
+  );
+  const segments = resolved.segments.map((segment) => {
+    const values = pinned.get(segment.objectId);
+    if (!values || Object.keys(values).length === 0) return segment;
+    const axes = segment.axes ? { ...segment.axes } : undefined;
+    for (const axis of AXES) {
+      const value = values[axis];
+      if (value === undefined || !axes) continue;
+      axes[axis] = { ...axes[axis], from: value, to: value };
+    }
+    return {
+      ...segment,
+      fromPose: pinPose(segment.objectId, segment.fromPose),
+      toPose: pinPose(segment.objectId, segment.toPose),
+      ...(axes ? { axes } : {}),
+    };
+  });
+  return { ...resolved, poses, posesByObject, initialPoseByObject, segments };
 };

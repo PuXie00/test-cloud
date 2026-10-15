@@ -1,4 +1,4 @@
-import { interpolatePoseWithProfiles } from "@/app/project/action-sequence/evaluate-sequence";
+import { segmentPoseAt } from "@/app/project/action-sequence/evaluate-sequence";
 import type { ModelPose } from "@/app/project/action-sequence/types";
 import type { ResolvedMotionSegment } from "@/app/project/action-sequence/resolve-sequence";
 import { solveMultiPointForward, type Vec3 } from "./multi-point-forward";
@@ -36,13 +36,7 @@ export type MotorOverspeedHit = {
 };
 
 const poseAtProgress = (segment: ResolvedMotionSegment, progress: number): ModelPose =>
-  interpolatePoseWithProfiles(
-    segment.fromPose,
-    segment.toPose,
-    segment.settings.profiles,
-    progress,
-    segment.durationMs,
-  );
+  segmentPoseAt(segment, segment.startMs + progress * segment.durationMs);
 
 const ropeLengthsAt = (object: MotorOverspeedObject, pose: ModelPose): number[] =>
   solveMultiPointForward({

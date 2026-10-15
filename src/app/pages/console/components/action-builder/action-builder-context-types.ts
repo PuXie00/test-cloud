@@ -1,6 +1,7 @@
 import type { TrajectoryMode } from "@shared/action-sequence";
 import type {
   ActionSequenceConfig,
+  ModelPose,
   MotionSegmentSettings,
   TimelineBlock,
 } from "@/app/project/action-sequence/types";
@@ -77,6 +78,8 @@ export type ActionBuilderContextValue = {
   handleCreateSequence: (objectIds: number[]) => void;
   /** 保存当前位姿：有选中序列则在播放头加位姿，否则新建序列（不加入节目） */
   handleSaveCurrentPose: (request: CapturedPoseRequest) => void;
+  /** 物体的实时位姿（虚轴1–3），拿不到时为 null；调用时读取，不随遥测重渲染 */
+  getLivePose: (objectId: number) => ModelPose | null;
   /** 返回错误文案；成功或名称未变化时返回 null */
   handleRenameSequence: (name: string) => string | null;
   handleDeleteSequence: () => void;

@@ -15,6 +15,7 @@ import {
 } from "@/app/project/action-sequence/initial-pose-gate";
 import type { NearestStartPlan } from "@/app/project/action-sequence/nearest-start";
 import {
+  pinUncontrolledAxes,
   resolveActionSequence,
   type ResolvedActionSequence,
 } from "@/app/project/action-sequence/resolve-sequence";
@@ -102,6 +103,12 @@ export const SequencePreviewProvider: FC<{ children: ReactNode }> = ({ children 
     for (const snapshot of snapshotsRef.current ?? []) {
       telemetryByObjectId.set(snapshot.descriptor.id, hpyFromPositions(snapshot.positions));
     }
+    // 序列不控制的轴在预览里停在开始预览时的实时位置
+    resolved = pinUncontrolledAxes(resolved, (objectId, axis) => {
+      const current = telemetryByObjectId.get(objectId);
+      if (!current) return undefined;
+      return axis === "v1" ? current.h : axis === "v2" ? current.p : current.y;
+    });
     let plan: NearestStartPlan | null = null;
     try {
       plan = planStartTransition({

@@ -9,7 +9,15 @@ import {
   isInstructionPresetId,
   validateInstructionInstr,
 } from "./instruction-registry";
-import { resolveActionSequence, type ResolvedActionSequence, type ResolvedMotionSegment } from "./resolve-sequence";
+import { isAxisSet } from "./keyframe-pose";
+import {
+  resolveActionSequence,
+  segmentAxisMotion,
+  isPassThroughMotion,
+  uncontrolledAxesOf,
+  type ResolvedActionSequence,
+  type ResolvedMotionSegment,
+} from "./resolve-sequence";
 import { calculateMotionProfileKinematics, validateMotionProfile } from "./motion-profile";
 import type {
   ActionSequenceConfig,
@@ -44,7 +52,8 @@ export type SequenceIssueCode =
   | "insufficient-cruise"
   | "idle-on-moving-axis"
   | "motor-overspeed"
-  | "angle-protection";
+  | "angle-protection"
+  | "unset-axis";
 
 export type SequenceIssue = {
   severity: SequenceIssueSeverity;
@@ -53,6 +62,8 @@ export type SequenceIssue = {
   blockId?: string;
   objectId?: number;
   segmentKey?: string;
+  /** 问题曲线跨过多个运动区间时，全部区间的 key（含 segmentKey） */
+  segmentKeys?: readonly string[];
   atMs?: number;
   suggestedDurationMs?: number;
 };
@@ -267,6 +278,19 @@ const collectAuthoredIssues = (
     if (block.kind === "static-preset" || block.kind === "dynamic-preset") {
       validatePresetBlock(block, issues);
     }
+    if (block.kind === "pose") {
+      const object = objectById.get(block.objectId);
+      const axes = object?.enabledVirtualAxes ?? (["v1", "v2", "v3"] as const);
+      if (!axes.some((axis) => isAxisSet(block.pose, axis))) {
+        issues.push({
+          severity: "error",
+          code: "unset-axis",
+          message: "pose has no axis set",
+          blockId: block.id,
+          objectId: block.objectId,
+        });
+      }
+    }
     if (block.kind === "instruction") {
       if (!isInstructionPresetId(block.presetId)) {
         issues.push({
@@ -373,10 +397,13 @@ const checkPoseLimits = (
   objectById: Map<number, ObjectInfo>,
   issues: SequenceIssue[],
   blockId?: string | null,
+  /** 序列不控制的轴只有占位值，不查 */
+  skipAxes: readonly VirtualAxisId[] = [],
 ): void => {
   const object = objectById.get(objectId);
   if (!object) return;
   for (const axis of object.enabledVirtualAxes) {
+    if (skipAxes.includes(axis)) continue;
     const limit = object.limits[axis];
     if (!limit) continue;
     const value = pose[axis];
@@ -408,20 +435,25 @@ const profileErrorsOfProfiles = (profiles: AxisMotionProfiles | undefined): stri
 const checkSegmentKinematics = (
   object: ObjectInfo,
   segment: ResolvedMotionSegment,
+  checked: Set<string>,
   issues: SequenceIssue[],
 ): void => {
-  if (segment.durationMs <= 0) return;
-
-  const { profiles } = segment.settings;
-  const durationMs = segment.durationMs;
   const blockId = segment.ownerPresetBlockId;
   for (const axis of object.enabledVirtualAxes) {
-    const travel = Math.abs(segment.toPose[axis] - segment.fromPose[axis]);
+    const motion = segmentAxisMotion(segment, axis);
+    // 轴跨过中间位姿时几个区间共用一条曲线，只查一次
+    const motionKey = `${object.id}:${axis}:${motion.fromRef}->${motion.toRef}`;
+    if (checked.has(motionKey)) continue;
+    checked.add(motionKey);
+    const durationMs = motion.durationMs;
+    if (durationMs <= 0) continue;
+    const travel = Math.abs(motion.to - motion.from);
     if (travel === 0) continue;
 
-    const profile = profiles[axis];
+    const profile = motion.profile;
     const location = {
-      segmentKey: segment.key,
+      segmentKey: motion.segmentKeys[0] ?? segment.key,
+      ...(motion.segmentKeys.length > 1 ? { segmentKeys: motion.segmentKeys } : {}),
       objectId: object.id,
       ...(blockId ? { blockId } : {}),
     };
@@ -429,7 +461,7 @@ const checkSegmentKinematics = (
       issues.push({
         severity: "error",
         code: "idle-on-moving-axis",
-        message: `axis ${axis} is idle but has travel on segment ${segment.fromRef} -> ${segment.toRef}`,
+        message: `axis ${axis} is idle but has travel on segment ${motion.fromRef} -> ${motion.toRef}`,
         ...location,
       });
       continue;
@@ -465,7 +497,7 @@ const checkSegmentKinematics = (
       issues.push({
         severity: "error",
         code: "insufficient-cruise",
-        message: `axis ${axis} has insufficient cruise time for accel and decel phases on segment ${segment.fromRef} -> ${segment.toRef}`,
+        message: `axis ${axis} has insufficient cruise time for accel and decel phases on segment ${motion.fromRef} -> ${motion.toRef}`,
         ...location,
       });
       continue;
@@ -507,14 +539,27 @@ const collectResolvedIssues = (
   }
 
   for (const point of resolved.poses) {
-    checkPoseLimits(point.objectId, point.pose, objectById, issues, point.sourceBlockId);
+    checkPoseLimits(
+      point.objectId,
+      point.pose,
+      objectById,
+      issues,
+      point.sourceBlockId,
+      uncontrolledAxesOf(resolved, point.objectId),
+    );
   }
 
-  const derivedConfigurable = new Set(
-    resolved.segments
-      .filter((segment) => segment.configurable)
-      .map((segment) => `${segment.fromRef}=>${segment.toRef}`),
-  );
+  const derivedConfigurable = new Set<string>();
+  for (const segment of resolved.segments) {
+    if (!segment.configurable) continue;
+    derivedConfigurable.add(`${segment.fromRef}=>${segment.toRef}`);
+    for (const axis of ["v1", "v2", "v3"] as const) {
+      const motion = segmentAxisMotion(segment, axis);
+      if (motion.configurable && isPassThroughMotion(segment, motion)) {
+        derivedConfigurable.add(`${motion.fromRef}=>${motion.toRef}`);
+      }
+    }
+  }
   for (const item of sequence.segments) {
     if (derivedConfigurable.has(`${item.fromRef}=>${item.toRef}`)) continue;
     issues.push({
@@ -524,11 +569,12 @@ const collectResolvedIssues = (
     });
   }
 
+  const checkedMotions = new Set<string>();
   for (const segment of resolved.segments) {
     const object = objectById.get(segment.objectId);
     if (!object) continue;
     const axes = enabledAxesOf(object);
-    checkSegmentKinematics(object, segment, issues);
+    checkSegmentKinematics(object, segment, checkedMotions, issues);
 
     if (segment.durationMs >= LONG_IDLE_MS && posesEqualOn(segment.fromPose, segment.toPose, axes)) {
       issues.push({
@@ -626,11 +672,9 @@ export const invalidTimelineTargets = (
       blockIds.add(issue.blockId);
       if (!blockMessage.has(issue.blockId)) blockMessage.set(issue.blockId, issue.message);
     }
-    if (issue.segmentKey) {
-      segmentKeys.add(issue.segmentKey);
-      if (!segmentMessage.has(issue.segmentKey)) {
-        segmentMessage.set(issue.segmentKey, issue.message);
-      }
+    for (const key of issue.segmentKeys ?? (issue.segmentKey ? [issue.segmentKey] : [])) {
+      segmentKeys.add(key);
+      if (!segmentMessage.has(key)) segmentMessage.set(key, issue.message);
     }
   }
   return { blockIds, segmentKeys, blockMessage, segmentMessage };

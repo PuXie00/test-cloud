@@ -18,6 +18,7 @@ import { VIRTUAL_AXIS_IDS, formatDurationSeconds } from "../timeline/timeline-da
 import { getVirtualAxisCanonicalUnit } from "../virtual-axis-display";
 import { PROFILE_KIND_OPTIONS, profileKindMeta } from "./profile-kind";
 import {
+  axisDurationMs,
   axisHasWarning,
   minAccelMsOf,
   phaseFloorWarningMessages,
@@ -41,6 +42,8 @@ export type MotionProfileEditorProps = {
     fromRef: string;
     toRef: string;
   };
+  /** 区间模式下当前轴的补充说明，如轴跨过端点位姿时的整段曲线范围 */
+  axisNotes?: Partial<Record<VirtualAxisId, string>>;
 };
 
 const formatNumber = (value: number): string => {
@@ -171,7 +174,7 @@ const AxisMetrics = ({
   const kinematics = tryKinematics(
     profile,
     Math.abs(axisContext.travel[axis] ?? 0),
-    axisContext.durationMs,
+    axisDurationMs(axisContext, axis),
   );
 
   return (
@@ -314,6 +317,7 @@ export const MotionProfileEditor = ({
   ownedAxes,
   axisContext,
   segmentContext,
+  axisNotes,
 }: MotionProfileEditorProps) => {
   const enabledAxes = (axisContext
     ? resolveEnabledAxes(axisContext.enabledAxes)
@@ -351,6 +355,7 @@ export const MotionProfileEditor = ({
     ? selectedAxis
     : pickDefaultAxis(enabledAxes, axisContext.travel);
   const currentProfile = value[currentAxis];
+  const currentDurationMs = axisDurationMs(axisContext, currentAxis);
   const otherAxes = enabledAxes.filter((axis) => axis !== currentAxis);
   const unit = getVirtualAxisCanonicalUnit(currentAxis, axisContext.controlType);
   const speedUnit = `${unit}/s`;
@@ -361,7 +366,7 @@ export const MotionProfileEditor = ({
   const displayProfile: MotionProfile =
     travelDistance === 0 || currentProfile.kind === "idle" ? { kind: "idle" } : currentProfile;
   const kindMeta = profileKindMeta(displayProfile.kind);
-  const kinematics = tryKinematics(displayProfile, travelDistance, axisContext.durationMs);
+  const kinematics = tryKinematics(displayProfile, travelDistance, currentDurationMs);
   const limits =
     travelDistance > 0 && kinematics
       ? toChartLimits(kinematics, currentAxis, axisContext)
@@ -369,7 +374,7 @@ export const MotionProfileEditor = ({
   const minAccelMs = minAccelMsOf(currentAxis, axisContext);
   const currentWarnings = phaseFloorWarningMessages(
     displayProfile,
-    axisContext.durationMs,
+    currentDurationMs,
     minAccelMs,
   );
   const currentMaxSpeed = axisContext.maxSpeedByAxis?.[currentAxis];
@@ -393,7 +398,7 @@ export const MotionProfileEditor = ({
           <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
             <ProfileKindSelect
               profile={displayProfile}
-              durationMs={axisContext.durationMs}
+              durationMs={currentDurationMs}
               minAccelMs={minAccelMs}
               disabled={disabled || displayProfile.kind === "idle"}
               summary
@@ -406,7 +411,7 @@ export const MotionProfileEditor = ({
                 aria-readonly="true"
                 className="mt-0.5 font-mono text-mono-sm tabular-nums text-foreground"
               >
-                {formatDurationSeconds(axisContext.durationMs)}
+                {formatDurationSeconds(currentDurationMs)}
               </p>
             </div>
           </div>
@@ -450,10 +455,14 @@ export const MotionProfileEditor = ({
           })}
         </div>
 
+        {axisNotes?.[currentAxis] ? (
+          <p className="px-1 text-body-sm text-muted-foreground">{axisNotes[currentAxis]}</p>
+        ) : null}
+
         <div className="h-40 overflow-visible">
           <VelocityChart
             profile={displayProfile}
-            durationMs={axisContext.durationMs}
+            durationMs={currentDurationMs}
             velocityUnit={speedDisplayUnit}
             formatVelocity={formatSpeedValue}
             limits={limits}
@@ -479,7 +488,7 @@ export const MotionProfileEditor = ({
             <TrapezoidProfileEditor
               value={displayProfile}
               onChange={(profile) => handleProfileChange(currentAxis, profile)}
-              durationMs={axisContext.durationMs}
+              durationMs={currentDurationMs}
               disabled={disabled}
               compact
               showKindSelect={false}
@@ -557,7 +566,7 @@ export const MotionProfileEditor = ({
                 const axisKinematics = tryKinematics(
                   value[axis],
                   Math.abs(axisTravel),
-                  axisContext.durationMs,
+                  axisDurationMs(axisContext, axis),
                 );
                 const axisMaxSpeed = axisContext.maxSpeedByAxis?.[axis];
                 const axisWarning = axisHasWarning(axis, value, axisContext);
@@ -598,7 +607,7 @@ export const MotionProfileEditor = ({
     <div className="flex flex-col gap-3">
       <ProfileKindSelect
         profile={displayProfile}
-        durationMs={axisContext.durationMs}
+        durationMs={currentDurationMs}
         minAccelMs={minAccelMs}
         disabled={disabled || displayProfile.kind === "idle"}
         onChange={(profile) => handleProfileChange(currentAxis, profile)}
@@ -607,7 +616,7 @@ export const MotionProfileEditor = ({
       <div className="h-44 overflow-visible">
         <VelocityChart
           profile={displayProfile}
-          durationMs={axisContext.durationMs}
+          durationMs={currentDurationMs}
           velocityUnit={speedDisplayUnit}
           formatVelocity={formatSpeedValue}
           limits={limits}
@@ -648,7 +657,7 @@ export const MotionProfileEditor = ({
         <TrapezoidProfileEditor
           value={displayProfile}
           onChange={(profile) => handleProfileChange(currentAxis, profile)}
-          durationMs={axisContext.durationMs}
+          durationMs={currentDurationMs}
           disabled={disabled}
           showKindSelect={false}
           timeUnit="s"
@@ -660,7 +669,7 @@ export const MotionProfileEditor = ({
 
       <PhaseFloorWarnings
         profile={displayProfile}
-        durationMs={axisContext.durationMs}
+        durationMs={currentDurationMs}
         minAccelMs={minAccelMs}
       />
 

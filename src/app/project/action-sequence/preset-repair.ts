@@ -75,6 +75,7 @@ export const formatPresetRepairMessage = (
   if (issue.code === "motor-overspeed") return issue.message;
   if (issue.code === "angle-protection") return `${who}${issue.message}`.trim();
   if (issue.code === "motion-overlap") return `${who}运动来源重叠`.trim();
+  if (issue.code === "unset-axis") return `${who}位姿没有设定任何虚轴`.trim();
 
   return who ? `${who}${issue.message}`.trim() : issue.message;
 };
@@ -86,7 +87,10 @@ export const collectRepairIssuesFor = (
   (issues ?? []).filter((issue) => {
     if (issue.severity !== "error") return false;
     if (target.blockId !== undefined && issue.blockId === target.blockId) return true;
-    if (target.segmentKey !== undefined && issue.segmentKey === target.segmentKey) return true;
+    if (target.segmentKey !== undefined) {
+      if (issue.segmentKey === target.segmentKey) return true;
+      if (issue.segmentKeys?.includes(target.segmentKey)) return true;
+    }
     return false;
   });
 

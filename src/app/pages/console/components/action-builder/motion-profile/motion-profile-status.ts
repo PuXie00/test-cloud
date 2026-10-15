@@ -11,10 +11,17 @@ export type MotionProfileAxisContext = {
   enabledAxes: VirtualAxisId[];
   travel: Pick<ModelPose, VirtualAxisId>;
   durationMs: number;
+  /** 轴跟随的曲线比区间长（轴在端点位姿上不设定）时各轴自己的时长 */
+  durationMsByAxis?: Partial<Record<VirtualAxisId, number>>;
   controlType?: ControlType;
   maxSpeedByAxis?: Partial<Record<VirtualAxisId, number>>;
   minAccelTimeByAxis?: Partial<Record<VirtualAxisId, number>>;
 };
+
+export const axisDurationMs = (
+  axisContext: Pick<MotionProfileAxisContext, "durationMs" | "durationMsByAxis">,
+  axis: VirtualAxisId,
+): number => axisContext.durationMsByAxis?.[axis] ?? axisContext.durationMs;
 
 export const resolveEnabledAxes = (enabledAxes: VirtualAxisId[]): VirtualAxisId[] =>
   enabledAxes.length > 0 ? enabledAxes : [...VIRTUAL_AXIS_IDS];
@@ -83,7 +90,7 @@ export const axisHasWarning = (
   if (
     phaseFloorWarningMessages(
       axisProfile,
-      axisContext.durationMs,
+      axisDurationMs(axisContext, axis),
       axisMinAccelMs,
     ).length > 0
   ) {
@@ -93,7 +100,7 @@ export const axisHasWarning = (
   const axisKinematics = tryKinematics(
     axisProfile,
     axisDistance,
-    axisContext.durationMs,
+    axisDurationMs(axisContext, axis),
   );
   const axisMaxSpeed = axisContext.maxSpeedByAxis?.[axis];
   return (

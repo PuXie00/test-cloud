@@ -8,6 +8,8 @@ export type PoseMarkerProps = {
   atMs: number;
   label?: string;
   isInitialPose: boolean;
+  /** 有轴不设定：空心菱形 */
+  partial?: boolean;
   selected: boolean;
   invalid?: boolean;
   invalidMessage?: string;
@@ -23,6 +25,7 @@ export const PoseMarker = ({
   atMs,
   label,
   isInitialPose,
+  partial = false,
   selected,
   invalid = false,
   invalidMessage,
@@ -74,7 +77,7 @@ export const PoseMarker = ({
       type="button"
       data-timeline-time={String(atMs)}
       data-block-id={blockId}
-      aria-label={isInitialPose ? `位姿 ${blockId} 起始位姿` : `位姿 ${blockId}`}
+      aria-label={`${isInitialPose ? `位姿 ${blockId} 起始位姿` : `位姿 ${blockId}`}${partial ? " 部分轴经过" : ""}`}
       aria-pressed={selected}
       aria-invalid={invalid || undefined}
       data-invalid={invalid ? "true" : undefined}
@@ -91,7 +94,16 @@ export const PoseMarker = ({
       <span
         className={cn(
           "size-2.5 shrink-0 -translate-x-1/2 rotate-45",
-          invalid ? "bg-warning" : selected ? "bg-primary" : "bg-muted-foreground",
+          partial
+            ? cn(
+                "border-2 bg-background",
+                invalid ? "border-warning" : selected ? "border-primary" : "border-muted-foreground",
+              )
+            : invalid
+              ? "bg-warning"
+              : selected
+                ? "bg-primary"
+                : "bg-muted-foreground",
         )}
         aria-hidden
       />

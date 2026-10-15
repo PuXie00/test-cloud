@@ -2,7 +2,7 @@ import { presetLabelOf } from "@/app/project/action-sequence/preset-registry";
 import type {
   DynamicPresetBlock,
   InstructionBlock,
-  ModelPose,
+  KeyframePose,
   StaticPresetBlock,
 } from "@/app/project/action-sequence/types";
 import type { ResolvedMotionSegment, ResolvedPosePoint } from "@/app/project/action-sequence/resolve-sequence";
@@ -16,9 +16,11 @@ import { SegmentBand } from "./segment-band";
 export type TimelineTrackPose = {
   id: string;
   atMs: number;
-  pose: ModelPose;
+  pose: KeyframePose;
   label?: string;
   isInitialPose: boolean;
+  /** 有轴不设定（这一帧经过） */
+  partial?: boolean;
 };
 
 export type TimelineTrackProps = {
@@ -156,6 +158,7 @@ export const TimelineTrack = ({
           atMs={pose.atMs}
           label={pose.label}
           isInitialPose={pose.isInitialPose}
+          partial={pose.partial}
           selected={isBlockSelected(selection, pose.id)}
           invalid={invalidTargets?.blockIds.has(pose.id) ?? false}
           invalidMessage={invalidTargets?.blockMessage.get(pose.id)}

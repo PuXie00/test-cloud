@@ -4,15 +4,27 @@ import { TabBar } from "@/app/components/ics/tab-bar";
 import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-input";
 import { cn } from "@/app/components/ui/utils";
 import { instructionBlockTitle } from "@/app/project/action-sequence/instruction-registry";
+import { isAxisSet, withoutAxis } from "@/app/project/action-sequence/keyframe-pose";
+import { createDefaultAxisProfiles } from "@/app/project/action-sequence/motion-profile";
 import { formatRepairItems } from "@/app/project/action-sequence/preset-repair";
-import type { ResolvedActionSequence } from "@/app/project/action-sequence/resolve-sequence";
+import {
+  isPassThroughMotion,
+  segmentAxisMotion,
+  uncontrolledAxesOf,
+  type ResolvedActionSequence,
+  type ResolvedAxisMotion,
+  type ResolvedMotionSegment,
+} from "@/app/project/action-sequence/resolve-sequence";
 import type {
   ActionSequenceConfig,
+  AxisMotionProfiles,
+  KeyframePose,
   ModelPose,
   MotionSegmentSettings,
   PoseBlock,
   TimelineBlock,
 } from "@/app/project/action-sequence/types";
+import { roundProjectCoordinate } from "@/app/project/project-quantity";
 import {
   MotionProfileEditor,
   type MotionProfileAxisContext,
@@ -28,13 +40,20 @@ import { lookupSequenceSelection, type SequenceSelection } from "../sequence-sel
 import type { PoseAxisWrite } from "../sequence-ops";
 import {
   VIRTUAL_AXIS_IDS,
+  formatDurationSeconds,
+  formatTime,
   msToSeconds,
   secondsToMs,
   type ControlledObject,
 } from "../timeline/timeline-data";
 import { useActionBuilder } from "../use-action-builder";
 import { getVirtualAxisCanonicalUnit } from "../virtual-axis-display";
-import { AXIS_MODE_TABS, intersectAxisRange, type AxisEditMode } from "../virtual-axis-edit";
+import {
+  AXIS_MODE_TABS,
+  intersectAxisRange,
+  virtualAxisLabel,
+  type AxisEditMode,
+} from "../virtual-axis-edit";
 import { VirtualAxisRow } from "../virtual-axis-row";
 import type { VirtualAxisId } from "@/app/project/project-document-types";
 
@@ -118,43 +137,74 @@ const axisContextFromObject = (
 
 const PoseAxesEditor = ({
   pose,
+  passThrough,
+  uncontrolledAxes,
   objectId,
   onChange,
 }: {
-  pose: ModelPose;
+  pose: KeyframePose;
+  /** 解析后的位姿：不设定的轴取这一帧的经过值 */
+  passThrough: ModelPose | undefined;
+  /** 该物体在所有位姿上都不设定的轴：序列不控制，没有经过值 */
+  uncontrolledAxes: readonly VirtualAxisId[];
   objectId: number;
-  onChange: (pose: ModelPose) => void;
+  onChange: (pose: KeyframePose) => void;
 }) => {
-  const { getTimelineObject } = useActionBuilder();
+  const { getTimelineObject, getLivePose } = useActionBuilder();
   const object = getTimelineObject(objectId);
   const [mode, setMode] = useState<AxisEditMode>("abs");
-  const [drafts, setDrafts] = useState<ModelPose>(pose);
+  const shown: ModelPose = {
+    v1: pose.v1 ?? passThrough?.v1 ?? 0,
+    v2: pose.v2 ?? passThrough?.v2 ?? 0,
+    v3: pose.v3 ?? passThrough?.v3 ?? 0,
+  };
+  const [drafts, setDrafts] = useState<ModelPose>(shown);
 
   useEffect(() => {
-    setDrafts(mode === "rel" ? ZERO_POSE : { v1: pose.v1, v2: pose.v2, v3: pose.v3 });
-  }, [mode, pose.v1, pose.v2, pose.v3]);
+    setDrafts(mode === "rel" ? ZERO_POSE : { v1: shown.v1, v2: shown.v2, v3: shown.v3 });
+  }, [mode, shown.v1, shown.v2, shown.v3]);
 
   const handleModeChange = (next: AxisEditMode) => {
     setMode(next);
   };
 
   const enabledAxes = resolveEnabledAxes(object?.enabledAxes ?? []);
+  const setCount = enabledAxes.filter((axis) => isAxisSet(pose, axis)).length;
 
   const handleDraftChange = (axis: VirtualAxisId, value: number) => {
     setDrafts((current) => ({ ...current, [axis]: value }));
   };
 
   const handleCommit = (axis: VirtualAxisId, value: number) => {
+    const current = pose[axis];
+    if (current === undefined) return;
     const range = object?.rangeByAxis?.[axis];
-    const nextValue = mode === "rel" ? pose[axis] + value : value;
+    const nextValue = mode === "rel" ? current + value : value;
     const clamped = clampNumeric(nextValue, range?.min, range?.max);
-    setDrafts((current) => ({
-      ...current,
+    setDrafts((drafts) => ({
+      ...drafts,
       [axis]: mode === "rel" ? 0 : clamped,
     }));
-    if (clamped === pose[axis]) return;
+    if (clamped === current) return;
     onChange({ ...pose, [axis]: clamped });
   };
+
+  const handleTogglePassThrough = (axis: VirtualAxisId) => {
+    if (isAxisSet(pose, axis)) {
+      if (setCount <= 1) return;
+      onChange(withoutAxis(pose, axis));
+      return;
+    }
+    // 重新设定时取这一帧的经过值，轨迹位置不跳；序列原本不控制的轴取实时位置
+    const value = uncontrolledAxes.includes(axis)
+      ? (getLivePose?.(objectId)?.[axis] ?? shown[axis])
+      : shown[axis];
+    onChange({ ...pose, [axis]: roundProjectCoordinate(value) });
+  };
+  const passingAxes = enabledAxes.filter(
+    (axis) => !isAxisSet(pose, axis) && !uncontrolledAxes.includes(axis),
+  );
+  const freeAxes = enabledAxes.filter((axis) => uncontrolledAxes.includes(axis));
 
   return (
     <div className="mb-3 space-y-2">
@@ -168,19 +218,52 @@ const PoseAxesEditor = ({
       </div>
       {enabledAxes.map((axis) => {
         const range = object?.rangeByAxis?.[axis];
+        const passing = !isAxisSet(pose, axis);
+        const onlySet = !passing && setCount <= 1;
         return (
-          <VirtualAxisRow
-            key={axis}
-            axis={axis}
-            value={drafts[axis]}
-            unit={getVirtualAxisCanonicalUnit(axis, object?.controlType)}
-            min={mode === "abs" ? range?.min : undefined}
-            max={mode === "abs" ? range?.max : undefined}
-            onChange={(value) => handleDraftChange(axis, value)}
-            onCommit={(value) => handleCommit(axis, value)}
-          />
+          <div key={axis} className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <VirtualAxisRow
+                axis={axis}
+                value={drafts[axis]}
+                mixed={uncontrolledAxes.includes(axis)}
+                unit={getVirtualAxisCanonicalUnit(axis, object?.controlType)}
+                min={mode === "abs" ? range?.min : undefined}
+                max={mode === "abs" ? range?.max : undefined}
+                disabled={passing}
+                onChange={(value) => handleDraftChange(axis, value)}
+                onCommit={(value) => handleCommit(axis, value)}
+              />
+            </div>
+            <button
+              type="button"
+              aria-label={`${virtualAxisLabel(axis)} 经过`}
+              aria-pressed={passing}
+              disabled={onlySet}
+              title={onlySet ? "至少设定一个轴" : "不设定：这一帧不停，按前后设定值之间的曲线经过"}
+              onClick={() => handleTogglePassThrough(axis)}
+              className={cn(
+                "h-8 shrink-0 rounded-md px-2 text-body-sm disabled:cursor-not-allowed disabled:opacity-50",
+                passing
+                  ? "bg-primary font-semibold text-primary-foreground"
+                  : "border border-border text-foreground hover:bg-accent",
+              )}
+            >
+              经过
+            </button>
+          </div>
         );
       })}
+      {passingAxes.length > 0 ? (
+        <p className="text-body-sm text-muted-foreground">
+          经过的轴这一帧不停，显示的是按前后设定值算出的位置
+        </p>
+      ) : null}
+      {freeAxes.length > 0 ? (
+        <p className="text-body-sm text-muted-foreground">
+          {freeAxes.map(virtualAxisLabel).join("、")} 在所有位姿上都不设定，这条序列不控制它，停在原位
+        </p>
+      ) : null}
     </div>
   );
 };
@@ -298,6 +381,29 @@ const MultiPoseAxesEditor = ({ poses }: { poses: PoseBlock[] }) => {
   );
 };
 
+const segmentMotions = (
+  segment: ResolvedMotionSegment,
+): Record<VirtualAxisId, ResolvedAxisMotion> => ({
+  v1: segmentAxisMotion(segment, "v1"),
+  v2: segmentAxisMotion(segment, "v2"),
+  v3: segmentAxisMotion(segment, "v3"),
+});
+
+const passThroughNotes = (
+  segment: ResolvedMotionSegment,
+  motions: Record<VirtualAxisId, ResolvedAxisMotion>,
+): Partial<Record<VirtualAxisId, string>> => {
+  const notes: Partial<Record<VirtualAxisId, string>> = {};
+  for (const axis of VIRTUAL_AXIS_IDS) {
+    const motion = motions[axis];
+    if (!isPassThroughMotion(segment, motion)) continue;
+    notes[axis] =
+      `${virtualAxisLabel(axis)}在区间端点经过，这里是 ${formatTime(motion.startMs)}–` +
+      `${formatDurationSeconds(motion.endMs)} 整段曲线，修改作用于整段`;
+  }
+  return notes;
+};
+
 const EmptyProperties = () => (
   <div className="flex min-h-0 flex-1 flex-col">
     <div className="flex h-9 shrink-0 items-center bg-muted px-3">
@@ -328,19 +434,40 @@ export const SequencePropertiesPanel = ({
 
   if (lookup.kind === "segment") {
     const { segment } = lookup;
+    const motions = segmentMotions(segment);
     const travel = {
-      v1: segment.toPose.v1 - segment.fromPose.v1,
-      v2: segment.toPose.v2 - segment.fromPose.v2,
-      v3: segment.toPose.v3 - segment.fromPose.v3,
+      v1: motions.v1.to - motions.v1.from,
+      v2: motions.v2.to - motions.v2.from,
+      v3: motions.v3.to - motions.v3.from,
+    };
+    const profiles: AxisMotionProfiles = {
+      v1: motions.v1.profile,
+      v2: motions.v2.profile,
+      v3: motions.v3.profile,
     };
     const object = getTimelineObject(segment.objectId);
     const disabled = !segment.configurable;
-    const axisContext = axisContextFromObject(object, travel, segment.durationMs);
-    const status = motionProfileSegmentStatus(
-      segment.settings.profiles,
-      axisContext,
-      disabled,
-    );
+    const axisContext: MotionProfileAxisContext = {
+      ...axisContextFromObject(object, travel, segment.durationMs),
+      durationMsByAxis: {
+        v1: motions.v1.durationMs,
+        v2: motions.v2.durationMs,
+        v3: motions.v3.durationMs,
+      },
+    };
+    const status = motionProfileSegmentStatus(profiles, axisContext, disabled);
+    const configProfiles = (fromRef: string, toRef: string, durationMs: number) =>
+      sequence.segments.find((item) => item.fromRef === fromRef && item.toRef === toRef)?.settings
+        .profiles ?? createDefaultAxisProfiles(durationMs);
+    // 编辑器一次只改一个轴；跨过端点的轴写到它整段曲线的设置上
+    const handleProfilesChange = (next: AxisMotionProfiles) => {
+      for (const axis of VIRTUAL_AXIS_IDS) {
+        if (next[axis] === profiles[axis]) continue;
+        const motion = motions[axis];
+        const base = configProfiles(motion.fromRef, motion.toRef, motion.durationMs);
+        onUpdateSegment(motion.fromRef, motion.toRef, { profiles: { ...base, [axis]: next[axis] } });
+      }
+    };
     return (
       <PropertiesShell
         title="运动区间"
@@ -358,16 +485,15 @@ export const SequencePropertiesPanel = ({
         />
         <MotionProfileEditor
           key={`${segment.fromRef}->${segment.toRef}`}
-          value={segment.settings.profiles}
+          value={profiles}
           disabled={disabled}
           axisContext={axisContext}
+          axisNotes={passThroughNotes(segment, motions)}
           segmentContext={{
             fromRef: segment.fromRef,
             toRef: segment.toRef,
           }}
-          onChange={(profiles) =>
-            onUpdateSegment(segment.fromRef, segment.toRef, { profiles })
-          }
+          onChange={handleProfilesChange}
         />
       </PropertiesShell>
     );
@@ -406,6 +532,10 @@ export const SequencePropertiesPanel = ({
         <PoseAxesEditor
           key={poseBlock.id}
           pose={poseBlock.pose}
+          passThrough={
+            resolved.poses.find((point) => point.sourceBlockId === poseBlock.id)?.pose
+          }
+          uncontrolledAxes={uncontrolledAxesOf(resolved, poseBlock.objectId)}
           objectId={poseBlock.objectId}
           onChange={(pose) => onReplaceBlock({ ...poseBlock, pose })}
         />

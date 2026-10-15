@@ -569,11 +569,12 @@ const validateAxisMotionProfiles = (value: unknown, path: string, a: StructuralA
   validateMotionProfile(profiles.v3, `${path}.v3`, a);
 };
 
-const validateModelPose = (value: unknown, path: string, a: StructuralAssertions): void => {
+/** 位姿块的值：缺少的轴表示不设定 */
+const validateKeyframePose = (value: unknown, path: string, a: StructuralAssertions): void => {
   const pose = a.record(value, path);
-  a.finite(pose.v1, `${path}.v1`);
-  a.finite(pose.v2, `${path}.v2`);
-  a.finite(pose.v3, `${path}.v3`);
+  a.optionalFinite(pose.v1, `${path}.v1`);
+  a.optionalFinite(pose.v2, `${path}.v2`);
+  a.optionalFinite(pose.v3, `${path}.v3`);
 };
 
 const validatePresetParams = (value: unknown, path: string, a: StructuralAssertions): void => {
@@ -610,7 +611,7 @@ const validateTimelineBlock = (value: unknown, path: string, a: StructuralAssert
     case "pose":
       validateSetupEntityId(block.objectId, `${path}.objectId`, a);
       a.nonNegativeFinite(block.atMs, `${path}.atMs`);
-      validateModelPose(block.pose, `${path}.pose`, a);
+      validateKeyframePose(block.pose, `${path}.pose`, a);
       break;
     case "instruction":
       validateSetupEntityId(block.objectId, `${path}.objectId`, a);
