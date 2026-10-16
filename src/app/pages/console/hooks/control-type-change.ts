@@ -6,7 +6,7 @@ import {
 } from "@/app/project/action-sequence/resolve-sequence";
 import type {
   ActionSequenceConfig,
-  ModelPose,
+  KeyframePose,
   ProjectDocument,
   TimelineBlock,
   VirtualAxisId,
@@ -157,14 +157,15 @@ export const analyzeControlTypeChangeImpact = (
 const PRESET_AXIS_PARAM_KEYS: readonly VirtualAxisId[] = ["v2", "v3"];
 
 const zeroPoseRemovedAxes = (
-  pose: ModelPose,
+  pose: KeyframePose,
   removed: Set<VirtualAxisId>,
-): { pose: ModelPose; changed: boolean } => {
-  const next: ModelPose = { v1: pose.v1, v2: pose.v2, v3: pose.v3 };
+): { pose: KeyframePose; changed: boolean } => {
+  const next: KeyframePose = { ...pose };
   let changed = false;
   for (const axis of removed) {
     if (axis !== "v1" && axis !== "v2" && axis !== "v3") continue;
-    if (next[axis] === 0) continue;
+    // 不设定的轴本来就不下发，留着不动
+    if (next[axis] === undefined || next[axis] === 0) continue;
     next[axis] = 0;
     changed = true;
   }

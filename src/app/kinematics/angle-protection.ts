@@ -1,4 +1,4 @@
-import { interpolatePoseWithProfiles } from "@/app/project/action-sequence/evaluate-sequence";
+import { segmentPoseAt } from "@/app/project/action-sequence/evaluate-sequence";
 import type { ModelPose } from "@/app/project/action-sequence/types";
 import type { ResolvedMotionSegment, ResolvedPosePoint } from "@/app/project/action-sequence/resolve-sequence";
 
@@ -73,13 +73,7 @@ const sampleTimesMs = (startMs: number, endMs: number, stepMs: number): number[]
 };
 
 const poseAtProgress = (segment: ResolvedMotionSegment, progress: number): ModelPose =>
-  interpolatePoseWithProfiles(
-    segment.fromPose,
-    segment.toPose,
-    segment.settings.profiles,
-    progress,
-    segment.durationMs,
-  );
+  segmentPoseAt(segment, segment.startMs + progress * segment.durationMs);
 
 const excessOf = (pitch: number, min: number, max: number): number =>
   Math.max(min - pitch, pitch - max, 0);

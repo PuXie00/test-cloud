@@ -576,7 +576,7 @@ describe("validateActionSequence", () => {
     );
   });
 
-  it("blocks accel or decel shorter than minAccelTime", () => {
+  it("blocks acceleration above max velocity / minAccelTime, not short phases", () => {
     const sequence = sequenceOf(
       [
         { id: "start", kind: "pose", objectId: 7, atMs: 0, pose: origin },
@@ -586,7 +586,12 @@ describe("validateActionSequence", () => {
         segments: [{ fromRef: "start", toRef: "end", settings: { profiles: axisProfiles(200, 600) } }],
       },
     );
-    expect(codesOf(sequence, contextWith({ minAccelTime: 1 }))).toContain("phase-shorter-than-min-accel");
+    // 峰值 900/(3-0.4)≈346，加速 0.2 s 即 ≈1731 mm/s²
+    expect(codesOf(sequence, contextWith({ maxVelocity: 1000, minAccelTime: 1 }))).toContain(
+      "acceleration-exceeded",
+    );
+    // 加速段比最短加减速时间短，但上限 10000/1 足够
+    expect(codesOf(sequence, contextWith({ minAccelTime: 1 }))).not.toContain("acceleration-exceeded");
   });
 
   it("only validates phase and cruise on travelling axes", () => {
@@ -627,10 +632,10 @@ describe("validateActionSequence", () => {
         },
       ]),
     );
-    expect(issues.some((issue) => issue.code === "phase-shorter-than-min-accel")).toBe(false);
+    expect(issues.some((issue) => issue.code === "acceleration-exceeded")).toBe(false);
   });
 
-  it("reports phase-shorter only on the travelling axis with short phases", () => {
+  it("reports acceleration only on the travelling axis that exceeds its limit", () => {
     const profiles: AxisMotionProfiles = {
       v1: trapezoid(200, 1000),
       v2: trapezoid(600, 600),
@@ -661,7 +666,7 @@ describe("validateActionSequence", () => {
             v1: {
               min: -10_000,
               max: 10_000,
-              maxVelocity: 10_000,
+              maxVelocity: 1000,
               minAccelTime: 1,
             },
             v2: {
@@ -674,7 +679,7 @@ describe("validateActionSequence", () => {
         },
       ]),
     );
-    const phaseIssues = issues.filter((issue) => issue.code === "phase-shorter-than-min-accel");
+    const phaseIssues = issues.filter((issue) => issue.code === "acceleration-exceeded");
     expect(phaseIssues).toHaveLength(1);
     expect(phaseIssues[0]?.message).toMatch(/v1/);
   });

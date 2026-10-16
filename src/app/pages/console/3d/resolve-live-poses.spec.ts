@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   mergeHoldPoses,
+  pinLiveAxes,
   resolveLivePoses,
 } from "./resolve-live-poses";
 import type { ModelPose } from "@/app/project/action-sequence/types";
@@ -37,6 +38,23 @@ describe("resolveLivePoses", () => {
   it("fills install pose for virtual-axis objects absent from snapshots", () => {
     const poses = resolveLivePoses([], new Set([7]));
     expect(poses.get(7)).toEqual(pose(0));
+  });
+});
+
+describe("pinLiveAxes", () => {
+  it("shows the live value only on axes the sequence does not control", () => {
+    const preview = new Map([
+      [1, { v1: 100, v2: 0, v3: 0 }],
+      [2, { v1: 50, v2: 3, v3: 0 }],
+    ]);
+    const live = new Map([
+      [1, { v1: 900, v2: 12, v3: 4 }],
+      [2, { v1: 1, v2: 2, v3: 3 }],
+    ]);
+    const pinned = pinLiveAxes(preview, new Map([[1, ["v2", "v3"] as const]]), live);
+    expect(pinned.get(1)).toEqual({ v1: 100, v2: 12, v3: 4 });
+    expect(pinned.get(2)).toEqual({ v1: 50, v2: 3, v3: 0 });
+    expect(pinLiveAxes(preview, null, live)).toBe(preview);
   });
 });
 

@@ -22,6 +22,8 @@ export type VelocityChartProps = {
   compact?: boolean;
   minAccelMs?: number;
   onProfileChange?: (profile: MotionProfile) => void;
+  /** 带进出速度时的实际速度（与 limits 同单位）；不传时按从 0 到 0 的梯形画 */
+  velocityAt?: (tNorm: number) => number;
 };
 
 const VIEW_WIDTH = 100;
@@ -120,30 +122,23 @@ const plotNormFromSample = (
 ): number => (sample * peakVelocity) / yTop;
 
 const PhaseShape = ({
-  profile,
-  durationMs,
-  peakVelocity,
-  yTop,
+  yAt,
   t0,
   t1,
   phase,
   fillClass,
   limitAttr,
 }: {
-  profile: MotionProfile;
-  durationMs: number;
-  peakVelocity: number;
-  yTop: number;
+  /** 曲线在 tNorm 处的 svg y */
+  yAt: (tNorm: number) => number;
   t0: number;
   t1: number;
   phase: PhaseId;
   fillClass: string;
   limitAttr?: LimitAttr;
 }) => {
-  const v0 = drawVelocityNorm(profile, t0, durationMs);
-  const v1 = drawVelocityNorm(profile, t1, durationMs);
-  const y0 = svgY(plotNormFromSample(v0, peakVelocity, yTop));
-  const y1 = svgY(plotNormFromSample(v1, peakVelocity, yTop));
+  const y0 = yAt(t0);
+  const y1 = yAt(t1);
   const points = [
     formatPoint(t0, 0),
     `${plotX(t0)},${y0}`,
@@ -170,6 +165,7 @@ export const VelocityChart = ({
   compact = false,
   minAccelMs,
   onProfileChange,
+  velocityAt,
 }: VelocityChartProps) => {
   const plotRef = useRef<SVGSVGElement>(null);
   const { kind } = profile;
@@ -209,11 +205,9 @@ export const VelocityChart = ({
 
   const plotYFromT = (tNorm: number): number =>
     svgY(
-      plotNormFromSample(
-        drawVelocityNorm(profile, tNorm, durationMs),
-        peakVelocity,
-        yTop,
-      ),
+      velocityAt
+        ? velocityAt(tNorm) / yTop
+        : plotNormFromSample(drawVelocityNorm(profile, tNorm, durationMs), peakVelocity, yTop),
     );
 
   const handlePointerDown = (event: PointerEvent<SVGGElement>) => {
@@ -347,20 +341,14 @@ export const VelocityChart = ({
           {canDrawProfile ? (
             <>
               <PhaseShape
-                profile={profile}
-                durationMs={durationMs}
-                peakVelocity={peakVelocity}
-                yTop={yTop}
+                yAt={plotYFromT}
                 t0={0}
                 t1={tAccel}
                 phase="accel"
                 fillClass="fill-primary/20"
               />
               <PhaseShape
-                profile={profile}
-                durationMs={durationMs}
-                peakVelocity={peakVelocity}
-                yTop={yTop}
+                yAt={plotYFromT}
                 t0={tAccel}
                 t1={tCruiseEnd}
                 phase="cruise"
@@ -368,10 +356,7 @@ export const VelocityChart = ({
                 limitAttr={velOver ? "velocity" : undefined}
               />
               <PhaseShape
-                profile={profile}
-                durationMs={durationMs}
-                peakVelocity={peakVelocity}
-                yTop={yTop}
+                yAt={plotYFromT}
                 t0={tCruiseEnd}
                 t1={1}
                 phase="decel"
@@ -383,7 +368,7 @@ export const VelocityChart = ({
                 strokeWidth={1.2}
                 vectorEffect="non-scaling-stroke"
                 points={[
-                  formatPoint(0, 0),
+                  `${plotX(0)},${plotYFromT(0)}`,
                   `${plotX(tAccel)},${plotYFromT(tAccel)}`,
                 ].join(" ")}
               />
@@ -403,7 +388,7 @@ export const VelocityChart = ({
                 vectorEffect="non-scaling-stroke"
                 points={[
                   `${plotX(tCruiseEnd)},${plotYFromT(tCruiseEnd)}`,
-                  formatPoint(1, 0),
+                  `${plotX(1)},${plotYFromT(1)}`,
                 ].join(" ")}
               />
               {showPeakTick ? (

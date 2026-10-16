@@ -382,9 +382,12 @@ export const applyPoseAxisWrite = (
     const info = options?.objectInfo?.(block.objectId);
     if (!resolveWriteAxes(info?.enabledAxes).includes(write.axis)) continue;
     const range = info?.rangeByAxis?.[write.axis];
-    const nextValue = write.mode === "rel" ? block.pose[write.axis] + write.value : write.value;
+    const current = block.pose[write.axis];
+    // 相对写入跳过不设定的轴，让它继续经过；绝对写入会设定该轴
+    if (write.mode === "rel" && current === undefined) continue;
+    const nextValue = write.mode === "rel" ? (current ?? 0) + write.value : write.value;
     const clamped = clampNumeric(nextValue, range?.min, range?.max);
-    if (clamped === block.pose[write.axis]) continue;
+    if (clamped === current) continue;
     block.pose = { ...block.pose, [write.axis]: clamped };
     changed = true;
   }

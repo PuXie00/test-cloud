@@ -311,8 +311,8 @@ describe("compilePlcAction", () => {
     expect(compiled.models).toEqual([{
       deviceId: 7,
       timeBlockList: [
-        { time: 1000, virtualAxis: [{ pos: 0, vel: 0, accVel: 0, decVel: 0 }] },
-        { time: 2000, virtualAxis: [{ pos: 1000, ...expected }] },
+        { time: 1000, virtualAxis: [{ pos: 0, vel: 0, accVel: 0, decVel: 0, passVel: 0 }] },
+        { time: 2000, virtualAxis: [{ pos: 1000, ...expected, passVel: 0 }] },
       ],
     }]);
   });
@@ -340,8 +340,8 @@ describe("compilePlcAction", () => {
     expect(compiled.models).toEqual([{
       deviceId: 7,
       timeBlockList: [
-        { time: 1000, virtualAxis: [{ pos: 0, ...expected }] },
-        { time: 2000, virtualAxis: [{ pos: 1000, vel: 0, accVel: 0, decVel: 0 }] },
+        { time: 1000, virtualAxis: [{ pos: 0, ...expected, passVel: 0 }] },
+        { time: 2000, virtualAxis: [{ pos: 1000, vel: 0, accVel: 0, decVel: 0, passVel: 0 }] },
       ],
     }]);
   });
@@ -383,15 +383,15 @@ describe("compilePlcAction", () => {
     const model7 = compiled.models.find((model) => model.deviceId === 7);
     expect(model7?.timeBlockList.map((block) => block.time)).toEqual([1000, 1750, 2500, 3000]);
     expect(model7?.timeBlockList[0]?.virtualAxis).toEqual([
-      { pos: 1000, vel: 0, accVel: 0, decVel: 0 },
+      { pos: 1000, vel: 0, accVel: 0, decVel: 0, passVel: 0 },
     ]);
     expect(model7?.timeBlockList[3]?.virtualAxis).toEqual([
-      { pos: 1000, vel: 0, accVel: 0, decVel: 0 },
+      { pos: 1000, vel: 0, accVel: 0, decVel: 0, passVel: 0 },
     ]);
     const model8 = compiled.models.find((model) => model.deviceId === 8);
     expect(model8?.timeBlockList[0]).toEqual({
       time: 1000,
-      virtualAxis: [{ pos: 1000, vel: 0, accVel: 0, decVel: 0 }],
+      virtualAxis: [{ pos: 1000, vel: 0, accVel: 0, decVel: 0, passVel: 0 }],
     });
   });
 

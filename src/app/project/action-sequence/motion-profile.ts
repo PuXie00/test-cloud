@@ -280,3 +280,81 @@ export const calculateMotionProfileKinematics = (
     decelDurationSec: decelRatio * durationSec,
   };
 };
+
+/** 进入、离开这段时的速度（单位/秒，沿行程方向为正）；连续衔接时中间位姿不为 0 */
+export type MotionBoundary = { startSpeed: number; endSpeed: number };
+
+export const hasMotionBoundary = (boundary: MotionBoundary | undefined): boolean =>
+  boundary !== undefined && (boundary.startSpeed > 0 || boundary.endSpeed > 0);
+
+/** 带进出速度的梯形：段首从 startSpeed 变到匀速，段尾从匀速变到 endSpeed */
+export type BoundaryTrapezoid = {
+  startSpeed: number;
+  cruiseSpeed: number;
+  endSpeed: number;
+  accelSec: number;
+  cruiseSec: number;
+  decelSec: number;
+};
+
+/** 行程或时长放不下这次变速（匀速算出来不是正数）时返回 null */
+export const boundaryTrapezoidOf = (
+  profile: MotionProfile,
+  distance: number,
+  durationMs: number,
+  boundary: MotionBoundary,
+): BoundaryTrapezoid | null => {
+  if (profile.kind !== "trapezoid") return null;
+  const totalSec = durationMs / 1000;
+  const accelSec = profile.params.accelMs / 1000;
+  const decelSec = profile.params.decelMs / 1000;
+  if (!(totalSec > 0) || !(accelSec > 0) || !(decelSec > 0) || accelSec + decelSec > totalSec) {
+    return null;
+  }
+  const cruiseSpeed =
+    (distance - (accelSec * boundary.startSpeed) / 2 - (decelSec * boundary.endSpeed) / 2) /
+    (totalSec - accelSec / 2 - decelSec / 2);
+  if (!Number.isFinite(cruiseSpeed) || cruiseSpeed <= 0) return null;
+  return {
+    startSpeed: boundary.startSpeed,
+    cruiseSpeed,
+    endSpeed: boundary.endSpeed,
+    accelSec,
+    cruiseSec: totalSec - accelSec - decelSec,
+    decelSec,
+  };
+};
+
+/** 从这段起点走过的距离 */
+export const boundaryTrapezoidDistanceAt = (shape: BoundaryTrapezoid, sec: number): number => {
+  const { startSpeed, cruiseSpeed, endSpeed, accelSec, cruiseSec, decelSec } = shape;
+  const t = Math.min(Math.max(sec, 0), accelSec + cruiseSec + decelSec);
+  if (t <= accelSec) return startSpeed * t + ((cruiseSpeed - startSpeed) * t * t) / (2 * accelSec);
+  const accelDistance = (accelSec * (startSpeed + cruiseSpeed)) / 2;
+  if (t <= accelSec + cruiseSec) return accelDistance + cruiseSpeed * (t - accelSec);
+  const u = t - accelSec - cruiseSec;
+  return (
+    accelDistance +
+    cruiseSpeed * cruiseSec +
+    cruiseSpeed * u -
+    ((cruiseSpeed - endSpeed) * u * u) / (2 * decelSec)
+  );
+};
+
+export const boundaryTrapezoidSpeedAt = (shape: BoundaryTrapezoid, sec: number): number => {
+  const { startSpeed, cruiseSpeed, endSpeed, accelSec, cruiseSec, decelSec } = shape;
+  const t = Math.min(Math.max(sec, 0), accelSec + cruiseSec + decelSec);
+  if (t <= accelSec) return startSpeed + ((cruiseSpeed - startSpeed) * t) / accelSec;
+  if (t <= accelSec + cruiseSec) return cruiseSpeed;
+  return cruiseSpeed - ((cruiseSpeed - endSpeed) * (t - accelSec - cruiseSec)) / decelSec;
+};
+
+/** 和 calculateMotionProfileKinematics 同形：峰值取三个速度里最大的，加减速度取两段变速的变化率 */
+export const boundaryTrapezoidKinematics = (shape: BoundaryTrapezoid): MotionProfileKinematics => ({
+  peakVelocity: Math.max(shape.startSpeed, shape.cruiseSpeed, shape.endSpeed),
+  acceleration: Math.abs(shape.cruiseSpeed - shape.startSpeed) / shape.accelSec,
+  deceleration: Math.abs(shape.cruiseSpeed - shape.endSpeed) / shape.decelSec,
+  accelDurationSec: shape.accelSec,
+  cruiseDurationSec: shape.cruiseSec,
+  decelDurationSec: shape.decelSec,
+});

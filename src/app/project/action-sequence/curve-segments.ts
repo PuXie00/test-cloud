@@ -1,8 +1,12 @@
 import type { PlcCurveSegment } from "@shared/csocket/action-data-save";
 import {
+  boundaryTrapezoidDistanceAt,
+  boundaryTrapezoidOf,
   calculateMotionProfileKinematics,
   cruiseMsOf,
   evaluateMotionProfile,
+  hasMotionBoundary,
+  type MotionBoundary,
 } from "./motion-profile";
 import type { MotionProfile } from "./types";
 
@@ -50,16 +54,58 @@ const phaseSegment = (
   };
 };
 
+/** 带进出速度：首行带进入速度，末段变到离开速度，下一段从这个速度接上 */
+const boundaryCurveSegments = (
+  profile: MotionProfile,
+  startMs: number,
+  startPos: number,
+  travel: number,
+  durationMs: number,
+  boundary: MotionBoundary,
+): PlcCurveSegment[] => {
+  const shape = boundaryTrapezoidOf(profile, Math.abs(travel), durationMs, boundary);
+  if (!shape) throw new Error("invalid trapezoid motion profile");
+  const sign = Math.sign(travel);
+  const at = (sec: number) => startPos + sign * boundaryTrapezoidDistanceAt(shape, sec);
+  const rows = [
+    phaseSegment(
+      startMs,
+      startPos,
+      sign * shape.startSpeed,
+      (sign * (shape.cruiseSpeed - shape.startSpeed)) / shape.accelSec,
+    ),
+  ];
+  if (shape.cruiseSec > 0) {
+    rows.push(phaseSegment(startMs + shape.accelSec * 1000, at(shape.accelSec), sign * shape.cruiseSpeed, 0));
+  }
+  if (shape.decelSec > 0) {
+    const decelStartSec = shape.accelSec + shape.cruiseSec;
+    rows.push(
+      phaseSegment(
+        startMs + decelStartSec * 1000,
+        at(decelStartSec),
+        sign * shape.cruiseSpeed,
+        (-sign * (shape.cruiseSpeed - shape.endSpeed)) / shape.decelSec,
+      ),
+    );
+  }
+  return rows;
+};
+
 export const trapezoidToCurveSegments = (
   profile: MotionProfile,
   startMs: number,
   startPos: number,
   endPos: number,
   durationMs: number,
+  boundary?: MotionBoundary,
 ): PlcCurveSegment[] => {
   const travel = endPos - startPos;
   if (profile.kind !== "trapezoid" || travel === 0) {
     return [holdSegment(startMs, startPos)];
+  }
+  if (boundary && hasMotionBoundary(boundary)) {
+    return boundaryCurveSegments(profile, startMs, startPos, travel, durationMs, boundary);
   }
 
   const sign = Math.sign(travel);
