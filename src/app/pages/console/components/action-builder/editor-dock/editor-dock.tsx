@@ -20,6 +20,7 @@ import {
 import { pickNiceMajorStepSec } from "../timeline/timeline-ticks";
 import { TimelineEditor } from "../timeline/timeline-editor";
 import { TimelineToolbar } from "../timeline/timeline-toolbar";
+import { SequenceDeleteDialog } from "./sequence-delete-dialog";
 import { SequenceRenameDialog } from "./sequence-rename-dialog";
 import { useTimelinePlayback } from "../timeline/use-timeline-playback";
 
@@ -54,7 +55,6 @@ const SequenceEditor = () => {
     handleShiftTimelineBlocksEnd,
     handleResizeDynamicPreset,
     handleBlockDelete,
-    handleDeleteSequence,
     handleBlockCopy,
     handleBlockPaste,
     canPasteBlock,
@@ -87,6 +87,7 @@ const SequenceEditor = () => {
   };
   const rootRef = useRef<HTMLDivElement>(null);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const selectedBlockIds = selectionBlockIds(selection);
   const invalidTargets = useMemo(
     () => invalidTimelineTargets(sequenceIssues),
@@ -193,11 +194,12 @@ const SequenceEditor = () => {
         atEnd={totalMs > 0 && cursorMs >= totalMs}
         onPlayToggle={handlePlayToggle}
         onSave={handleSave}
-        onDelete={handleDeleteSequence}
+        onDelete={() => setDeleteOpen(true)}
         onZoomIn={handleTimelineZoomIn}
         onZoomOut={handleTimelineZoomOut}
       />
       <SequenceRenameDialog open={renameOpen} onOpenChange={setRenameOpen} />
+      <SequenceDeleteDialog open={deleteOpen} onOpenChange={setDeleteOpen} />
       {resolved === null && (
         <div className="shrink-0 bg-warning-surface px-3 py-2 text-body-sm text-warning">
           预设无法解析，可继续编辑块

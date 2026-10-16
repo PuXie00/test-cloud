@@ -323,8 +323,33 @@ describe("editor dock sequence editor", () => {
     });
     render(<EditorDock />);
     fireEvent.click(screen.getByRole("button", { name: "删除序列" }));
+    expect(handleDeleteSequence).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
     expect(handleDeleteSequence).toHaveBeenCalledTimes(1);
     expect(handleBlockDelete).not.toHaveBeenCalled();
+  });
+
+  it("asks before deleting and keeps the sequence on cancel", () => {
+    const handleDeleteSequence = vi.fn();
+    mockBuilder({
+      handleDeleteSequence,
+      programs: [
+        {
+          id: "p1",
+          name: "节目",
+          type: "program",
+          children: [{ id: "c1", name: "章节", type: "chapter", children: [{ id: String(sequence.id), name: sequence.name, type: "sequence" }] }],
+        },
+      ],
+    });
+    render(<EditorDock />);
+    fireEvent.click(screen.getByRole("button", { name: "删除序列" }));
+    expect(screen.getByRole("alertdialog")).not.toBeNull();
+    expect(screen.getByText(`删除动作序列「${sequence.name}」`)).not.toBeNull();
+    expect(screen.getByText("节目中有 1 处用到这条序列，删除后会一并移除。确定删除吗？")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(handleDeleteSequence).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
   it("enables 删除序列 without a timeline block selection", () => {
