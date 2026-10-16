@@ -802,3 +802,7 @@ const validateDocument = (input: unknown): void => {
 
 export const assertProjectDocumentStructure = (input: unknown): void =>
   validateDocument(input);
+
+/** 单条动作序列的结构，与工程文件里 motion.actionSequences[] 的要求一致 */
+export const assertActionSequenceStructure = (input: unknown, path = "sequence"): void =>
+  validateSequence(input, path, new StructuralAssertions());

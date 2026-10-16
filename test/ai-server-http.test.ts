@@ -1,7 +1,7 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { AiConfigPayload } from "../shared/ai-bridge/types";
+import type { AiConfigPayload, AiWriteRequest, AiWriteResult } from "../shared/ai-bridge/types";
 import type { ProjectDocumentLike } from "../shared/project/types";
 import { createAiHttpServer } from "../electron/ai-server/http";
 import { AiBridgeStore } from "../electron/ai-server/store";
@@ -51,10 +51,12 @@ describe("ai-server HTTP", () => {
   let store: AiBridgeStore;
   let server: http.Server;
   let port: number;
+  const writes: AiWriteRequest[] = [];
+  let writeResult: AiWriteResult = { ok: false, code: "NO_PROJECT", message: "没有打开的工程" };
 
   const request = (
     path: string,
-    options: { method?: string; headers?: http.OutgoingHttpHeaders } = {},
+    options: { method?: string; headers?: http.OutgoingHttpHeaders; body?: string } = {},
   ): Promise<Reply> =>
     new Promise((resolve, reject) => {
       const req = http.request(
@@ -72,7 +74,14 @@ describe("ai-server HTTP", () => {
         },
       );
       req.on("error", reject);
-      req.end();
+      req.end(options.body);
+    });
+
+  const postSequence = (body: unknown, headers: http.OutgoingHttpHeaders = {}) =>
+    request("/api/sequences", {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=utf-8", ...headers },
+      body: typeof body === "string" ? body : JSON.stringify(body),
     });
 
   const getJson = async (path: string) => {
@@ -83,7 +92,12 @@ describe("ai-server HTTP", () => {
 
   beforeAll(async () => {
     store = new AiBridgeStore();
-    server = createAiHttpServer(store);
+    server = createAiHttpServer(store, {
+      request: async (write) => {
+        writes.push(write);
+        return writeResult;
+      },
+    });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     port = (server.address() as AddressInfo).port;
   });
@@ -94,6 +108,7 @@ describe("ai-server HTTP", () => {
   });
 
   beforeEach(() => {
+    writes.length = 0;
     store.resetRenderer();
     store.applyStatus({ reset: true, connection: "idle" });
   });
@@ -111,11 +126,74 @@ describe("ai-server HTTP", () => {
     expect(JSON.parse(reply.body).ok).toBe(true);
   });
 
-  it("is read-only and 404s unknown paths", async () => {
+  it("only accepts GET on read paths and 404s unknown paths", async () => {
     const post = await request("/api/view", { method: "POST" });
     expect(post.status).toBe(405);
     expect(post.headers.allow).toBe("GET, HEAD");
     expect((await request("/api/nope")).status).toBe(404);
+  });
+
+  it("forwards a sequence write to the renderer and maps the outcome", async () => {
+    const sequence = { id: 9, name: "上升", trajectoryMode: false, blocks: [], segments: [] };
+    writeResult = { ok: true, created: true, changed: true, sequence, warnings: [] };
+    const created = await postSequence(sequence);
+    expect(created.status).toBe(201);
+    expect(JSON.parse(created.body)).toEqual(writeResult);
+    expect(writes).toEqual([{ kind: "upsert-sequence", sequence }]);
+
+    writeResult = { ...writeResult, created: false };
+    expect((await postSequence(sequence)).status).toBe(200);
+
+    writeResult = {
+      ok: false,
+      code: "VALIDATION_FAILED",
+      message: "动作序列校验未通过",
+      issues: [{ severity: "error", code: "limit-exceeded", message: "超限" }],
+    };
+    const rejected = await postSequence(sequence);
+    expect(rejected.status).toBe(422);
+    expect(JSON.parse(rejected.body)).toEqual(writeResult);
+
+    writeResult = { ok: false, code: "RENDERER_UNAVAILABLE", message: "x" };
+    expect((await postSequence(sequence)).status).toBe(503);
+  });
+
+  it("rejects malformed sequence writes before reaching the renderer", async () => {
+    const wrongMethod = await request("/api/sequences");
+    expect(wrongMethod.status).toBe(405);
+    expect(wrongMethod.headers.allow).toBe("POST");
+
+    const plainText = await postSequence("{}", { "Content-Type": "text/plain" });
+    expect(plainText.status).toBe(415);
+
+    const badJson = await postSequence("{oops");
+    expect(badJson.status).toBe(400);
+    expect(JSON.parse(badJson.body).code).toBe("INVALID_JSON");
+
+    const foreign = await postSequence({}, { Origin: "https://evil.example" });
+    expect(foreign.status).toBe(403);
+    expect(JSON.parse(foreign.body).code).toBe("FORBIDDEN_ORIGIN");
+
+    const tooLarge = await postSequence(JSON.stringify({ pad: "x".repeat(2 * 1024 * 1024) }));
+    expect(tooLarge.status).toBe(413);
+
+    expect(writes).toEqual([]);
+  });
+
+  it("refuses sequence writes in show mode", async () => {
+    store.applyRenderer({
+      type: "console",
+      data: {
+        mode: "show",
+        nav: "control",
+        tab: null,
+        selection: { objects: [], primaryObjectId: null, motors: [], treeFocus: null, sequence: null },
+      },
+    });
+    const reply = await postSequence({ id: 9 });
+    expect(reply.status).toBe(409);
+    expect(JSON.parse(reply.body).code).toBe("SHOW_MODE");
+    expect(writes).toEqual([]);
   });
 
   it("serves the view pushed by the renderer", async () => {

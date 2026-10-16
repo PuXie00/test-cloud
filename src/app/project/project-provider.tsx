@@ -49,7 +49,9 @@ export type DocumentMutationOrigin =
   | "program"
   | "project-command"
   | "history"
-  | "version-restore";
+  | "version-restore"
+  /** 本地 AI 经 HTTP 写入（动作序列）；动作 / 节目编辑器按外部改动重新载入 */
+  | "ai";
 
 export type DocumentRevision = {
   value: number;
@@ -112,7 +114,7 @@ type ProjectContextValue = {
   redoProjectConfiguration: () => ProjectHistoryResult;
   updateCurrentDocument: (
     updater: (document: ProjectDocument) => ProjectDocument,
-    origin?: Extract<DocumentMutationOrigin, "motion" | "program">,
+    origin?: Extract<DocumentMutationOrigin, "motion" | "program" | "ai">,
   ) => ProjectUpdateResult;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
@@ -965,7 +967,7 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
   const updateCurrentDocument = useCallback(
     (
       updater: (document: ProjectDocument) => ProjectDocument,
-      origin: Extract<DocumentMutationOrigin, "motion" | "program"> = "motion",
+      origin: Extract<DocumentMutationOrigin, "motion" | "program" | "ai"> = "motion",
     ): ProjectUpdateResult => {
       if (isRestoringVersionRef.current) {
         return failUpdate("正在恢复版本，无法修改工程配置");
