@@ -22,7 +22,7 @@ const pose = (
 
 const sequenceOf = (
   blocks: PoseBlock[],
-  extra: Partial<ActionSequenceConfig> = { continuousMotion: true },
+  extra: Partial<ActionSequenceConfig> = {},
 ): ActionSequenceConfig => ({
   id: 1,
   name: "continuous",
@@ -74,11 +74,17 @@ describe("continuous motion between poses", () => {
     expect(evaluateResolvedSequence(resolved, 6000).get(1)?.v1).toBeCloseTo(1000);
   });
 
-  it("keeps stopping at every pose in old sequences", () => {
-    const [slow, fast] = v1Motions(sequenceOf(slowFast, {}));
+  it("stops at every pose when each pass speed is 0", () => {
+    const stopped = sequenceOf([
+      slowFast[0]!,
+      pose("p1", 4000, { v1: 400 }, { v1: 0 }),
+      slowFast[2]!,
+    ]);
+    const [slow, fast] = v1Motions(stopped);
     expect(slow).toMatchObject({ startSpeed: 0, endSpeed: 0 });
+    // 和原来每帧停一样：快段峰值 600/(2-0.4)
     expect(axisMotionVelocityAt(fast!, 5000)).toBeCloseTo(375);
-    expect(junctionsOf(sequenceOf(slowFast, {}))[1]).toEqual({ speed: 0, kind: "per-frame" });
+    expect(junctionsOf(stopped)[1]).toEqual({ speed: 0, kind: "manual" });
   });
 
   it("follows hand-entered pass speeds, 0 meaning stop", () => {
@@ -104,10 +110,6 @@ describe("continuous motion between poses", () => {
     expect(axisMotionVelocityAt(motions[3]!, 9000)).toBeCloseTo(112.5);
     expect(junctionsOf(manual)[2]).toEqual({ speed: 150, kind: "manual" });
 
-    const stopped = v1Motions(
-      sequenceOf([alternating[0]!, pose("p1", 4000, { v1: 400 }, { v1: 0 }), alternating[2]!]),
-    );
-    expect(stopped[0]?.endSpeed).toBe(0);
   });
 
   it("stops where the axis turns back or holds", () => {
@@ -140,7 +142,7 @@ describe("continuous motion between poses", () => {
         pose("p2", 6000, { v1: -500 }),
         pose("p3", 8000, { v1: 0 }),
       ],
-      { continuousMotion: true, loop: true },
+      { loop: true },
     );
     const motions = v1Motions(loop);
     expect(motions[0]?.startSpeed).toBeCloseTo(250);

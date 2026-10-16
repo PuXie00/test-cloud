@@ -536,13 +536,6 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     [updateSelectedSequence],
   );
 
-  const handleContinuousMotionChange = useCallback(
-    (continuous: boolean) => {
-      updateSelectedSequence((current) => ({ ...current, continuousMotion: continuous }));
-    },
-    [updateSelectedSequence],
-  );
-
   const handleBlockDelete = useCallback(
     (blockIds?: string | string[]) => {
       const ids = typeof blockIds === "string" ? [blockIds] : (blockIds ?? selectedBlockIds);
@@ -1183,7 +1176,6 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleBlockDelete,
       handleTrajectoryModeChange,
       handleLoopChange,
-      handleContinuousMotionChange,
       handleBlockCopy,
       handleBlockPaste,
       handleSequenceCopy,
@@ -1246,7 +1238,6 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleBlockDelete,
       handleTrajectoryModeChange,
       handleLoopChange,
-      handleContinuousMotionChange,
       handleBlockCopy,
       handleBlockPaste,
       handleSequenceCopy,

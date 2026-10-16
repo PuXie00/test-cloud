@@ -118,6 +118,8 @@ export const fixtureSequence = (trajectoryMode: boolean, loop = false): ActionSe
       objectId: Number(objectId),
       atMs,
       pose: value,
+      // 和 Python 参考对数的夹具按每帧停算
+      passSpeeds: { v1: 0, v2: 0, v3: 0 },
     })),
   ),
   segments: [],

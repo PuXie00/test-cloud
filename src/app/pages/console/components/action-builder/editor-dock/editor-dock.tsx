@@ -64,7 +64,6 @@ const SequenceEditor = () => {
     handleSave,
     handleTrajectoryModeChange,
     handleLoopChange,
-    handleContinuousMotionChange,
     sequenceIssues,
   } = useActionBuilder();
   const { multiSelectedIds, select, toggleMulti, replaceSelection } = useSelection();
@@ -185,8 +184,6 @@ const SequenceEditor = () => {
         canLoop={resolved !== null && sequencePathIsClosed(resolved)}
         loopDisabledHint={SEQUENCE_LOOP_DISABLED_HINT}
         onLoopChange={handleLoopChange}
-        continuousMotion={sequence.continuousMotion === true}
-        onContinuousMotionChange={handleContinuousMotionChange}
         majorStepSec={majorStepSec}
         canZoomIn={timelinePxPerSecond > TIMELINE_PX_PER_SECOND_MIN}
         canZoomOut={timelinePxPerSecond < TIMELINE_PX_PER_SECOND_MAX}

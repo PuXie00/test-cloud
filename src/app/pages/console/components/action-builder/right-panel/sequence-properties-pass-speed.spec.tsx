@@ -17,10 +17,7 @@ vi.mock("../use-action-builder", () => ({
 }));
 
 // 0–4s 慢速到 400，4–6s 快速到 1000；虚轴2 不动
-const slowFast = (
-  middle: Partial<PoseBlock> = {},
-  extra: Partial<ActionSequenceConfig> = { continuousMotion: true },
-): ActionSequenceConfig => ({
+const slowFast = (middle: Partial<PoseBlock> = {}): ActionSequenceConfig => ({
   id: 1,
   name: "slow-fast",
   trajectoryMode: true,
@@ -30,7 +27,6 @@ const slowFast = (
     { id: "p2", kind: "pose", objectId: 1, atMs: 6000, pose: { v1: 1000, v2: 0 } },
   ],
   segments: [],
-  ...extra,
 });
 
 const renderPanel = (sequence: ActionSequenceConfig, selection: SequenceSelection) => {
@@ -93,10 +89,19 @@ describe("pass speed on a pose", () => {
     expect(replaced).not.toHaveProperty("passSpeeds");
   });
 
-  it("only hints at stopping in sequences that stop at every pose", () => {
-    renderPanel(slowFast({}, {}), { kind: "block", blockId: "p1" });
-    expect(screen.getByText("序列为每帧停，经过速度都是 0")).not.toBeNull();
-    expect(screen.queryByRole("group", { name: "虚轴1 经过速度设置" })).toBeNull();
+  it("fixes the speed at 0 where the axis turns back", () => {
+    const turnBack: ActionSequenceConfig = {
+      ...slowFast(),
+      blocks: [
+        { id: "p0", kind: "pose", objectId: 1, atMs: 0, pose: { v1: 0, v2: 0 } },
+        { id: "p1", kind: "pose", objectId: 1, atMs: 4000, pose: { v1: 400, v2: 0 } },
+        { id: "p2", kind: "pose", objectId: 1, atMs: 6000, pose: { v1: 0, v2: 0 } },
+      ],
+    };
+    renderPanel(turnBack, { kind: "block", blockId: "p1" });
+    const v1 = speedRow("虚轴1");
+    expect(within(v1).getByText("折返停")).not.toBeNull();
+    expect(within(v1).queryByRole("button", { name: "增加" })).toBeNull();
   });
 
   it("shows the entry speed and speed-change phases on the next segment", () => {

@@ -182,7 +182,6 @@ const JUNCTION_LABEL: Record<PoseJunctionKind, string> = {
   edge: "起止停",
   reverse: "折返停",
   hold: "停留",
-  "per-frame": "每帧停",
   seam: "随首帧",
 };
 
@@ -281,7 +280,6 @@ const PoseAxesEditor = ({
   );
   const freeAxes = enabledAxes.filter((axis) => uncontrolledAxes.includes(axis));
   const speedAxes = enabledAxes.filter((axis) => isAxisSet(pose, axis) && junctions[axis]);
-  const perFrame = speedAxes.length > 0 && speedAxes.every((axis) => junctions[axis]?.kind === "per-frame");
 
   return (
     <div className="mb-3 space-y-2">
@@ -335,9 +333,7 @@ const PoseAxesEditor = ({
           {freeAxes.map(virtualAxisLabel).join("、")} 在所有位姿上都不设定，这条序列不控制它，停在原位
         </p>
       ) : null}
-      {perFrame ? (
-        <p className="text-body-sm text-muted-foreground">序列为每帧停，经过速度都是 0</p>
-      ) : speedAxes.length > 0 ? (
+      {speedAxes.length > 0 ? (
         <div className="space-y-1.5 pt-1">
           <p className="text-body-sm text-muted-foreground">经过速度（0 即停在这一帧）</p>
           {speedAxes.map((axis) => {

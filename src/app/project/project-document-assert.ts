@@ -657,7 +657,6 @@ const validateSequence = (value: unknown, path: string, a: StructuralAssertions)
   a.optionalString(sequence.note, `${path}.note`);
   a.boolean(sequence.trajectoryMode, `${path}.trajectoryMode`);
   a.optionalBoolean(sequence.loop, `${path}.loop`);
-  a.optionalBoolean(sequence.continuousMotion, `${path}.continuousMotion`);
   if (sequence.initialPoses !== undefined) {
     a.fail(`${path}.initialPoses`, "legacy initialPoses are not accepted");
   }

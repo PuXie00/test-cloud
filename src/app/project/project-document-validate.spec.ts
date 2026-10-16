@@ -208,10 +208,9 @@ describe("pose blocks with axes left unset", () => {
     expect(() => assertProjectDocumentStructure(document)).toThrow(/pose\.v2/);
   });
 
-  it("accepts pass speeds and the continuous flag, rejecting bad pass speeds", () => {
+  it("accepts pass speeds and rejects bad ones", () => {
     const sequence: ActionSequenceConfig = {
       ...validSequence(),
-      continuousMotion: true,
       blocks: [
         { id: "pose-1", kind: "pose", objectId: OBJECT_A, atMs: 1000, pose: { v1: 80 }, passSpeeds: { v1: 120 } },
       ],

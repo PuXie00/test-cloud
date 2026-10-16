@@ -290,7 +290,6 @@ export const ProgramProvider = ({ children }: ProgramProviderProps) => {
         name,
         trajectoryMode: false,
         loop: false,
-        continuousMotion: true,
         blocks: [],
         segments: [],
       };

@@ -40,9 +40,9 @@ export type ResolvedPosePoint = {
 
 /**
  * 衔接速度的来由：auto 自动（调和平均）、manual 手填、edge 序列起止、reverse 折返、
- * hold 前后有一段不动、per-frame 序列为每帧停、seam 循环末帧跟随起始位姿。
+ * hold 前后有一段不动、seam 循环末帧跟随起始位姿。
  */
-export type PoseJunctionKind = "auto" | "manual" | "edge" | "reverse" | "hold" | "per-frame" | "seam";
+export type PoseJunctionKind = "auto" | "manual" | "edge" | "reverse" | "hold" | "seam";
 
 export type PoseJunction = { speed: number; kind: PoseJunctionKind };
 
@@ -59,7 +59,7 @@ export type ResolvedAxisMotion = {
   configurable: boolean;
   /** 曲线覆盖的运动区间 key；轴在中间位姿不设定时不止一个 */
   segmentKeys: readonly string[];
-  /** 进入、离开这段的速度（单位/秒，绝对值）；每帧停的序列都是 0 */
+  /** 进入、离开这段的速度（单位/秒，绝对值）；两端停下时为 0 */
   startSpeed: number;
   endSpeed: number;
 };
@@ -563,7 +563,7 @@ const junctionOf = (
 };
 
 /**
- * 连续衔接：每个设定点按前后两段平均速度的调和平均通过（可手填，0 即停）；
+ * 衔接：每个设定点按前后两段平均速度的调和平均通过（可手填，0 即停）；
  * 序列起止、折返、停留处为 0。循环序列的首尾按同一个衔接点算，由起始位姿的手填值决定。
  */
 const assignJunctionSpeeds = (
@@ -571,7 +571,6 @@ const assignJunctionSpeeds = (
   objectSegments: readonly ResolvedMotionSegment[],
   sequence: ActionSequenceConfig,
 ): void => {
-  const continuous = sequence.continuousMotion === true;
   const pointByRef = new Map(series.map((point) => [point.sourceRef, point]));
   for (const axis of AXES) {
     const setJunction = (ref: string, junction: PoseJunction) => {
@@ -583,17 +582,13 @@ const assignJunctionSpeeds = (
     const first = motions[0];
     const last = motions[motions.length - 1];
     if (!first || !last) {
-      if (series[0]) setJunction(series[0].sourceRef, { speed: 0, kind: continuous ? "edge" : "per-frame" });
+      if (series[0]) setJunction(series[0].sourceRef, { speed: 0, kind: "edge" });
       continue;
     }
     const refs = [first.fromRef, ...motions.map((motion) => motion.toRef)];
     const manualAt = (ref: string) => pointByRef.get(ref)?.passSpeeds?.[axis];
-    const seam = continuous && sequence.loop === true;
+    const seam = sequence.loop === true;
     refs.forEach((ref, index) => {
-      if (!continuous) {
-        setJunction(ref, { speed: 0, kind: "per-frame" });
-        return;
-      }
       const isFirst = index === 0;
       const isLast = index === refs.length - 1;
       if (seam && isLast) return;
