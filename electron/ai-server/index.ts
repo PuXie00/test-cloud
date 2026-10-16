@@ -1,12 +1,19 @@
 import type { MessagePortMain } from 'electron'
 import { AI_HTTP_DEFAULT_PORT, AI_HTTP_HOST } from '../../shared/ai-bridge/protocol'
-import type { AiChildMessage, AiMainMessage, AiRendererMessage } from '../../shared/ai-bridge/types'
+import type {
+  AiChildMessage,
+  AiMainMessage,
+  AiRendererMessage,
+  AiWriteResponseMessage,
+} from '../../shared/ai-bridge/types'
 import { createAiHttpServer } from './http'
+import { AiRendererRpc } from './renderer-rpc'
 import { AiBridgeStore } from './store'
 
 /**
- * utilityProcess 入口：给本地 AI 的只读 HTTP 服务。
- * main 推设备状态，渲染进程经直连 MessagePort 推界面状态与工程配置；请求只读内存。
+ * utilityProcess 入口：给本地 AI 的 HTTP 服务。
+ * main 推设备状态，渲染进程经直连 MessagePort 推界面状态与工程配置；读请求只读内存，
+ * 写请求经同一端口转给渲染进程执行。
  */
 
 const parsePort = (argv: readonly string[]): number => {
@@ -17,6 +24,7 @@ const parsePort = (argv: readonly string[]): number => {
 
 const parent = process.parentPort
 const store = new AiBridgeStore()
+const rpc = new AiRendererRpc()
 let rendererPort: MessagePortMain | null = null
 
 const postParent = (message: AiChildMessage): void => {
@@ -29,11 +37,15 @@ const attachRendererPort = (port: MessagePortMain | undefined): void => {
   rendererPort = port
   store.resetRenderer()
   store.rendererConnected = true
+  rpc.attach(port)
   port.on('message', (event) => {
     if (rendererPort !== port) return
-    store.applyRenderer(event.data as AiRendererMessage)
+    const message = event.data as AiRendererMessage | AiWriteResponseMessage
+    if (message?.type === 'response') rpc.settle(message)
+    else store.applyRenderer(message)
   })
   port.on('close', () => {
+    rpc.detach(port)
     if (rendererPort !== port) return
     rendererPort = null
     store.rendererConnected = false
@@ -51,7 +63,7 @@ parent.on('message', (event) => {
 })
 
 const port = parsePort(process.argv)
-const server = createAiHttpServer(store)
+const server = createAiHttpServer(store, rpc)
 
 server.on('error', (err: NodeJS.ErrnoException) => {
   console.error(`[ai-server] listen failed: ${err.message}`)
