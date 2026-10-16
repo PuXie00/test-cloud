@@ -31,6 +31,11 @@ export type PoseBlock = {
   objectId: number;
   atMs: number;
   pose: KeyframePose;
+  /**
+   * 手填的经过速度（单位/秒，绝对值）：缺省时自动取前后两段平均速度的调和平均，0 表示停在这一帧。
+   * 只对连续衔接的序列生效。
+   */
+  passSpeeds?: Partial<Record<"v1" | "v2" | "v3", number>>;
   label?: string;
 };
 
@@ -92,6 +97,8 @@ export type ActionSequenceConfig = {
   trajectoryMode: TrajectoryMode;
   /** Closed-path repeat until stop. Missing/false = play once. */
   loop?: boolean;
+  /** 连续衔接：中间位姿不减速到 0，只在起止、折返、停留处停。缺省（老序列）为每帧停 */
+  continuousMotion?: boolean;
   blocks: TimelineBlock[];
   segments: MotionSegmentConfig[];
 };

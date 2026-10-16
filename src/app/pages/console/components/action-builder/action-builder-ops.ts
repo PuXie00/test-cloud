@@ -16,6 +16,7 @@ export const createEmptySequence = (id: number, name?: string): ActionSequenceCo
   name: name ?? NEW_SEQUENCE_BASE_NAME,
   trajectoryMode: false,
   loop: false,
+  continuousMotion: true,
   blocks: [],
   segments: [],
 });

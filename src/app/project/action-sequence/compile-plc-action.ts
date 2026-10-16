@@ -5,7 +5,8 @@ import type {
   PlcCompiledTimeline,
 } from "@shared/csocket/action-data-save";
 import { roundProjectCoordinate } from "../project-quantity";
-import { axisKinematics, ZERO_AXIS_KINEMATICS } from "./axis-kinematics";
+import { ZERO_AXIS_KINEMATICS } from "./axis-kinematics";
+import { axisMotionKinematics } from "./axis-motion";
 import { finalizePlcTimeline, trapezoidToCurveSegments } from "./curve-segments";
 import { instructionToCompiledEvent } from "./instruction-registry";
 import {
@@ -89,15 +90,13 @@ const compileModels = (
         return {
           time: pose.atMs,
           // 位置按启用的轴排；这一帧不设定的轴放 null，C++ 按前后设定值之间的曲线继续运动
+          // passVel：经过这一帧的速度，连续衔接的中间位姿不为 0
           virtualAxis: enabledAxes.map((axis) => {
             if (pose.unsetAxes?.includes(axis)) return null;
             const pos = roundProjectCoordinate(pose.pose[axis]);
-            if (!segment) return { pos, ...ZERO_AXIS_KINEMATICS };
-            const motion = segmentAxisMotion(segment, axis);
-            return {
-              pos,
-              ...axisKinematics(motion.profile, motion.to - motion.from, motion.durationMs),
-            };
+            const passVel = roundProjectCoordinate(pose.junctions?.[axis]?.speed ?? 0);
+            if (!segment) return { pos, ...ZERO_AXIS_KINEMATICS, passVel };
+            return { pos, ...axisMotionKinematics(segmentAxisMotion(segment, axis)), passVel };
           }),
         };
       });
@@ -154,6 +153,7 @@ export const compilePlcAction = (
                   motion.from,
                   motion.to,
                   motion.durationMs,
+                  motion,
                 ),
               );
         const endPose = poses[poses.length - 1]?.pose[axis] ?? first.pose[axis];

@@ -207,6 +207,24 @@ describe("pose blocks with axes left unset", () => {
     };
     expect(() => assertProjectDocumentStructure(document)).toThrow(/pose\.v2/);
   });
+
+  it("accepts pass speeds and the continuous flag, rejecting bad pass speeds", () => {
+    const sequence: ActionSequenceConfig = {
+      ...validSequence(),
+      continuousMotion: true,
+      blocks: [
+        { id: "pose-1", kind: "pose", objectId: OBJECT_A, atMs: 1000, pose: { v1: 80 }, passSpeeds: { v1: 120 } },
+      ],
+    };
+    const document = documentOf();
+    document.motion.actionSequences = [sequence];
+    expect(() => assertProjectDocumentStructure(document)).not.toThrow();
+
+    sequence.blocks[0] = { ...sequence.blocks[0]!, passSpeeds: { v1: -1 } } as never;
+    expect(() => assertProjectDocumentStructure(document)).toThrow(/passSpeeds/);
+    sequence.blocks[0] = { ...sequence.blocks[0]!, passSpeeds: { v4: 1 } } as never;
+    expect(() => assertProjectDocumentStructure(document)).toThrow(/passSpeeds/);
+  });
 });
 
 describe("object mount parentId", () => {

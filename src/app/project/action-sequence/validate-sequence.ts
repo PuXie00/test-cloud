@@ -18,7 +18,14 @@ import {
   type ResolvedActionSequence,
   type ResolvedMotionSegment,
 } from "./resolve-sequence";
-import { calculateMotionProfileKinematics, validateMotionProfile } from "./motion-profile";
+import { axisMotionShape } from "./axis-motion";
+import {
+  boundaryTrapezoidKinematics,
+  calculateMotionProfileKinematics,
+  hasMotionBoundary,
+  validateMotionProfile,
+  type MotionProfileKinematics,
+} from "./motion-profile";
 import type {
   ActionSequenceConfig,
   AxisMotionProfiles,
@@ -48,12 +55,13 @@ export type SequenceIssueCode =
   | "long-idle"
   | "invalid-motion-profile"
   | "missing-motion-limit"
-  | "phase-shorter-than-min-accel"
+  | "acceleration-exceeded"
   | "insufficient-cruise"
   | "idle-on-moving-axis"
   | "motor-overspeed"
   | "angle-protection"
-  | "unset-axis";
+  | "unset-axis"
+  | "pass-speed-infeasible";
 
 export type SequenceIssue = {
   severity: SequenceIssueSeverity;
@@ -482,17 +490,6 @@ const checkSegmentKinematics = (
     }
 
     const { accelMs, decelMs } = profile.params;
-    const minAccelMs = minAccelTime * 1000;
-    if (accelMs < minAccelMs || decelMs < minAccelMs) {
-      issues.push({
-        severity: "error",
-        code: "phase-shorter-than-min-accel",
-        message: `axis ${axis} accel or decel phase is shorter than min accel time ${minAccelTime}s`,
-        ...location,
-      });
-      continue;
-    }
-
     if (accelMs + decelMs >= durationMs) {
       issues.push({
         severity: "error",
@@ -503,14 +500,41 @@ const checkSegmentKinematics = (
       continue;
     }
 
-    const metrics = calculateMotionProfileKinematics(profile, travel, durationMs);
-    if (metrics.peakVelocity <= maxVelocity) continue;
-    issues.push({
-      severity: "error",
-      code: "limit-exceeded",
-      message: `axis ${axis} velocity ${metrics.peakVelocity} exceeds ${maxVelocity}`,
-      ...location,
-    });
+    let metrics: MotionProfileKinematics;
+    if (hasMotionBoundary(motion)) {
+      const shape = axisMotionShape(motion);
+      if (!shape) {
+        issues.push({
+          severity: "error",
+          code: "pass-speed-infeasible",
+          message: `axis ${axis} cannot fit pass speeds ${motion.startSpeed} -> ${motion.endSpeed} on segment ${motion.fromRef} -> ${motion.toRef}`,
+          ...location,
+        });
+        continue;
+      }
+      metrics = boundaryTrapezoidKinematics(shape);
+    } else {
+      metrics = calculateMotionProfileKinematics(profile, travel, durationMs);
+    }
+    if (metrics.peakVelocity > maxVelocity) {
+      issues.push({
+        severity: "error",
+        code: "limit-exceeded",
+        message: `axis ${axis} velocity ${metrics.peakVelocity} exceeds ${maxVelocity}`,
+        ...location,
+      });
+    }
+    // 加减速度上限 = 虚轴最大速度 / 最短加减速时间，和下发 PLC 的最大加速度一致
+    const maxAcceleration = maxVelocity / minAccelTime;
+    const acceleration = Math.max(metrics.acceleration, metrics.deceleration);
+    if (acceleration > maxAcceleration * (1 + 1e-9)) {
+      issues.push({
+        severity: "error",
+        code: "acceleration-exceeded",
+        message: `axis ${axis} acceleration ${acceleration} exceeds ${maxAcceleration}`,
+        ...location,
+      });
+    }
   }
 };
 

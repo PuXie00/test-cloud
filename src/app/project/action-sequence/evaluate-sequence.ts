@@ -1,14 +1,10 @@
 import type { VirtualAxisId } from "../project-document-types";
-import {
-  calculateMotionProfileKinematics,
-  evaluateMotionProfile,
-  sampleVelocityNorm,
-} from "./motion-profile";
+import { axisMotionValueAt } from "./axis-motion";
+import { evaluateMotionProfile } from "./motion-profile";
 import type { AxisMotionProfiles, ModelPose } from "./types";
 import {
   segmentAxisMotion,
   type ResolvedActionSequence,
-  type ResolvedAxisMotion,
   type ResolvedMotionSegment,
   type ResolvedPosePoint,
 } from "./resolve-sequence";
@@ -27,22 +23,7 @@ export const interpolatePoseWithProfiles = (
   v3: from.v3 + (to.v3 - from.v3) * evaluateMotionProfile(profiles.v3, tNorm, durationMs),
 });
 
-/** 轴曲线在某一时刻的位置（时刻在曲线范围外时取端点） */
-export const axisMotionValueAt = (motion: ResolvedAxisMotion, atMs: number): number => {
-  const travel = motion.to - motion.from;
-  if (travel === 0 || motion.durationMs <= 0) return atMs < motion.endMs ? motion.from : motion.to;
-  const progress = (atMs - motion.startMs) / motion.durationMs;
-  return motion.from + travel * evaluateMotionProfile(motion.profile, progress, motion.durationMs);
-};
-
-/** 轴曲线在某一时刻的带符号速度，单位/秒 */
-export const axisMotionVelocityAt = (motion: ResolvedAxisMotion, atMs: number): number => {
-  const travel = motion.to - motion.from;
-  if (motion.profile.kind === "idle" || travel === 0 || motion.durationMs <= 0) return 0;
-  const tNorm = (atMs - motion.startMs) / motion.durationMs;
-  const { peakVelocity } = calculateMotionProfileKinematics(motion.profile, travel, motion.durationMs);
-  return Math.sign(travel) * peakVelocity * sampleVelocityNorm(motion.profile, tNorm, motion.durationMs);
-};
+export { axisMotionValueAt, axisMotionVelocityAt } from "./axis-motion";
 
 const AXES: readonly VirtualAxisId[] = ["v1", "v2", "v3"];
 

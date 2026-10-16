@@ -219,7 +219,7 @@ describe("downloadSequence", () => {
     await downloadSequence(moving, context, reverse, null, 1, false);
     const blocksOf = (transport: InstrumentedTransport) =>
       transport.saveAction.mock.calls[0]?.[0][0].modelList[0].timeBlockList as Array<{
-        virtualAxis: Array<{ pos: number; vel: number; accVel: number; decVel: number }>;
+        virtualAxis: Array<{ pos: number; vel: number; accVel: number; decVel: number; passVel: number }>;
       }>;
     const forwardBlocks = blocksOf(forward);
     const reverseBlocks = blocksOf(reverse);
@@ -234,6 +234,7 @@ describe("downloadSequence", () => {
       vel: 0,
       accVel: 0,
       decVel: 0,
+      passVel: 0,
     });
   });
 });

@@ -2,30 +2,31 @@ import { useState } from "react";
 import { cn } from "@/app/components/ui/utils";
 import { useSessionDisplayLengthUnit } from "@/app/project/display-length-unit-provider";
 import {
-  formatLengthFamilyValue,
   getDisplayLengthFamilyUnit,
-  isLengthFamilyUnit,
   type DisplayLengthUnit,
 } from "@/app/project/display-length-units";
-import type { MotionProfileKinematics } from "@/app/project/action-sequence/motion-profile";
+import {
+  boundaryTrapezoidOf,
+  boundaryTrapezoidSpeedAt,
+  hasMotionBoundary,
+  type MotionProfileKinematics,
+} from "@/app/project/action-sequence/motion-profile";
 import type { AxisMotionProfiles, ModelPose, MotionProfile } from "@/app/project/action-sequence/types";
 import type { VirtualAxisId } from "@/app/project/project-document-types";
-import {
-  MAX_PROJECT_COORDINATE_DECIMALS,
-  roundProjectCoordinate,
-} from "@/app/project/project-quantity";
 import { VIRTUAL_AXIS_IDS, formatDurationSeconds } from "../timeline/timeline-data";
 import { getVirtualAxisCanonicalUnit } from "../virtual-axis-display";
 import { PROFILE_KIND_OPTIONS, profileKindMeta } from "./profile-kind";
 import {
   axisDurationMs,
   axisHasWarning,
+  maxAccelerationOf,
   minAccelMsOf,
-  phaseFloorWarningMessages,
+  profileLimitWarnings,
   resolveEnabledAxes,
   tryKinematics,
   type MotionProfileAxisContext,
 } from "./motion-profile-status";
+import { formatQuantity, formatQuantityValue } from "./quantity-format";
 import { TrapezoidProfileEditor } from "./trapezoid-profile-editor";
 import { VelocityChart, type VelocityChartLimits } from "./velocity-chart";
 
@@ -45,30 +46,6 @@ export type MotionProfileEditorProps = {
   /** 区间模式下当前轴的补充说明，如轴跨过端点位姿时的整段曲线范围 */
   axisNotes?: Partial<Record<VirtualAxisId, string>>;
 };
-
-const formatNumber = (value: number): string => {
-  const rounded = roundProjectCoordinate(value);
-  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
-};
-
-/** Length-family values follow the display unit; angles keep their canonical unit. */
-const formatQuantityValue = (
-  value: number,
-  canonicalUnit: string,
-  display: DisplayLengthUnit,
-): string =>
-  isLengthFamilyUnit(canonicalUnit)
-    ? formatLengthFamilyValue(roundProjectCoordinate(value), canonicalUnit, display, {
-        canonicalPrecision: MAX_PROJECT_COORDINATE_DECIMALS,
-      })
-    : formatNumber(value);
-
-const formatQuantity = (
-  value: number,
-  canonicalUnit: string,
-  display: DisplayLengthUnit,
-): string =>
-  `${formatQuantityValue(value, canonicalUnit, display)} ${getDisplayLengthFamilyUnit(canonicalUnit, display)}`;
 
 const axisName = (axis: VirtualAxisId): string => axis.toUpperCase();
 
@@ -108,16 +85,7 @@ const OverLimitWarning = ({ text }: { text: string }) => (
   <p className="text-body-sm text-warning">超过上限 {text}</p>
 );
 
-const PhaseFloorWarnings = ({
-  profile,
-  durationMs,
-  minAccelMs,
-}: {
-  profile: MotionProfile;
-  durationMs: number;
-  minAccelMs: number | undefined;
-}) => {
-  const warnings = phaseFloorWarningMessages(profile, durationMs, minAccelMs);
+const LimitWarnings = ({ warnings }: { warnings: string[] }) => {
   if (warnings.length === 0) return null;
   return (
     <div className="flex flex-col gap-1">
@@ -366,17 +334,33 @@ export const MotionProfileEditor = ({
   const displayProfile: MotionProfile =
     travelDistance === 0 || currentProfile.kind === "idle" ? { kind: "idle" } : currentProfile;
   const kindMeta = profileKindMeta(displayProfile.kind);
-  const kinematics = tryKinematics(displayProfile, travelDistance, currentDurationMs);
+  const currentBoundary = axisContext.boundaryByAxis?.[currentAxis];
+  const withPassSpeeds = hasMotionBoundary(currentBoundary);
+  const kinematics = tryKinematics(displayProfile, travelDistance, currentDurationMs, currentBoundary);
+  const boundaryShape =
+    travelDistance > 0 && currentBoundary && hasMotionBoundary(currentBoundary)
+      ? boundaryTrapezoidOf(displayProfile, travelDistance, currentDurationMs, currentBoundary)
+      : null;
+  const boundaryVelocityAt = boundaryShape
+    ? (tNorm: number) => boundaryTrapezoidSpeedAt(boundaryShape, (tNorm * currentDurationMs) / 1000)
+    : undefined;
   const limits =
     travelDistance > 0 && kinematics
       ? toChartLimits(kinematics, currentAxis, axisContext)
       : undefined;
   const minAccelMs = minAccelMsOf(currentAxis, axisContext);
-  const currentWarnings = phaseFloorWarningMessages(
-    displayProfile,
-    currentDurationMs,
-    minAccelMs,
-  );
+  const currentWarnings = [
+    ...profileLimitWarnings(
+      displayProfile,
+      currentDurationMs,
+      kinematics,
+      maxAccelerationOf(currentAxis, axisContext),
+      (value) => formatQuantity(value, accelUnit, display),
+    ),
+    ...(travelDistance > 0 && withPassSpeeds && !boundaryShape
+      ? ["经过速度太快，这段行程放不下进出变速"]
+      : []),
+  ];
   const currentMaxSpeed = axisContext.maxSpeedByAxis?.[currentAxis];
   const currentOverSpeed =
     currentMaxSpeed !== undefined &&
@@ -468,7 +452,7 @@ export const MotionProfileEditor = ({
             limits={limits}
             disabled={disabled || displayProfile.kind === "idle"}
             compact
-            minAccelMs={minAccelMs}
+            velocityAt={boundaryVelocityAt}
             onProfileChange={
               displayProfile.kind === "idle"
                 ? undefined
@@ -494,6 +478,7 @@ export const MotionProfileEditor = ({
               showKindSelect={false}
               timeUnit="s"
               readOnly={displayProfile.kind === "idle"}
+              withPassSpeeds={withPassSpeeds}
             />
           ) : (
             <p className="text-body-sm text-muted-foreground">未知曲线</p>
@@ -567,6 +552,7 @@ export const MotionProfileEditor = ({
                   value[axis],
                   Math.abs(axisTravel),
                   axisDurationMs(axisContext, axis),
+                  axisContext.boundaryByAxis?.[axis],
                 );
                 const axisMaxSpeed = axisContext.maxSpeedByAxis?.[axis];
                 const axisWarning = axisHasWarning(axis, value, axisContext);
@@ -621,7 +607,6 @@ export const MotionProfileEditor = ({
           formatVelocity={formatSpeedValue}
           limits={limits}
           disabled={disabled || displayProfile.kind === "idle"}
-          minAccelMs={minAccelMs}
           onProfileChange={
             displayProfile.kind === "idle"
               ? undefined
@@ -667,11 +652,7 @@ export const MotionProfileEditor = ({
         <p className="text-body-sm text-muted-foreground">未知曲线</p>
       )}
 
-      <PhaseFloorWarnings
-        profile={displayProfile}
-        durationMs={currentDurationMs}
-        minAccelMs={minAccelMs}
-      />
+      <LimitWarnings warnings={currentWarnings} />
 
       <AxisMetrics axis={currentAxis} profile={displayProfile} axisContext={axisContext} />
 

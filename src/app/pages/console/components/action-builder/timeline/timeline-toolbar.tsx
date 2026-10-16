@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, ElementType } from "react";
-import { Minus, Pause, Play, Plus, Repeat, RotateCcw, Route, Save, Trash2 } from "lucide-react";
+import { Minus, Pause, Play, Plus, Repeat, RotateCcw, Route, Save, Spline, Trash2 } from "lucide-react";
 import { Switch } from "@/app/components/ui/switch";
 import { cn } from "@/app/components/ui/utils";
 import type { TrajectoryMode } from "@shared/action-sequence";
@@ -13,6 +13,9 @@ type TimelineToolbarProps = {
   canLoop?: boolean;
   loopDisabledHint?: string;
   onLoopChange?: (loop: boolean) => void;
+  /** 连续衔接：中间位姿不减速到 0；关掉为每帧停 */
+  continuousMotion?: boolean;
+  onContinuousMotionChange?: (continuous: boolean) => void;
   /** 当前自适应主刻度间隔（秒），仅展示 */
   majorStepSec: number;
   canZoomIn: boolean;
@@ -60,6 +63,8 @@ export const TimelineToolbar = ({
   canLoop = false,
   loopDisabledHint,
   onLoopChange,
+  continuousMotion = false,
+  onContinuousMotionChange,
   majorStepSec,
   canZoomIn,
   canZoomOut,
@@ -111,6 +116,20 @@ export const TimelineToolbar = ({
             onCheckedChange={onTrajectoryModeChange}
           />
         </label>
+        {onContinuousMotionChange ? (
+          <label
+            className="inline-flex h-7 items-center gap-1.5"
+            title="开：中间位姿带速度通过，只在起止、折返、停留处停；关：每个位姿都停"
+          >
+            <Spline className="h-3.5 w-3.5 text-foreground" aria-hidden />
+            <span className="text-body-sm text-muted-foreground">连续</span>
+            <Switch
+              aria-label="连续衔接"
+              checked={continuousMotion}
+              onCheckedChange={onContinuousMotionChange}
+            />
+          </label>
+        ) : null}
         {onLoopChange ? (
           <label
             className="inline-flex h-7 items-center gap-1.5"

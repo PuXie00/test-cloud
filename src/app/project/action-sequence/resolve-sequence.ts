@@ -1,11 +1,13 @@
 import type { VirtualAxisId } from "../project-document-types";
-import { unsetAxesOf } from "./keyframe-pose";
+import { axisMotionValueAt } from "./axis-motion";
+import { isAxisSet, unsetAxesOf } from "./keyframe-pose";
 import {
   cloneAxisProfiles,
   cloneMotionProfile,
   createDefaultAxisProfile,
   createDefaultAxisProfiles,
   evaluateMotionProfile,
+  hasMotionBoundary,
   syncAxisProfileToTravel,
 } from "./motion-profile";
 import { getPresetDefinition, resolvePreset } from "./preset-registry";
@@ -30,7 +32,19 @@ export type ResolvedPosePoint = {
   visible: boolean;
   /** 位姿块里不设定的轴；pose 里对应的值是按前后设定值之间的曲线算出的经过值 */
   unsetAxes?: readonly VirtualAxisId[];
+  /** 位姿块里手填的经过速度（只含设定了值的轴） */
+  passSpeeds?: Partial<Record<VirtualAxisId, number>>;
+  /** 各设定轴在这一帧的衔接速度及原因 */
+  junctions?: Partial<Record<VirtualAxisId, PoseJunction>>;
 };
+
+/**
+ * 衔接速度的来由：auto 自动（调和平均）、manual 手填、edge 序列起止、reverse 折返、
+ * hold 前后有一段不动、per-frame 序列为每帧停、seam 循环末帧跟随起始位姿。
+ */
+export type PoseJunctionKind = "auto" | "manual" | "edge" | "reverse" | "hold" | "per-frame" | "seam";
+
+export type PoseJunction = { speed: number; kind: PoseJunctionKind };
 
 /** 一个轴在一段运动区间里跟随的曲线 */
 export type ResolvedAxisMotion = {
@@ -45,6 +59,9 @@ export type ResolvedAxisMotion = {
   configurable: boolean;
   /** 曲线覆盖的运动区间 key；轴在中间位姿不设定时不止一个 */
   segmentKeys: readonly string[];
+  /** 进入、离开这段的速度（单位/秒，绝对值）；每帧停的序列都是 0 */
+  startSpeed: number;
+  endSpeed: number;
 };
 
 export type ResolvedMotionSegment = {
@@ -92,6 +109,8 @@ const ownAxisMotion = (segment: ResolvedMotionSegment, axis: VirtualAxisId): Res
   profile: segment.settings.profiles[axis],
   configurable: segment.configurable,
   segmentKeys: [segment.key],
+  startSpeed: 0,
+  endSpeed: 0,
 });
 
 export const segmentAxisMotion = (
@@ -508,8 +527,116 @@ const attachAxisMotions = (
         profile: span.profile,
         configurable: span.configurable,
         segmentKeys: covered.map((segment) => segment.key),
+        startSpeed: 0,
+        endSpeed: 0,
       };
       for (const segment of covered) segment.axes![axis] = motion;
+    }
+  }
+};
+
+const junctionOf = (
+  incoming: ResolvedAxisMotion | undefined,
+  outgoing: ResolvedAxisMotion | undefined,
+  manual: number | undefined,
+): PoseJunction => {
+  if (!incoming || !outgoing) return { speed: 0, kind: "edge" };
+  const inTravel = incoming.to - incoming.from;
+  const outTravel = outgoing.to - outgoing.from;
+  if (
+    inTravel === 0 ||
+    outTravel === 0 ||
+    incoming.durationMs <= 0 ||
+    outgoing.durationMs <= 0 ||
+    incoming.profile.kind !== "trapezoid" ||
+    outgoing.profile.kind !== "trapezoid"
+  ) {
+    return { speed: 0, kind: "hold" };
+  }
+  if (Math.sign(inTravel) !== Math.sign(outTravel)) return { speed: 0, kind: "reverse" };
+  if (manual !== undefined && Number.isFinite(manual)) {
+    return { speed: Math.max(0, manual), kind: "manual" };
+  }
+  const inSpeed = Math.abs(inTravel) / (incoming.durationMs / 1000);
+  const outSpeed = Math.abs(outTravel) / (outgoing.durationMs / 1000);
+  return { speed: (2 * inSpeed * outSpeed) / (inSpeed + outSpeed), kind: "auto" };
+};
+
+/**
+ * 连续衔接：每个设定点按前后两段平均速度的调和平均通过（可手填，0 即停）；
+ * 序列起止、折返、停留处为 0。循环序列的首尾按同一个衔接点算，由起始位姿的手填值决定。
+ */
+const assignJunctionSpeeds = (
+  series: readonly ResolvedPosePoint[],
+  objectSegments: readonly ResolvedMotionSegment[],
+  sequence: ActionSequenceConfig,
+): void => {
+  const continuous = sequence.continuousMotion === true;
+  const pointByRef = new Map(series.map((point) => [point.sourceRef, point]));
+  for (const axis of AXES) {
+    const setJunction = (ref: string, junction: PoseJunction) => {
+      const point = pointByRef.get(ref);
+      if (!point || point.unsetAxes?.includes(axis)) return;
+      point.junctions = { ...point.junctions, [axis]: junction };
+    };
+    const motions = objectAxisMotions(objectSegments, axis);
+    const first = motions[0];
+    const last = motions[motions.length - 1];
+    if (!first || !last) {
+      if (series[0]) setJunction(series[0].sourceRef, { speed: 0, kind: continuous ? "edge" : "per-frame" });
+      continue;
+    }
+    const refs = [first.fromRef, ...motions.map((motion) => motion.toRef)];
+    const manualAt = (ref: string) => pointByRef.get(ref)?.passSpeeds?.[axis];
+    const seam = continuous && sequence.loop === true;
+    refs.forEach((ref, index) => {
+      if (!continuous) {
+        setJunction(ref, { speed: 0, kind: "per-frame" });
+        return;
+      }
+      const isFirst = index === 0;
+      const isLast = index === refs.length - 1;
+      if (seam && isLast) return;
+      const incoming = isFirst ? (seam ? last : undefined) : motions[index - 1];
+      const outgoing = isLast ? undefined : motions[index];
+      const junction = junctionOf(incoming, outgoing, manualAt(ref));
+      if (incoming) incoming.endSpeed = junction.speed;
+      if (outgoing) outgoing.startSpeed = junction.speed;
+      setJunction(ref, junction);
+      if (seam && isFirst) {
+        const followsFirst = junction.kind === "auto" || junction.kind === "manual";
+        setJunction(last.toRef, followsFirst ? { speed: junction.speed, kind: "seam" } : junction);
+      }
+    });
+  }
+};
+
+/** 带进出速度的整段曲线改变了中间经过值，重算跨过的位姿和区间端点 */
+const refillBoundarySpans = (
+  series: readonly ResolvedPosePoint[],
+  objectSegments: readonly ResolvedMotionSegment[],
+): void => {
+  for (const axis of AXES) {
+    for (const motion of objectAxisMotions(objectSegments, axis)) {
+      if (!hasMotionBoundary(motion)) continue;
+      const covered = objectSegments.filter((segment) => segment.axes?.[axis] === motion);
+      if (covered.length <= 1) continue;
+      const valueAt = (atMs: number): number => {
+        try {
+          return axisMotionValueAt(motion, atMs);
+        } catch {
+          const tNorm = motion.durationMs > 0 ? (atMs - motion.startMs) / motion.durationMs : 1;
+          return motion.from + (motion.to - motion.from) * tNorm;
+        }
+      };
+      for (const segment of covered) {
+        segment.fromPose[axis] = valueAt(segment.startMs);
+        segment.toPose[axis] = valueAt(segment.endMs);
+      }
+      for (const point of series) {
+        if (point.atMs <= motion.startMs || point.atMs >= motion.endMs) continue;
+        if (point.unsetAxes?.includes(axis)) point.pose[axis] = valueAt(point.atMs);
+      }
     }
   }
 };
@@ -522,6 +649,11 @@ export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedA
   for (const block of sequence.blocks) {
     if (block.kind === "pose") {
       const unsetAxes = unsetAxesOf(block.pose);
+      const passSpeeds = Object.fromEntries(
+        Object.entries(block.passSpeeds ?? {}).filter(
+          ([axis, speed]) => isAxisSet(block.pose, axis as VirtualAxisId) && typeof speed === "number",
+        ),
+      ) as Partial<Record<VirtualAxisId, number>>;
       timed.push({
         sourceRef: block.id,
         sourceBlockId: block.id,
@@ -532,6 +664,7 @@ export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedA
         editable: true,
         visible: true,
         ...(unsetAxes.length > 0 ? { unsetAxes } : {}),
+        ...(Object.keys(passSpeeds).length > 0 ? { passSpeeds } : {}),
       });
       totalMs = Math.max(totalMs, block.atMs);
       continue;
@@ -680,6 +813,8 @@ export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedA
       });
     }
     attachAxisMotions(series, objectSegments, spansByAxis);
+    assignJunctionSpeeds(series, objectSegments, sequence);
+    refillBoundarySpans(series, objectSegments);
     segments.push(...objectSegments);
   }
 

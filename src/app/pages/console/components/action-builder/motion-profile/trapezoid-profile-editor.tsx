@@ -16,6 +16,8 @@ export type TrapezoidProfileEditorProps = {
   showKindSelect?: boolean;
   timeUnit?: "ms" | "s";
   readOnly?: boolean;
+  /** 两端带经过速度：首尾两段是从经过速度变到匀速，不一定从 0 起、到 0 止 */
+  withPassSpeeds?: boolean;
 };
 
 const formatPhaseValue = (valueMs: number, timeUnit: "ms" | "s"): string => {
@@ -109,6 +111,7 @@ export const TrapezoidProfileEditor = ({
   showKindSelect = true,
   timeUnit = "ms",
   readOnly = false,
+  withPassSpeeds = false,
 }: TrapezoidProfileEditorProps) => {
   const cruiseMs = cruiseMsOf(value, durationMs);
   const accelMs = value.kind === "trapezoid" ? value.params.accelMs : 0;
@@ -145,7 +148,7 @@ export const TrapezoidProfileEditor = ({
 
       <div className={cn("grid grid-cols-3", compact ? "gap-2" : "gap-3")}>
         <PhaseField
-          label="加速时间"
+          label={withPassSpeeds ? "段首变速" : "加速时间"}
           value={accelMs}
           disabled={disabled}
           compact={compact}
@@ -162,7 +165,7 @@ export const TrapezoidProfileEditor = ({
           timeUnit={timeUnit}
         />
         <PhaseField
-          label="减速时间"
+          label={withPassSpeeds ? "段尾变速" : "减速时间"}
           value={decelMs}
           disabled={disabled}
           compact={compact}

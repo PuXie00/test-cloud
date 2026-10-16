@@ -28,6 +28,7 @@ export const buildCapturedPoseSequence = (
     name: args.name,
     trajectoryMode: false,
     loop: false,
+    continuousMotion: true,
     blocks,
     segments: [],
   };

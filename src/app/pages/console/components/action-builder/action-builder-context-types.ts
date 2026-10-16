@@ -66,6 +66,7 @@ export type ActionBuilderContextValue = {
   handleBlockDelete: (blockIds?: string | string[]) => void;
   handleTrajectoryModeChange: (mode: TrajectoryMode) => void;
   handleLoopChange: (loop: boolean) => void;
+  handleContinuousMotionChange: (continuous: boolean) => void;
   handleBlockCopy: () => void;
   handleBlockPaste: () => void;
   handleSequenceCopy: (sequenceId: number) => void;

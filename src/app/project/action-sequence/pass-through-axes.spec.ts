@@ -78,7 +78,7 @@ describe("pose axes left unset", () => {
 
     const blocks = compiled.models[0]!.timeBlockList;
     expect(blocks.map((block) => block.time)).toEqual([0, 2000, 4000, 6000]);
-    expect(blocks[1]?.virtualAxis).toEqual([null, { pos: 0, vel: 0, accVel: 0, decVel: 0 }]);
+    expect(blocks[1]?.virtualAxis).toEqual([null, { pos: 0, vel: 0, accVel: 0, decVel: 0, passVel: 0 }]);
     expect(blocks[2]?.virtualAxis[0]).toMatchObject({ pos: 1000, vel: 312.5 });
     expect(blocks[2]?.virtualAxis[1]).toBeNull();
     expect(blocks[3]?.virtualAxis[0]).toBeNull();

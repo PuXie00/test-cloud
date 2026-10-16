@@ -7,7 +7,10 @@ import {
   installMemoryProjectAPI,
   uninstallMemoryProjectAPI,
 } from "@/app/project/install-memory-project-api";
+import { evaluateResolvedSequence } from "@/app/project/action-sequence/evaluate-sequence";
+import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
 import type { TimelineBlock } from "@/app/project/action-sequence/types";
+import { roundProjectCoordinate } from "@/app/project/project-quantity";
 import { GZ_2025_RECORD } from "@/app/project/test-fixtures";
 import { useProject } from "@/app/project/use-project";
 import { ProgramProvider } from "@/app/pages/console/hooks/use-program";
@@ -117,6 +120,7 @@ describe("inserting blocks at an occupied time", () => {
       });
     });
     act(() => result.current.builder.handleCursorChange(1500));
+    const before = result.current.builder.sequence!;
     act(() => result.current.builder.handleCreatePose([7]));
     act(() => result.current.builder.handleCursorChange(3000));
     act(() => result.current.builder.handleCreatePose([7]));
@@ -127,8 +131,10 @@ describe("inserting blocks at an occupied time", () => {
     const created = [...byId.values()].find(
       (block) => block.kind === "pose" && block.atMs === 1500,
     );
-    // 0→750 的 0–3s 默认梯形曲线在 1.5s 走到一半
-    expect(created).toMatchObject({ pose: { v1: 375, v2: 0, v3: 0 } });
+    // 新建位姿取指针处原轨迹上的值（序列默认连续衔接，3s 处带速度通过）
+    const expected = evaluateResolvedSequence(resolveActionSequence(before), 1500).get(7)!;
+    expect(created).toMatchObject({ pose: { v1: roundProjectCoordinate(expected.v1), v2: 0, v3: 0 } });
+    expect((created as { pose: { v1: number } }).pose.v1).not.toBe(375);
     // 指针落在已有位姿上：原样保留，不设定的轴还是不设定
     expect(byId.get("passing")).toEqual(expect.objectContaining({ pose: { v1: 750 } }));
   });

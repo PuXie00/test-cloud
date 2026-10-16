@@ -6,11 +6,14 @@ import { cn } from "@/app/components/ui/utils";
 import { instructionBlockTitle } from "@/app/project/action-sequence/instruction-registry";
 import { isAxisSet, withoutAxis } from "@/app/project/action-sequence/keyframe-pose";
 import { createDefaultAxisProfiles } from "@/app/project/action-sequence/motion-profile";
+import { useSessionDisplayLengthUnit } from "@/app/project/display-length-unit-provider";
 import { formatRepairItems } from "@/app/project/action-sequence/preset-repair";
 import {
   isPassThroughMotion,
   segmentAxisMotion,
   uncontrolledAxesOf,
+  type PoseJunction,
+  type PoseJunctionKind,
   type ResolvedActionSequence,
   type ResolvedAxisMotion,
   type ResolvedMotionSegment,
@@ -35,6 +38,7 @@ import {
 } from "../motion-profile/motion-profile-status";
 import { EmptySelectionState } from "./empty-selection-state";
 import { PresetBlockFields, presetBlockTitle } from "./preset-block-panel";
+import { formatQuantity } from "../motion-profile/quantity-format";
 import { RepairBand } from "./repair-band";
 import { lookupSequenceSelection, type SequenceSelection } from "../sequence-selection";
 import type { PoseAxisWrite } from "../sequence-ops";
@@ -135,20 +139,72 @@ const axisContextFromObject = (
   minAccelTimeByAxis: object?.minAccelTimeByAxis,
 });
 
+const AxisToggle = ({
+  label,
+  pressed,
+  disabled,
+  title,
+  children,
+  onClick,
+}: {
+  label: string;
+  pressed: boolean;
+  disabled?: boolean;
+  title: string;
+  children: ReactNode;
+  onClick: () => void;
+}) => (
+  <button
+    type="button"
+    aria-label={label}
+    aria-pressed={pressed}
+    disabled={disabled}
+    title={title}
+    onClick={onClick}
+    className={cn(
+      "h-8 shrink-0 rounded-md px-2 text-body-sm disabled:cursor-not-allowed disabled:opacity-50",
+      pressed
+        ? "bg-primary font-semibold text-primary-foreground"
+        : "border border-border text-foreground hover:bg-accent",
+    )}
+  >
+    {children}
+  </button>
+);
+
+type PassSpeeds = Partial<Record<VirtualAxisId, number>>;
+
+type PoseAxesChange = { pose: KeyframePose; passSpeeds: PassSpeeds };
+
+const JUNCTION_LABEL: Record<PoseJunctionKind, string> = {
+  auto: "自动",
+  manual: "手填",
+  edge: "起止停",
+  reverse: "折返停",
+  hold: "停留",
+  "per-frame": "每帧停",
+  seam: "随首帧",
+};
+
 const PoseAxesEditor = ({
   pose,
+  passSpeeds,
   passThrough,
+  junctions,
   uncontrolledAxes,
   objectId,
   onChange,
 }: {
   pose: KeyframePose;
+  passSpeeds: PassSpeeds;
   /** 解析后的位姿：不设定的轴取这一帧的经过值 */
   passThrough: ModelPose | undefined;
+  /** 各设定轴在这一帧的经过速度及原因 */
+  junctions: Partial<Record<VirtualAxisId, PoseJunction>>;
   /** 该物体在所有位姿上都不设定的轴：序列不控制，没有经过值 */
   uncontrolledAxes: readonly VirtualAxisId[];
   objectId: number;
-  onChange: (pose: KeyframePose) => void;
+  onChange: (change: PoseAxesChange) => void;
 }) => {
   const { getTimelineObject, getLivePose } = useActionBuilder();
   const object = getTimelineObject(objectId);
@@ -170,6 +226,14 @@ const PoseAxesEditor = ({
 
   const enabledAxes = resolveEnabledAxes(object?.enabledAxes ?? []);
   const setCount = enabledAxes.filter((axis) => isAxisSet(pose, axis)).length;
+  const emit = (nextPose: KeyframePose, nextSpeeds: PassSpeeds = passSpeeds) => {
+    const kept: PassSpeeds = {};
+    for (const axis of VIRTUAL_AXIS_IDS) {
+      const speed = nextSpeeds[axis];
+      if (speed !== undefined && isAxisSet(nextPose, axis)) kept[axis] = speed;
+    }
+    onChange({ pose: nextPose, passSpeeds: kept });
+  };
 
   const handleDraftChange = (axis: VirtualAxisId, value: number) => {
     setDrafts((current) => ({ ...current, [axis]: value }));
@@ -186,25 +250,38 @@ const PoseAxesEditor = ({
       [axis]: mode === "rel" ? 0 : clamped,
     }));
     if (clamped === current) return;
-    onChange({ ...pose, [axis]: clamped });
+    emit({ ...pose, [axis]: clamped });
   };
 
   const handleTogglePassThrough = (axis: VirtualAxisId) => {
     if (isAxisSet(pose, axis)) {
       if (setCount <= 1) return;
-      onChange(withoutAxis(pose, axis));
+      emit(withoutAxis(pose, axis));
       return;
     }
     // 重新设定时取这一帧的经过值，轨迹位置不跳；序列原本不控制的轴取实时位置
     const value = uncontrolledAxes.includes(axis)
       ? (getLivePose?.(objectId)?.[axis] ?? shown[axis])
       : shown[axis];
-    onChange({ ...pose, [axis]: roundProjectCoordinate(value) });
+    emit({ ...pose, [axis]: roundProjectCoordinate(value) });
   };
+
+  const handlePassSpeedCommit = (axis: VirtualAxisId, value: number) => {
+    emit(pose, { ...passSpeeds, [axis]: roundProjectCoordinate(Math.max(0, value)) });
+  };
+
+  const handlePassSpeedAuto = (axis: VirtualAxisId) => {
+    const next = { ...passSpeeds };
+    delete next[axis];
+    emit(pose, next);
+  };
+
   const passingAxes = enabledAxes.filter(
     (axis) => !isAxisSet(pose, axis) && !uncontrolledAxes.includes(axis),
   );
   const freeAxes = enabledAxes.filter((axis) => uncontrolledAxes.includes(axis));
+  const speedAxes = enabledAxes.filter((axis) => isAxisSet(pose, axis) && junctions[axis]);
+  const perFrame = speedAxes.length > 0 && speedAxes.every((axis) => junctions[axis]?.kind === "per-frame");
 
   return (
     <div className="mb-3 space-y-2">
@@ -220,6 +297,7 @@ const PoseAxesEditor = ({
         const range = object?.rangeByAxis?.[axis];
         const passing = !isAxisSet(pose, axis);
         const onlySet = !passing && setCount <= 1;
+        const label = virtualAxisLabel(axis);
         return (
           <div key={axis} className="flex items-center gap-2">
             <div className="min-w-0 flex-1">
@@ -235,22 +313,15 @@ const PoseAxesEditor = ({
                 onCommit={(value) => handleCommit(axis, value)}
               />
             </div>
-            <button
-              type="button"
-              aria-label={`${virtualAxisLabel(axis)} 经过`}
-              aria-pressed={passing}
+            <AxisToggle
+              label={`${label} 经过`}
+              pressed={passing}
               disabled={onlySet}
               title={onlySet ? "至少设定一个轴" : "不设定：这一帧不停，按前后设定值之间的曲线经过"}
               onClick={() => handleTogglePassThrough(axis)}
-              className={cn(
-                "h-8 shrink-0 rounded-md px-2 text-body-sm disabled:cursor-not-allowed disabled:opacity-50",
-                passing
-                  ? "bg-primary font-semibold text-primary-foreground"
-                  : "border border-border text-foreground hover:bg-accent",
-              )}
             >
               经过
-            </button>
+            </AxisToggle>
           </div>
         );
       })}
@@ -263,6 +334,54 @@ const PoseAxesEditor = ({
         <p className="text-body-sm text-muted-foreground">
           {freeAxes.map(virtualAxisLabel).join("、")} 在所有位姿上都不设定，这条序列不控制它，停在原位
         </p>
+      ) : null}
+      {perFrame ? (
+        <p className="text-body-sm text-muted-foreground">序列为每帧停，经过速度都是 0</p>
+      ) : speedAxes.length > 0 ? (
+        <div className="space-y-1.5 pt-1">
+          <p className="text-body-sm text-muted-foreground">经过速度（0 即停在这一帧）</p>
+          {speedAxes.map((axis) => {
+            const junction = junctions[axis]!;
+            const label = virtualAxisLabel(axis);
+            const editable = junction.kind === "auto" || junction.kind === "manual";
+            const status =
+              junction.kind === "manual" && junction.speed === 0 ? "停" : JUNCTION_LABEL[junction.kind];
+            return (
+              <div
+                key={axis}
+                role="group"
+                aria-label={`${label} 经过速度设置`}
+                className="flex items-center gap-2"
+              >
+                <span className="w-12 shrink-0 text-body-sm text-foreground">{label}</span>
+                <div className="min-w-0 flex-1">
+                  <UnitAwareNumericInput
+                    aria-label={`${label} 经过速度`}
+                    value={roundProjectCoordinate(junction.speed)}
+                    unit={`${getVirtualAxisCanonicalUnit(axis, object?.controlType)}/s`}
+                    min={0}
+                    step={1}
+                    precision={1}
+                    disabled={!editable}
+                    onCommit={(value) => handlePassSpeedCommit(axis, value)}
+                    className="w-full border-border border"
+                  />
+                </div>
+                <span className="w-12 shrink-0 text-body-sm text-muted-foreground">{status}</span>
+                {junction.kind === "manual" ? (
+                  <button
+                    type="button"
+                    aria-label={`${label} 经过速度改回自动`}
+                    onClick={() => handlePassSpeedAuto(axis)}
+                    className="h-8 shrink-0 rounded-md border border-border px-2 text-body-sm text-foreground hover:bg-accent"
+                  >
+                    自动
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
       ) : null}
     </div>
   );
@@ -389,17 +508,24 @@ const segmentMotions = (
   v3: segmentAxisMotion(segment, "v3"),
 });
 
-const passThroughNotes = (
+const motionNotes = (
   segment: ResolvedMotionSegment,
   motions: Record<VirtualAxisId, ResolvedAxisMotion>,
+  formatSpeed: (axis: VirtualAxisId, speed: number) => string,
 ): Partial<Record<VirtualAxisId, string>> => {
   const notes: Partial<Record<VirtualAxisId, string>> = {};
   for (const axis of VIRTUAL_AXIS_IDS) {
     const motion = motions[axis];
-    if (!isPassThroughMotion(segment, motion)) continue;
-    notes[axis] =
-      `${virtualAxisLabel(axis)}在区间端点经过，这里是 ${formatTime(motion.startMs)}–` +
-      `${formatDurationSeconds(motion.endMs)} 整段曲线，修改作用于整段`;
+    const parts: string[] = [];
+    if (isPassThroughMotion(segment, motion)) {
+      parts.push(
+        `${virtualAxisLabel(axis)}在区间端点经过，这里是 ${formatTime(motion.startMs)}–` +
+          `${formatDurationSeconds(motion.endMs)} 整段曲线，修改作用于整段`,
+      );
+    }
+    if (motion.startSpeed > 0) parts.push(`从 ${formatSpeed(axis, motion.startSpeed)} 进入`);
+    if (motion.endSpeed > 0) parts.push(`以 ${formatSpeed(axis, motion.endSpeed)} 离开`);
+    if (parts.length > 0) notes[axis] = parts.join("；");
   }
   return notes;
 };
@@ -422,6 +548,7 @@ export const SequencePropertiesPanel = ({
   onDeleteBlock,
 }: SequencePropertiesPanelProps) => {
   const { getTimelineObject, sequenceIssues } = useActionBuilder();
+  const display = useSessionDisplayLengthUnit();
   if (selection === null) {
     return <EmptyProperties />;
   }
@@ -454,7 +581,14 @@ export const SequencePropertiesPanel = ({
         v2: motions.v2.durationMs,
         v3: motions.v3.durationMs,
       },
+      boundaryByAxis: {
+        v1: motions.v1,
+        v2: motions.v2,
+        v3: motions.v3,
+      },
     };
+    const formatAxisSpeed = (axis: VirtualAxisId, speed: number) =>
+      formatQuantity(speed, `${getVirtualAxisCanonicalUnit(axis, object?.controlType)}/s`, display);
     const status = motionProfileSegmentStatus(profiles, axisContext, disabled);
     const configProfiles = (fromRef: string, toRef: string, durationMs: number) =>
       sequence.segments.find((item) => item.fromRef === fromRef && item.toRef === toRef)?.settings
@@ -488,7 +622,7 @@ export const SequencePropertiesPanel = ({
           value={profiles}
           disabled={disabled}
           axisContext={axisContext}
-          axisNotes={passThroughNotes(segment, motions)}
+          axisNotes={motionNotes(segment, motions, formatAxisSpeed)}
           segmentContext={{
             fromRef: segment.fromRef,
             toRef: segment.toRef,
@@ -522,6 +656,7 @@ export const SequencePropertiesPanel = ({
 
   if (block.kind === "pose") {
     const poseBlock: PoseBlock = block;
+    const resolvedPoint = resolved.poses.find((point) => point.sourceBlockId === poseBlock.id);
     return (
       <PropertiesShell title="位姿" onDelete={() => onDeleteBlock(poseBlock.id)}>
         <RepairBand
@@ -532,12 +667,17 @@ export const SequencePropertiesPanel = ({
         <PoseAxesEditor
           key={poseBlock.id}
           pose={poseBlock.pose}
-          passThrough={
-            resolved.poses.find((point) => point.sourceBlockId === poseBlock.id)?.pose
-          }
+          passSpeeds={poseBlock.passSpeeds ?? {}}
+          passThrough={resolvedPoint?.pose}
+          junctions={resolvedPoint?.junctions ?? {}}
           uncontrolledAxes={uncontrolledAxesOf(resolved, poseBlock.objectId)}
           objectId={poseBlock.objectId}
-          onChange={(pose) => onReplaceBlock({ ...poseBlock, pose })}
+          onChange={({ pose, passSpeeds }) => {
+            const { passSpeeds: _previous, ...rest } = poseBlock;
+            onReplaceBlock(
+              Object.keys(passSpeeds).length > 0 ? { ...rest, pose, passSpeeds } : { ...rest, pose },
+            );
+          }}
         />
         <Field label="时间">
           <UnitAwareNumericInput
