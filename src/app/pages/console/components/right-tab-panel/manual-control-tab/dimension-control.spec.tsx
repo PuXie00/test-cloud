@@ -294,3 +294,42 @@ describe("DimensionControl GO", () => {
     ).toBe(true);
   });
 });
+
+describe("DimensionControl 当前位置", () => {
+  it("每根虚轴旁显示当前位置，目标改了也照旧显示实际位置", () => {
+    selectLiftAndSwing();
+    hookState.goState = {
+      phase: "armed",
+      mode: "abs",
+      entries: [{ objectId: "1", target: { v1: 400 }, current: {} }],
+    };
+    renderControl();
+    // 虚轴 1 两个物体都在 100；虚轴 2 只有四点摆
+    expect(screen.getByLabelText("虚轴1 当前位置").textContent).toBe("当前 100.0");
+    expect(screen.getByLabelText("虚轴2 当前位置").textContent).toBe("当前 5.0");
+  });
+
+  it("各物体当前位置不一致或没有数据时显示 --", () => {
+    selectLiftAndSwing();
+    hookState.snapshots.set(1, snapshot(1, [HEIGHT], { h: 200 }));
+    renderControl();
+    expect(screen.getByLabelText("虚轴1 当前位置").textContent).toBe("当前 --");
+  });
+
+  it("传入 objectIds 时操作这些物体而不是全局选择", () => {
+    selectLiftAndSwing();
+    hookState.selectedIds = [];
+    hookState.goState = {
+      phase: "armed",
+      mode: "abs",
+      entries: [{ objectId: "2", target: { v1: 10, v2: 0, v3: 0 }, current: {} }],
+    };
+    render(
+      <DisplayLengthUnitProvider initialUnit="mm">
+        <DimensionControl objectIds={[2]} />
+      </DisplayLengthUnitProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "选中物体 GO" }));
+    expect(hookState.go).toHaveBeenCalledWith(["2"]);
+  });
+});

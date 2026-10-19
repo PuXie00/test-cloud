@@ -1,10 +1,11 @@
 import { useMemo } from "react";
 import { ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE } from "@/app/project/configuration-rules";
+import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
 import type { ModelPose } from "@/app/project/action-sequence/types";
 import { useActionBuilder } from "../components/action-builder/use-action-builder";
 import { useControlledObjects } from "../hooks/use-controlled-objects";
 import { useProjectStore } from "../hooks/use-project-store";
-import { mergeHoldPoses, resolveLivePoses } from "./resolve-live-poses";
+import { mergeHoldPoses, pinLiveAxes, resolveLivePoses } from "./resolve-live-poses";
 import { resolvePreviewPoses } from "./resolve-preview-poses";
 
 export const useActionPreviewPoses = (): Map<number, ModelPose> => {
@@ -41,8 +42,22 @@ export const useActionPreviewPoses = (): Map<number, ModelPose> => {
     [snapshots, virtualAxisObjectIds],
   );
 
+  const uncontrolledByObject = useMemo(() => {
+    if (dockMode !== "sequence" || !sequence) return null;
+    try {
+      return resolveActionSequence(sequence).uncontrolledAxesByObject ?? null;
+    } catch {
+      return null;
+    }
+  }, [dockMode, sequence]);
+
+  const sequencePoses = useMemo(
+    () => pinLiveAxes(previewPoses, uncontrolledByObject, livePoses),
+    [previewPoses, uncontrolledByObject, livePoses],
+  );
+
   return useMemo(
-    () => mergeHoldPoses(previewPoses, livePoses, showLivePose),
-    [previewPoses, livePoses, showLivePose],
+    () => mergeHoldPoses(sequencePoses, livePoses, showLivePose),
+    [sequencePoses, livePoses, showLivePose],
   );
 };

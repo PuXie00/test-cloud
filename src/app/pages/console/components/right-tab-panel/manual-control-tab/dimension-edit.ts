@@ -118,13 +118,28 @@ export const sharedAxisValue = (
   participants: readonly DimensionParticipant[],
   axis: VirtualAxisId,
   armedTargetsByObjectId: Readonly<Record<string, VirtualAxisValues>>,
-): number | undefined => {
-  const values = writableParticipants(participants, axis).map((item) => {
-    const value =
-      armedTargetsByObjectId[item.objectId]?.[axis] ??
-      positionsToAxisValues(item.snapshot.positions)[axis];
-    return value === undefined ? undefined : roundToInputPrecision(value);
-  });
+): number | undefined =>
+  sharedRoundedValue(
+    writableParticipants(participants, axis).map(
+      (item) =>
+        armedTargetsByObjectId[item.objectId]?.[axis] ??
+        positionsToAxisValues(item.snapshot.positions)[axis],
+    ),
+  );
+
+/** 各物体当前监控位置一致时返回该值（按输入框精度），不一致或没有位置数据时 undefined */
+export const sharedLiveAxisValue = (
+  participants: readonly DimensionParticipant[],
+  axis: VirtualAxisId,
+): number | undefined =>
+  sharedRoundedValue(
+    writableParticipants(participants, axis).map(
+      (item) => positionsToAxisValues(item.snapshot.positions)[axis],
+    ),
+  );
+
+const sharedRoundedValue = (raw: readonly (number | undefined)[]): number | undefined => {
+  const values = raw.map((value) => (value === undefined ? undefined : roundToInputPrecision(value)));
   const [shared] = values;
   if (shared === undefined || values.some((value) => value !== shared)) return undefined;
   return shared;

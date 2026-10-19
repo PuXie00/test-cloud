@@ -18,7 +18,14 @@ import {
   type CapturedPoseRequest,
 } from "@/app/project/capture-pose-sequence";
 import { useProject } from "@/app/project/use-project";
+import { evaluateResolvedSequence } from "@/app/project/action-sequence/evaluate-sequence";
 import { createDefaultAxisProfiles } from "@/app/project/action-sequence/motion-profile";
+import {
+  resolveActionSequence,
+  uncontrolledAxesOf,
+  type ResolvedActionSequence,
+} from "@/app/project/action-sequence/resolve-sequence";
+import { roundProjectCoordinate } from "@/app/project/project-quantity";
 import { fitPresetParams } from "@/app/project/action-sequence/preset-defaults";
 import {
   dynamicPresetProfileDurationMs,
@@ -35,13 +42,23 @@ import {
   normalizeSequenceName,
   sequenceNameError,
 } from "@/app/project/action-sequence/sequence-name";
-import type { ActionSequenceConfig, ModelPose, MotionSegmentSettings, TimelineBlock } from "@/app/project/action-sequence/types";
+import type {
+  ActionSequenceConfig,
+  KeyframePose,
+  ModelPose,
+  MotionSegmentSettings,
+  TimelineBlock,
+} from "@/app/project/action-sequence/types";
 import {
   actionSequencePathIsClosed,
   reconcileSequenceLoop,
   SEQUENCE_LOOP_CLEARED_TOAST,
 } from "@/app/project/action-sequence/sequence-loop";
-import type { ProjectMotion, VirtualAxisId } from "@/app/project/project-document-types";
+import type {
+  ProjectMotion,
+  VirtualAxisId,
+  VirtualAxisValues,
+} from "@/app/project/project-document-types";
 import {
   createEmptySequence,
   DEFAULT_BLOCK_MS,
@@ -56,6 +73,7 @@ import {
 } from "./action-clipboard";
 import {
   applyPoseAxisWrite,
+  changedPoseIds,
   copyTimelineBlocks,
   deleteTimelineBlocks,
   insertTimelineBlock,
@@ -72,6 +90,7 @@ import {
   replaceTimelineBlock,
   resizeDynamicPreset,
   shiftTimelineBlocks,
+  updatePosesFromLive,
   updateSegmentSettings,
   type EditResult,
 } from "./sequence-ops";
@@ -100,6 +119,7 @@ import type {
 } from "./action-builder-context-types";
 import { ActionBuilderContext } from "./action-builder-react-context";
 import type { ContextSelection } from "./context-bar/selection-context-bar";
+import { LivePoseBridge, type LivePoseLookup } from "./live-pose-bridge";
 import type { ActionRightTab } from "./right-panel/action-right-panel";
 
 export { useActionBuilder } from "./use-action-builder";
@@ -383,9 +403,9 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
 
   const handleSelectionChange = useCallback((next: SequenceSelection) => {
     setSelection(next);
-    // Clearing the selection (e.g. moving the playhead) keeps the manual-control tab;
-    // selecting blocks shows their properties.
-    setActiveRightTab((tab) => (next === null && tab === "manual" ? tab : "selection"));
+    // 手动控制（「当前位置」打开）是联机编辑：选块和清空选择都留在这个 tab，
+    // 选中的位姿成为 GO 目标；其它 tab 选块时显示属性。
+    setActiveRightTab((tab) => (tab === "manual" ? tab : "selection"));
     setSequenceMissingHint(false);
   }, []);
 
@@ -445,22 +465,57 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     [applySequenceEdit, sequenceEditOptions],
   );
 
+  const poseObjectInfo = useCallback(
+    (objectId: number) => {
+      const object = getTimelineObject(objectId);
+      if (object === undefined) return undefined;
+      return {
+        enabledAxes: object.enabledAxes,
+        rangeByAxis: object.rangeByAxis,
+      };
+    },
+    [getTimelineObject],
+  );
+
   const handleApplyPoseAxisWrite = useCallback(
     (blockIds: readonly string[], write: PoseAxisWrite): boolean =>
       applySequenceEdit((current) =>
         applyPoseAxisWrite(current, blockIds, write, {
           ...sequenceEditOptions,
-          objectInfo: (objectId) => {
-            const object = getTimelineObject(objectId);
-            if (object === undefined) return undefined;
-            return {
-              enabledAxes: object.enabledAxes,
-              rangeByAxis: object.rangeByAxis,
-            };
-          },
+          objectInfo: poseObjectInfo,
         }),
       ),
-    [applySequenceEdit, getTimelineObject, sequenceEditOptions],
+    [applySequenceEdit, poseObjectInfo, sequenceEditOptions],
+  );
+
+  /** 取当前：把物体的实时位置写进选中位姿里设定了值的轴 */
+  const handleUpdatePosesFromLive = useCallback(
+    (blockIds: readonly string[], liveFor: (objectId: number) => VirtualAxisValues | null) => {
+      let updated = 0;
+      let failed = false;
+      const committed = applySequenceEdit((current) => {
+        const result = updatePosesFromLive(current, blockIds, liveFor, {
+          ...sequenceEditOptions,
+          objectInfo: poseObjectInfo,
+        });
+        if (!result.ok) {
+          failed = true;
+          return result;
+        }
+        updated = changedPoseIds(current, result.sequence, blockIds).length;
+        return result;
+      });
+      if (failed) {
+        toast.error("位姿写入失败");
+        return;
+      }
+      if (committed) {
+        toast.success(`已用当前位置更新 ${updated} 个位姿`);
+        return;
+      }
+      if (updated === 0) toast.info("位姿已和当前位置一致");
+    },
+    [applySequenceEdit, poseObjectInfo, sequenceEditOptions],
   );
 
   const handleMoveTimelineBlock = useCallback(
@@ -582,12 +637,44 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     [cursorMs],
   );
 
-  const poseForObject = useCallback(
-    (objectId: number): ModelPose => {
-      const object = getTimelineObject(objectId);
-      return { v1: object?.currentPosition ?? 0, v2: 0, v3: 0 };
+  const livePoseRef = useRef<LivePoseLookup | null>(null);
+  const getLivePose = useCallback(
+    (objectId: number): ModelPose | null => livePoseRef.current?.(objectId) ?? null,
+    [],
+  );
+
+  /**
+   * 新建位姿的默认值：序列里已有该物体时取指针处的序列值（原轨迹不变），序列不控制的轴仍不设定；
+   * 没有时取实时位置。指针处已有位姿就原样保留（包括不设定的轴）。
+   */
+  const defaultPosesAtCursor = useCallback(
+    (target: ActionSequenceConfig, objectIds: readonly number[]): Map<number, KeyframePose> => {
+      let resolved: ResolvedActionSequence | null = null;
+      let evaluated = new Map<number, ModelPose>();
+      try {
+        resolved = resolveActionSequence(target);
+        evaluated = evaluateResolvedSequence(resolved, cursorMs);
+      } catch {
+        // 序列解析失败时全部退回实时位置
+      }
+      return new Map(
+        objectIds.map((objectId): [number, KeyframePose] => {
+          const existing = target.blocks.find(
+            (block) => block.kind === "pose" && block.objectId === objectId && block.atMs === cursorMs,
+          );
+          if (existing?.kind === "pose") return [objectId, { ...existing.pose }];
+          const pose = evaluated.get(objectId);
+          if (!pose) return [objectId, getLivePose(objectId) ?? { v1: 0, v2: 0, v3: 0 }];
+          const uncontrolled = resolved ? uncontrolledAxesOf(resolved, objectId) : [];
+          const next: KeyframePose = {};
+          for (const axis of ["v1", "v2", "v3"] as const) {
+            if (!uncontrolled.includes(axis)) next[axis] = roundProjectCoordinate(pose[axis]);
+          }
+          return [objectId, next];
+        }),
+      );
     },
-    [getTimelineObject],
+    [cursorMs, getLivePose],
   );
 
   const handleCreatePose = useCallback(
@@ -596,16 +683,17 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         setSequenceMissingHint(true);
         return;
       }
+      const poses = defaultPosesAtCursor(sequence, objectIds);
       const outcome = upsertForObjects(objectIds, (current, objectId) =>
         upsertPoseBlock(
           current,
-          { id: nextId("blk"), kind: "pose", objectId, atMs: cursorMs, pose: poseForObject(objectId) },
+          { id: nextId("blk"), kind: "pose", objectId, atMs: cursorMs, pose: poses.get(objectId)! },
           sequenceEditOptions,
         ),
       );
       reportUpsert(outcome, "位姿");
     },
-    [selectedSequenceId, sequence, cursorMs, poseForObject, sequenceEditOptions],
+    [selectedSequenceId, sequence, cursorMs, defaultPosesAtCursor, sequenceEditOptions],
   );
 
   const handleCreateSetEnabled = useCallback(
@@ -1121,6 +1209,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleInsertTimelineBlock,
       handleReplaceTimelineBlock,
       handleApplyPoseAxisWrite,
+      handleUpdatePosesFromLive,
       handleMoveTimelineBlock,
       handleShiftTimelineBlocks,
       handleShiftTimelineBlocksEnd,
@@ -1140,6 +1229,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleCreateSetEnabled,
       handleCreateSequence,
       handleSaveCurrentPose,
+      getLivePose,
       handleRenameSequence,
       handleDeleteSequence,
       handleApplyStaticPreset,
@@ -1182,6 +1272,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleInsertTimelineBlock,
       handleReplaceTimelineBlock,
       handleApplyPoseAxisWrite,
+      handleUpdatePosesFromLive,
       handleMoveTimelineBlock,
       handleShiftTimelineBlocks,
       handleShiftTimelineBlocksEnd,
@@ -1201,6 +1292,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleCreateSetEnabled,
       handleCreateSequence,
       handleSaveCurrentPose,
+      getLivePose,
       handleRenameSequence,
       handleDeleteSequence,
       handleApplyStaticPreset,
@@ -1214,6 +1306,9 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   );
 
   return (
-    <ActionBuilderContext.Provider value={value}>{children}</ActionBuilderContext.Provider>
+    <ActionBuilderContext.Provider value={value}>
+      <LivePoseBridge lookupRef={livePoseRef} />
+      {children}
+    </ActionBuilderContext.Provider>
   );
 };

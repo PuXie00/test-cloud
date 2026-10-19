@@ -1,5 +1,11 @@
 import http from 'node:http'
-import type { AiStatusKind } from '../../shared/ai-bridge/types'
+import { AI_WRITE_MAX_BODY_BYTES } from '../../shared/ai-bridge/protocol'
+import type {
+  AiStatusKind,
+  AiWriteErrorCode,
+  AiWriteRequest,
+  AiWriteResult,
+} from '../../shared/ai-bridge/types'
 import type { AiBridgeStore, AiResource } from './store'
 import {
   CONFIG_SECTIONS,
@@ -119,11 +125,80 @@ export const isAllowedAiHost = (hostHeader: string, port: number): boolean => {
   return isPrivateIPv4(parsed.name)
 }
 
+/** 浏览器跨站请求一定带 Origin；没带的是普通 HTTP 客户端 */
+const isAllowedOrigin = (origin: string | undefined, port: number): boolean => {
+  if (origin === undefined) return true
+  try {
+    return isAllowedAiHost(new URL(origin).host, port)
+  } catch {
+    return false
+  }
+}
+
+/** 必须声明 JSON：网页表单 / text/plain 这类不需预检的跨站 POST 进不来 */
+const isJsonContentType = (header: string | undefined): boolean =>
+  header?.split(';')[0].trim().toLowerCase() === 'application/json'
+
+const WRITE_ERROR_STATUS: Record<AiWriteErrorCode, number> = {
+  NO_PROJECT: 409,
+  SHOW_MODE: 409,
+  BUSY: 409,
+  INVALID_SEQUENCE: 400,
+  VALIDATION_FAILED: 422,
+  RENDERER_UNAVAILABLE: 503,
+  TIMEOUT: 504,
+}
+
+type BodyResult = { ok: true; text: string } | { ok: false; status: number; code: string; message: string }
+
+const readBody = (req: http.IncomingMessage, limit: number): Promise<BodyResult> =>
+  new Promise((resolve) => {
+    const declared = Number(req.headers['content-length'])
+    if (Number.isFinite(declared) && declared > limit) {
+      resolve({ ok: false, status: 413, code: 'PAYLOAD_TOO_LARGE', message: `body exceeds ${limit} bytes` })
+      req.resume()
+      return
+    }
+    const chunks: Buffer[] = []
+    let size = 0
+    let done = false
+    req.on('data', (chunk: Buffer) => {
+      if (done) return
+      size += chunk.length
+      if (size > limit) {
+        done = true
+        resolve({ ok: false, status: 413, code: 'PAYLOAD_TOO_LARGE', message: `body exceeds ${limit} bytes` })
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => {
+      if (done) return
+      done = true
+      resolve({ ok: true, text: Buffer.concat(chunks).toString('utf8') })
+    })
+    req.on('error', (err) => {
+      if (done) return
+      done = true
+      resolve({ ok: false, status: 400, code: 'BAD_REQUEST', message: err.message })
+    })
+  })
+
+export type AiWriteGateway = { request: (request: AiWriteRequest) => Promise<AiWriteResult> }
+
+const NO_GATEWAY: AiWriteGateway = {
+  request: async () => ({ ok: false, code: 'RENDERER_UNAVAILABLE', message: 'write gateway not attached' }),
+}
+
 /**
- * 只读 JSON 服务。请求只读子进程内存快照，同一 version + 过滤条件只序列化一次。
+ * JSON 服务。读请求只读子进程内存快照，同一 version + 过滤条件只序列化一次；
+ * 写请求（POST /api/sequences）转给渲染进程校验并写入工程。
  * Host 必须是回环或局域网私有地址加实际端口。
  */
-export const createAiHttpServer = (store: AiBridgeStore): http.Server => {
+export const createAiHttpServer = (
+  store: AiBridgeStore,
+  gateway: AiWriteGateway = NO_GATEWAY,
+): http.Server => {
   const cache = new Map<string, Buffer>()
   let listenPort: number | null = null
 
@@ -165,6 +240,51 @@ export const createAiHttpServer = (store: AiBridgeStore): http.Server => {
     send(req, res, status, Buffer.from(JSON.stringify({ ok: false, code, message }), 'utf8'), extra)
   }
 
+  const json = (req: http.IncomingMessage, res: http.ServerResponse, status: number, value: unknown): void =>
+    send(req, res, status, Buffer.from(JSON.stringify(value), 'utf8'))
+
+  /** POST /api/sequences：按 id 新增或整条替换动作序列 */
+  const writeSequence = async (
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    port: number,
+  ): Promise<void> => {
+    if (!isAllowedOrigin(req.headers.origin, port)) {
+      fail(req, res, 403, 'FORBIDDEN_ORIGIN', 'browser pages from other sites may not write')
+      return
+    }
+    if (req.method !== 'POST') {
+      fail(req, res, 405, 'METHOD_NOT_ALLOWED', 'use POST', { Allow: 'POST' })
+      return
+    }
+    if (!isJsonContentType(req.headers['content-type'])) {
+      fail(req, res, 415, 'UNSUPPORTED_MEDIA_TYPE', 'Content-Type must be application/json')
+      return
+    }
+    const body = await readBody(req, AI_WRITE_MAX_BODY_BYTES)
+    if (!body.ok) {
+      fail(req, res, body.status, body.code, body.message, { Connection: 'close' })
+      return
+    }
+    let sequence: unknown
+    try {
+      sequence = JSON.parse(body.text)
+    } catch (err) {
+      fail(req, res, 400, 'INVALID_JSON', err instanceof Error ? err.message : 'invalid JSON')
+      return
+    }
+    if (store.console?.mode === 'show') {
+      fail(req, res, 409, 'SHOW_MODE', '演出模式下不能修改动作序列，请先切回排练模式')
+      return
+    }
+    const result = await gateway.request({ kind: 'upsert-sequence', sequence })
+    if (result.ok) {
+      json(req, res, result.created ? 201 : 200, result)
+      return
+    }
+    json(req, res, WRITE_ERROR_STATUS[result.code] ?? 500, result)
+  }
+
   const server = http.createServer((req, res) => {
     if (listenPort === null) {
       const address = server.address()
@@ -175,12 +295,18 @@ export const createAiHttpServer = (store: AiBridgeStore): http.Server => {
       fail(req, res, 403, 'FORBIDDEN_HOST', 'Host must be loopback or a private LAN address with this port')
       return
     }
+    const url = new URL(req.url ?? '/', 'http://localhost')
+    if (url.pathname === '/api/sequences') {
+      void writeSequence(req, res, listenPort)
+      return
+    }
     if (req.method !== 'GET' && req.method !== 'HEAD') {
-      fail(req, res, 405, 'METHOD_NOT_ALLOWED', 'read-only API: use GET', { Allow: 'GET, HEAD' })
+      fail(req, res, 405, 'METHOD_NOT_ALLOWED', 'use GET (writes only via POST /api/sequences)', {
+        Allow: 'GET, HEAD',
+      })
       return
     }
 
-    const url = new URL(req.url ?? '/', 'http://localhost')
     let result: { etag: string; body: Buffer }
     switch (url.pathname) {
       case '/api/health':

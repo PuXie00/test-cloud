@@ -34,12 +34,13 @@ export type cCompiledModel = {
   deviceId:number, // 物体id
   timeBlockList:{
     time:number,
-    virtualAxis:{
+    virtualAxis:({
       pos:number, // 虚轴值
       vel:number, // 速度
       accVel:number, // 加速度
       decVel:number, // 减速度
-    }[] // 虚轴列表，【v1，v2，v3】
+      passVel:number, // 经过这一时间块的速度（绝对值）；0 表示在这里停下，连续衔接的中间位姿不为 0
+    } | null)[] // 虚轴列表，【v1，v2，v3】；该时间块不设定的轴为 null，按前后设定值之间的曲线经过
   }[] // 时间块列表，如：[ { time:0, virtualAxis:[ { pos:0, vel:0, accVel:0, decVel:0 } ] } ]
 }
 

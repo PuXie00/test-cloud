@@ -4,6 +4,9 @@ export type { TrajectoryMode } from "@shared/action-sequence";
 
 export type ModelPose = { v1: number; v2: number; v3: number };
 
+/** 位姿块里的值。缺少的轴「不设定」：这一帧不停，按前后设定值之间的整段曲线经过。 */
+export type KeyframePose = Partial<ModelPose>;
+
 export type IdleAxisProfile = { kind: "idle" };
 
 export type TrapezoidAxisProfile = {
@@ -27,7 +30,11 @@ export type PoseBlock = {
   kind: "pose";
   objectId: number;
   atMs: number;
-  pose: ModelPose;
+  pose: KeyframePose;
+  /**
+   * 手填的经过速度（单位/秒，绝对值）：缺省时自动取前后两段平均速度的调和平均，0 表示停在这一帧。
+   */
+  passSpeeds?: Partial<Record<"v1" | "v2" | "v3", number>>;
   label?: string;
 };
 

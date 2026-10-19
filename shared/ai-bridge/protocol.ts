@@ -1,4 +1,4 @@
-/** 本地 AI 只读 HTTP 服务（utilityProcess）的常量 */
+/** 本地 AI HTTP 服务（utilityProcess）的常量 */
 
 /** 可用环境变量 YZ_AI_HTTP_PORT 覆盖 */
 export const AI_HTTP_DEFAULT_PORT = 17890
@@ -20,6 +20,12 @@ export const AI_VIEW_PUBLISH_MS = 50
 
 /** 工程配置变化后的防抖时间 */
 export const AI_CONFIG_PUBLISH_MS = 300
+
+/** 写入请求等渲染进程应答的上限 */
+export const AI_WRITE_TIMEOUT_MS = 5000
+
+/** 写入请求体上限 */
+export const AI_WRITE_MAX_BODY_BYTES = 2 * 1024 * 1024
 
 /** 子进程意外退出后的重启退避 */
 export const AI_RESTART_MIN_MS = 1000

@@ -6,6 +6,7 @@ import { toDocumentLike } from "@/app/project/project-ipc";
 import { useProject } from "@/app/project/use-project";
 import { buildAiEntityNames, resolveAiPage } from "./ai-view";
 import { useAiPublish } from "./use-ai-publish";
+import { useAiWriteHandler } from "./use-ai-write-handler";
 
 /** 给每个文档对象一个序号：文档不可变更新，对象变了就是内容变了 */
 const documentIds = new WeakMap<object, number>();
@@ -19,10 +20,11 @@ const documentKey = (document: object): number => {
   return id;
 };
 
-/** 应用级：把所在页面、当前工程和工程配置（含未保存修改）推给本地 AI 服务 */
+/** 应用级：把所在页面、当前工程和工程配置（含未保存修改）推给本地 AI 服务，并处理它的写入请求 */
 export const AiAppSync = () => {
   const { pathname } = useLocation();
   const { currentProject, isDirty, documentRevision } = useProject();
+  useAiWriteHandler();
 
   const projectId = currentProject?.id;
   const projectName = currentProject?.name;

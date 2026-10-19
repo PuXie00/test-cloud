@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ManualControlPanel } from "./manual-control-panel";
 
@@ -48,13 +48,21 @@ vi.mock("../../../hooks/manual-commands", () => ({
 }));
 vi.mock("./couple-preview-dialog", () => ({ CouplePreviewDialog: () => null }));
 vi.mock("./jog-control", () => ({
-  JogControl: ({ disabled }: { disabled?: boolean }) => (
-    <div data-testid="jog" data-disabled={String(Boolean(disabled))} />
+  JogControl: ({ disabled, objectIds }: { disabled?: boolean; objectIds?: readonly number[] }) => (
+    <div
+      data-testid="jog"
+      data-disabled={String(Boolean(disabled))}
+      data-objects={(objectIds ?? []).join(",")}
+    />
   ),
 }));
 vi.mock("./dimension-control", () => ({
-  DimensionControl: ({ disabled }: { disabled?: boolean }) => (
-    <div data-testid="dimension" data-disabled={String(Boolean(disabled))} />
+  DimensionControl: ({ disabled, objectIds }: { disabled?: boolean; objectIds?: readonly number[] }) => (
+    <div
+      data-testid="dimension"
+      data-disabled={String(Boolean(disabled))}
+      data-objects={(objectIds ?? []).join(",")}
+    />
   ),
 }));
 
@@ -114,5 +122,41 @@ describe("ManualControlPanel 预览中", () => {
     hookState.previewSequenceId = 99;
     renderPanel();
     expect(screen.getByText("正在预览动作序列，无法操作")).not.toBeNull();
+  });
+});
+
+describe("ManualControlPanel 联机编辑", () => {
+  it("操作传入的物体，顶部说明联机，按钮写明写到哪", () => {
+    hookState.snapshots.set(2, snapshot(2, "升降灯架-02"));
+    const onSave = vi.fn();
+    render(
+      <ManualControlPanel
+        objectIds={[2]}
+        liveLabel="联机编辑 4.0 s 的位姿"
+        saveLabel="取当前 → 更新位姿"
+        onSaveCurrentPose={onSave}
+      />,
+    );
+    expect(screen.getByRole("status").textContent).toContain("联机编辑 4.0 s 的位姿");
+    expect(screen.getByRole("heading", { name: "升降灯架-02" })).not.toBeNull();
+    expect(screen.getByTestId("jog").dataset.objects).toBe("2");
+    expect(screen.getByTestId("dimension").dataset.objects).toBe("2");
+
+    fireEvent.click(screen.getByRole("button", { name: "取当前 → 更新位姿" }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ objectIds: [2] }));
+  });
+
+  it("不能取当前时按钮不可用并说明原因", () => {
+    render(
+      <ManualControlPanel
+        saveLabel="取当前 → 更新位姿"
+        saveBlockedReason="设备运动中，停稳后再取当前"
+        onSaveCurrentPose={vi.fn()}
+      />,
+    );
+    expect(
+      (screen.getByRole("button", { name: "取当前 → 更新位姿" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(screen.getByText("设备运动中，停稳后再取当前")).not.toBeNull();
   });
 });

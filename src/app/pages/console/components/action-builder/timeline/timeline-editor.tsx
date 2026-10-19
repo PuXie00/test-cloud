@@ -8,7 +8,11 @@ import type {
   StaticPresetBlock,
   TimelineBlock,
 } from "@/app/project/action-sequence/types";
-import type { ResolvedActionSequence } from "@/app/project/action-sequence/resolve-sequence";
+import { unsetAxesOf } from "@/app/project/action-sequence/keyframe-pose";
+import {
+  uncontrolledAxesOf,
+  type ResolvedActionSequence,
+} from "@/app/project/action-sequence/resolve-sequence";
 import type { InvalidTimelineTargets } from "@/app/project/action-sequence/validate-sequence";
 import {
   selectionBlockIds,
@@ -209,6 +213,7 @@ export const TimelineEditor = ({
     () =>
       objectIdsInRowOrder.map((objectId) => {
         const initial = resolved.initialPoseByObject.get(objectId);
+        const uncontrolled = uncontrolledAxesOf(resolved, objectId);
         const dynamicPresets = dynamicPresetsFor(sequence, objectId);
         const generatedTicksByPreset: Record<string, number[]> = {};
         for (const block of dynamicPresets) {
@@ -223,6 +228,8 @@ export const TimelineEditor = ({
             pose: block.pose,
             label: block.label,
             isInitialPose: initial?.sourceRef === block.id,
+            // 序列整体不控制的轴不算“经过”
+            partial: unsetAxesOf(block.pose).some((axis) => !uncontrolled.includes(axis)),
           })),
           commands: commandsFor(sequence, objectId),
           staticPresets: staticPresetsFor(sequence, objectId),
@@ -234,7 +241,7 @@ export const TimelineEditor = ({
           ),
         };
       }),
-    [objectIdsInRowOrder, objectNameById, resolved.initialPoseByObject, resolved.poses, resolved.segments, sequence],
+    [objectIdsInRowOrder, objectNameById, resolved, sequence],
   );
 
   const clientToMs = (clientX: number): number => {

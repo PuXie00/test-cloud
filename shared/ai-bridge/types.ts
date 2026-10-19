@@ -71,6 +71,54 @@ export type AiRendererMessage =
   | { type: 'console'; data: AiConsoleView | null }
   | { type: 'config'; data: AiConfigPayload | null }
 
+// ── 子进程 ⇄ 渲染进程：AI 写入请求（同一 MessagePort，按 requestId 应答） ──
+
+/** 新增或修改动作序列：结构同工程文件里的 motion.actionSequences[]，id 由调用方给定 */
+export type AiWriteRequest = { kind: 'upsert-sequence'; sequence: unknown }
+
+/** 同 validateActionSequence 的 SequenceIssue */
+export type AiSequenceIssue = {
+  severity: 'error' | 'warning'
+  code: string
+  message: string
+  blockId?: string
+  objectId?: number
+  segmentKey?: string
+  segmentKeys?: readonly string[]
+  atMs?: number
+  suggestedDurationMs?: number
+}
+
+export type AiWriteErrorCode =
+  /** 没有打开的工程 */
+  | 'NO_PROJECT'
+  /** 演出模式下界面也不能编辑动作序列 */
+  | 'SHOW_MODE'
+  /** 界面有进行中的编辑或正在恢复版本 */
+  | 'BUSY'
+  /** 结构与工程动作序列不一致 */
+  | 'INVALID_SEQUENCE'
+  /** 结构对，但校验不通过（重名、引用不存在的物体、超限等） */
+  | 'VALIDATION_FAILED'
+  | 'RENDERER_UNAVAILABLE'
+  | 'TIMEOUT'
+
+export type AiWriteResult =
+  | {
+      ok: true
+      /** true 新增；false 修改已有序列 */
+      created: boolean
+      /** 与已有序列完全相同时为 false，工程不变 */
+      changed: boolean
+      sequence: unknown
+      warnings: AiSequenceIssue[]
+    }
+  | { ok: false; code: AiWriteErrorCode; message: string; issues?: AiSequenceIssue[] }
+
+export type AiWriteRequestMessage = { type: 'request'; requestId: number; request: AiWriteRequest }
+
+export type AiWriteResponseMessage = { type: 'response'; requestId: number; result: AiWriteResult }
+
 // ── main → 子进程：设备状态（合并后的增量） ──
 
 export type AiActionLive = {

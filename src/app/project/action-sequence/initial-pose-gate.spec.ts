@@ -10,7 +10,7 @@ import {
   preparedPosesMatchTelemetry,
   remainingProgramMs,
 } from "./initial-pose-gate";
-import { fixtureObjects, fixtureSequence } from "./nearest-start.fixture";
+import { fixtureObjects, fixtureSequence, twoPointFixture } from "./nearest-start.fixture";
 
 const singlePointObject = (
   overrides: Partial<ControlledObjectConfig> = {},
@@ -213,5 +213,40 @@ describe("remainingProgramMs", () => {
     const base = { direction: 1 as const, targetFrameMs: 3000 };
     expect(remainingProgramMs({ ...base } as never, 10000)).toBe(7000);
     expect(remainingProgramMs({ ...base, direction: -1 } as never, 10000)).toBe(3000);
+  });
+});
+
+describe("axes the sequence never sets", () => {
+  // 两点摆只动升降，摆动轴在所有位姿上都不设定
+  const liftOnly: ActionSequenceConfig = {
+    id: 1,
+    name: "lift",
+    trajectoryMode: false,
+    blocks: [
+      { id: "a", kind: "pose", objectId: 2, atMs: 0, pose: { v1: 10 } },
+      { id: "b", kind: "pose", objectId: 2, atMs: 4000, pose: { v1: 400 } },
+    ],
+    segments: [],
+  };
+  const gateAt = (h: number, p: number) =>
+    evaluateStartGate({
+      sequence: liftOnly,
+      objects: [twoPointFixture()],
+      motors: [],
+      telemetryByObjectId: new Map([[2, { h, p, y: 0 }]]),
+      nearest: false,
+      reverse: false,
+    });
+
+  it("does not require the free axis at a start value", () => {
+    expect(gateAt(10, 7)).toMatchObject({ status: "at-start" });
+  });
+
+  it("leaves the free axis where it is during the start transition", () => {
+    const result = gateAt(200, 7);
+    expect(result.status).toBe("transition");
+    if (result.status !== "transition") return;
+    const axes = result.plan.members.flatMap((member) => member.axes.map((move) => move.axis));
+    expect(axes).toEqual(["v1"]);
   });
 });

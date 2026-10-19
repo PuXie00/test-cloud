@@ -1,7 +1,10 @@
 import type { VirtualAxisId } from "../project-document-types";
-import { interpolatePoseWithProfiles } from "./evaluate-sequence";
-import { calculateMotionProfileKinematics, sampleVelocityNorm } from "./motion-profile";
-import type { ResolvedActionSequence, ResolvedMotionSegment } from "./resolve-sequence";
+import { axisMotionVelocityAt, segmentPoseAt } from "./evaluate-sequence";
+import {
+  segmentAxisMotion,
+  type ResolvedActionSequence,
+  type ResolvedMotionSegment,
+} from "./resolve-sequence";
 import type { ModelPose } from "./types";
 
 export const AXES: readonly VirtualAxisId[] = ["v1", "v2", "v3"];
@@ -48,18 +51,6 @@ export type MemberSample = {
   velocityPer100ms: ModelPose;
 };
 
-const segmentVelocityPerSecond = (
-  segment: ResolvedMotionSegment,
-  axis: VirtualAxisId,
-  tNorm: number,
-): number => {
-  const profile = segment.settings.profiles[axis];
-  const travel = segment.toPose[axis] - segment.fromPose[axis];
-  if (profile.kind === "idle" || travel === 0) return 0;
-  const { peakVelocity } = calculateMotionProfileKinematics(profile, travel, segment.durationMs);
-  return Math.sign(travel) * peakVelocity * sampleVelocityNorm(profile, tNorm, segment.durationMs);
-};
-
 /** 等价 Python evaluate_model：首帧前取起点、末帧后取终点，曲线速度为 0。 */
 export const sampleMember = (member: MemberTimeline, frameMs: number): MemberSample => {
   if (frameMs <= member.firstMs) {
@@ -77,17 +68,10 @@ export const sampleMember = (member: MemberTimeline, frameMs: number): MemberSam
       velocityPer100ms: { ...ZERO_POSE },
     };
   }
-  const tNorm = (frameMs - segment.startMs) / segment.durationMs;
-  const pose = interpolatePoseWithProfiles(
-    segment.fromPose,
-    segment.toPose,
-    segment.settings.profiles,
-    tNorm,
-    segment.durationMs,
-  );
+  const pose = segmentPoseAt(segment, frameMs);
   const velocityPer100ms = { ...ZERO_POSE };
   for (const axis of AXES) {
-    velocityPer100ms[axis] = segmentVelocityPerSecond(segment, axis, tNorm) / 10;
+    velocityPer100ms[axis] = axisMotionVelocityAt(segmentAxisMotion(segment, axis), frameMs) / 10;
   }
   return { pose, velocityPer100ms };
 };

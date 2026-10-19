@@ -15,6 +15,7 @@ import {
   replaceTimelineBlock,
   resizeDynamicPreset,
   shiftTimelineBlocks,
+  updatePosesFromLive,
   updateSegmentSettings,
   upsertPoseBlock,
   upsertSetEnabledBlock,
@@ -539,6 +540,46 @@ describe("applyPoseAxisWrite", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(poseOf(result.sequence, "pose-b").pose.v3).toBe(9);
+  });
+});
+
+describe("updatePosesFromLive", () => {
+  const live = (objectId: number) =>
+    objectId === 1 ? { v1: 12.34, v2: 3.06, v3: 9 } : objectId === 2 ? { v1: 140, v2: 7 } : null;
+
+  it("writes each object's live position into the set axes, clamped and rounded", () => {
+    const result = updatePosesFromLive(multiPoseSequence, ["pose-a", "pose-b"], live, {
+      objectInfo: multiPoseObjectInfo,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // 物体 1 没有虚轴3，不写；物体 2 只有虚轴1，按行程截到 100
+    expect(poseOf(result.sequence, "pose-a").pose).toEqual({ v1: 12.3, v2: 3.1, v3: 0 });
+    expect(poseOf(result.sequence, "pose-b").pose).toEqual({ v1: 100, v2: 5, v3: 2 });
+  });
+
+  it("keeps axes that pass through unset and skips poses without live data", () => {
+    const passing: ActionSequenceConfig = {
+      ...multiPoseSequence,
+      blocks: [
+        { id: "pose-a", kind: "pose", objectId: 1, atMs: 100, pose: { v1: 10 } },
+        { id: "pose-c", kind: "pose", objectId: 3, atMs: 100, pose: { v1: 4 } },
+      ],
+    };
+    const result = updatePosesFromLive(passing, ["pose-a", "pose-c"], live, {
+      objectInfo: multiPoseObjectInfo,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(poseOf(result.sequence, "pose-a").pose).toEqual({ v1: 12.3 });
+    expect(poseOf(result.sequence, "pose-c").pose).toEqual({ v1: 4 });
+  });
+
+  it("returns the same sequence when nothing changes", () => {
+    const result = updatePosesFromLive(multiPoseSequence, ["pose-b"], () => ({ v1: 20 }), {
+      objectInfo: multiPoseObjectInfo,
+    });
+    expect(result).toEqual({ ok: true, sequence: multiPoseSequence });
   });
 });
 

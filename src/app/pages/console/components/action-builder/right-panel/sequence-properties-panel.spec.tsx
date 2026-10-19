@@ -476,13 +476,15 @@ describe("SequencePropertiesPanel edits", () => {
 
 
 
-  it("shows short-phase warnings with minAccelTime ms", () => {
+  it("shows acceleration warnings against max speed / minAccelTime", () => {
 
     builderState.current.getTimelineObject = () => ({
 
       enabledAxes: ["v1"],
 
       minAccelTimeByAxis: { v1: 1 },
+
+      maxSpeedByAxis: { v1: 1 },
 
     });
 
@@ -492,9 +494,9 @@ describe("SequencePropertiesPanel edits", () => {
 
     });
 
-    expect(screen.getByText("加速短于最短加减速 1000 ms")).not.toBeNull();
+    expect(screen.getByText(/^加速度 .+ 超过上限 /)).not.toBeNull();
 
-    expect(screen.getByText("减速短于最短加减速 1000 ms")).not.toBeNull();
+    expect(screen.getByText(/^减速度 .+ 超过上限 /)).not.toBeNull();
 
   });
 
@@ -536,7 +538,7 @@ describe("SequencePropertiesPanel edits", () => {
 
     });
 
-    expect(screen.getByText("时长不足，加速与减速至少各需 1000 ms")).not.toBeNull();
+    expect(screen.getByText("加速与减速时间之和不小于区间时长")).not.toBeNull();
 
   });
 

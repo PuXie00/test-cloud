@@ -39,7 +39,7 @@ import type {
 export type { CppAckResult };
 import type { ConfigResult, DeviceConfigCatalog } from '../../shared/config'
 import type { KinematicsSolveResult } from '../../shared/kinematics/types'
-import type { AiRendererMessage } from '../../shared/ai-bridge/types'
+import type { AiRendererMessage, AiWriteRequest, AiWriteResult } from '../../shared/ai-bridge/types'
 
 export type {
   CreateProjectParams,
@@ -213,9 +213,13 @@ export type ConfirmToolParams = {
   danger?: boolean
 }
 
-/** 本地 AI 只读服务：渲染进程推送界面状态与工程配置（window.aiBridgeApi） */
+/** 本地 AI 服务：渲染进程推送界面状态与工程配置，并处理 AI 的写入请求（window.aiBridgeApi） */
 export type AiBridgeAPI = {
   publish: (message: AiRendererMessage) => void
+  /** 注册写入处理，返回注销函数 */
+  onWriteRequest: (
+    handler: (request: AiWriteRequest) => AiWriteResult | Promise<AiWriteResult>,
+  ) => () => void
 }
 
 /** 工具域门面：window.toolAPI */
