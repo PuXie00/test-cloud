@@ -14,7 +14,8 @@ import type {
   SetEnabledInstruction,
   TimelineBlock,
 } from "@/app/project/action-sequence/types";
-import type { VirtualAxisId } from "@/app/project/project-document-types";
+import type { VirtualAxisId, VirtualAxisValues } from "@/app/project/project-document-types";
+import { roundProjectCoordinate } from "@/app/project/project-quantity";
 import { snapTimeMs } from "./timeline/timeline-data";
 
 export type SequenceEditError =
@@ -394,6 +395,56 @@ export const applyPoseAxisWrite = (
   if (!changed) return { ok: true, sequence };
   return tryFinalize(next, options);
 };
+
+/**
+ * 取当前：把物体的实时位置写进位姿里设定了值的轴。
+ * 经过（不设定）的轴不写，按行程截断，取到工程精度。
+ */
+export const updatePosesFromLive = (
+  sequence: ActionSequenceConfig,
+  blockIds: readonly string[],
+  liveFor: (objectId: number) => VirtualAxisValues | null | undefined,
+  options?: PoseAxisWriteOptions,
+): EditResult => {
+  const ids = new Set(blockIds);
+  if (ids.size === 0) return { ok: true, sequence };
+
+  let changed = false;
+  const next = cloneSequence(sequence);
+  for (const block of next.blocks) {
+    if (!ids.has(block.id) || block.kind !== "pose") continue;
+    const live = liveFor(block.objectId);
+    if (!live) continue;
+    const info = options?.objectInfo?.(block.objectId);
+    const pose = { ...block.pose };
+    for (const axis of resolveWriteAxes(info?.enabledAxes)) {
+      const current = pose[axis];
+      const value = live[axis];
+      if (current === undefined || value === undefined) continue;
+      const range = info?.rangeByAxis?.[axis];
+      const nextValue = roundProjectCoordinate(clampNumeric(value, range?.min, range?.max));
+      if (nextValue === current) continue;
+      pose[axis] = nextValue;
+      changed = true;
+    }
+    block.pose = pose;
+  }
+  if (!changed) return { ok: true, sequence };
+  return tryFinalize(next, options);
+};
+
+/** 这些位姿里值变了的（取当前后给提示用） */
+export const changedPoseIds = (
+  before: ActionSequenceConfig,
+  after: ActionSequenceConfig,
+  blockIds: readonly string[],
+): string[] =>
+  blockIds.filter((id) => {
+    const prev = before.blocks.find((block) => block.id === id);
+    const next = after.blocks.find((block) => block.id === id);
+    if (prev?.kind !== "pose" || next?.kind !== "pose") return false;
+    return (["v1", "v2", "v3"] as const).some((axis) => prev.pose[axis] !== next.pose[axis]);
+  });
 
 export const replaceTimelineBlock = (
   sequence: ActionSequenceConfig,

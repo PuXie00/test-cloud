@@ -54,7 +54,11 @@ import {
   reconcileSequenceLoop,
   SEQUENCE_LOOP_CLEARED_TOAST,
 } from "@/app/project/action-sequence/sequence-loop";
-import type { ProjectMotion, VirtualAxisId } from "@/app/project/project-document-types";
+import type {
+  ProjectMotion,
+  VirtualAxisId,
+  VirtualAxisValues,
+} from "@/app/project/project-document-types";
 import {
   createEmptySequence,
   DEFAULT_BLOCK_MS,
@@ -69,6 +73,7 @@ import {
 } from "./action-clipboard";
 import {
   applyPoseAxisWrite,
+  changedPoseIds,
   copyTimelineBlocks,
   deleteTimelineBlocks,
   insertTimelineBlock,
@@ -85,6 +90,7 @@ import {
   replaceTimelineBlock,
   resizeDynamicPreset,
   shiftTimelineBlocks,
+  updatePosesFromLive,
   updateSegmentSettings,
   type EditResult,
 } from "./sequence-ops";
@@ -397,9 +403,9 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
 
   const handleSelectionChange = useCallback((next: SequenceSelection) => {
     setSelection(next);
-    // Clearing the selection (e.g. moving the playhead) keeps the manual-control tab;
-    // selecting blocks shows their properties.
-    setActiveRightTab((tab) => (next === null && tab === "manual" ? tab : "selection"));
+    // 手动控制（「当前位置」打开）是联机编辑：选块和清空选择都留在这个 tab，
+    // 选中的位姿成为 GO 目标；其它 tab 选块时显示属性。
+    setActiveRightTab((tab) => (tab === "manual" ? tab : "selection"));
     setSequenceMissingHint(false);
   }, []);
 
@@ -459,22 +465,57 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     [applySequenceEdit, sequenceEditOptions],
   );
 
+  const poseObjectInfo = useCallback(
+    (objectId: number) => {
+      const object = getTimelineObject(objectId);
+      if (object === undefined) return undefined;
+      return {
+        enabledAxes: object.enabledAxes,
+        rangeByAxis: object.rangeByAxis,
+      };
+    },
+    [getTimelineObject],
+  );
+
   const handleApplyPoseAxisWrite = useCallback(
     (blockIds: readonly string[], write: PoseAxisWrite): boolean =>
       applySequenceEdit((current) =>
         applyPoseAxisWrite(current, blockIds, write, {
           ...sequenceEditOptions,
-          objectInfo: (objectId) => {
-            const object = getTimelineObject(objectId);
-            if (object === undefined) return undefined;
-            return {
-              enabledAxes: object.enabledAxes,
-              rangeByAxis: object.rangeByAxis,
-            };
-          },
+          objectInfo: poseObjectInfo,
         }),
       ),
-    [applySequenceEdit, getTimelineObject, sequenceEditOptions],
+    [applySequenceEdit, poseObjectInfo, sequenceEditOptions],
+  );
+
+  /** 取当前：把物体的实时位置写进选中位姿里设定了值的轴 */
+  const handleUpdatePosesFromLive = useCallback(
+    (blockIds: readonly string[], liveFor: (objectId: number) => VirtualAxisValues | null) => {
+      let updated = 0;
+      let failed = false;
+      const committed = applySequenceEdit((current) => {
+        const result = updatePosesFromLive(current, blockIds, liveFor, {
+          ...sequenceEditOptions,
+          objectInfo: poseObjectInfo,
+        });
+        if (!result.ok) {
+          failed = true;
+          return result;
+        }
+        updated = changedPoseIds(current, result.sequence, blockIds).length;
+        return result;
+      });
+      if (failed) {
+        toast.error("位姿写入失败");
+        return;
+      }
+      if (committed) {
+        toast.success(`已用当前位置更新 ${updated} 个位姿`);
+        return;
+      }
+      if (updated === 0) toast.info("位姿已和当前位置一致");
+    },
+    [applySequenceEdit, poseObjectInfo, sequenceEditOptions],
   );
 
   const handleMoveTimelineBlock = useCallback(
@@ -1168,6 +1209,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleInsertTimelineBlock,
       handleReplaceTimelineBlock,
       handleApplyPoseAxisWrite,
+      handleUpdatePosesFromLive,
       handleMoveTimelineBlock,
       handleShiftTimelineBlocks,
       handleShiftTimelineBlocksEnd,
@@ -1230,6 +1272,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleInsertTimelineBlock,
       handleReplaceTimelineBlock,
       handleApplyPoseAxisWrite,
+      handleUpdatePosesFromLive,
       handleMoveTimelineBlock,
       handleShiftTimelineBlocks,
       handleShiftTimelineBlocksEnd,

@@ -6,6 +6,7 @@ import type {
   TimelineBlock,
 } from "@/app/project/action-sequence/types";
 import type { SequenceIssue } from "@/app/project/action-sequence/validate-sequence";
+import type { VirtualAxisValues } from "@/app/project/project-document-types";
 import type { CapturedPoseRequest } from "@/app/project/capture-pose-sequence";
 import type { ContextSelection } from "./context-bar/selection-context-bar";
 import type { ActionRightTab } from "./right-panel/action-right-panel";
@@ -54,6 +55,11 @@ export type ActionBuilderContextValue = {
   handleInsertTimelineBlock: (block: TimelineBlock) => boolean;
   handleReplaceTimelineBlock: (block: TimelineBlock) => boolean;
   handleApplyPoseAxisWrite: (blockIds: readonly string[], write: PoseAxisWrite) => boolean;
+  /** 取当前：把物体的实时位置写进这些位姿里设定了值的轴 */
+  handleUpdatePosesFromLive: (
+    blockIds: readonly string[],
+    liveFor: (objectId: number) => VirtualAxisValues | null,
+  ) => void;
   handleMoveTimelineBlock: (blockId: string, atMs: number) => void;
   handleShiftTimelineBlocks: (blockIds: string[], deltaMs: number) => void;
   handleShiftTimelineBlocksEnd: () => void;

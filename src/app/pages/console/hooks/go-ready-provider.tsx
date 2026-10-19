@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { isCppAckFailed } from "@shared/csocket/ack";
 import {
   ARRIVAL_TOLERANCE,
+  applyGoBindings,
   buildMoveTargetItem,
   goEntriesForObjectIds,
   goPhaseFromEntries,
@@ -19,7 +20,8 @@ import {
   markGoDispatched,
   pendingGoEntries,
   positionsToAxisValues,
-  removeGoEntries,
+  releaseGoEntries,
+  type GoBindings,
   type GoReadyEntry,
   type GoReadyState,
 } from "./go-ready";
@@ -30,12 +32,22 @@ import { useProjectStore } from "./use-project-store";
 
 const IDLE_STATE: GoReadyState = { phase: "idle", mode: "abs", entries: [] };
 
+const NO_BINDINGS: GoBindings = new Map();
+
+const stateFromEntries = (current: GoReadyState, entries: GoReadyEntry[]): GoReadyState => {
+  const phase = goPhaseFromEntries(entries);
+  if (phase === "idle") return IDLE_STATE;
+  return { ...current, phase, entries };
+};
+
 type GoReadyContextValue = {
   state: GoReadyState;
   arm: (entries: GoReadyEntry[], mode: "abs" | "rel") => void;
   go: (objectIds?: readonly string[]) => Promise<void>;
   cancel: (objectIds?: readonly string[]) => void;
   clear: () => void;
+  /** 动作页联机：把这些物体的 GO 目标钉在选中的位姿上；null 解除 */
+  bind: (bindings: GoBindings | null) => void;
 };
 
 const GoReadyContext = createContext<GoReadyContextValue | null>(null);
@@ -52,10 +64,23 @@ export const GoReadyProvider = ({ children }: GoReadyProviderProps) => {
   const stateRef = useRef(state);
   stateRef.current = state;
   const arriveStreakRef = useRef(0);
+  const bindingsRef = useRef<GoBindings>(NO_BINDINGS);
 
   const clear = useCallback(() => {
     arriveStreakRef.current = 0;
+    bindingsRef.current = NO_BINDINGS;
     setState(IDLE_STATE);
+  }, []);
+
+  const bind = useCallback((bindings: GoBindings | null) => {
+    const previous = bindingsRef.current;
+    const next = bindings ?? NO_BINDINGS;
+    if (previous.size === 0 && next.size === 0) return;
+    bindingsRef.current = next;
+    arriveStreakRef.current = 0;
+    setState((current) =>
+      stateFromEntries(current, applyGoBindings(current.entries, previous, next)),
+    );
   }, []);
 
   const arm = useCallback((entries: GoReadyEntry[], mode: "abs" | "rel") => {
@@ -76,19 +101,20 @@ export const GoReadyProvider = ({ children }: GoReadyProviderProps) => {
   }, []);
 
   const cancel = useCallback((objectIds?: readonly string[]) => {
-    if (objectIds === undefined) {
+    if (objectIds === undefined && bindingsRef.current.size === 0) {
       clear();
       return;
     }
-    if (objectIds.length === 0) return;
+    if (objectIds?.length === 0) return;
+    // 绑定在位姿上的物体清除后回到位姿值
     setState((current) => {
-      const entries = removeGoEntries(current.entries, objectIds);
-      const phase = goPhaseFromEntries(entries);
-      if (phase === "idle") {
-        arriveStreakRef.current = 0;
-        return IDLE_STATE;
-      }
-      return { ...current, phase, entries };
+      const ids = objectIds ?? current.entries.map((entry) => entry.objectId);
+      const next = stateFromEntries(
+        current,
+        releaseGoEntries(current.entries, ids, bindingsRef.current),
+      );
+      if (next === IDLE_STATE) arriveStreakRef.current = 0;
+      return next;
     });
   }, [clear]);
 
@@ -132,16 +158,16 @@ export const GoReadyProvider = ({ children }: GoReadyProviderProps) => {
       return;
     }
     if (entries.length !== current.entries.length) {
-      setState((prev) => {
-        const nextEntries = prev.entries.filter((entry) => ids.has(entry.objectId));
-        const phase = goPhaseFromEntries(nextEntries);
-        if (phase === "idle") return IDLE_STATE;
-        return { ...prev, phase, entries: nextEntries };
-      });
+      setState((prev) =>
+        stateFromEntries(
+          prev,
+          prev.entries.filter((entry) => ids.has(entry.objectId)),
+        ),
+      );
     }
   }, [objects, clear]);
 
-  // 已下发条目到位后移除（未下发的准备目标保留）
+  // 已下发条目到位后移除（未下发的准备目标保留）；绑定在位姿上的物体回到位姿值
   useEffect(() => {
     const current = stateRef.current;
     const dispatched = current.entries.filter((entry) => entry.dispatched);
@@ -158,12 +184,9 @@ export const GoReadyProvider = ({ children }: GoReadyProviderProps) => {
       arriveStreakRef.current += 1;
       if (arriveStreakRef.current >= 3) {
         const dispatchedIds = dispatched.map((entry) => entry.objectId);
-        setState((prev) => {
-          const entries = removeGoEntries(prev.entries, dispatchedIds);
-          const phase = goPhaseFromEntries(entries);
-          if (phase === "idle") return IDLE_STATE;
-          return { ...prev, phase, entries };
-        });
+        setState((prev) =>
+          stateFromEntries(prev, releaseGoEntries(prev.entries, dispatchedIds, bindingsRef.current)),
+        );
         arriveStreakRef.current = 0;
       }
     } else {
@@ -172,8 +195,8 @@ export const GoReadyProvider = ({ children }: GoReadyProviderProps) => {
   }, [snapshots, getById]);
 
   const value = useMemo<GoReadyContextValue>(
-    () => ({ state, arm, go, cancel, clear }),
-    [state, arm, go, cancel, clear],
+    () => ({ state, arm, go, cancel, clear, bind }),
+    [state, arm, go, cancel, clear, bind],
   );
 
   return <GoReadyContext.Provider value={value}>{children}</GoReadyContext.Provider>;

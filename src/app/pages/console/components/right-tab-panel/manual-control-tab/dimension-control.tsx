@@ -9,7 +9,18 @@ import { useControlledObjects } from "../../../hooks/use-controlled-objects";
 import { goEntriesForObjectIds, pendingGoEntries } from "../../../hooks/go-ready";
 import { useGoReady } from "../../../hooks/go-ready-provider";
 import { useProjectStore } from "../../../hooks/use-project-store";
-import { AXIS_MODE_TABS, type AxisEditMode } from "../../action-builder/virtual-axis-edit";
+import { useSessionDisplayLengthUnit } from "@/app/project/display-length-unit-provider";
+import {
+  isLengthFamilyUnit,
+  resolveDisplayPrecision,
+  toDisplayLengthValue,
+  type DisplayLengthUnit,
+} from "@/app/project/display-length-units";
+import {
+  AXIS_MODE_TABS,
+  virtualAxisLabel,
+  type AxisEditMode,
+} from "../../action-builder/virtual-axis-edit";
 import { VirtualAxisRow } from "../../action-builder/virtual-axis-row";
 import {
   axisInputRange,
@@ -17,15 +28,24 @@ import {
   buildDimensionEntries,
   buildDimensionParticipants,
   sharedAxisValue,
+  sharedLiveAxisValue,
   unionAxes,
 } from "./dimension-edit";
 
 type DimensionControlProps = {
   disabled?: boolean;
+  /** 操作这些物体；不传时跟随全局选择 */
+  objectIds?: readonly number[];
 };
 
 /** 输入框里还没写入 GO 目标的值：绝对是输入的位置，相对是增量 */
 type AxisDrafts = Partial<Record<VirtualAxisId, number>>;
+
+/** 当前位置按输入框的显示单位和精度（一位小数）显示 */
+const formatLive = (value: number, unit: string, display: DisplayLengthUnit): string =>
+  isLengthFamilyUnit(unit)
+    ? toDisplayLengthValue(value, display).toFixed(resolveDisplayPrecision(1, display))
+    : value.toFixed(1);
 
 const targetSignature = (target: VirtualAxisValues | undefined): string =>
   target ? `${target.v1 ?? ""},${target.v2 ?? ""},${target.v3 ?? ""}` : "-";
@@ -34,8 +54,9 @@ const targetSignature = (target: VirtualAxisValues | undefined): string =>
  * 维度控制：虚轴的批量编辑规则和动作页「多选位姿」一致（见 dimension-edit.ts），
  * 区别是写入先设为 GO 目标并显示影子模型，按 GO 才执行。
  */
-export const DimensionControl = ({ disabled = false }: DimensionControlProps) => {
+export const DimensionControl = ({ disabled = false, objectIds }: DimensionControlProps) => {
   const { selectedId, multiSelectedIds } = useSelection();
+  const display = useSessionDisplayLengthUnit();
   const { getById } = useControlledObjects();
   const { objects } = useProjectStore();
   const { state, arm, go, cancel } = useGoReady();
@@ -44,7 +65,8 @@ export const DimensionControl = ({ disabled = false }: DimensionControlProps) =>
   const [drafts, setDrafts] = useState<AxisDrafts>({});
 
   const selectedIds =
-    multiSelectedIds.length > 0 ? multiSelectedIds : selectedId != null ? [selectedId] : [];
+    objectIds ??
+    (multiSelectedIds.length > 0 ? multiSelectedIds : selectedId != null ? [selectedId] : []);
   const snapshots = selectedIds.flatMap((id) => {
     const snapshot = getById(id);
     return snapshot ? [snapshot] : [];
@@ -131,16 +153,26 @@ export const DimensionControl = ({ disabled = false }: DimensionControlProps) =>
               const draft = drafts[axis];
               const value = mode === "rel" ? (draft ?? 0) : (draft ?? shared ?? 0);
               const mixed = mode === "abs" && draft === undefined && shared === undefined;
+              const unit = axisUnit(participants, axis);
+              const live = sharedLiveAxisValue(participants, axis);
               return (
                 <VirtualAxisRow
                   key={axis}
                   axis={axis}
                   value={value}
                   mixed={mixed}
-                  unit={axisUnit(participants, axis)}
+                  unit={unit}
                   min={mode === "abs" ? range.min : undefined}
                   max={mode === "abs" ? range.max : undefined}
                   disabled={disabled}
+                  trailing={
+                    <span
+                      aria-label={`${virtualAxisLabel(axis)} 当前位置`}
+                      className="w-20 shrink-0 truncate text-right text-body-sm tabular-nums text-muted-foreground"
+                    >
+                      当前 {live === undefined || unit === undefined ? "--" : formatLive(live, unit, display)}
+                    </span>
+                  }
                   onChange={(next) => handleDraftChange(axis, next)}
                   onCommit={(next) => handleCommit(axis, next)}
                 />
