@@ -89,6 +89,13 @@ export type MotionSegmentConfig = {
   settings: MotionSegmentSettings;
 };
 
+/** 时间轴上带名字的标记，如「灯光切换」「演员入场」；只是标注，不下发设备 */
+export type TimelineMarker = {
+  id: string;
+  atMs: number;
+  name: string;
+};
+
 export type ActionSequenceConfig = {
   id: number;
   name: string;
@@ -98,4 +105,5 @@ export type ActionSequenceConfig = {
   loop?: boolean;
   blocks: TimelineBlock[];
   segments: MotionSegmentConfig[];
+  markers?: TimelineMarker[];
 };

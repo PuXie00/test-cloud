@@ -674,6 +674,15 @@ const validateSequence = (value: unknown, path: string, a: StructuralAssertions)
     }
     validateAxisMotionProfiles(settings.profiles, `${segmentPath}.settings.profiles`, a);
   });
+  if (sequence.markers !== undefined) {
+    a.array(sequence.markers, `${path}.markers`).forEach((item, index) => {
+      const markerPath = indexedPath(`${path}.markers`, index);
+      const marker = a.record(item, markerPath);
+      a.string(marker.id, `${markerPath}.id`);
+      a.nonNegativeFinite(marker.atMs, `${markerPath}.atMs`);
+      a.string(marker.name, `${markerPath}.name`);
+    });
+  }
   if (sequence.tracks !== undefined) {
     a.fail(`${path}.tracks`, "legacy tracks are not accepted");
   }

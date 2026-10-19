@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { MousePointerClick } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
-import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
+import type { ActionSequenceConfig, TimelineMarker } from "@/app/project/action-sequence/types";
 import {
   resolveActionSequence,
   type ResolvedActionSequence,
@@ -16,7 +16,7 @@ import {
   clipboardShortcutOf,
   type ContextMenuAction,
 } from "../action-clipboard-menu";
-import { isBlockSelected, selectionBlockIds } from "../sequence-selection";
+import { isBlockSelected, selectionBlockIds, selectionMarkerIds } from "../sequence-selection";
 import {
   TIMELINE_PX_PER_SECOND_MAX,
   TIMELINE_PX_PER_SECOND_MIN,
@@ -29,7 +29,9 @@ import {
 import { pickNiceMajorStepSec } from "../timeline/timeline-ticks";
 import { TimelineEditor } from "../timeline/timeline-editor";
 import { TimelineToolbar } from "../timeline/timeline-toolbar";
+import { MarkerRenameDialog } from "./marker-rename-dialog";
 import { SequenceDeleteDialog } from "./sequence-delete-dialog";
+import { sortedMarkers } from "../marker-ops";
 import { useTimelinePlayback } from "../timeline/use-timeline-playback";
 
 const isEditableTarget = (target: EventTarget | null): boolean => {
@@ -64,6 +66,10 @@ const SequenceEditor = () => {
     handleResizeDynamicPreset,
     handleBlockDelete,
     handleExplodePresets,
+    handleAddMarker,
+    handleShiftMarkers,
+    handleShiftMarkersEnd,
+    handleDeleteMarkers,
     handleBlockCopy,
     handleBlockPaste,
     canPasteBlock,
@@ -99,6 +105,7 @@ const SequenceEditor = () => {
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [fitRequestId, setFitRequestId] = useState(0);
   const [revealCursorRequestId, setRevealCursorRequestId] = useState(0);
+  const [renamingMarkerId, setRenamingMarkerId] = useState<string | null>(null);
   const selectedBlockIds = selectionBlockIds(selection);
   const invalidTargets = useMemo(
     () => invalidTimelineTargets(sequenceIssues),
@@ -136,12 +143,23 @@ const SequenceEditor = () => {
   };
   const handleZoomFit = () => setFitRequestId((id) => id + 1);
   const handleSnapToggle = () => setSnapEnabled((enabled) => !enabled);
+  const markers = useMemo(() => (sequence ? sortedMarkers(sequence) : []), [sequence]);
+  const renamingMarker = markers.find((marker) => marker.id === renamingMarkerId) ?? null;
+  const jumpToMarker = (marker: TimelineMarker) => {
+    handleSelectionChange({ kind: "markers", markerIds: [marker.id] });
+    jumpTo(marker.atMs);
+  };
   const { isPlaying, toggle: handlePlayToggle } = useTimelinePlayback({
     cursorMs,
     totalMs,
     onCursorMs: handlePlaybackCursorChange ?? (() => {}),
     pauseKey: sequence,
   });
+
+  // 直接加，不弹改名框；名字之后双击、F2 或在属性里改
+  const addMarkerAtPlayhead = () => {
+    handleAddMarker();
+  };
 
   useEffect(() => {
     const onWindowKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -183,7 +201,24 @@ const SequenceEditor = () => {
         handleSnapToggle();
         return;
       }
+      if (plain && !event.shiftKey && (event.key.toLowerCase() === "m" || event.code === "KeyM")) {
+        event.preventDefault();
+        addMarkerAtPlayhead();
+        return;
+      }
+      const markerIds = selectionMarkerIds(selection);
+      if (plain && event.key === "F2") {
+        if (markerIds.length !== 1) return;
+        event.preventDefault();
+        setRenamingMarkerId(markerIds[0] ?? null);
+        return;
+      }
       if (event.key !== "Delete" && event.key !== "Backspace") return;
+      if (markerIds.length > 0) {
+        event.preventDefault();
+        handleDeleteMarkers(markerIds);
+        return;
+      }
       if (selectedBlockIds.length === 0) return;
       event.preventDefault();
       handleBlockDelete();
@@ -200,6 +235,9 @@ const SequenceEditor = () => {
     selectedBlockIds.length,
     prevKeyframe,
     nextKeyframe,
+    selection,
+    handleAddMarker,
+    handleDeleteMarkers,
   ]);
 
   if (!sequence) return null;
@@ -267,8 +305,12 @@ const SequenceEditor = () => {
         canNextKeyframe={nextKeyframe !== null}
         snapEnabled={snapEnabled}
         onSnapToggle={handleSnapToggle}
+        markers={markers}
+        onAddMarker={addMarkerAtPlayhead}
+        onJumpToMarker={jumpToMarker}
       />
       <SequenceDeleteDialog open={deleteOpen} onOpenChange={setDeleteOpen} />
+      <MarkerRenameDialog marker={renamingMarker} onClose={() => setRenamingMarkerId(null)} />
       {resolved === null && (
         <div className="shrink-0 bg-warning-surface px-3 py-2 text-body-sm text-warning">
           预设无法解析，可继续编辑块
@@ -307,6 +349,9 @@ const SequenceEditor = () => {
             snapEnabled={snapEnabled}
             fitRequestId={fitRequestId}
             revealCursorRequestId={revealCursorRequestId}
+            onMarkersShift={handleShiftMarkers}
+            onMarkersShiftEnd={handleShiftMarkersEnd}
+            onMarkerRename={(marker) => setRenamingMarkerId(marker.id)}
           />
         </div>
       </ClipboardContextMenu>

@@ -648,3 +648,72 @@ describe("explode presets from the timeline menu", () => {
     expect(screen.queryByRole("menuitem", { name: /拆解/ })).toBeNull();
   });
 });
+
+describe("timeline markers in the dock", () => {
+  const withMarkers: ActionSequenceConfig = {
+    ...sequence,
+    markers: [
+      { id: "m2", atMs: 3000, name: "演员入场" },
+      { id: "m1", atMs: 1200, name: "灯光切换" },
+    ],
+  };
+
+  it("adds a marker at the playhead with M without asking for a name", () => {
+    const handleAddMarker = vi.fn(() => "m1");
+    mockBuilder({
+      sequence: withMarkers,
+      sequences: [withMarkers],
+      handleAddMarker,
+      handleRenameMarker: vi.fn(() => true),
+    });
+    render(<EditorDock />);
+    fireEvent.keyDown(window, { key: "m" });
+    expect(handleAddMarker).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("textbox", { name: "标记名称" })).toBeNull();
+  });
+
+  it("renames the selected marker with F2 and deletes selected markers with Delete", () => {
+    const handleRenameMarker = vi.fn(() => true);
+    const handleDeleteMarkers = vi.fn();
+    const handleBlockDelete = vi.fn();
+    mockBuilder({
+      sequence: withMarkers,
+      sequences: [withMarkers],
+      selection: { kind: "markers", markerIds: ["m2"] },
+      handleRenameMarker,
+      handleDeleteMarkers,
+      handleBlockDelete,
+    });
+    render(<EditorDock />);
+    fireEvent.keyDown(window, { key: "F2" });
+    const input = screen.getByRole("textbox", { name: "标记名称" });
+    fireEvent.change(input, { target: { value: "开场" } });
+    fireEvent.click(screen.getByRole("button", { name: "确定" }));
+    expect(handleRenameMarker).toHaveBeenCalledWith("m2", "开场");
+
+    fireEvent.keyDown(window, { key: "Delete" });
+    expect(handleDeleteMarkers).toHaveBeenCalledWith(["m2"]);
+    expect(handleBlockDelete).not.toHaveBeenCalled();
+  });
+
+  it("lists markers in the toolbar menu and jumps to the one picked", async () => {
+    const handleCursorChange = vi.fn();
+    mockBuilder({
+      sequence: withMarkers,
+      sequences: [withMarkers],
+      handleCursorChange,
+      handleAddMarker: vi.fn(() => null),
+    });
+    render(<EditorDock />);
+    fireEvent.pointerDown(screen.getByRole("button", { name: "标记" }), { button: 0, ctrlKey: false });
+    const items = await screen.findAllByRole("menuitem");
+    expect(items.map((item) => item.textContent)).toEqual([
+      "添加标记M",
+      "灯光切换1.2 s",
+      "演员入场3.0 s",
+    ]);
+    fireEvent.click(screen.getByRole("menuitem", { name: /演员入场/ }));
+    expect(handleSelectionChange).toHaveBeenCalledWith({ kind: "markers", markerIds: ["m2"] });
+    expect(handleCursorChange).toHaveBeenCalledWith(3000);
+  });
+});

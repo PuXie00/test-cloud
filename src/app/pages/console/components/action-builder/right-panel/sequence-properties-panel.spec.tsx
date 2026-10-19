@@ -82,6 +82,9 @@ const { builderState } = vi.hoisted(() => ({
 
       handleApplyPoseAxisWrite: vi.fn(),
       handleExplodePresets: vi.fn(),
+      handleRenameMarker: vi.fn(),
+      handleSetMarkerTime: vi.fn(),
+      handleDeleteMarkers: vi.fn(),
       sequenceIssues: [] as unknown[],
 
     },
@@ -886,5 +889,51 @@ describe("SequencePropertiesPanel explode presets", () => {
   it("has no explode button without presets", () => {
     renderPanel({ selection: { kind: "multi-block", blockIds: ["pose", "later"] } });
     expect(screen.queryByRole("button", { name: /拆解/ })).toBeNull();
+  });
+});
+
+describe("SequencePropertiesPanel markers", () => {
+  const withMarkers: ActionSequenceConfig = {
+    ...sequence,
+    markers: [
+      { id: "m1", atMs: 1200, name: "灯光切换" },
+      { id: "m2", atMs: 3000, name: "演员入场" },
+    ],
+  };
+
+  afterEach(() => {
+    builderState.current.handleRenameMarker.mockClear();
+    builderState.current.handleSetMarkerTime.mockClear();
+    builderState.current.handleDeleteMarkers.mockClear();
+  });
+
+  it("edits the name and time of one marker", () => {
+    renderPanel({ sequence: withMarkers, selection: { kind: "markers", markerIds: ["m1"] } });
+    expect(screen.getByRole("heading", { name: "标记" })).not.toBeNull();
+    const name = screen.getByRole("textbox", { name: "标记名称" });
+    fireEvent.change(name, { target: { value: "切光" } });
+    fireEvent.blur(name);
+    expect(builderState.current.handleRenameMarker).toHaveBeenCalledWith("m1", "切光");
+    stepUp("标记时间");
+    expect(builderState.current.handleSetMarkerTime).toHaveBeenCalledWith("m1", 1300);
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    expect(builderState.current.handleDeleteMarkers).toHaveBeenCalledWith(["m1"]);
+  });
+
+  it("restores the name instead of saving a blank one", () => {
+    renderPanel({ sequence: withMarkers, selection: { kind: "markers", markerIds: ["m1"] } });
+    const name = screen.getByRole("textbox", { name: "标记名称" }) as HTMLInputElement;
+    fireEvent.change(name, { target: { value: "  " } });
+    fireEvent.blur(name);
+    expect(builderState.current.handleRenameMarker).not.toHaveBeenCalled();
+    expect(name.value).toBe("灯光切换");
+  });
+
+  it("lists several markers and deletes them together", () => {
+    renderPanel({ sequence: withMarkers, selection: { kind: "markers", markerIds: ["m1", "m2"] } });
+    expect(screen.getByRole("heading", { name: "多选标记" })).not.toBeNull();
+    expect(screen.getByText("已选 2 个标记")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    expect(builderState.current.handleDeleteMarkers).toHaveBeenCalledWith(["m1", "m2"]);
   });
 });

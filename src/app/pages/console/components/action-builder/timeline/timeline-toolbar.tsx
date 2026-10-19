@@ -1,5 +1,7 @@
 import type { ButtonHTMLAttributes, ElementType } from "react";
 import {
+  ChevronDown,
+  Flag,
   Magnet,
   Maximize2,
   Minus,
@@ -14,9 +16,19 @@ import {
   SkipForward,
   Trash2,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@/app/components/ui/dropdown-menu";
 import { Switch } from "@/app/components/ui/switch";
 import { cn } from "@/app/components/ui/utils";
+import type { TimelineMarker } from "@/app/project/action-sequence/types";
 import type { TrajectoryMode } from "@shared/action-sequence";
+import { formatTime } from "./timeline-data";
 
 type TimelineToolbarProps = {
   trajectoryMode?: TrajectoryMode;
@@ -48,6 +60,10 @@ type TimelineToolbarProps = {
   /** 吸附开关（S） */
   snapEnabled?: boolean;
   onSnapToggle?: () => void;
+  /** 「标记」菜单：添加标记（M），点列表里的标记跳过去 */
+  markers?: readonly TimelineMarker[];
+  onAddMarker?: () => void;
+  onJumpToMarker?: (marker: TimelineMarker) => void;
 };
 
 const formatMajorStep = (sec: number): string => {
@@ -99,6 +115,9 @@ export const TimelineToolbar = ({
   canNextKeyframe = false,
   snapEnabled = false,
   onSnapToggle,
+  markers = [],
+  onAddMarker,
+  onJumpToMarker,
 }: TimelineToolbarProps) => {
   const playLabel = isPlaying ? "暂停" : atEnd ? "重新播放" : "播放";
   const PlayIcon = isPlaying ? Pause : atEnd ? RotateCcw : Play;
@@ -134,6 +153,44 @@ export const TimelineToolbar = ({
           />
         ) : null}
       </div>
+    ) : null}
+
+    {onAddMarker ? (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label="标记"
+            className="inline-flex h-7 items-center gap-1 rounded-sm px-2 text-body-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <Flag className="h-3.5 w-3.5" aria-hidden />
+            标记
+            <ChevronDown className="h-3 w-3" aria-hidden />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="start"
+          className="max-h-72 min-w-[14rem] overflow-y-auto border-border bg-card text-foreground"
+        >
+          <DropdownMenuItem onSelect={onAddMarker}>
+            添加标记
+            <DropdownMenuShortcut>M</DropdownMenuShortcut>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          {markers.length === 0 ? (
+            <DropdownMenuItem disabled>还没有标记</DropdownMenuItem>
+          ) : (
+            markers.map((marker) => (
+              <DropdownMenuItem key={marker.id} onSelect={() => onJumpToMarker?.(marker)}>
+                <span className="min-w-0 truncate">{marker.name}</span>
+                <DropdownMenuShortcut className="font-mono tabular-nums">
+                  {formatTime(marker.atMs)} s
+                </DropdownMenuShortcut>
+              </DropdownMenuItem>
+            ))
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     ) : null}
 
     {trajectoryMode !== undefined && onTrajectoryModeChange ? (

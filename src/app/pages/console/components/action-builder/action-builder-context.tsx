@@ -101,8 +101,17 @@ import {
   pruneSequenceSelection,
   selectionBlockIds,
   selectionFromBlockIds,
+  selectionMarkerIds,
   type SequenceSelection,
 } from "./sequence-selection";
+import {
+  addMarker,
+  deleteMarkers,
+  newMarkerId,
+  renameMarker,
+  setMarkerTime,
+  shiftMarkers,
+} from "./marker-ops";
 import { clampCursorMs } from "./timeline/timeline-view-extent";
 import {
   clampTimelinePxPerSecond,
@@ -176,6 +185,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   const [isShiftingBlocks, setIsShiftingBlocks] = useState(false);
   const [sequenceIssues, setSequenceIssues] = useState<SequenceIssue[]>([]);
   const shiftOriginRef = useRef<ActionSequenceConfig | null>(null);
+  const markerShiftOriginRef = useRef<ActionSequenceConfig | null>(null);
   const selectedBlockIds = selectionBlockIds(selection);
   const selectedBlockId = selectedBlockIds[0] ?? null;
 
@@ -607,6 +617,64 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       });
     },
     [selectedBlockIds, updateSelectedSequence, sequenceEditOptions],
+  );
+
+  /** 在指定时刻（默认播放头）加标记并选中它，返回新标记的 id */
+  const handleAddMarker = useCallback(
+    (atMs?: number): string | null => {
+      let markerId: string | null = null;
+      const committed = updateSelectedSequence((current) => {
+        markerId = newMarkerId(current.markers ?? []);
+        return addMarker(current, { id: markerId, atMs: atMs ?? cursorMs });
+      });
+      if (!committed || markerId === null) return null;
+      setSelection({ kind: "markers", markerIds: [markerId] });
+      setActiveRightTab((tab) => (tab === "manual" ? tab : "selection"));
+      return markerId;
+    },
+    [cursorMs, updateSelectedSequence],
+  );
+
+  const handleRenameMarker = useCallback(
+    (markerId: string, name: string): boolean =>
+      updateSelectedSequence((current) => renameMarker(current, markerId, name)),
+    [updateSelectedSequence],
+  );
+
+  const handleSetMarkerTime = useCallback(
+    (markerId: string, atMs: number): boolean =>
+      updateSelectedSequence((current) => setMarkerTime(current, markerId, atMs)),
+    [updateSelectedSequence],
+  );
+
+  /** 拖标记：相对拖动开始时的序列平移，松手前都算一次编辑 */
+  const handleShiftMarkers = useCallback(
+    (markerIds: readonly string[], deltaMs: number) => {
+      updateSelectedSequence((current) => {
+        const origin = markerShiftOriginRef.current ?? current;
+        if (markerShiftOriginRef.current === null) markerShiftOriginRef.current = current;
+        return shiftMarkers(origin, markerIds, deltaMs);
+      });
+    },
+    [updateSelectedSequence],
+  );
+
+  const handleShiftMarkersEnd = useCallback(() => {
+    markerShiftOriginRef.current = null;
+  }, []);
+
+  const handleDeleteMarkers = useCallback(
+    (markerIds?: readonly string[]) => {
+      const ids = markerIds ?? selectionMarkerIds(selection);
+      if (ids.length === 0) return;
+      if (!updateSelectedSequence((current) => deleteMarkers(current, ids))) return;
+      setSelection((current) => {
+        const remaining = selectionMarkerIds(current).filter((id) => !ids.includes(id));
+        if (current?.kind !== "markers") return current;
+        return remaining.length === 0 ? null : { kind: "markers", markerIds: remaining };
+      });
+    },
+    [selection, updateSelectedSequence],
   );
 
   const handleExplodePresets = useCallback(
@@ -1251,6 +1319,12 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleWriteSegmentProfiles,
       handleBlockDelete,
       handleExplodePresets,
+      handleAddMarker,
+      handleRenameMarker,
+      handleSetMarkerTime,
+      handleShiftMarkers,
+      handleShiftMarkersEnd,
+      handleDeleteMarkers,
       handleTrajectoryModeChange,
       handleLoopChange,
       handleBlockCopy,
@@ -1317,6 +1391,12 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleWriteSegmentProfiles,
       handleBlockDelete,
       handleExplodePresets,
+      handleAddMarker,
+      handleRenameMarker,
+      handleSetMarkerTime,
+      handleShiftMarkers,
+      handleShiftMarkersEnd,
+      handleDeleteMarkers,
       handleTrajectoryModeChange,
       handleLoopChange,
       handleBlockCopy,
