@@ -5,22 +5,16 @@ import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-i
 import { cn } from "@/app/components/ui/utils";
 import { instructionBlockTitle } from "@/app/project/action-sequence/instruction-registry";
 import { isAxisSet, withoutAxis } from "@/app/project/action-sequence/keyframe-pose";
-import { createDefaultAxisProfiles } from "@/app/project/action-sequence/motion-profile";
-import { useSessionDisplayLengthUnit } from "@/app/project/display-length-unit-provider";
 import { formatRepairItems } from "@/app/project/action-sequence/preset-repair";
 import {
-  isPassThroughMotion,
-  segmentAxisMotion,
   uncontrolledAxesOf,
   type PoseJunction,
   type PoseJunctionKind,
   type ResolvedActionSequence,
-  type ResolvedAxisMotion,
   type ResolvedMotionSegment,
 } from "@/app/project/action-sequence/resolve-sequence";
 import type {
   ActionSequenceConfig,
-  AxisMotionProfiles,
   KeyframePose,
   ModelPose,
   MotionSegmentSettings,
@@ -28,28 +22,19 @@ import type {
   TimelineBlock,
 } from "@/app/project/action-sequence/types";
 import { roundProjectCoordinate } from "@/app/project/project-quantity";
-import {
-  MotionProfileEditor,
-  type MotionProfileAxisContext,
-} from "../motion-profile/motion-profile-editor";
-import {
-  motionProfileSegmentStatus,
-  resolveEnabledAxes,
-} from "../motion-profile/motion-profile-status";
+import { resolveEnabledAxes } from "../motion-profile/motion-profile-status";
 import { EmptySelectionState } from "./empty-selection-state";
+import { MultiSegmentEditor } from "./multi-segment-editor";
 import { PresetBlockFields, presetBlockTitle } from "./preset-block-panel";
-import { formatQuantity } from "../motion-profile/quantity-format";
 import { RepairBand } from "./repair-band";
-import { lookupSequenceSelection, type SequenceSelection } from "../sequence-selection";
-import type { PoseAxisWrite } from "../sequence-ops";
+import { SegmentEditor, SegmentStatusBadge, segmentStatusOf } from "./segment-editor";
 import {
-  VIRTUAL_AXIS_IDS,
-  formatDurationSeconds,
-  formatTime,
-  msToSeconds,
-  secondsToMs,
-  type ControlledObject,
-} from "../timeline/timeline-data";
+  lookupSequenceSelection,
+  type SelectionFocus,
+  type SequenceSelection,
+} from "../sequence-selection";
+import type { PoseAxisWrite } from "../sequence-ops";
+import { VIRTUAL_AXIS_IDS, msToSeconds, secondsToMs } from "../timeline/timeline-data";
 import { useActionBuilder } from "../use-action-builder";
 import { getVirtualAxisCanonicalUnit } from "../virtual-axis-display";
 import {
@@ -125,19 +110,6 @@ const ZERO_POSE: ModelPose = { v1: 0, v2: 0, v3: 0 };
 
 const poseSelectionKey = (poses: readonly PoseBlock[]): string =>
   poses.map((block) => `${block.id}:${block.pose.v1},${block.pose.v2},${block.pose.v3}`).join("|");
-
-const axisContextFromObject = (
-  object: ControlledObject | undefined,
-  travel: ModelPose,
-  durationMs: number,
-): MotionProfileAxisContext => ({
-  enabledAxes: object?.enabledAxes?.length ? object.enabledAxes : VIRTUAL_AXIS_IDS,
-  travel,
-  durationMs,
-  controlType: object?.controlType,
-  maxSpeedByAxis: object?.maxSpeedByAxis,
-  minAccelTimeByAxis: object?.minAccelTimeByAxis,
-});
 
 const AxisToggle = ({
   label,
@@ -496,34 +468,128 @@ const MultiPoseAxesEditor = ({ poses }: { poses: PoseBlock[] }) => {
   );
 };
 
-const segmentMotions = (
-  segment: ResolvedMotionSegment,
-): Record<VirtualAxisId, ResolvedAxisMotion> => ({
-  v1: segmentAxisMotion(segment, "v1"),
-  v2: segmentAxisMotion(segment, "v2"),
-  v3: segmentAxisMotion(segment, "v3"),
-});
+type MultiTab = "segments" | "poses";
 
-const motionNotes = (
-  segment: ResolvedMotionSegment,
-  motions: Record<VirtualAxisId, ResolvedAxisMotion>,
-  formatSpeed: (axis: VirtualAxisId, speed: number) => string,
-): Partial<Record<VirtualAxisId, string>> => {
-  const notes: Partial<Record<VirtualAxisId, string>> = {};
-  for (const axis of VIRTUAL_AXIS_IDS) {
-    const motion = motions[axis];
-    const parts: string[] = [];
-    if (isPassThroughMotion(segment, motion)) {
-      parts.push(
-        `${virtualAxisLabel(axis)}在区间端点经过，这里是 ${formatTime(motion.startMs)}–` +
-          `${formatDurationSeconds(motion.endMs)} 整段曲线，修改作用于整段`,
-      );
-    }
-    if (motion.startSpeed > 0) parts.push(`从 ${formatSpeed(axis, motion.startSpeed)} 进入`);
-    if (motion.endSpeed > 0) parts.push(`以 ${formatSpeed(axis, motion.endSpeed)} 离开`);
-    if (parts.length > 0) notes[axis] = parts.join("；");
+const OTHER_KIND_LABEL: Record<Exclude<TimelineBlock["kind"], "pose">, string> = {
+  instruction: "指令",
+  "static-preset": "静态预设",
+  "dynamic-preset": "动态预设",
+};
+
+/** 多选里不能批量改的块：只报数量 */
+const otherKindsSummary = (blocks: readonly TimelineBlock[]): string | null => {
+  const counts = new Map<string, number>();
+  for (const block of blocks) {
+    if (block.kind === "pose") continue;
+    const label = OTHER_KIND_LABEL[block.kind];
+    counts.set(label, (counts.get(label) ?? 0) + 1);
   }
-  return notes;
+  if (counts.size === 0) return null;
+  const parts = [...counts].map(([label, count]) => `${label} ${count} 个`);
+  return `另有 ${parts.join("、")}，多选时不能修改`;
+};
+
+/**
+ * 多选：按种类分页签。两端都选中的运动区间是一类（点区间进来先显示它），位姿是一类；
+ * 其它块只报数量。
+ */
+const MultiSelectionProperties = ({
+  sequence,
+  blocks,
+  segments,
+  focus,
+  onUpdateSegment,
+  onDeleteBlock,
+}: {
+  sequence: ActionSequenceConfig;
+  blocks: TimelineBlock[];
+  segments: ResolvedMotionSegment[];
+  focus?: SelectionFocus;
+  onUpdateSegment: SequencePropertiesPanelProps["onUpdateSegment"];
+  onDeleteBlock: (blockId: string | string[]) => void;
+}) => {
+  const { getTimelineObject } = useActionBuilder();
+  const poseBlocks = blocks.filter((block): block is PoseBlock => block.kind === "pose");
+  const tabs: Array<{ id: MultiTab; label: string }> = [
+    ...(segments.length > 0
+      ? [{ id: "segments" as const, label: `运动区间（${segments.length}）` }]
+      : []),
+    ...(poseBlocks.length > 0 ? [{ id: "poses" as const, label: `位姿（${poseBlocks.length}）` }] : []),
+  ];
+  const defaultTab: MultiTab | undefined =
+    focus === "segments" && segments.length > 0
+      ? "segments"
+      : poseBlocks.length > 0
+        ? "poses"
+        : tabs[0]?.id;
+  // 手动切的页签只对这一次选中有效；换了选中回到默认（点区间进来是运动区间，框选是位姿）
+  const selectionKey = `${focus ?? ""}:${blocks.map((block) => block.id).join("|")}`;
+  const [picked, setPicked] = useState<{ key: string; tab: MultiTab } | null>(null);
+  const pickedTab = picked?.key === selectionKey ? picked.tab : undefined;
+  const tab = tabs.some((item) => item.id === pickedTab) ? pickedTab : defaultTab;
+  const setPickedTab = (next: MultiTab) => setPicked({ key: selectionKey, tab: next });
+  const handleDeleteSelected = () => onDeleteBlock(blocks.map((block) => block.id));
+  const others = otherKindsSummary(blocks);
+
+  if (tab === undefined) {
+    return (
+      <PropertiesShell title="多选" onDelete={handleDeleteSelected}>
+        <p className="text-body-sm text-muted-foreground">已选 {blocks.length} 项</p>
+      </PropertiesShell>
+    );
+  }
+
+  const tabBar =
+    tabs.length > 1 ? (
+      <TabBar
+        tabs={tabs}
+        active={tab}
+        onChange={setPickedTab}
+        variant="filled"
+        className="mb-2 h-8 rounded-md"
+      />
+    ) : null;
+  const othersNote = others ? (
+    <p className="mt-2 px-1 text-body-sm text-muted-foreground">{others}</p>
+  ) : null;
+
+  if (tab === "segments") {
+    const single = segments.length === 1 ? segments[0] : undefined;
+    const needsCheck = segments.filter(
+      (segment) => segmentStatusOf(segment, getTimelineObject(segment.objectId)).label === "需检查",
+    ).length;
+    const status = single
+      ? segmentStatusOf(single, getTimelineObject(single.objectId))
+      : needsCheck > 0
+        ? { label: `${needsCheck} 段需检查`, className: "text-warning" }
+        : { label: "配置有效", className: "text-show" };
+    return (
+      <PropertiesShell
+        title={single ? "运动区间" : "多选运动区间"}
+        plain
+        headerStatus={<SegmentStatusBadge status={status} />}
+      >
+        {tabBar}
+        {single ? (
+          <SegmentEditor sequence={sequence} segment={single} onUpdateSegment={onUpdateSegment} />
+        ) : (
+          <MultiSegmentEditor segments={segments} />
+        )}
+        {othersNote}
+      </PropertiesShell>
+    );
+  }
+
+  return (
+    <PropertiesShell title="多选位姿" plain onDelete={handleDeleteSelected}>
+      {tabBar}
+      <div className="rounded-md bg-muted p-4">
+        <p className="mb-3 text-body-sm text-muted-foreground">已选 {blocks.length} 项</p>
+        <MultiPoseAxesEditor poses={poseBlocks} />
+      </div>
+      {othersNote}
+    </PropertiesShell>
+  );
 };
 
 const EmptyProperties = () => (
@@ -544,7 +610,6 @@ export const SequencePropertiesPanel = ({
   onDeleteBlock,
 }: SequencePropertiesPanelProps) => {
   const { getTimelineObject, sequenceIssues } = useActionBuilder();
-  const display = useSessionDisplayLengthUnit();
   if (selection === null) {
     return <EmptyProperties />;
   }
@@ -555,96 +620,16 @@ export const SequencePropertiesPanel = ({
     return <EmptyProperties />;
   }
 
-  if (lookup.kind === "segment") {
-    const { segment } = lookup;
-    const motions = segmentMotions(segment);
-    const travel = {
-      v1: motions.v1.to - motions.v1.from,
-      v2: motions.v2.to - motions.v2.from,
-      v3: motions.v3.to - motions.v3.from,
-    };
-    const profiles: AxisMotionProfiles = {
-      v1: motions.v1.profile,
-      v2: motions.v2.profile,
-      v3: motions.v3.profile,
-    };
-    const object = getTimelineObject(segment.objectId);
-    const disabled = !segment.configurable;
-    const axisContext: MotionProfileAxisContext = {
-      ...axisContextFromObject(object, travel, segment.durationMs),
-      durationMsByAxis: {
-        v1: motions.v1.durationMs,
-        v2: motions.v2.durationMs,
-        v3: motions.v3.durationMs,
-      },
-      boundaryByAxis: {
-        v1: motions.v1,
-        v2: motions.v2,
-        v3: motions.v3,
-      },
-    };
-    const formatAxisSpeed = (axis: VirtualAxisId, speed: number) =>
-      formatQuantity(speed, `${getVirtualAxisCanonicalUnit(axis, object?.controlType)}/s`, display);
-    const status = motionProfileSegmentStatus(profiles, axisContext, disabled);
-    const configProfiles = (fromRef: string, toRef: string, durationMs: number) =>
-      sequence.segments.find((item) => item.fromRef === fromRef && item.toRef === toRef)?.settings
-        .profiles ?? createDefaultAxisProfiles(durationMs);
-    // 编辑器一次只改一个轴；跨过端点的轴写到它整段曲线的设置上
-    const handleProfilesChange = (next: AxisMotionProfiles) => {
-      for (const axis of VIRTUAL_AXIS_IDS) {
-        if (next[axis] === profiles[axis]) continue;
-        const motion = motions[axis];
-        const base = configProfiles(motion.fromRef, motion.toRef, motion.durationMs);
-        onUpdateSegment(motion.fromRef, motion.toRef, { profiles: { ...base, [axis]: next[axis] } });
-      }
-    };
-    return (
-      <PropertiesShell
-        title="运动区间"
-        plain
-        headerStatus={
-          <p className={cn("shrink-0 text-body-sm", status.className)}>
-            <span aria-hidden>●</span> {status.label}
-          </p>
-        }
-      >
-        <RepairBand
-          items={formatRepairItems(sequenceIssues ?? [], { segmentKey: segment.key }, {
-            objectName: (id) => getTimelineObject(id)?.name,
-          })}
-        />
-        <MotionProfileEditor
-          key={`${segment.fromRef}->${segment.toRef}`}
-          value={profiles}
-          disabled={disabled}
-          axisContext={axisContext}
-          axisNotes={motionNotes(segment, motions, formatAxisSpeed)}
-          segmentContext={{
-            fromRef: segment.fromRef,
-            toRef: segment.toRef,
-          }}
-          onChange={handleProfilesChange}
-        />
-      </PropertiesShell>
-    );
-  }
-
   if (lookup.kind === "multi-block") {
-    const poseBlocks = lookup.blocks.filter((block): block is PoseBlock => block.kind === "pose");
-    const allPoses = poseBlocks.length === lookup.blocks.length && poseBlocks.length > 0;
-    const handleDeleteSelected = () => onDeleteBlock(lookup.blocks.map((block) => block.id));
-    if (!allPoses) {
-      return (
-        <PropertiesShell title="多选" onDelete={handleDeleteSelected}>
-          <p className="text-body-sm text-muted-foreground">已选 {lookup.blocks.length} 项</p>
-        </PropertiesShell>
-      );
-    }
     return (
-      <PropertiesShell title="多选位姿" onDelete={handleDeleteSelected}>
-        <p className="mb-3 text-body-sm text-muted-foreground">已选 {lookup.blocks.length} 项</p>
-        <MultiPoseAxesEditor poses={poseBlocks} />
-      </PropertiesShell>
+      <MultiSelectionProperties
+        sequence={sequence}
+        blocks={lookup.blocks}
+        segments={lookup.segments}
+        focus={lookup.focus}
+        onUpdateSegment={onUpdateSegment}
+        onDeleteBlock={onDeleteBlock}
+      />
     );
   }
 

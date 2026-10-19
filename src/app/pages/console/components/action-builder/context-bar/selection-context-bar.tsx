@@ -63,11 +63,15 @@ export const SelectionContextBar = ({
     );
   }
 
-  if (lookup?.kind === "segment") {
+  const segment =
+    lookup?.kind === "multi-block" && lookup.focus === "segments" && lookup.segments.length === 1
+      ? lookup.segments[0]
+      : undefined;
+  if (segment) {
     return (
       <BlockContextBar
         title="运动区间"
-        segmentDurationMs={lookup.segment.durationMs}
+        segmentDurationMs={segment.durationMs}
       />
     );
   }

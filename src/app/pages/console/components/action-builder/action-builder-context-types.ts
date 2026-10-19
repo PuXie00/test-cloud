@@ -9,8 +9,9 @@ import type { SequenceIssue } from "@/app/project/action-sequence/validate-seque
 import type { VirtualAxisValues } from "@/app/project/project-document-types";
 import type { CapturedPoseRequest } from "@/app/project/capture-pose-sequence";
 import type { ContextSelection } from "./context-bar/selection-context-bar";
+import type { PhaseInputMode } from "./motion-profile/phase-rates";
 import type { ActionRightTab } from "./right-panel/action-right-panel";
-import type { PoseAxisWrite } from "./sequence-ops";
+import type { PoseAxisWrite, SegmentProfileWrite } from "./sequence-ops";
 import type { SequenceSelection } from "./sequence-selection";
 import type {
   ControlledObject as TimelineControlledObject,
@@ -45,6 +46,9 @@ export type ActionBuilderContextValue = {
   canPasteBlock: boolean;
   /** 剪贴板里有整条动作序列（可来自别的工程） */
   canPasteSequence: boolean;
+  /** 运动区间阶段的填法（按时间 / 按速度），本次运行期间记住 */
+  phaseInputMode: PhaseInputMode;
+  handlePhaseInputModeChange: (mode: PhaseInputMode) => void;
   setActiveRightTab: (tab: ActionRightTab) => void;
   handleSequenceSelect: (sequenceId: number | null) => void;
   handleSelectionChange: (selection: SequenceSelection) => void;
@@ -69,6 +73,8 @@ export type ActionBuilderContextValue = {
     toRef: string,
     settings: MotionSegmentSettings,
   ) => void;
+  /** 多选运动区间改阶段：一次写多段曲线 */
+  handleWriteSegmentProfiles: (writes: readonly SegmentProfileWrite[]) => boolean;
   handleBlockDelete: (blockIds?: string | string[]) => void;
   handleTrajectoryModeChange: (mode: TrajectoryMode) => void;
   handleLoopChange: (loop: boolean) => void;

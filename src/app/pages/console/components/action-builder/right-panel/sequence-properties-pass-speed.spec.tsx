@@ -105,7 +105,7 @@ describe("pass speed on a pose", () => {
   });
 
   it("shows the entry speed and speed-change phases on the next segment", () => {
-    renderPanel(slowFast(), { kind: "segment", objectId: 1, fromRef: "p1", toRef: "p2" });
+    renderPanel(slowFast(), { kind: "multi-block", blockIds: ["p1", "p2"], focus: "segments" });
     fireEvent.click(screen.getByRole("button", { name: /^V1 / }));
     expect(screen.getByText("从 150 mm/s 进入")).not.toBeNull();
     expect(screen.getByLabelText("段首变速")).not.toBeNull();

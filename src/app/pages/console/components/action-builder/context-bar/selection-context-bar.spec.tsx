@@ -115,7 +115,7 @@ describe("selection context bar", () => {
         <SelectionContextBar
           sequence={withLater}
           resolved={resolveActionSequence(withLater)}
-          selection={{ kind: "segment", objectId: 7, fromRef: "pose", toRef: "later" }}
+          selection={{ kind: "multi-block", blockIds: ["pose", "later"], focus: "segments" }}
           selectedObjectIds={[]}
           onReplaceBlock={onReplaceBlock}
           onUpdateSegment={onUpdateSegment}

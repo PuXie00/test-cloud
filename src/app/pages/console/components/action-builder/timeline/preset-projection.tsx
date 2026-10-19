@@ -2,6 +2,7 @@ import { useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from
 import { cn } from "@/app/components/ui/utils";
 import { formatTime, msToPx } from "./timeline-data";
 import { viewPxFromMs } from "./timeline-view-extent";
+import { DRAG_CLICK_THRESHOLD_PX, isAdditiveClick, useDragClickGuard } from "./suppress-click";
 
 export type PresetProjectionProps = {
   blockId: string;
@@ -17,7 +18,8 @@ export type PresetProjectionProps = {
   invalidMessage?: string;
   viewStartMs: number;
   pxPerSecond: number;
-  onSelect: () => void;
+  /** additive：Ctrl/⌘ 单击加选或减选 */
+  onSelect: (additive: boolean) => void;
   onMove: (atMs: number) => void;
   onMoveEnd?: () => void;
   onResize?: (startMs: number, endMs: number, edge: "start" | "end") => void;
@@ -25,17 +27,44 @@ export type PresetProjectionProps = {
 
 type DragKind = "move" | "start" | "end";
 
-const useSelectHandlers = (onSelect: () => void) => {
+const useSelectHandlers = (
+  onSelect: (additive: boolean) => void,
+  consumeDragClick: () => boolean,
+) => {
   const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
-    onSelect();
+    if (consumeDragClick()) return;
+    onSelect(isAdditiveClick(event));
   };
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
-    onSelect();
+    onSelect(false);
   };
   return { handleClick, handleKeyDown };
+};
+
+/** 按下后横移过阈值才开始拖；拖过的话松手时调 onDragEnd */
+const attachPointerDrag = (
+  startX: number,
+  onDragMove: (dx: number) => void,
+  onDragEnd: () => void,
+) => {
+  let moved = false;
+  const handleMove = (moveEvent: globalThis.PointerEvent) => {
+    const dx = moveEvent.clientX - startX;
+    if (!moved && Math.abs(dx) < DRAG_CLICK_THRESHOLD_PX) return;
+    moved = true;
+    onDragMove(dx);
+  };
+  const handleUp = () => {
+    window.removeEventListener("pointermove", handleMove);
+    window.removeEventListener("pointerup", handleUp);
+    if (!moved) return;
+    onDragEnd();
+  };
+  window.addEventListener("pointermove", handleMove);
+  window.addEventListener("pointerup", handleUp);
 };
 
 const attachTimeDrag = (
@@ -46,20 +75,18 @@ const attachTimeDrag = (
   onDrag: (kind: DragKind | null) => void,
   onMoveEnd?: () => void,
 ) => {
-  const handleMove = (moveEvent: globalThis.PointerEvent) => {
-    const deltaMs = Math.round(((moveEvent.clientX - startX) / pxPerSecond) * 1000);
-    const nextAtMs = Math.max(0, initialAtMs + deltaMs);
-    onDrag("move");
-    onMove(nextAtMs);
-  };
-  const handleUp = () => {
-    onDrag(null);
-    onMoveEnd?.();
-    window.removeEventListener("pointermove", handleMove);
-    window.removeEventListener("pointerup", handleUp);
-  };
-  window.addEventListener("pointermove", handleMove);
-  window.addEventListener("pointerup", handleUp);
+  attachPointerDrag(
+    startX,
+    (dx) => {
+      const deltaMs = Math.round((dx / pxPerSecond) * 1000);
+      onDrag("move");
+      onMove(Math.max(0, initialAtMs + deltaMs));
+    },
+    () => {
+      onDrag(null);
+      onMoveEnd?.();
+    },
+  );
 };
 
 const GENERATED_TICK_WIDTH_PX = 1;
@@ -95,13 +122,19 @@ export const PresetProjection = ({
 }: PresetProjectionProps) => {
   // 拖动时标签显示块实际所在的时刻（吸附、被拒绝后都以它为准）
   const [dragKind, setDragKind] = useState<DragKind | null>(null);
-  const { handleClick, handleKeyDown } = useSelectHandlers(onSelect);
+  const dragClick = useDragClickGuard();
+  const { handleClick, handleKeyDown } = useSelectHandlers(onSelect, dragClick.consumeDragClick);
+  const handleDragKind = (kind: DragKind | null) => {
+    if (kind === null) dragClick.dragEnded();
+    setDragKind(kind);
+  };
 
   if (kind === "static-preset") {
     const handlePointerDown = (event: PointerEvent<HTMLButtonElement>) => {
       if (event.button !== 0) return;
       event.stopPropagation();
-      attachTimeDrag(event.clientX, atMs, pxPerSecond, onMove, setDragKind, onMoveEnd);
+      dragClick.pressStarted();
+      attachTimeDrag(event.clientX, atMs, pxPerSecond, onMove, handleDragKind, onMoveEnd);
     };
 
     return (
@@ -154,7 +187,8 @@ export const PresetProjection = ({
   const handleMovePointerDown = (event: PointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return;
     event.stopPropagation();
-    attachTimeDrag(event.clientX, startMs, pxPerSecond, onMove, setDragKind, onMoveEnd);
+    dragClick.pressStarted();
+    attachTimeDrag(event.clientX, startMs, pxPerSecond, onMove, handleDragKind, onMoveEnd);
   };
 
   const handleResizePointerDown =
@@ -163,28 +197,27 @@ export const PresetProjection = ({
       event.stopPropagation();
       event.preventDefault();
       if (!onResize) return;
-      const originX = event.clientX;
+      dragClick.pressStarted();
       const initialStart = startMs;
       const initialEnd = endMs;
-
-      const handleMove = (moveEvent: globalThis.PointerEvent) => {
-        const deltaMs = Math.round(((moveEvent.clientX - originX) / pxPerSecond) * 1000);
-        setDragKind(edge);
-        if (edge === "start") {
-          const nextStart = Math.max(0, Math.min(initialStart + deltaMs, initialEnd - 1));
-          onResize(nextStart, initialEnd, "start");
-        } else {
-          const nextEnd = Math.max(initialStart + 1, initialEnd + deltaMs);
-          onResize(initialStart, nextEnd, "end");
-        }
-      };
-      const handleUp = () => {
-        setDragKind(null);
-        window.removeEventListener("pointermove", handleMove);
-        window.removeEventListener("pointerup", handleUp);
-      };
-      window.addEventListener("pointermove", handleMove);
-      window.addEventListener("pointerup", handleUp);
+      attachPointerDrag(
+        event.clientX,
+        (dx) => {
+          const deltaMs = Math.round((dx / pxPerSecond) * 1000);
+          setDragKind(edge);
+          if (edge === "start") {
+            const nextStart = Math.max(0, Math.min(initialStart + deltaMs, initialEnd - 1));
+            onResize(nextStart, initialEnd, "start");
+          } else {
+            const nextEnd = Math.max(initialStart + 1, initialEnd + deltaMs);
+            onResize(initialStart, nextEnd, "end");
+          }
+        },
+        () => {
+          handleDragKind(null);
+          onMoveEnd?.();
+        },
+      );
     };
 
   return (

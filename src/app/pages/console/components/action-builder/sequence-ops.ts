@@ -1,5 +1,9 @@
 import { clampNumeric } from "@/app/components/ics/numeric-input-utils";
-import { cloneAxisProfiles } from "@/app/project/action-sequence/motion-profile";
+import {
+  cloneAxisProfiles,
+  cloneMotionProfile,
+  createDefaultAxisProfiles,
+} from "@/app/project/action-sequence/motion-profile";
 import { getPresetDefinition } from "@/app/project/action-sequence/preset-registry";
 import {
   reconcileSegmentConfigs,
@@ -8,6 +12,7 @@ import {
 } from "@/app/project/action-sequence/resolve-sequence";
 import type {
   ActionSequenceConfig,
+  MotionProfile,
   MotionSegmentConfig,
   MotionSegmentSettings,
   PoseBlock,
@@ -693,5 +698,43 @@ export const updateSegmentSettings = (
   const index = next.segments.findIndex((item) => item.fromRef === fromRef && item.toRef === toRef);
   if (index >= 0) next.segments[index] = config;
   else next.segments.push(config);
+  return finalize(next);
+};
+
+/** 批量改阶段时的一条写入：某段曲线（fromRef→toRef）某个轴的新曲线 */
+export type SegmentProfileWrite = {
+  fromRef: string;
+  toRef: string;
+  axis: VirtualAxisId;
+  profile: MotionProfile;
+  /** 这段还没有设置时，其它轴按这个时长取默认曲线 */
+  durationMs: number;
+};
+
+/** 一次写多段曲线（多选运动区间改阶段），只提交一次 */
+export const writeSegmentProfiles = (
+  sequence: ActionSequenceConfig,
+  writes: readonly SegmentProfileWrite[],
+): ActionSequenceConfig => {
+  if (writes.length === 0) return sequence;
+  const next = cloneSequence(sequence);
+  for (const write of writes) {
+    const index = next.segments.findIndex(
+      (item) => item.fromRef === write.fromRef && item.toRef === write.toRef,
+    );
+    const base =
+      index >= 0
+        ? next.segments[index]!.settings.profiles
+        : createDefaultAxisProfiles(write.durationMs);
+    const config: MotionSegmentConfig = {
+      fromRef: write.fromRef,
+      toRef: write.toRef,
+      settings: {
+        profiles: { ...cloneAxisProfiles(base), [write.axis]: cloneMotionProfile(write.profile) },
+      },
+    };
+    if (index >= 0) next.segments[index] = config;
+    else next.segments.push(config);
+  }
   return finalize(next);
 };

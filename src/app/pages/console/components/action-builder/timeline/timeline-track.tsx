@@ -34,10 +34,16 @@ export type TimelineTrackProps = {
   generatedTicksByPreset: Record<string, number[]>;
   segments: ResolvedMotionSegment[];
   selection: SequenceSelection;
+  /** 两端都选中的运动区间 */
+  selectedSegmentKeys: ReadonlySet<string>;
   viewStartMs: number;
   contentWidth: number;
   pxPerSecond: number;
-  onSelectionChange: (selection: SequenceSelection) => void;
+  /** additive：Ctrl/⌘ 单击加选或减选 */
+  onBlockSelect: (blockId: string, additive: boolean) => void;
+  onSegmentSelect: (segment: ResolvedMotionSegment, additive: boolean) => void;
+  /** 拖运动区间：startMs 是区间起点想去的时刻 */
+  onSegmentMove?: (segment: ResolvedMotionSegment, startMs: number) => void;
   onPoseMove: (blockId: string, atMs: number) => void;
   onPresetMove: (blockId: string, atMs: number) => void;
   onDynamicPresetResize: (
@@ -49,15 +55,6 @@ export type TimelineTrackProps = {
   onBlockMoveEnd?: () => void;
   invalidTargets?: InvalidTimelineTargets;
 };
-
-const isSegmentSelected = (
-  selection: SequenceSelection,
-  segment: ResolvedMotionSegment,
-): boolean =>
-  selection?.kind === "segment" &&
-  selection.objectId === segment.objectId &&
-  selection.fromRef === segment.fromRef &&
-  selection.toRef === segment.toRef;
 
 const presetLabel = (block: StaticPresetBlock | DynamicPresetBlock): string =>
   block.label ?? presetLabelOf(block.presetId);
@@ -78,10 +75,13 @@ export const TimelineTrack = ({
   generatedTicksByPreset,
   segments,
   selection,
+  selectedSegmentKeys,
   viewStartMs,
   contentWidth,
   pxPerSecond,
-  onSelectionChange,
+  onBlockSelect,
+  onSegmentSelect,
+  onSegmentMove,
   onPoseMove,
   onPresetMove,
   onDynamicPresetResize,
@@ -102,19 +102,14 @@ export const TimelineTrack = ({
           toRef={segment.toRef}
           startMs={segment.startMs}
           endMs={segment.endMs}
-          selected={isSegmentSelected(selection, segment)}
+          selected={selectedSegmentKeys.has(segment.key)}
           invalid={invalidTargets?.segmentKeys.has(segment.key) ?? false}
           invalidMessage={invalidTargets?.segmentMessage.get(segment.key)}
           viewStartMs={viewStartMs}
           pxPerSecond={pxPerSecond}
-          onSelect={() =>
-            onSelectionChange({
-              kind: "segment",
-              objectId: segment.objectId,
-              fromRef: segment.fromRef,
-              toRef: segment.toRef,
-            })
-          }
+          onSelect={(additive) => onSegmentSelect(segment, additive)}
+          onMove={onSegmentMove ? (startMs) => onSegmentMove(segment, startMs) : undefined}
+          onMoveEnd={onBlockMoveEnd}
         />
       ))}
       {dynamicPresets.map((block) => (
@@ -132,7 +127,7 @@ export const TimelineTrack = ({
           invalidMessage={invalidTargets?.blockMessage.get(block.id)}
           viewStartMs={viewStartMs}
           pxPerSecond={pxPerSecond}
-          onSelect={() => onSelectionChange({ kind: "block", blockId: block.id })}
+          onSelect={(additive) => onBlockSelect(block.id, additive)}
           onMove={(nextAtMs) => onPresetMove(block.id, nextAtMs)}
           onMoveEnd={onBlockMoveEnd}
           onResize={(nextStart, nextEnd, edge) =>
@@ -153,7 +148,7 @@ export const TimelineTrack = ({
           invalidMessage={invalidTargets?.blockMessage.get(block.id)}
           viewStartMs={viewStartMs}
           pxPerSecond={pxPerSecond}
-          onSelect={() => onSelectionChange({ kind: "block", blockId: block.id })}
+          onSelect={(additive) => onBlockSelect(block.id, additive)}
           onMove={(nextAtMs) => onPresetMove(block.id, nextAtMs)}
           onMoveEnd={onBlockMoveEnd}
         />
@@ -171,7 +166,7 @@ export const TimelineTrack = ({
           invalidMessage={invalidTargets?.blockMessage.get(pose.id)}
           viewStartMs={viewStartMs}
           pxPerSecond={pxPerSecond}
-          onSelect={() => onSelectionChange({ kind: "block", blockId: pose.id })}
+          onSelect={(additive) => onBlockSelect(pose.id, additive)}
           onMove={(nextAtMs) => onPoseMove(pose.id, nextAtMs)}
           onMoveEnd={onBlockMoveEnd}
         />
@@ -187,7 +182,7 @@ export const TimelineTrack = ({
           invalidMessage={invalidTargets?.blockMessage.get(command.id)}
           viewStartMs={viewStartMs}
           pxPerSecond={pxPerSecond}
-          onSelect={() => onSelectionChange({ kind: "block", blockId: command.id })}
+          onSelect={(additive) => onBlockSelect(command.id, additive)}
         />
       ))}
     </div>

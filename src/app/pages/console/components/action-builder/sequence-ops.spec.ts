@@ -17,6 +17,7 @@ import {
   shiftTimelineBlocks,
   updatePosesFromLive,
   updateSegmentSettings,
+  writeSegmentProfiles,
   upsertPoseBlock,
   upsertSetEnabledBlock,
 } from "./sequence-ops";
@@ -847,5 +848,61 @@ describe("blocks at an occupied time", () => {
     expect(result.sequence.blocks.filter((block) => block.kind === "instruction")).toEqual([
       { id: "en", kind: "instruction", presetId: "set-enabled", objectId: 7, atMs: 1000, instr: { enabled: false } },
     ]);
+  });
+});
+
+describe("writeSegmentProfiles", () => {
+  const twoSpans: ActionSequenceConfig = {
+    id: 1,
+    name: "two",
+    trajectoryMode: false,
+    blocks: [
+      { id: "a", kind: "pose", objectId: 1, atMs: 0, pose: { v1: 0, v2: 0 } },
+      { id: "b", kind: "pose", objectId: 1, atMs: 2000, pose: { v1: 200, v2: 100 } },
+      { id: "c", kind: "pose", objectId: 2, atMs: 0, pose: { v1: 0, v2: 0 } },
+      { id: "d", kind: "pose", objectId: 2, atMs: 4000, pose: { v1: 400, v2: 0 } },
+    ],
+    segments: [
+      {
+        fromRef: "a",
+        toRef: "b",
+        settings: {
+          profiles: {
+            v1: { kind: "trapezoid", params: { accelMs: 300, decelMs: 300 } },
+            v2: { kind: "trapezoid", params: { accelMs: 700, decelMs: 700 } },
+            v3: { kind: "idle" },
+          },
+        },
+      },
+    ],
+  };
+
+  it("writes one axis of several curves in a single edit and keeps the other axes", () => {
+    const next = writeSegmentProfiles(twoSpans, [
+      {
+        fromRef: "a",
+        toRef: "b",
+        axis: "v1",
+        profile: { kind: "trapezoid", params: { accelMs: 500, decelMs: 400 } },
+        durationMs: 2000,
+      },
+      {
+        fromRef: "c",
+        toRef: "d",
+        axis: "v1",
+        profile: { kind: "trapezoid", params: { accelMs: 500, decelMs: 800 } },
+        durationMs: 4000,
+      },
+    ]);
+    const settingsOf = (fromRef: string) =>
+      next.segments.find((item) => item.fromRef === fromRef)?.settings.profiles;
+    expect(settingsOf("a")?.v1).toEqual({ kind: "trapezoid", params: { accelMs: 500, decelMs: 400 } });
+    expect(settingsOf("a")?.v2).toEqual({ kind: "trapezoid", params: { accelMs: 700, decelMs: 700 } });
+    expect(settingsOf("c")?.v1).toEqual({ kind: "trapezoid", params: { accelMs: 500, decelMs: 800 } });
+    expect(twoSpans.segments).toHaveLength(1);
+  });
+
+  it("returns the same sequence when there is nothing to write", () => {
+    expect(writeSegmentProfiles(twoSpans, [])).toBe(twoSpans);
   });
 });

@@ -258,7 +258,7 @@ describe("SequencePropertiesPanel states", () => {
 
     [{ kind: "block", blockId: "pose" }, /位姿/],
 
-    [{ kind: "segment", objectId: 7, fromRef: "pose", toRef: "later" }, /运动区间/],
+    [{ kind: "multi-block", blockIds: ["pose", "later"], focus: "segments" }, /运动区间/],
 
     [{ kind: "block", blockId: "enable" }, /使能指令/],
 
@@ -376,7 +376,7 @@ describe("SequencePropertiesPanel edits", () => {
 
     renderPanel({
 
-      selection: { kind: "segment", objectId: 7, fromRef: "pose", toRef: "later" },
+      selection: { kind: "multi-block", blockIds: ["pose", "later"], focus: "segments" },
 
     });
 
@@ -414,7 +414,7 @@ describe("SequencePropertiesPanel edits", () => {
 
     renderPanel({
 
-      selection: { kind: "segment", objectId: 7, fromRef: "pose", toRef: "later" },
+      selection: { kind: "multi-block", blockIds: ["pose", "later"], focus: "segments" },
 
     });
 
@@ -444,7 +444,7 @@ describe("SequencePropertiesPanel edits", () => {
 
     renderPanel({
 
-      selection: { kind: "segment", objectId: 7, fromRef: "pose", toRef: "later" },
+      selection: { kind: "multi-block", blockIds: ["pose", "later"], focus: "segments" },
 
     });
 
@@ -490,7 +490,7 @@ describe("SequencePropertiesPanel edits", () => {
 
     renderPanel({
 
-      selection: { kind: "segment", objectId: 7, fromRef: "pose", toRef: "later" },
+      selection: { kind: "multi-block", blockIds: ["pose", "later"], focus: "segments" },
 
     });
 
@@ -534,7 +534,7 @@ describe("SequencePropertiesPanel edits", () => {
 
       },
 
-      selection: { kind: "segment", objectId: 7, fromRef: "pose", toRef: "later" },
+      selection: { kind: "multi-block", blockIds: ["pose", "later"], focus: "segments" },
 
     });
 
@@ -696,7 +696,7 @@ describe("SequencePropertiesPanel edits", () => {
 
     ];
 
-    renderPanel({ selection: { kind: "segment", objectId: 7, fromRef: "pose", toRef: "later" } });
+    renderPanel({ selection: { kind: "multi-block", blockIds: ["pose", "later"], focus: "segments" } });
 
     expect(screen.getByLabelText("待修复内容")).not.toBeNull();
 
@@ -752,15 +752,28 @@ describe("SequencePropertiesPanel multi-pose", () => {
 
 
 
-  it("keeps the count-only panel when the selection mixes kinds", () => {
-
+  it("edits the poses of a mixed selection and only counts the other kinds", () => {
     renderPanel({ selection: { kind: "multi-block", blockIds: ["pose", "enable"] } });
+
+    expect(screen.getByRole("heading", { name: "多选位姿" })).not.toBeNull();
+
+    expect(screen.getByText("已选 2 项")).not.toBeNull();
+
+    expect(screen.getByRole("tab", { name: "绝对" })).not.toBeNull();
+
+    expect(screen.getByText("另有 指令 1 个，多选时不能修改")).not.toBeNull();
+
+  });
+
+
+
+  it("keeps the count-only panel when nothing selected is a pose or a segment", () => {
+
+    renderPanel({ selection: { kind: "multi-block", blockIds: ["enable", "static"] } });
 
     expect(screen.getByRole("heading", { name: "多选" })).not.toBeNull();
 
     expect(screen.getByText("已选 2 项")).not.toBeNull();
-
-    expect(screen.queryByRole("heading", { name: "多选位姿" })).toBeNull();
 
     expect(screen.queryByRole("tab", { name: "绝对" })).toBeNull();
 

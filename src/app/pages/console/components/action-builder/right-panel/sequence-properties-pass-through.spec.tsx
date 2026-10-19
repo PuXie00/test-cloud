@@ -80,7 +80,7 @@ describe("pose axes passing through", () => {
   });
 
   it("edits the whole span of an axis that passes the band's end", () => {
-    renderPanel({ kind: "segment", objectId: 1, fromRef: "p1", toRef: "p2" });
+    renderPanel({ kind: "multi-block", blockIds: ["p1", "p2"], focus: "segments" });
     fireEvent.click(screen.getByRole("button", { name: /^V1 / }));
     expect(screen.getByText(/虚轴1在区间端点经过，这里是 0\.0–4\.0 s 整段曲线/)).not.toBeNull();
     expect(screen.getByLabelText("时长").textContent).toBe("4.0 s");
