@@ -1,3 +1,4 @@
+import { Link2 } from "lucide-react";
 import type { CapturedPoseRequest } from "@/app/project/capture-pose-sequence";
 import { sendEnableModel, sendHomeModel, sendResetModel } from "../../../hooks/manual-commands";
 import { useSelection } from "../../../hooks/use-selection";
@@ -29,12 +30,24 @@ type ManualControlPanelProps = {
   saveDisabled?: boolean;
   /** 保存到哪里由页面决定 */
   onSaveCurrentPose: (request: CapturedPoseRequest) => void;
+  /** 操作这些物体，不跟随全局选择（动作页联机编辑选中的位姿） */
+  objectIds?: readonly number[];
+  /** 保存按钮的文字，默认「保存当前位姿」 */
+  saveLabel?: string;
+  /** 不能保存的原因，显示在保存按钮下 */
+  saveBlockedReason?: string | null;
+  /** 顶部的联机说明 */
+  liveLabel?: string | null;
 };
 
 /** 手动控制：状态条 / 点动 / 维度控制 / 快捷操作；控制页与动作页共用 */
 export const ManualControlPanel = ({
   saveDisabled = false,
   onSaveCurrentPose,
+  objectIds,
+  saveLabel,
+  saveBlockedReason = null,
+  liveLabel = null,
 }: ManualControlPanelProps) => {
   const { selectedId, multiSelectedIds } = useSelection();
   const { getById } = useControlledObjects();
@@ -48,7 +61,8 @@ export const ManualControlPanel = ({
     : undefined;
 
   const selectedIds =
-    multiSelectedIds.length > 0 ? multiSelectedIds : selectedId != null ? [selectedId] : [];
+    objectIds ??
+    (multiSelectedIds.length > 0 ? multiSelectedIds : selectedId != null ? [selectedId] : []);
   const snapshots = selectedIds.flatMap((id) => {
     const snapshot = getById(id);
     return snapshot ? [snapshot] : [];
@@ -62,7 +76,7 @@ export const ManualControlPanel = ({
     })),
     previewing ? { name: previewName } : null,
   );
-  const canSave = !saveDisabled && availability.allowed("savePose");
+  const canSave = !saveDisabled && !saveBlockedReason && availability.allowed("savePose");
 
   const handleSaveCurrentPose = () => {
     onSaveCurrentPose({
@@ -120,6 +134,20 @@ export const ManualControlPanel = ({
 
   return (
     <div className="custom-scrollbar h-full overflow-y-auto bg-card-muted">
+      {liveLabel ? (
+        <div className="px-3 pt-3">
+          <div
+            role="status"
+            className="flex items-center gap-2 rounded-md bg-primary/10 px-3 py-2 text-body-sm font-semibold text-primary"
+          >
+            <Link2 className="h-4 w-4 shrink-0" aria-hidden />
+            <span className="min-w-0 truncate">{liveLabel}</span>
+          </div>
+          <p className="mt-1 px-1 text-body-sm text-muted-foreground">
+            位姿已设为 GO 目标；点动或改目标到位后按「取当前」写回
+          </p>
+        </div>
+      ) : null}
       <StatusControlBar
         objectLabel={objectLabel}
         objectSummary={objectSummary}
@@ -135,12 +163,18 @@ export const ManualControlPanel = ({
         onHome={handleHome}
       />
       <JogControl
+        objectIds={selectedIds}
         dimensions={dimensions}
         disabled={!availability.allowed("jog")}
         settingsDisabled={!availability.allowed("jogSettings")}
       />
-      <DimensionControl disabled={!availability.allowed("dimension")} />
-      <QuickActions canSave={canSave} onSave={handleSaveCurrentPose} />
+      <DimensionControl objectIds={selectedIds} disabled={!availability.allowed("dimension")} />
+      <QuickActions
+        canSave={canSave}
+        onSave={handleSaveCurrentPose}
+        label={saveLabel}
+        hint={saveBlockedReason}
+      />
       <AlertDialog open={couple.phase === "solving"}>
         <AlertDialogContent className="bg-card">
           <AlertDialogHeader>

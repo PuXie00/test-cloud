@@ -30,6 +30,8 @@ type JogControlProps = {
   disabled?: boolean;
   /** 禁用默认速度、速度、加减速时间设置 */
   settingsDisabled?: boolean;
+  /** 点动这些物体；不传时跟随全局选择 */
+  objectIds?: readonly number[];
 };
 
 type AxisJogParams = {
@@ -98,6 +100,7 @@ export const JogControl = ({
   dimensions,
   disabled = false,
   settingsDisabled = false,
+  objectIds,
 }: JogControlProps) => {
   const { persistManualJog } = useProject();
   const document = useProjectDocument();
@@ -127,7 +130,8 @@ export const JogControl = ({
   const jogHoldRef = useRef<JogHoldSnapshot | null>(null);
 
   const selectedIds =
-    multiSelectedIds.length > 0 ? multiSelectedIds : selectedId != null ? [selectedId] : [];
+    objectIds ??
+    (multiSelectedIds.length > 0 ? multiSelectedIds : selectedId != null ? [selectedId] : []);
   const snapshots = selectedIds.flatMap((id) => {
     const snapshot = getById(id);
     return snapshot ? [snapshot] : [];

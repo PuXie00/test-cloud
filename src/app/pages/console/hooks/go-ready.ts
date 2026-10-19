@@ -12,6 +12,8 @@ export type GoReadyEntry = {
   target: VirtualAxisValues;
   current: VirtualAxisValues;
   dispatched?: boolean;
+  /** 下发时刻（Date.now()） */
+  dispatchedAt?: number;
 };
 
 export type GoReadyState = {
@@ -122,17 +124,18 @@ export const isArrived = (
   return true;
 };
 
+/** 目标里没写的轴按设目标时的当前位置下发（不动），连当前位置也没有才是 0 */
 export const buildMoveTargetItem = (entry: GoReadyEntry): MoveTargetItem => ({
   deviceId: Number(entry.objectId),
-  hTargetPosition: entry.target.v1 ?? 0,
+  hTargetPosition: entry.target.v1 ?? entry.current.v1 ?? 0,
   hVelocity: 0,
   hAcceleration: 0,
   hDeceleration: 0,
-  pTargetPosition: entry.target.v2 ?? 0,
+  pTargetPosition: entry.target.v2 ?? entry.current.v2 ?? 0,
   pVelocity: 0,
   pAcceleration: 0,
   pDeceleration: 0,
-  yTargetPosition: entry.target.v3 ?? 0,
+  yTargetPosition: entry.target.v3 ?? entry.current.v3 ?? 0,
   yVelocity: 0,
   yAcceleration: 0,
   yDeceleration: 0,
@@ -153,12 +156,22 @@ export const goEntriesForObjectIds = (
 export const markGoDispatched = (
   entries: readonly GoReadyEntry[],
   objectIds: readonly string[],
+  now: number = Date.now(),
 ): GoReadyEntry[] => {
   const idSet = new Set(objectIds);
   return entries.map((entry) =>
-    idSet.has(entry.objectId) ? { ...entry, dispatched: true } : entry,
+    idSet.has(entry.objectId) ? { ...entry, dispatched: true, dispatchedAt: now } : entry,
   );
 };
+
+/**
+ * 刚下发的 GO：遥测约 0.43 s 一帧，设备的「运动」状态要过一两帧才报上来，这段时间也当作在动。
+ * 过了这段时间就只看遥测状态，没走到容差内停下的设备不会一直被当成在动。
+ */
+export const GO_START_GRACE_MS = 1500;
+
+export const isGoStarting = (entry: GoReadyEntry, now: number = Date.now()): boolean =>
+  entry.dispatched === true && now - (entry.dispatchedAt ?? 0) < GO_START_GRACE_MS;
 
 export const removeGoEntries = (
   entries: readonly GoReadyEntry[],
@@ -171,4 +184,57 @@ export const removeGoEntries = (
 export const goPhaseFromEntries = (entries: readonly GoReadyEntry[]): GoPhase => {
   if (entries.length === 0) return "idle";
   return pendingGoEntries(entries).length === 0 ? "moving" : "armed";
+};
+
+/**
+ * 动作页联机：选中位姿给出的 GO 目标（按物体 id）。
+ * 绑定的物体到位或被清除后，GO 目标回到这里，影子一直停在位姿上。
+ */
+export type GoBinding = Pick<GoReadyEntry, "target" | "current">;
+export type GoBindings = ReadonlyMap<string, GoBinding>;
+
+const boundEntry = (objectId: string, binding: GoBinding): GoReadyEntry => ({
+  objectId,
+  target: { ...binding.target },
+  current: { ...binding.current },
+  dispatched: false,
+});
+
+/**
+ * 换绑定：不再绑定的物体去掉还没下发的目标；新绑定的物体目标设为位姿值。
+ * 正在走的（已下发）条目保留，到位后再回到绑定的目标。
+ */
+export const applyGoBindings = (
+  entries: readonly GoReadyEntry[],
+  previous: GoBindings,
+  next: GoBindings,
+): GoReadyEntry[] => {
+  const result: GoReadyEntry[] = [];
+  for (const entry of entries) {
+    if (next.has(entry.objectId)) {
+      if (entry.dispatched) result.push(entry);
+      continue;
+    }
+    if (previous.has(entry.objectId) && !entry.dispatched) continue;
+    result.push(entry);
+  }
+  for (const [objectId, binding] of next) {
+    if (result.some((entry) => entry.objectId === objectId)) continue;
+    result.push(boundEntry(objectId, binding));
+  }
+  return result;
+};
+
+/** 到位或清除：绑定的物体回到绑定的目标，其余物体去掉 */
+export const releaseGoEntries = (
+  entries: readonly GoReadyEntry[],
+  objectIds: readonly string[],
+  bindings: GoBindings,
+): GoReadyEntry[] => {
+  const idSet = new Set(objectIds);
+  return entries.flatMap((entry) => {
+    if (!idSet.has(entry.objectId)) return [entry];
+    const binding = bindings.get(entry.objectId);
+    return binding ? [boundEntry(entry.objectId, binding)] : [];
+  });
 };

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ControlledObjectSnapshot } from "../components/monitor-grid/monitor-data";
 import {
   ARRIVAL_TOLERANCE,
+  applyGoBindings,
   buildMoveTargetItem,
   goEntriesForObjectIds,
   goPhaseFromEntries,
@@ -9,8 +10,10 @@ import {
   markGoDispatched,
   pendingGoEntries,
   positionsToAxisValues,
+  releaseGoEntries,
   removeGoEntries,
   resolveGoTargets,
+  type GoBinding,
   type GoReadyEntry,
 } from "./go-ready";
 
@@ -194,5 +197,65 @@ describe("buildMoveTargetItem", () => {
     expect(item).not.toHaveProperty("hPositionSign");
     expect(item).not.toHaveProperty("pPositionSign");
     expect(item).not.toHaveProperty("yPositionSign");
+  });
+});
+
+describe("buildMoveTargetItem fallback", () => {
+  it("目标没写的轴按设目标时的当前位置下发，而不是 0", () => {
+    const item = buildMoveTargetItem({
+      objectId: "1",
+      target: { v1: 250 },
+      current: { v1: 100, v2: 12 },
+    });
+    expect(item.hTargetPosition).toBe(250);
+    expect(item.pTargetPosition).toBe(12);
+    expect(item.yTargetPosition).toBe(0);
+  });
+});
+
+describe("pose bindings", () => {
+  const binding = (v1: number): GoBinding => ({ target: { v1, v2: 3 }, current: { v1: 0, v2: 3 } });
+  const entry = (objectId: string, v1: number, dispatched = false): GoReadyEntry => ({
+    objectId,
+    target: { v1 },
+    current: {},
+    dispatched,
+  });
+
+  it("applyGoBindings 设位姿目标，换绑时去掉不再绑定且还没下发的目标", () => {
+    const first = applyGoBindings([entry("9", 5)], new Map(), new Map([["1", binding(400)]]));
+    expect(first).toEqual([
+      entry("9", 5),
+      { objectId: "1", target: { v1: 400, v2: 3 }, current: { v1: 0, v2: 3 }, dispatched: false },
+    ]);
+
+    const next = applyGoBindings(
+      first,
+      new Map([["1", binding(400)]]),
+      new Map([["2", binding(500)]]),
+    );
+    expect(next.map((item) => item.objectId)).toEqual(["9", "2"]);
+  });
+
+  it("applyGoBindings 不打断正在走的物体，也覆盖还没下发的手动目标", () => {
+    const moving = entry("1", 420, true);
+    expect(applyGoBindings([moving], new Map(), new Map([["1", binding(400)]]))).toEqual([moving]);
+    expect(
+      applyGoBindings([entry("1", 420)], new Map(), new Map([["1", binding(400)]]))[0]?.target,
+    ).toEqual({ v1: 400, v2: 3 });
+    // 解绑时正在走的保留，到位后由 releaseGoEntries 去掉
+    expect(applyGoBindings([moving], new Map([["1", binding(400)]]), new Map())).toEqual([moving]);
+  });
+
+  it("releaseGoEntries 到位或清除后绑定的物体回到位姿目标，其余去掉", () => {
+    const released = releaseGoEntries(
+      [entry("1", 420, true), entry("2", 7), entry("3", 8)],
+      ["1", "2"],
+      new Map([["1", binding(400)]]),
+    );
+    expect(released).toEqual([
+      { objectId: "1", target: { v1: 400, v2: 3 }, current: { v1: 0, v2: 3 }, dispatched: false },
+      entry("3", 8),
+    ]);
   });
 });

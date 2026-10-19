@@ -14,10 +14,14 @@ import { ProjectStoreProvider } from "@/app/pages/console/hooks/use-project-stor
 import { ActionBuilderProvider } from "./action-builder-context";
 import { useActionBuilder } from "./use-action-builder";
 
-const { toastWarning } = vi.hoisted(() => ({ toastWarning: vi.fn() }));
+const { toastWarning, toastSuccess, toastInfo } = vi.hoisted(() => ({
+  toastWarning: vi.fn(),
+  toastSuccess: vi.fn(),
+  toastInfo: vi.fn(),
+}));
 
 vi.mock("sonner", () => ({
-  toast: { success: vi.fn(), warning: toastWarning, error: vi.fn(), info: vi.fn() },
+  toast: { success: toastSuccess, warning: toastWarning, error: vi.fn(), info: toastInfo },
 }));
 
 const stubCsocketOpenProject = () => {
@@ -64,6 +68,8 @@ const capture = (objectIds: number[]) => ({
 describe("action builder save current pose", () => {
   beforeEach(() => {
     toastWarning.mockClear();
+    toastSuccess.mockClear();
+    toastInfo.mockClear();
     installMemoryProjectAPI();
     stubCsocketOpenProject();
   });
@@ -88,6 +94,43 @@ describe("action builder save current pose", () => {
     expect(result.current.builder.selectedSequenceId).toBe(sequenceId);
   });
 
+  it("updates selected poses from the live position, leaving passing axes unset", async () => {
+    const { result } = renderBuilder();
+    await openFixtureProject(result);
+    act(() => result.current.builder.handleCreateSequence([]));
+    act(() => {
+      result.current.builder.handleInsertTimelineBlock({
+        id: "a",
+        kind: "pose",
+        objectId: 7,
+        atMs: 1000,
+        pose: { v1: 400 },
+      });
+      result.current.builder.handleInsertTimelineBlock({
+        id: "b",
+        kind: "pose",
+        objectId: 8,
+        atMs: 1000,
+        pose: { v1: 500 },
+      });
+    });
+    const liveFor = (objectId: number) =>
+      objectId === 7 ? { v1: 403.46 } : objectId === 8 ? { v1: 512.04, v2: 6 } : null;
+
+    act(() => result.current.builder.handleUpdatePosesFromLive(["a", "b"], liveFor));
+
+    const posesById = new Map(
+      result.current.builder.sequence!.blocks.map((block) => [block.id, block] as const),
+    );
+    expect(posesById.get("a")).toMatchObject({ pose: { v1: 403.5 } });
+    // 物体 8 的虚轴2 在这个位姿上是「经过」，取当前不写
+    expect(posesById.get("b")).toEqual(expect.objectContaining({ pose: { v1: 512 } }));
+    expect(toastSuccess).toHaveBeenCalledWith("已用当前位置更新 2 个位姿");
+
+    act(() => result.current.builder.handleUpdatePosesFromLive(["a", "b"], liveFor));
+    expect(toastInfo).toHaveBeenCalledWith("位姿已和当前位置一致");
+  });
+
   it("creates and selects a new sequence when none is selected, without adding it to the program", async () => {
     const { result } = renderBuilder();
     await openFixtureProject(result);
@@ -107,7 +150,7 @@ describe("action builder save current pose", () => {
     expect(result.current.project.currentProject!.document!.motion.programs).toEqual(programsBefore);
   });
 
-  it("keeps the manual tab on object picks and playhead moves, and leaves it on a block selection", async () => {
+  it("keeps the manual tab on object picks, playhead moves and block selection", async () => {
     const { result } = renderBuilder();
     await openFixtureProject(result);
     act(() => result.current.builder.setActiveRightTab("manual"));
@@ -120,6 +163,11 @@ describe("action builder save current pose", () => {
     act(() => result.current.builder.handleSelectionChange(null));
     expect(result.current.builder.activeRightTab).toBe("manual");
 
+    // 手动控制是联机编辑：选中的位姿成为 GO 目标，所以选块也留在这里
+    act(() => result.current.builder.handleSelectionChange({ kind: "block", blockId: "x" }));
+    expect(result.current.builder.activeRightTab).toBe("manual");
+
+    act(() => result.current.builder.setActiveRightTab("program"));
     act(() => result.current.builder.handleSelectionChange({ kind: "block", blockId: "x" }));
     expect(result.current.builder.activeRightTab).toBe("selection");
 
