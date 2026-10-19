@@ -65,12 +65,15 @@ const PropertiesShell = ({
   onDelete,
   plain = false,
   headerStatus,
+  actions,
 }: {
   title: string;
   children: ReactNode;
   onDelete?: () => void;
   plain?: boolean;
   headerStatus?: ReactNode;
+  /** 删除按钮上方的其它操作，如拆解预设 */
+  actions?: ReactNode;
 }) => (
   <div className="flex min-h-0 flex-1 flex-col">
     <div className="flex h-9 shrink-0 items-center justify-between gap-2 bg-muted px-3">
@@ -85,18 +88,34 @@ const PropertiesShell = ({
     >
       <div className={cn(!plain && "rounded-md bg-muted p-4")}>
         {children}
-        {onDelete ? (
-          <button
-            type="button"
-            onClick={onDelete}
-            className="mt-4 inline-flex h-9 w-full items-center justify-center rounded-md bg-destructive text-body-sm font-semibold text-destructive-foreground hover:bg-destructive/90"
-          >
-            删除
-          </button>
+        {actions || onDelete ? (
+          <div className="mt-4 flex flex-col gap-2">
+            {actions}
+            {onDelete ? (
+              <button
+                type="button"
+                onClick={onDelete}
+                className="inline-flex h-9 w-full items-center justify-center rounded-md bg-destructive text-body-sm font-semibold text-destructive-foreground hover:bg-destructive/90"
+              >
+                删除
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </div>
     </div>
   </div>
+);
+
+/** 拆解预设：换成各物体的关键点位姿 */
+const ExplodePresetsButton = ({ label, onClick }: { label: string; onClick: () => void }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className="inline-flex h-9 w-full items-center justify-center rounded-md border border-border text-body-sm font-semibold text-foreground hover:bg-accent"
+  >
+    {label}
+  </button>
 );
 
 const Field = ({ label, children }: { label: string; children: ReactNode }) => (
@@ -508,8 +527,18 @@ const MultiSelectionProperties = ({
   onUpdateSegment: SequencePropertiesPanelProps["onUpdateSegment"];
   onDeleteBlock: (blockId: string | string[]) => void;
 }) => {
-  const { getTimelineObject } = useActionBuilder();
+  const { getTimelineObject, handleExplodePresets } = useActionBuilder();
   const poseBlocks = blocks.filter((block): block is PoseBlock => block.kind === "pose");
+  const presetIds = blocks
+    .filter((block) => block.kind === "static-preset" || block.kind === "dynamic-preset")
+    .map((block) => block.id);
+  const explodeAction =
+    presetIds.length > 0 ? (
+      <ExplodePresetsButton
+        label={`拆解所选预设（${presetIds.length}）`}
+        onClick={() => handleExplodePresets(presetIds)}
+      />
+    ) : undefined;
   const tabs: Array<{ id: MultiTab; label: string }> = [
     ...(segments.length > 0
       ? [{ id: "segments" as const, label: `运动区间（${segments.length}）` }]
@@ -533,7 +562,7 @@ const MultiSelectionProperties = ({
 
   if (tab === undefined) {
     return (
-      <PropertiesShell title="多选" onDelete={handleDeleteSelected}>
+      <PropertiesShell title="多选" onDelete={handleDeleteSelected} actions={explodeAction}>
         <p className="text-body-sm text-muted-foreground">已选 {blocks.length} 项</p>
       </PropertiesShell>
     );
@@ -568,6 +597,7 @@ const MultiSelectionProperties = ({
         title={single ? "运动区间" : "多选运动区间"}
         plain
         headerStatus={<SegmentStatusBadge status={status} />}
+        actions={explodeAction}
       >
         {tabBar}
         {single ? (
@@ -581,7 +611,12 @@ const MultiSelectionProperties = ({
   }
 
   return (
-    <PropertiesShell title="多选位姿" plain onDelete={handleDeleteSelected}>
+    <PropertiesShell
+      title="多选位姿"
+      plain
+      onDelete={handleDeleteSelected}
+      actions={explodeAction}
+    >
       {tabBar}
       <div className="rounded-md bg-muted p-4">
         <p className="mb-3 text-body-sm text-muted-foreground">已选 {blocks.length} 项</p>
@@ -609,7 +644,7 @@ export const SequencePropertiesPanel = ({
   onUpdateSegment,
   onDeleteBlock,
 }: SequencePropertiesPanelProps) => {
-  const { getTimelineObject, sequenceIssues } = useActionBuilder();
+  const { getTimelineObject, sequenceIssues, handleExplodePresets } = useActionBuilder();
   if (selection === null) {
     return <EmptyProperties />;
   }
@@ -710,7 +745,16 @@ export const SequencePropertiesPanel = ({
 
   if (block.kind === "static-preset" || block.kind === "dynamic-preset") {
     return (
-      <PropertiesShell title={presetBlockTitle(block)} onDelete={() => onDeleteBlock(block.id)}>
+      <PropertiesShell
+        title={presetBlockTitle(block)}
+        onDelete={() => onDeleteBlock(block.id)}
+        actions={
+          <ExplodePresetsButton
+            label="拆解为位姿"
+            onClick={() => handleExplodePresets([block.id])}
+          />
+        }
+      >
         <PresetBlockFields
           block={block}
           resolved={resolved}

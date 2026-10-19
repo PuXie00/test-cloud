@@ -11,7 +11,11 @@ import { invalidTimelineTargets } from "@/app/project/action-sequence/validate-s
 import { useActionBuilder } from "../use-action-builder";
 import { idsInRange, resolveSelectionMode } from "../../../hooks/selection-range";
 import { useSelection } from "../../../hooks/use-selection";
-import { ClipboardContextMenu, clipboardShortcutOf } from "../action-clipboard-menu";
+import {
+  ClipboardContextMenu,
+  clipboardShortcutOf,
+  type ContextMenuAction,
+} from "../action-clipboard-menu";
 import { isBlockSelected, selectionBlockIds } from "../sequence-selection";
 import {
   TIMELINE_PX_PER_SECOND_MAX,
@@ -59,6 +63,7 @@ const SequenceEditor = () => {
     handleShiftTimelineBlocksEnd,
     handleResizeDynamicPreset,
     handleBlockDelete,
+    handleExplodePresets,
     handleBlockCopy,
     handleBlockPaste,
     canPasteBlock,
@@ -199,6 +204,25 @@ const SequenceEditor = () => {
 
   if (!sequence) return null;
 
+  // 选中里有预设时右键可以拆解成位姿
+  const selectedPresetIds = sequence.blocks
+    .filter(
+      (block) =>
+        (block.kind === "static-preset" || block.kind === "dynamic-preset") &&
+        selectedBlockIds.includes(block.id),
+    )
+    .map((block) => block.id);
+  const presetActions: ContextMenuAction[] =
+    selectedPresetIds.length > 0
+      ? [
+          {
+            label:
+              selectedPresetIds.length > 1 ? `拆解 ${selectedPresetIds.length} 个预设` : "拆解预设",
+            onSelect: () => handleExplodePresets(selectedPresetIds),
+          },
+        ]
+      : [];
+
   const timelineResolved = resolved ?? unresolvedSequenceStub(sequence);
 
   /** 右键点在没选中的块上时先选中它，菜单里的“复制”作用于这个块 */
@@ -258,6 +282,7 @@ const SequenceEditor = () => {
         onCopy={handleBlockCopy}
         onPaste={handleBlockPaste}
         onContextMenu={handleTimelineContextMenu}
+        actions={presetActions}
       >
         <div className="flex min-h-0 flex-1">
           <TimelineEditor

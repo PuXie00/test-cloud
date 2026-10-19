@@ -603,3 +603,48 @@ describe("timeline navigation tools", () => {
     expect(capturedEditor.current?.snapEnabled).toBe(true);
   });
 });
+
+describe("explode presets from the timeline menu", () => {
+  const withPreset: ActionSequenceConfig = {
+    ...sequence,
+    blocks: [
+      { id: "pose-1", kind: "pose", objectId: 7, atMs: 0, pose: { v1: 0 } },
+      {
+        id: "flat",
+        kind: "static-preset",
+        presetId: "static-flat",
+        atMs: 2000,
+        orderedObjectIds: [7, 8],
+        params: { v1: 50 },
+      },
+    ],
+  };
+
+  it("offers 拆解预设 when a preset is selected and explodes only the presets", async () => {
+    const handleExplodePresets = vi.fn();
+    mockBuilder({
+      sequence: withPreset,
+      sequences: [withPreset],
+      selection: { kind: "multi-block", blockIds: ["pose-1", "flat"] },
+      handleExplodePresets,
+    });
+    render(<EditorDock />);
+    fireEvent.contextMenu(screen.getByTestId("timeline-editor"));
+    await screen.findByRole("menu");
+    fireEvent.click(screen.getByRole("menuitem", { name: "拆解预设" }));
+    expect(handleExplodePresets).toHaveBeenCalledWith(["flat"]);
+  });
+
+  it("has no explode item without a selected preset", async () => {
+    mockBuilder({
+      sequence: withPreset,
+      sequences: [withPreset],
+      selection: { kind: "block", blockId: "pose-1" },
+      handleExplodePresets: vi.fn(),
+    });
+    render(<EditorDock />);
+    fireEvent.contextMenu(screen.getByTestId("timeline-editor"));
+    await screen.findByRole("menu");
+    expect(screen.queryByRole("menuitem", { name: /拆解/ })).toBeNull();
+  });
+});

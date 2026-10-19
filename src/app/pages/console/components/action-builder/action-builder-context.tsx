@@ -76,6 +76,7 @@ import {
   changedPoseIds,
   copyTimelineBlocks,
   deleteTimelineBlocks,
+  explodePresetBlocks,
   insertTimelineBlock,
   type PasteResult,
   type PoseAxisWrite,
@@ -606,6 +607,25 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       });
     },
     [selectedBlockIds, updateSelectedSequence, sequenceEditOptions],
+  );
+
+  const handleExplodePresets = useCallback(
+    (blockIds?: readonly string[]) => {
+      const ids = blockIds ?? selectedBlockIds;
+      let createdIds: string[] = [];
+      const committed = applySequenceEdit((current) => {
+        const result = explodePresetBlocks(current, ids, sequenceEditOptions);
+        if (result.ok) createdIds = result.createdIds;
+        return result;
+      });
+      if (!committed) {
+        toast.warning("预设无法拆解");
+        return;
+      }
+      setSelection(selectionFromBlockIds(createdIds));
+      toast.success(`已拆成 ${createdIds.length} 个位姿`);
+    },
+    [applySequenceEdit, selectedBlockIds, sequenceEditOptions],
   );
 
   /** 逐个物体在播放头位置新建或更新动作块，一次提交 */
@@ -1230,6 +1250,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleUpdateSegmentSettings,
       handleWriteSegmentProfiles,
       handleBlockDelete,
+      handleExplodePresets,
       handleTrajectoryModeChange,
       handleLoopChange,
       handleBlockCopy,
@@ -1295,6 +1316,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleUpdateSegmentSettings,
       handleWriteSegmentProfiles,
       handleBlockDelete,
+      handleExplodePresets,
       handleTrajectoryModeChange,
       handleLoopChange,
       handleBlockCopy,

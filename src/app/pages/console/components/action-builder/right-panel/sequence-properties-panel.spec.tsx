@@ -81,6 +81,7 @@ const { builderState } = vi.hoisted(() => ({
         | undefined,
 
       handleApplyPoseAxisWrite: vi.fn(),
+      handleExplodePresets: vi.fn(),
       sequenceIssues: [] as unknown[],
 
     },
@@ -864,3 +865,26 @@ describe("SequencePropertiesPanel multi-pose", () => {
 });
 
 
+
+describe("SequencePropertiesPanel explode presets", () => {
+  afterEach(() => {
+    builderState.current.handleExplodePresets.mockClear();
+  });
+
+  it("explodes the selected preset from its properties", () => {
+    renderPanel({ selection: { kind: "block", blockId: "static" } });
+    fireEvent.click(screen.getByRole("button", { name: "拆解为位姿" }));
+    expect(builderState.current.handleExplodePresets).toHaveBeenCalledWith(["static"]);
+  });
+
+  it("explodes only the presets of a mixed selection", () => {
+    renderPanel({ selection: { kind: "multi-block", blockIds: ["pose", "static", "dynamic"] } });
+    fireEvent.click(screen.getByRole("button", { name: "拆解所选预设（2）" }));
+    expect(builderState.current.handleExplodePresets).toHaveBeenCalledWith(["static", "dynamic"]);
+  });
+
+  it("has no explode button without presets", () => {
+    renderPanel({ selection: { kind: "multi-block", blockIds: ["pose", "later"] } });
+    expect(screen.queryByRole("button", { name: /拆解/ })).toBeNull();
+  });
+});
