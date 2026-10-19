@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { evaluateResolvedSequence } from "@/app/project/action-sequence/evaluate-sequence";
 import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
 import type {
   ActionSequenceConfig,
@@ -9,6 +10,7 @@ import {
   applyPoseAxisWrite,
   copyTimelineBlocks,
   deleteTimelineBlocks,
+  explodePresetBlocks,
   insertTimelineBlock,
   moveTimelineBlock,
   pasteTimelineBlocks,
@@ -904,5 +906,139 @@ describe("writeSegmentProfiles", () => {
 
   it("returns the same sequence when there is nothing to write", () => {
     expect(writeSegmentProfiles(twoSpans, [])).toBe(twoSpans);
+  });
+});
+
+describe("explodePresetBlocks", () => {
+  /** 拆解前后每 0.1 s 的位置（只比给定的轴） */
+  const samePath = (
+    before: ActionSequenceConfig,
+    after: ActionSequenceConfig,
+    axesOf: (objectId: number) => Array<"v1" | "v2" | "v3">,
+  ) => {
+    const left = resolveActionSequence(before);
+    const right = resolveActionSequence(after);
+    expect(right.totalMs).toBe(left.totalMs);
+    for (let atMs = 0; atMs <= left.totalMs; atMs += 100) {
+      const a = evaluateResolvedSequence(left, atMs);
+      const b = evaluateResolvedSequence(right, atMs);
+      for (const [objectId, pose] of a) {
+        for (const axis of axesOf(objectId)) {
+          expect(b.get(objectId)?.[axis], `${objectId} ${axis} @${atMs}`).toBeCloseTo(pose[axis], 6);
+        }
+      }
+    }
+  };
+
+  const withFlat: ActionSequenceConfig = {
+    id: 1,
+    name: "flat",
+    trajectoryMode: false,
+    blocks: [
+      { id: "p0", kind: "pose", objectId: 1, atMs: 0, pose: { v1: 0, v2: 30 } },
+      {
+        id: "flat",
+        kind: "static-preset",
+        presetId: "static-flat",
+        atMs: 2000,
+        orderedObjectIds: [1, 2],
+        params: { v1: 50 },
+      },
+      { id: "p2", kind: "pose", objectId: 1, atMs: 4000, pose: { v1: 100, v2: 30 } },
+      { id: "q0", kind: "pose", objectId: 2, atMs: 0, pose: { v1: 0 } },
+    ],
+    segments: [
+      {
+        fromRef: "p0",
+        toRef: "preset:flat:1:0",
+        settings: { profiles: axisProfiles(500, 300) },
+      },
+    ],
+  };
+
+  it("turns a static preset into one pose per object at its time", () => {
+    const result = explodePresetBlocks(withFlat, ["flat"]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.sequence.blocks.some((block) => block.id === "flat")).toBe(false);
+    const created = result.sequence.blocks.filter((block) => result.createdIds.includes(block.id));
+    expect(created).toEqual([
+      expect.objectContaining({ kind: "pose", objectId: 1, atMs: 2000, pose: { v1: 50, v2: 30 } }),
+      expect.objectContaining({ kind: "pose", objectId: 2, atMs: 2000, pose: { v1: 50 } }),
+    ]);
+  });
+
+  it("keeps the tuned neighbouring segment and the path of the preset's axes", () => {
+    const result = explodePresetBlocks(withFlat, ["flat"]);
+    if (!result.ok) throw new Error(result.reason);
+    const onObject1 = result.createdIds.find(
+      (id) => result.sequence.blocks.find((block) => block.id === id)?.objectId === 1,
+    );
+    expect(
+      result.sequence.segments.find((item) => item.fromRef === "p0" && item.toRef === onObject1)
+        ?.settings.profiles.v1,
+    ).toEqual({ kind: "trapezoid", params: { accelMs: 500, decelMs: 300 } });
+    // 物体 2 的虚轴2、3 原来只是占位 0，拆完不受控，不比
+    samePath(withFlat, result.sequence, (objectId) => (objectId === 1 ? ["v1", "v2"] : ["v1"]));
+  });
+
+  const wave: ActionSequenceConfig = {
+    id: 2,
+    name: "wave",
+    trajectoryMode: false,
+    blocks: [
+      {
+        id: "wave",
+        kind: "dynamic-preset",
+        presetId: "dynamic-wave",
+        startMs: 1000,
+        endMs: 7000,
+        orderedObjectIds: [1, 2],
+        params: { baseV1: 0, amplitude: 300, staggerMs: 1000, cycles: 1, direction: 1 },
+        profiles: axisProfiles(600, 600),
+      },
+      { id: "after", kind: "pose", objectId: 1, atMs: 9000, pose: { v1: 100 } },
+    ],
+    segments: [],
+  };
+
+  it("turns a travelling wave into key poses, holding the staggered object until it starts", () => {
+    const before = resolveActionSequence(wave);
+    const result = explodePresetBlocks(wave, ["wave"]);
+    if (!result.ok) throw new Error(result.reason);
+    const created = result.sequence.blocks.filter((block) => result.createdIds.includes(block.id));
+    const timesOf = (objectId: number) =>
+      created.flatMap((block) =>
+        block.kind === "pose" && block.objectId === objectId ? [block.atMs] : [],
+      );
+    const presetTimesOf = (objectId: number) =>
+      before.poses
+        .filter((point) => point.objectId === objectId && point.sourceBlockId === "wave")
+        .map((point) => point.atMs);
+    // 物体 2 晚 1 s 起步：开头多一个保持点
+    expect(timesOf(1)).toEqual(presetTimesOf(1));
+    expect(timesOf(2)).toEqual(presetTimesOf(2));
+    expect(timesOf(2)[0]).toBe(1000);
+    expect(timesOf(2)).toContain(2000);
+    samePath(wave, result.sequence, () => ["v1"]);
+  });
+
+  it("writes the preset's curves onto the segments between its key poses", () => {
+    const result = explodePresetBlocks(wave, ["wave"]);
+    if (!result.ok) throw new Error(result.reason);
+    const resolved = resolveActionSequence(result.sequence);
+    const inner = resolved.segments.filter(
+      (segment) => segment.objectId === 1 && segment.endMs <= 7000,
+    );
+    expect(inner.length).toBeGreaterThan(0);
+    expect(inner.every((segment) => segment.configurable)).toBe(true);
+    expect(inner.map((segment) => segment.settings.profiles.v1)).toContainEqual({
+      kind: "trapezoid",
+      params: { accelMs: 600, decelMs: 600 },
+    });
+  });
+
+  it("refuses when nothing selected is a preset", () => {
+    expect(explodePresetBlocks(withFlat, ["p0"])).toEqual({ ok: false, reason: "missing-block" });
   });
 });

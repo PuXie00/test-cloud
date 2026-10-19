@@ -76,6 +76,8 @@ export type ActionBuilderContextValue = {
   /** 多选运动区间改阶段：一次写多段曲线 */
   handleWriteSegmentProfiles: (writes: readonly SegmentProfileWrite[]) => boolean;
   handleBlockDelete: (blockIds?: string | string[]) => void;
+  /** 拆解预设：换成各物体的关键点位姿；不传时拆选中的预设 */
+  handleExplodePresets: (blockIds?: readonly string[]) => void;
   handleTrajectoryModeChange: (mode: TrajectoryMode) => void;
   handleLoopChange: (loop: boolean) => void;
   handleBlockCopy: () => void;

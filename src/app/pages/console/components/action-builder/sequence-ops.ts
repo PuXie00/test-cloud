@@ -12,6 +12,7 @@ import {
 } from "@/app/project/action-sequence/resolve-sequence";
 import type {
   ActionSequenceConfig,
+  KeyframePose,
   MotionProfile,
   MotionSegmentConfig,
   MotionSegmentSettings,
@@ -737,4 +738,102 @@ export const writeSegmentProfiles = (
     else next.segments.push(config);
   }
   return finalize(next);
+};
+
+export type ExplodeResult =
+  | { ok: true; sequence: ActionSequenceConfig; createdIds: string[] }
+  | { ok: false; reason: SequenceEditError };
+
+const isPresetBlock = (block: TimelineBlock): boolean =>
+  block.kind === "static-preset" || block.kind === "dynamic-preset";
+
+/**
+ * 拆解预设：换成它在各物体上的关键点位姿（含行进波浪错开等待时的保持点），时刻和位置不变。
+ * 预设管的轴照填；不管的轴在这之前真正设过值（位姿设了值，或别的预设管这个轴）就照沿用的值填，
+ * 只是占位的不填，拆完这个轴不受控或经过。预设内部各段沿用预设的加减速时间，
+ * 前后相邻区间的设置跟着换到新位姿上。
+ */
+export const explodePresetBlocks = (
+  sequence: ActionSequenceConfig,
+  blockIds: readonly string[],
+  options?: SequenceEditOptions,
+): ExplodeResult => {
+  const targetIds = new Set(
+    sequence.blocks
+      .filter((block) => blockIds.includes(block.id) && isPresetBlock(block))
+      .map((block) => block.id),
+  );
+  if (targetIds.size === 0) return { ok: false, reason: "missing-block" };
+  let resolved: ReturnType<typeof resolveActionSequence>;
+  try {
+    resolved = resolveActionSequence(sequence);
+  } catch {
+    return { ok: false, reason: "invalid-preset" };
+  }
+
+  const ownedAxesOf = (blockId: string | null): readonly VirtualAxisId[] => {
+    const block = sequence.blocks.find((item) => item.id === blockId);
+    if (!block || (block.kind !== "static-preset" && block.kind !== "dynamic-preset")) return [];
+    return getPresetDefinition(block.presetId)?.ownedAxes ?? [];
+  };
+  // 每个物体每个轴第一次真正设定的时刻；预设沿用的值、保持点不算
+  const firstSetMs = new Map<string, number>();
+  for (const point of resolved.poses) {
+    for (const axis of ALL_VIRTUAL_AXES) {
+      const set =
+        point.sourceKind === "pose"
+          ? !point.unsetAxes?.includes(axis)
+          : point.visible && ownedAxesOf(point.sourceBlockId).includes(axis);
+      if (!set) continue;
+      const key = `${point.objectId}:${axis}`;
+      firstSetMs.set(key, Math.min(firstSetMs.get(key) ?? Number.POSITIVE_INFINITY, point.atMs));
+    }
+  }
+
+  const existingIds = new Set(sequence.blocks.map((block) => block.id));
+  const blockIdByRef = new Map<string, string>();
+  const posesByPreset = new Map<string, PoseBlock[]>();
+  for (const point of resolved.poses) {
+    if (point.sourceBlockId === null || !targetIds.has(point.sourceBlockId)) continue;
+    const owned = ownedAxesOf(point.sourceBlockId);
+    const pose: KeyframePose = {};
+    for (const axis of ALL_VIRTUAL_AXES) {
+      const keep =
+        owned.includes(axis) ||
+        (firstSetMs.get(`${point.objectId}:${axis}`) ?? Number.POSITIVE_INFINITY) < point.atMs;
+      if (keep) pose[axis] = roundProjectCoordinate(point.pose[axis]);
+    }
+    const id = nextBlockId(existingIds);
+    existingIds.add(id);
+    blockIdByRef.set(point.sourceRef, id);
+    const list = posesByPreset.get(point.sourceBlockId) ?? [];
+    list.push({ id, kind: "pose", objectId: point.objectId, atMs: point.atMs, pose });
+    posesByPreset.set(point.sourceBlockId, list);
+  }
+
+  const next = cloneSequence(sequence);
+  next.blocks = next.blocks.flatMap((block) =>
+    targetIds.has(block.id) ? (posesByPreset.get(block.id) ?? []) : [block],
+  );
+  const remap = (ref: string) => blockIdByRef.get(ref) ?? ref;
+  next.segments = next.segments.map((config) => ({
+    ...config,
+    fromRef: remap(config.fromRef),
+    toRef: remap(config.toRef),
+  }));
+  for (const segment of resolved.segments) {
+    if (!segment.ownerPresetBlockId || !targetIds.has(segment.ownerPresetBlockId)) continue;
+    const fromRef = blockIdByRef.get(segment.fromRef);
+    const toRef = blockIdByRef.get(segment.toRef);
+    if (fromRef === undefined || toRef === undefined) continue;
+    next.segments.push({ fromRef, toRef, settings: cloneSettings(segment.settings) });
+  }
+
+  const committed = commitBlocks(sequence, next, options);
+  if (!committed.ok) return committed;
+  return {
+    ok: true,
+    sequence: committed.sequence,
+    createdIds: [...posesByPreset.values()].flat().map((block) => block.id),
+  };
 };
