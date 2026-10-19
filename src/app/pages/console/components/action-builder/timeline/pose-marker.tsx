@@ -2,6 +2,7 @@ import { useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from
 import { cn } from "@/app/components/ui/utils";
 import { formatTime } from "./timeline-data";
 import { viewPxFromMs } from "./timeline-view-extent";
+import { DRAG_CLICK_THRESHOLD_PX, isAdditiveClick, useDragClickGuard } from "./suppress-click";
 
 export type PoseMarkerProps = {
   blockId: string;
@@ -15,7 +16,8 @@ export type PoseMarkerProps = {
   invalidMessage?: string;
   viewStartMs: number;
   pxPerSecond: number;
-  onSelect: () => void;
+  /** additive：Ctrl/⌘ 单击加选或减选 */
+  onSelect: (additive: boolean) => void;
   onMove: (atMs: number) => void;
   onMoveEnd?: () => void;
 };
@@ -37,36 +39,46 @@ export const PoseMarker = ({
 }: PoseMarkerProps) => {
   // 拖动时标签显示块实际所在的时刻（吸附、被拒绝后都以它为准）
   const [dragging, setDragging] = useState(false);
+  const dragClick = useDragClickGuard();
 
   const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
-    onSelect();
+    // 拖完补的 click 不改选中，否则拖多选里的一个会只剩它
+    if (dragClick.consumeDragClick()) return;
+    onSelect(isAdditiveClick(event));
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
-    onSelect();
+    onSelect(false);
   };
 
   const handlePointerDown = (event: PointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return;
     event.stopPropagation();
+    dragClick.pressStarted();
     const startX = event.clientX;
     const initialAtMs = atMs;
+    let moved = false;
 
     const handleMove = (moveEvent: globalThis.PointerEvent) => {
-      const deltaMs = Math.round(((moveEvent.clientX - startX) / pxPerSecond) * 1000);
+      const dx = moveEvent.clientX - startX;
+      if (!moved && Math.abs(dx) < DRAG_CLICK_THRESHOLD_PX) return;
+      moved = true;
+      const deltaMs = Math.round((dx / pxPerSecond) * 1000);
       const nextAtMs = Math.max(0, initialAtMs + deltaMs);
       setDragging(true);
       onMove(nextAtMs);
     };
 
     const handleUp = () => {
-      setDragging(false);
-      onMoveEnd?.();
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
+      if (!moved) return;
+      setDragging(false);
+      dragClick.dragEnded();
+      onMoveEnd?.();
     };
 
     window.addEventListener("pointermove", handleMove);

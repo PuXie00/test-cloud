@@ -47,16 +47,34 @@ describe("sequence track", () => {
     expect(document.querySelector("[data-fixed-track-column]")).toBeNull();
   });
 
-  it("selects a derived segment independently from endpoint poses", () => {
+  it("selects a segment as its two end poses", () => {
     const handleSelect = vi.fn();
     render(<TimelineEditor {...createTimelineProps(sequence, handleSelect)} />);
     fireEvent.click(screen.getByRole("button", { name: /运动区间.*7/ }));
     expect(handleSelect).toHaveBeenCalledWith({
-      kind: "segment",
-      objectId: 7,
-      fromRef: "first",
-      toRef: "later",
+      kind: "multi-block",
+      blockIds: ["first", "later"],
+      focus: "segments",
     });
+  });
+
+  it("presses a segment whenever both end poses are selected", () => {
+    const { rerender } = render(
+      <TimelineEditor
+        {...createTimelineProps(sequence)}
+        selection={{ kind: "block", blockId: "first" }}
+      />,
+    );
+    const band = () => screen.getByRole("button", { name: /运动区间.*7/ });
+    expect(band().getAttribute("aria-pressed")).toBe("false");
+    rerender(
+      <TimelineEditor
+        {...createTimelineProps(sequence)}
+        selection={{ kind: "multi-block", blockIds: ["first", "later"] }}
+      />,
+    );
+    expect(band().getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: /位姿 first/ }).getAttribute("aria-pressed")).toBe("true");
   });
 
   it("positions a pose marker only from atMs", () => {
@@ -84,7 +102,7 @@ describe("sequence track", () => {
     rerender(
       <TimelineEditor
         {...createTimelineProps(sequence)}
-        selection={{ kind: "segment", objectId: 7, fromRef: "first", toRef: "later" }}
+        selection={{ kind: "multi-block", blockIds: ["first", "later"], focus: "segments" }}
       />,
     );
     const selected = screen.getByRole("button", { name: /运动区间.*7/ });
@@ -115,7 +133,7 @@ describe("sequence track", () => {
     render(
       <TimelineEditor
         {...createTimelineProps(sequence)}
-        selection={{ kind: "segment", objectId: 7, fromRef: "first", toRef: "later" }}
+        selection={{ kind: "multi-block", blockIds: ["first", "later"], focus: "segments" }}
         invalidTargets={{
           blockIds: new Set(),
           segmentKeys: new Set(["first->later"]),
@@ -175,25 +193,25 @@ describe("sequence track", () => {
     expect(onPoseMove).not.toHaveBeenCalled();
   });
 
-  it("does not resize or drag a derived segment", () => {
+  it("drags a segment by shifting its end poses instead of resizing it", () => {
     const onPoseMove = vi.fn();
-    const onPresetMove = vi.fn();
+    const onBlocksShift = vi.fn();
     const onDynamicPresetResize = vi.fn();
     render(
       <TimelineEditor
         {...createTimelineProps(sequence)}
         onPoseMove={onPoseMove}
-        onPresetMove={onPresetMove}
+        onBlocksShift={onBlocksShift}
         onDynamicPresetResize={onDynamicPresetResize}
       />,
     );
     const segment = screen.getByRole("button", { name: /运动区间.*7/ });
     expect(segment.querySelector("[data-resize]")).toBeNull();
-    fireEvent.pointerDown(segment, { clientX: 40 });
+    fireEvent.pointerDown(segment, { clientX: 40, button: 0 });
     fireEvent.pointerMove(window, { clientX: 120 });
     fireEvent.pointerUp(window);
+    expect(onBlocksShift).toHaveBeenLastCalledWith(["first", "later"], 800);
     expect(onPoseMove).not.toHaveBeenCalled();
-    expect(onPresetMove).not.toHaveBeenCalled();
     expect(onDynamicPresetResize).not.toHaveBeenCalled();
   });
 

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { TabBar } from "@/app/components/ics/tab-bar";
 import { cn } from "@/app/components/ui/utils";
 import { useSessionDisplayLengthUnit } from "@/app/project/display-length-unit-provider";
 import {
@@ -26,6 +27,7 @@ import {
   tryKinematics,
   type MotionProfileAxisContext,
 } from "./motion-profile-status";
+import { PHASE_INPUT_MODE_TABS, type PhaseInputMode } from "./phase-rates";
 import { formatQuantity, formatQuantityValue } from "./quantity-format";
 import { TrapezoidProfileEditor } from "./trapezoid-profile-editor";
 import { VelocityChart, type VelocityChartLimits } from "./velocity-chart";
@@ -45,6 +47,9 @@ export type MotionProfileEditorProps = {
   };
   /** 区间模式下当前轴的补充说明，如轴跨过端点位姿时的整段曲线范围 */
   axisNotes?: Partial<Record<VirtualAxisId, string>>;
+  /** 区间模式下阶段的填法；给了切换回调才显示「按时间 / 按速度」 */
+  phaseInputMode?: PhaseInputMode;
+  onPhaseInputModeChange?: (mode: PhaseInputMode) => void;
 };
 
 const axisName = (axis: VirtualAxisId): string => axis.toUpperCase();
@@ -252,6 +257,22 @@ const ProfileKindSelect = ({
   );
 };
 
+/** 阶段的填法：按时间填加减速时间，按速度填加减速度 */
+export const PhaseInputModeTabs = ({
+  mode,
+  onChange,
+}: {
+  mode: PhaseInputMode;
+  onChange: (mode: PhaseInputMode) => void;
+}) => (
+  <TabBar
+    tabs={PHASE_INPUT_MODE_TABS}
+    active={mode}
+    onChange={onChange}
+    className="h-6 shrink-0 border-b-0 bg-transparent [&>button]:whitespace-nowrap [&>button]:px-2"
+  />
+);
+
 const SegmentMetricTile = ({
   label,
   value,
@@ -286,6 +307,8 @@ export const MotionProfileEditor = ({
   axisContext,
   segmentContext,
   axisNotes,
+  phaseInputMode = "time",
+  onPhaseInputModeChange,
 }: MotionProfileEditorProps) => {
   const enabledAxes = (axisContext
     ? resolveEnabledAxes(axisContext.enabledAxes)
@@ -461,12 +484,16 @@ export const MotionProfileEditor = ({
           />
         </div>
 
-        <section className="rounded-md bg-muted p-3" aria-label="阶段时间">
+        <section className="rounded-md bg-muted p-3" aria-label="阶段">
           <div className="mb-2 flex items-center justify-between gap-2">
-            <h3 className="text-label-caps text-muted-foreground">阶段时间</h3>
-            <p className="text-[10px] leading-3 text-muted-foreground">
-              拖动控制点或精确输入
-            </p>
+            <h3 className="text-label-caps text-muted-foreground">阶段</h3>
+            {onPhaseInputModeChange ? (
+              <PhaseInputModeTabs mode={phaseInputMode} onChange={onPhaseInputModeChange} />
+            ) : (
+              <p className="text-[10px] leading-3 text-muted-foreground">
+                拖动控制点或精确输入
+              </p>
+            )}
           </div>
           {kindMeta ? (
             <TrapezoidProfileEditor
@@ -479,6 +506,8 @@ export const MotionProfileEditor = ({
               timeUnit="s"
               readOnly={displayProfile.kind === "idle"}
               withPassSpeeds={withPassSpeeds}
+              inputMode={phaseInputMode}
+              rateContext={{ distance: travelDistance, boundary: currentBoundary, unit }}
             />
           ) : (
             <p className="text-body-sm text-muted-foreground">未知曲线</p>
