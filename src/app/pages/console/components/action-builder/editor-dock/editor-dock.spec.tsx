@@ -295,23 +295,11 @@ describe("editor dock sequence editor", () => {
     expect(handleBlockDelete).not.toHaveBeenCalled();
   });
 
-  it("renames the sequence from the toolbar and rejects duplicates", () => {
-    const handleRenameSequence = vi.fn(() => null);
-    mockBuilder({
-      sequences: [sequence, { ...sequence, id: 2, name: "另一序列" }],
-      handleRenameSequence,
-    });
+  it("does not show the sequence name in the timeline toolbar", () => {
+    mockBuilder();
     render(<EditorDock />);
-    fireEvent.click(screen.getByRole("button", { name: "修改序列名" }));
-    const input = screen.getByRole("textbox", { name: "序列名" });
-    fireEvent.change(input, { target: { value: "另一序列" } });
-    expect(screen.getByText("序列名已存在")).toBeTruthy();
-    expect((screen.getByRole("button", { name: "确定" }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(input, { target: { value: "一二三四五六七八九" } });
-    expect((input as HTMLInputElement).value).toBe("一二三四五六七八");
-    fireEvent.change(input, { target: { value: "新名字" } });
-    fireEvent.click(screen.getByRole("button", { name: "确定" }));
-    expect(handleRenameSequence).toHaveBeenCalledWith("新名字");
+    expect(screen.queryByText(sequence.name)).toBeNull();
+    expect(screen.queryByRole("button", { name: "修改序列名" })).toBeNull();
   });
 
   it("toolbar 删除序列 deletes the current sequence even when blocks are selected", () => {

@@ -26,7 +26,6 @@ import { pickNiceMajorStepSec } from "../timeline/timeline-ticks";
 import { TimelineEditor } from "../timeline/timeline-editor";
 import { TimelineToolbar } from "../timeline/timeline-toolbar";
 import { SequenceDeleteDialog } from "./sequence-delete-dialog";
-import { SequenceRenameDialog } from "./sequence-rename-dialog";
 import { useTimelinePlayback } from "../timeline/use-timeline-playback";
 
 const isEditableTarget = (target: EventTarget | null): boolean => {
@@ -91,7 +90,6 @@ const SequenceEditor = () => {
     select(objectId);
   };
   const rootRef = useRef<HTMLDivElement>(null);
-  const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [fitRequestId, setFitRequestId] = useState(0);
@@ -220,8 +218,6 @@ const SequenceEditor = () => {
       className="flex min-h-0 min-w-0 flex-1 flex-col outline-none"
     >
       <TimelineToolbar
-        sequenceName={sequence.name}
-        onRename={() => setRenameOpen(true)}
         trajectoryMode={sequence.trajectoryMode}
         onTrajectoryModeChange={handleTrajectoryModeChange}
         loop={sequence.loop === true}
@@ -248,7 +244,6 @@ const SequenceEditor = () => {
         snapEnabled={snapEnabled}
         onSnapToggle={handleSnapToggle}
       />
-      <SequenceRenameDialog open={renameOpen} onOpenChange={setRenameOpen} />
       <SequenceDeleteDialog open={deleteOpen} onOpenChange={setDeleteOpen} />
       {resolved === null && (
         <div className="shrink-0 bg-warning-surface px-3 py-2 text-body-sm text-warning">

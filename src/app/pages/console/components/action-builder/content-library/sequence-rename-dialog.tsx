@@ -15,12 +15,15 @@ import { useActionBuilder } from "../use-action-builder";
 type SequenceRenameDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** 要重命名的序列；序列库里右键的可以不是当前选中的 */
+  sequenceId: number | null;
 };
 
 const clampDraft = (value: string): string => [...value].slice(0, SEQUENCE_NAME_MAX_LENGTH).join("");
 
-export const SequenceRenameDialog = ({ open, onOpenChange }: SequenceRenameDialogProps) => {
-  const { sequence, sequences, handleRenameSequence } = useActionBuilder();
+export const SequenceRenameDialog = ({ open, onOpenChange, sequenceId }: SequenceRenameDialogProps) => {
+  const { sequences, handleRenameSequence } = useActionBuilder();
+  const sequence = (sequences ?? []).find((item) => item.id === sequenceId);
   const [draft, setDraft] = useState(sequence?.name ?? "");
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -44,7 +47,11 @@ export const SequenceRenameDialog = ({ open, onOpenChange }: SequenceRenameDialo
       setSubmitError("重命名失败");
       return;
     }
-    const failed = handleRenameSequence(draft);
+    if (!sequence) {
+      setSubmitError("未选择序列");
+      return;
+    }
+    const failed = handleRenameSequence(draft, sequence.id);
     if (failed) {
       setSubmitError(failed);
       return;

@@ -204,3 +204,62 @@ describe("content library copy / paste", () => {
     expect(screen.getByRole("menuitem", { name: /粘贴为新序列/ }).textContent).toBe("粘贴为新序列");
   });
 });
+
+describe("content library rename", () => {
+  const second: ActionSequenceConfig = {
+    id: 2,
+    name: "第二序列",
+    trajectoryMode: false,
+    blocks: [],
+    segments: [],
+  };
+  const handleRenameSequence = vi.fn(() => null);
+
+  beforeEach(() => {
+    handleRenameSequence.mockClear();
+    mockBuilder({ sequences: [sequence, second], handleRenameSequence });
+  });
+
+  it("renames the selected sequence when its name is clicked, without deselecting it", () => {
+    render(<ContentLibraryPanel />);
+    fireEvent.click(screen.getByText("共享斜面"));
+    expect(builderState.current.handleSequenceSelect).not.toHaveBeenCalled();
+    const input = screen.getByRole("textbox", { name: "序列名" });
+    expect((input as HTMLInputElement).value).toBe("共享斜面");
+
+    fireEvent.change(input, { target: { value: "第二序列" } });
+    expect(screen.getByText("序列名已存在")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "确定" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(input, { target: { value: "一二三四五六七八九" } });
+    expect((input as HTMLInputElement).value).toBe("一二三四五六七八");
+    fireEvent.change(input, { target: { value: "新名字" } });
+    fireEvent.click(screen.getByRole("button", { name: "确定" }));
+    expect(handleRenameSequence).toHaveBeenCalledWith("新名字", 1);
+  });
+
+  it("selects an unselected sequence when its name is clicked instead of renaming", () => {
+    render(<ContentLibraryPanel />);
+    fireEvent.click(screen.getByText("第二序列"));
+    expect(builderState.current.handleSequenceSelect).toHaveBeenCalledWith(2);
+    expect(screen.queryByRole("textbox", { name: "序列名" })).toBeNull();
+  });
+
+  it("renames the right-clicked sequence from the menu, even if it is not selected", async () => {
+    render(<ContentLibraryPanel />);
+    fireEvent.contextMenu(screen.getByRole("button", { name: "第二序列，待修复" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "重命名「第二序列」" }));
+    const input = await screen.findByRole("textbox", { name: "序列名" });
+    expect((input as HTMLInputElement).value).toBe("第二序列");
+    fireEvent.change(input, { target: { value: "改过的" } });
+    fireEvent.click(screen.getByRole("button", { name: "确定" }));
+    expect(handleRenameSequence).toHaveBeenCalledWith("改过的", 2);
+    expect(builderState.current.handleSequenceSelect).not.toHaveBeenCalled();
+  });
+
+  it("has no rename on empty space", async () => {
+    render(<ContentLibraryPanel />);
+    fireEvent.contextMenu(screen.getByRole("listbox", { name: "动作序列库列表" }));
+    const rename = await screen.findByRole("menuitem", { name: "重命名" });
+    expect(rename.getAttribute("aria-disabled")).toBe("true");
+  });
+});
