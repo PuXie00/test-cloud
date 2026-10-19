@@ -1,5 +1,19 @@
 import type { ButtonHTMLAttributes, ElementType } from "react";
-import { Minus, Pause, Play, Plus, Repeat, RotateCcw, Route, Save, Trash2 } from "lucide-react";
+import {
+  Magnet,
+  Maximize2,
+  Minus,
+  Pause,
+  Play,
+  Plus,
+  Repeat,
+  RotateCcw,
+  Route,
+  Save,
+  SkipBack,
+  SkipForward,
+  Trash2,
+} from "lucide-react";
 import { Switch } from "@/app/components/ui/switch";
 import { cn } from "@/app/components/ui/utils";
 import type { TrajectoryMode } from "@shared/action-sequence";
@@ -26,6 +40,16 @@ type TimelineToolbarProps = {
   onDelete?: () => void;
   onZoomIn?: () => void;
   onZoomOut?: () => void;
+  /** 缩放到全部（\） */
+  onZoomFit?: () => void;
+  /** 上一个 / 下一个关键帧（Alt+← / Alt+→） */
+  onPrevKeyframe?: () => void;
+  onNextKeyframe?: () => void;
+  canPrevKeyframe?: boolean;
+  canNextKeyframe?: boolean;
+  /** 吸附开关（S） */
+  snapEnabled?: boolean;
+  onSnapToggle?: () => void;
 };
 
 const formatMajorStep = (sec: number): string => {
@@ -72,12 +96,20 @@ export const TimelineToolbar = ({
   onDelete,
   onZoomIn,
   onZoomOut,
+  onZoomFit,
+  onPrevKeyframe,
+  onNextKeyframe,
+  canPrevKeyframe = false,
+  canNextKeyframe = false,
+  snapEnabled = false,
+  onSnapToggle,
 }: TimelineToolbarProps) => {
   const playLabel = isPlaying ? "暂停" : atEnd ? "重新播放" : "播放";
   const PlayIcon = isPlaying ? Pause : atEnd ? RotateCcw : Play;
 
   return (
     <div className="flex h-9 shrink-0 items-center gap-2 bg-muted px-2">
+
     {sequenceName ? (
       <button
         type="button"
@@ -91,13 +123,33 @@ export const TimelineToolbar = ({
     ) : null}
 
     {onPlayToggle ? (
-      <ToolbarIcon
-        icon={PlayIcon}
-        label={playLabel}
-        onClick={onPlayToggle}
-        disabled={!canPlay && !isPlaying}
-        className="text-primary hover:text-primary"
-      />
+      <div className="flex items-center">
+        {onPrevKeyframe ? (
+          <ToolbarIcon
+            icon={SkipBack}
+            label="上一个关键帧"
+            title="上一个关键帧（Alt+←）"
+            onClick={onPrevKeyframe}
+            disabled={!canPrevKeyframe}
+          />
+        ) : null}
+        <ToolbarIcon
+          icon={PlayIcon}
+          label={playLabel}
+          onClick={onPlayToggle}
+          disabled={!canPlay && !isPlaying}
+          className="text-primary hover:text-primary"
+        />
+        {onNextKeyframe ? (
+          <ToolbarIcon
+            icon={SkipForward}
+            label="下一个关键帧"
+            title="下一个关键帧（Alt+→）"
+            onClick={onNextKeyframe}
+            disabled={!canNextKeyframe}
+          />
+        ) : null}
+      </div>
     ) : null}
 
     {trajectoryMode !== undefined && onTrajectoryModeChange ? (
@@ -148,6 +200,16 @@ export const TimelineToolbar = ({
         <Save className="h-3.5 w-3.5" aria-hidden />
         保存
       </button>
+      {onSnapToggle ? (
+        <ToolbarIcon
+          icon={Magnet}
+          label="吸附"
+          title={snapEnabled ? "吸附已开（S）；拖动时按住 Alt 临时不吸" : "吸附已关（S）"}
+          aria-pressed={snapEnabled}
+          onClick={onSnapToggle}
+          className={cn(snapEnabled && "bg-accent text-primary hover:text-primary")}
+        />
+      ) : null}
       <div className="ml-1 flex h-7 items-center rounded-sm bg-input-background">
         <ToolbarIcon
           icon={Minus}
@@ -167,6 +229,9 @@ export const TimelineToolbar = ({
           onClick={onZoomIn}
           disabled={!canZoomIn}
         />
+        {onZoomFit ? (
+          <ToolbarIcon icon={Maximize2} label="适合窗口" title="适合窗口（\）" onClick={onZoomFit} />
+        ) : null}
       </div>
     </div>
   </div>

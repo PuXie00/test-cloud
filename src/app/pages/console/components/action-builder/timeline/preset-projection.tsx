@@ -20,8 +20,10 @@ export type PresetProjectionProps = {
   onSelect: () => void;
   onMove: (atMs: number) => void;
   onMoveEnd?: () => void;
-  onResize?: (startMs: number, endMs: number) => void;
+  onResize?: (startMs: number, endMs: number, edge: "start" | "end") => void;
 };
+
+type DragKind = "move" | "start" | "end";
 
 const useSelectHandlers = (onSelect: () => void) => {
   const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
@@ -41,17 +43,17 @@ const attachTimeDrag = (
   initialAtMs: number,
   pxPerSecond: number,
   onMove: (atMs: number) => void,
-  onLabel: (label: string | null) => void,
+  onDrag: (kind: DragKind | null) => void,
   onMoveEnd?: () => void,
 ) => {
   const handleMove = (moveEvent: globalThis.PointerEvent) => {
     const deltaMs = Math.round(((moveEvent.clientX - startX) / pxPerSecond) * 1000);
     const nextAtMs = Math.max(0, initialAtMs + deltaMs);
-    onLabel(formatTime(nextAtMs));
+    onDrag("move");
     onMove(nextAtMs);
   };
   const handleUp = () => {
-    onLabel(null);
+    onDrag(null);
     onMoveEnd?.();
     window.removeEventListener("pointermove", handleMove);
     window.removeEventListener("pointerup", handleUp);
@@ -91,14 +93,15 @@ export const PresetProjection = ({
   onMoveEnd,
   onResize,
 }: PresetProjectionProps) => {
-  const [dragLabel, setDragLabel] = useState<string | null>(null);
+  // 拖动时标签显示块实际所在的时刻（吸附、被拒绝后都以它为准）
+  const [dragKind, setDragKind] = useState<DragKind | null>(null);
   const { handleClick, handleKeyDown } = useSelectHandlers(onSelect);
 
   if (kind === "static-preset") {
     const handlePointerDown = (event: PointerEvent<HTMLButtonElement>) => {
       if (event.button !== 0) return;
       event.stopPropagation();
-      attachTimeDrag(event.clientX, atMs, pxPerSecond, onMove, setDragLabel, onMoveEnd);
+      attachTimeDrag(event.clientX, atMs, pxPerSecond, onMove, setDragKind, onMoveEnd);
     };
 
     return (
@@ -136,9 +139,9 @@ export const PresetProjection = ({
            起
          </span>
         ) : null}
-        {dragLabel && (
+        {dragKind && (
           <span className="pointer-events-none absolute -top-5 left-1/2 z-40 -translate-x-1/2 rounded-sm bg-card px-1.5 py-0.5 font-mono text-mono-sm tabular-nums text-foreground">
-            {dragLabel}
+            {formatTime(atMs)}
           </span>
         )}
       </button>
@@ -151,7 +154,7 @@ export const PresetProjection = ({
   const handleMovePointerDown = (event: PointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return;
     event.stopPropagation();
-    attachTimeDrag(event.clientX, startMs, pxPerSecond, onMove, setDragLabel, onMoveEnd);
+    attachTimeDrag(event.clientX, startMs, pxPerSecond, onMove, setDragKind, onMoveEnd);
   };
 
   const handleResizePointerDown =
@@ -166,18 +169,17 @@ export const PresetProjection = ({
 
       const handleMove = (moveEvent: globalThis.PointerEvent) => {
         const deltaMs = Math.round(((moveEvent.clientX - originX) / pxPerSecond) * 1000);
+        setDragKind(edge);
         if (edge === "start") {
           const nextStart = Math.max(0, Math.min(initialStart + deltaMs, initialEnd - 1));
-          setDragLabel(formatTime(nextStart));
-          onResize(nextStart, initialEnd);
+          onResize(nextStart, initialEnd, "start");
         } else {
           const nextEnd = Math.max(initialStart + 1, initialEnd + deltaMs);
-          setDragLabel(formatTime(nextEnd));
-          onResize(initialStart, nextEnd);
+          onResize(initialStart, nextEnd, "end");
         }
       };
       const handleUp = () => {
-        setDragLabel(null);
+        setDragKind(null);
         window.removeEventListener("pointermove", handleMove);
         window.removeEventListener("pointerup", handleUp);
       };
@@ -247,9 +249,9 @@ export const PresetProjection = ({
         className="absolute right-0 top-0 z-10 h-full w-2 cursor-ew-resize"
         onPointerDown={handleResizePointerDown("end")}
       />
-      {dragLabel && (
+      {dragKind && (
         <span className="pointer-events-none absolute -top-5 left-0 z-40 rounded-sm bg-card px-1.5 py-0.5 font-mono text-mono-sm tabular-nums text-foreground">
-          {dragLabel}
+          {formatTime(dragKind === "end" ? endMs : startMs)}
         </span>
       )}
     </button>

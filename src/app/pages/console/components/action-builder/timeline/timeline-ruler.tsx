@@ -10,6 +10,8 @@ type TimelineRulerProps = {
   contentWidth: number;
   pxPerSecond: number;
   onCursorChange: (ms: number) => void;
+  /** 鼠标拖动指针（可吸附）；不传时用 onCursorChange */
+  onScrub?: (ms: number) => void;
 };
 
 const tickHeight = (kind: TimelineTick["kind"]): string => {
@@ -48,6 +50,7 @@ export const TimelineRuler = ({
   contentWidth,
   pxPerSecond,
   onCursorChange,
+  onScrub = onCursorChange,
 }: TimelineRulerProps) => {
   const { ticks } = computeNiceTimeTicks(pxPerSecond, viewEndMs, viewStartMs);
   const used = usedBandScreenRect(occupiedEndMs, viewStartMs, pxPerSecond);
@@ -64,10 +67,10 @@ export const TimelineRuler = ({
     if (typeof target.setPointerCapture === "function" && event.pointerId != null) {
       target.setPointerCapture(event.pointerId);
     }
-    onCursorChange(msFromClientX(event.clientX, target));
+    onScrub(msFromClientX(event.clientX, target));
 
     const handleMove = (moveEvent: PointerEvent) => {
-      onCursorChange(msFromClientX(moveEvent.clientX, target));
+      onScrub(msFromClientX(moveEvent.clientX, target));
     };
     const handleUp = () => {
       if (typeof target.releasePointerCapture === "function" && event.pointerId != null) {
@@ -114,6 +117,8 @@ export const TimelineRuler = ({
         aria-valuenow={cursorMs}
         tabIndex={0}
         onKeyDown={(event) => {
+          // Alt+←/→ 是跳关键帧，由编辑区处理
+          if (event.altKey) return;
           const step = event.shiftKey ? TIME_STEP_MS * 10 : TIME_STEP_MS;
           if (event.key === "ArrowRight") {
             event.preventDefault();

@@ -40,7 +40,12 @@ export type TimelineTrackProps = {
   onSelectionChange: (selection: SequenceSelection) => void;
   onPoseMove: (blockId: string, atMs: number) => void;
   onPresetMove: (blockId: string, atMs: number) => void;
-  onDynamicPresetResize: (blockId: string, startMs: number, endMs: number) => void;
+  onDynamicPresetResize: (
+    blockId: string,
+    startMs: number,
+    endMs: number,
+    edge?: "start" | "end",
+  ) => void;
   onBlockMoveEnd?: () => void;
   invalidTargets?: InvalidTimelineTargets;
 };
@@ -130,7 +135,9 @@ export const TimelineTrack = ({
           onSelect={() => onSelectionChange({ kind: "block", blockId: block.id })}
           onMove={(nextAtMs) => onPresetMove(block.id, nextAtMs)}
           onMoveEnd={onBlockMoveEnd}
-          onResize={(nextStart, nextEnd) => onDynamicPresetResize(block.id, nextStart, nextEnd)}
+          onResize={(nextStart, nextEnd, edge) =>
+            onDynamicPresetResize(block.id, nextStart, nextEnd, edge)
+          }
         />
       ))}
       {staticPresets.map((block) => (

@@ -14,9 +14,10 @@ const sequence: ActionSequenceConfig = {
   segments: [],
 };
 
-const { builderState, capturedEditor } = vi.hoisted(() => ({
+const { builderState, capturedEditor, selectionState } = vi.hoisted(() => ({
   builderState: { current: {} as Record<string, unknown> },
   capturedEditor: { current: null as TimelineEditorProps | null },
+  selectionState: { ids: [] as number[] },
 }));
 
 vi.mock("../timeline/timeline-editor", () => ({
@@ -40,7 +41,7 @@ vi.mock("../../../hooks/use-selection", () => ({
   useSelection: () => ({
     replaceSelection: vi.fn(),
     selectedId: null,
-    multiSelectedIds: [],
+    multiSelectedIds: selectionState.ids,
   }),
 }));
 
@@ -552,5 +553,65 @@ describe("timeline copy / paste", () => {
     window.dispatchEvent(handled);
     expect(handleBlockCopy).not.toHaveBeenCalled();
     expect(handleBlockPaste).not.toHaveBeenCalled();
+  });
+});
+
+describe("timeline navigation tools", () => {
+  const navSequence: ActionSequenceConfig = {
+    id: 2,
+    name: "Nav",
+    trajectoryMode: false,
+    blocks: [
+      { id: "a", kind: "pose", objectId: 7, atMs: 1000, pose: { v1: 0 } },
+      { id: "b", kind: "pose", objectId: 7, atMs: 3000, pose: { v1: 100 } },
+      { id: "c", kind: "pose", objectId: 8, atMs: 2000, pose: { v1: 0 } },
+      { id: "d", kind: "pose", objectId: 8, atMs: 4000, pose: { v1: 100 } },
+    ],
+    segments: [],
+  };
+
+  afterEach(() => {
+    selectionState.ids = [];
+  });
+
+  it("jumps between keyframes from the toolbar and with Alt+arrows", () => {
+    const handleCursorChange = vi.fn();
+    mockBuilder({ sequence: navSequence, cursorMs: 2000, handleCursorChange });
+    render(<EditorDock />);
+    fireEvent.click(screen.getByRole("button", { name: "下一个关键帧" }));
+    expect(handleCursorChange).toHaveBeenLastCalledWith(3000);
+    fireEvent.click(screen.getByRole("button", { name: "上一个关键帧" }));
+    expect(handleCursorChange).toHaveBeenLastCalledWith(1000);
+    fireEvent.keyDown(window, { key: "ArrowRight", altKey: true });
+    expect(handleCursorChange).toHaveBeenLastCalledWith(3000);
+    // 跳完要求时间轴把指针移回视野
+    expect(capturedEditor.current?.revealCursorRequestId).toBe(3);
+  });
+
+  it("only uses the selected objects' keyframes when objects are selected", () => {
+    selectionState.ids = [8];
+    const handleCursorChange = vi.fn();
+    mockBuilder({ sequence: navSequence, cursorMs: 2000, handleCursorChange });
+    render(<EditorDock />);
+    fireEvent.click(screen.getByRole("button", { name: "下一个关键帧" }));
+    expect(handleCursorChange).toHaveBeenLastCalledWith(4000);
+    fireEvent.click(screen.getByRole("button", { name: "上一个关键帧" }));
+    expect(handleCursorChange).toHaveBeenLastCalledWith(0);
+  });
+
+  it("fits the timeline and toggles snapping from the toolbar and keys", () => {
+    mockBuilder({ sequence: navSequence });
+    render(<EditorDock />);
+    expect(capturedEditor.current?.fitRequestId).toBe(0);
+    fireEvent.click(screen.getByRole("button", { name: "适合窗口" }));
+    fireEvent.keyDown(window, { key: "\\", code: "Backslash" });
+    expect(capturedEditor.current?.fitRequestId).toBe(2);
+
+    expect(capturedEditor.current?.snapEnabled).toBe(true);
+    expect(screen.getByRole("button", { name: "吸附" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.keyDown(window, { key: "s", code: "KeyS" });
+    expect(capturedEditor.current?.snapEnabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "吸附" }));
+    expect(capturedEditor.current?.snapEnabled).toBe(true);
   });
 });

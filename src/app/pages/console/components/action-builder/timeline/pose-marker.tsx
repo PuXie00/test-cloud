@@ -35,7 +35,8 @@ export const PoseMarker = ({
   onMove,
   onMoveEnd,
 }: PoseMarkerProps) => {
-  const [dragLabel, setDragLabel] = useState<string | null>(null);
+  // 拖动时标签显示块实际所在的时刻（吸附、被拒绝后都以它为准）
+  const [dragging, setDragging] = useState(false);
 
   const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
@@ -57,12 +58,12 @@ export const PoseMarker = ({
     const handleMove = (moveEvent: globalThis.PointerEvent) => {
       const deltaMs = Math.round(((moveEvent.clientX - startX) / pxPerSecond) * 1000);
       const nextAtMs = Math.max(0, initialAtMs + deltaMs);
-      setDragLabel(formatTime(nextAtMs));
+      setDragging(true);
       onMove(nextAtMs);
     };
 
     const handleUp = () => {
-      setDragLabel(null);
+      setDragging(false);
       onMoveEnd?.();
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
@@ -112,9 +113,9 @@ export const PoseMarker = ({
           起
         </span>
       ) : null}
-      {dragLabel && (
+      {dragging && (
         <span className="pointer-events-none absolute -top-5 left-1/2 z-40 -translate-x-1/2 rounded-sm bg-card px-1.5 py-0.5 font-mono text-mono-sm tabular-nums text-foreground">
-          {dragLabel}
+          {formatTime(atMs)}
         </span>
       )}
     </button>
