@@ -7,7 +7,9 @@ import type {
   InstructionBlock,
   StaticPresetBlock,
   TimelineBlock,
+  TimelineMarker,
 } from "@/app/project/action-sequence/types";
+import { sortedMarkers } from "../marker-ops";
 import { unsetAxesOf } from "@/app/project/action-sequence/keyframe-pose";
 import {
   uncontrolledAxesOf,
@@ -21,10 +23,13 @@ import {
   selectedSegmentsOf,
   selectionBlockIds,
   selectionFromBlockIds,
+  selectionMarkerIds,
   toggleBlockSelection,
+  toggleMarkerSelection,
   toggleSegmentSelection,
   type SequenceSelection,
 } from "../sequence-selection";
+import { MARKER_LANE_HEIGHT_PX, TimelineMarkerLane } from "./timeline-markers";
 import { suppressNextClick } from "./suppress-click";
 import {
   clampTimelinePxPerSecond,
@@ -89,6 +94,11 @@ export type TimelineEditorProps = {
   fitRequestId?: number;
   /** 变化时把跑到视野外的指针移回视野（跳关键帧） */
   revealCursorRequestId?: number;
+  /** 拖标记：deltaMs 相对拖动开始 */
+  onMarkersShift?: (markerIds: string[], deltaMs: number) => void;
+  onMarkersShiftEnd?: () => void;
+  /** 双击标记改名 */
+  onMarkerRename?: (marker: TimelineMarker) => void;
 };
 
 const TRACK_ROW_HEIGHT = 36;
@@ -159,6 +169,9 @@ export const TimelineEditor = ({
   snapEnabled = true,
   fitRequestId = 0,
   revealCursorRequestId = 0,
+  onMarkersShift,
+  onMarkersShiftEnd,
+  onMarkerRename,
 }: TimelineEditorProps) => {
   const viewportRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -168,6 +181,7 @@ export const TimelineEditor = ({
   // 一次拖动里只在开始时改一次选中；拖区间时记下这次拖的块和区间原来的起点
   const dragSelectedRef = useRef(false);
   const segmentDragRef = useRef<{ blockIds: string[]; originStartMs: number } | null>(null);
+  const markerDragRef = useRef<{ markerIds: string[]; originAtMs: number } | null>(null);
   const [viewportWidth, setViewportWidth] = useState(0);
   const [viewStartMs, setViewStartMs] = useState(0);
   const [marquee, setMarquee] = useState<MarqueeDrag | null>(null);
@@ -217,9 +231,13 @@ export const TimelineEditor = ({
   const contentWidth = Math.max(canvasWidth - TIMELINE_PAD_LEFT, 1);
   const used = usedBandScreenRect(occupiedEndMs, viewStartMs, pxPerSecond);
 
-  // 缩放到全部：从 0 开始，整条序列铺满时间区
-  const fitStateRef = useRef({ totalMs: occupiedEndMs, viewportWidth, onTimelinePxPerSecondChange });
-  fitStateRef.current = { totalMs: occupiedEndMs, viewportWidth, onTimelinePxPerSecondChange };
+  const markers = useMemo(() => sortedMarkers(sequence), [sequence]);
+  const selectedMarkerIds = selectionMarkerIds(selection);
+
+  // 缩放到全部：从 0 开始，整条序列和所有标记铺满时间区
+  const fitEndMs = Math.max(occupiedEndMs, markers.at(-1)?.atMs ?? 0);
+  const fitStateRef = useRef({ totalMs: fitEndMs, viewportWidth, onTimelinePxPerSecondChange });
+  fitStateRef.current = { totalMs: fitEndMs, viewportWidth, onTimelinePxPerSecondChange };
   useEffect(() => {
     if (fitRequestId === 0) return;
     const { totalMs, viewportWidth: width, onTimelinePxPerSecondChange: setPx } = fitStateRef.current;
@@ -590,6 +608,42 @@ export const TimelineEditor = ({
     onBlocksShift(drag.blockIds, startMs - drag.originStartMs);
   };
 
+  /** 点标记：选中它并把指针移过去；Ctrl/⌘ 单击加选或减选 */
+  const handleMarkerSelect = (marker: TimelineMarker, additive: boolean) => {
+    if (additive) {
+      onSelectionChange(toggleMarkerSelection(selection, marker.id));
+      return;
+    }
+    onSelectionChange({ kind: "markers", markerIds: [marker.id] });
+    onCursorChange(marker.atMs);
+  };
+
+  /** 拖标记：标记已选中时选中的一起走，没选中时先只选中它 */
+  const handleMarkerMove = (marker: TimelineMarker, proposedMs: number) => {
+    if (!onMarkersShift) return;
+    let drag = markerDragRef.current;
+    if (drag === null) {
+      const selected = selectionMarkerIds(selection);
+      const grouped = selected.includes(marker.id);
+      if (!grouped) onSelectionChange({ kind: "markers", markerIds: [marker.id] });
+      drag = { markerIds: grouped ? selected : [marker.id], originAtMs: marker.atMs };
+      markerDragRef.current = drag;
+    }
+    const targets = snapTargetTimes({
+      sequence,
+      totalMs: occupiedEndMs,
+      cursorMs,
+      excludeMarkerIds: new Set(drag.markerIds),
+    });
+    onMarkersShift(drag.markerIds, applySnap(proposedMs, targets) - drag.originAtMs);
+  };
+
+  const handleMarkerMoveEnd = () => {
+    markerDragRef.current = null;
+    setSnapIndicatorMs(null);
+    onMarkersShiftEnd?.();
+  };
+
   const handleBlockMoveEnd = () => {
     groupDragOriginRef.current = null;
     dragSelectedRef.current = false;
@@ -622,6 +676,14 @@ export const TimelineEditor = ({
         style={{ width: TRACK_LABEL_WIDTH }}
       >
         <TimelineRulerReadout cursorMs={cursorMs} occupiedEndMs={occupiedEndMs} />
+        {markers.length > 0 ? (
+          <div
+            className="flex shrink-0 items-center border-b border-border/40 bg-muted px-3 text-[11px] text-muted-foreground"
+            style={{ height: MARKER_LANE_HEIGHT_PX }}
+          >
+            标记
+          </div>
+        ) : null}
         <div ref={labelNamesRef} className="min-h-0 flex-1 overflow-hidden bg-card">
           {rows.map((row) => {
             const objectSelected = selectedObjectIds.includes(row.objectId);
@@ -686,6 +748,21 @@ export const TimelineEditor = ({
               onScrub={(ms) => onCursorChange(snapCursor(ms))}
             />
 
+            {markers.length > 0 ? (
+              <TimelineMarkerLane
+                markers={markers}
+                selectedMarkerIds={selectedMarkerIds}
+                cursorMs={cursorMs}
+                viewStartMs={viewStartMs}
+                pxPerSecond={pxPerSecond}
+                contentWidth={contentWidth}
+                onSelect={handleMarkerSelect}
+                onMove={handleMarkerMove}
+                onMoveEnd={handleMarkerMoveEnd}
+                onRename={(marker) => onMarkerRename?.(marker)}
+              />
+            ) : null}
+
             <div
               ref={tracksRef}
               data-testid="timeline-tracks"
@@ -711,6 +788,19 @@ export const TimelineEditor = ({
                     data-tick-ms={String(tick.ms)}
                     className="absolute top-0 h-full w-px -translate-x-1/2 bg-border/40"
                     style={{ left: TIMELINE_PAD_LEFT + viewPxFromMs(tick.ms, viewStartMs, pxPerSecond) }}
+                  />
+                ))}
+                {markers.map((marker) => (
+                  <div
+                    key={marker.id}
+                    data-testid="timeline-marker-line"
+                    className={cn(
+                      "absolute top-0 h-full w-0 border-l border-dashed",
+                      selectedMarkerIds.includes(marker.id)
+                        ? "border-primary/70"
+                        : "border-foreground/20",
+                    )}
+                    style={{ left: TIMELINE_PAD_LEFT + viewPxFromMs(marker.atMs, viewStartMs, pxPerSecond) }}
                   />
                 ))}
               </div>

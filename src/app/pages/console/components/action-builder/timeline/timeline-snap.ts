@@ -13,20 +13,25 @@ export const blockObjectIds = (block: TimelineBlock): number[] =>
   block.kind === "pose" || block.kind === "instruction" ? [block.objectId] : block.orderedObjectIds;
 
 /**
- * 吸附目标：序列起止、指针、块的时刻。
- * excludeObjectIds 里物体的块不算（拖动时同一行的块不能叠在同一时刻）。
+ * 吸附目标：序列起止、指针、块的时刻、标记。
+ * excludeObjectIds 里物体的块不算（拖动时同一行的块不能叠在同一时刻）；
+ * excludeMarkerIds 是正在拖的标记。
  */
 export const snapTargetTimes = (input: {
   sequence: ActionSequenceConfig;
   totalMs: number;
   cursorMs?: number;
   excludeObjectIds?: ReadonlySet<number>;
+  excludeMarkerIds?: ReadonlySet<string>;
 }): number[] => {
   const targets = new Set<number>([0, input.totalMs]);
   if (input.cursorMs !== undefined) targets.add(input.cursorMs);
   for (const block of input.sequence.blocks) {
     if (blockObjectIds(block).some((objectId) => input.excludeObjectIds?.has(objectId))) continue;
     for (const ms of blockTimesMs(block)) targets.add(ms);
+  }
+  for (const marker of input.sequence.markers ?? []) {
+    if (!input.excludeMarkerIds?.has(marker.id)) targets.add(marker.atMs);
   }
   return [...targets].sort((left, right) => left - right);
 };

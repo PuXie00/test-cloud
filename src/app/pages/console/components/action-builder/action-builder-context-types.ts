@@ -78,6 +78,15 @@ export type ActionBuilderContextValue = {
   handleBlockDelete: (blockIds?: string | string[]) => void;
   /** 拆解预设：换成各物体的关键点位姿；不传时拆选中的预设 */
   handleExplodePresets: (blockIds?: readonly string[]) => void;
+  /** 在指定时刻（默认播放头）加标记并选中它，返回新标记的 id */
+  handleAddMarker: (atMs?: number) => string | null;
+  handleRenameMarker: (markerId: string, name: string) => boolean;
+  handleSetMarkerTime: (markerId: string, atMs: number) => boolean;
+  /** 拖标记：deltaMs 相对拖动开始；松手时调 handleShiftMarkersEnd */
+  handleShiftMarkers: (markerIds: readonly string[], deltaMs: number) => void;
+  handleShiftMarkersEnd: () => void;
+  /** 不传时删选中的标记 */
+  handleDeleteMarkers: (markerIds?: readonly string[]) => void;
   handleTrajectoryModeChange: (mode: TrajectoryMode) => void;
   handleLoopChange: (loop: boolean) => void;
   handleBlockCopy: () => void;

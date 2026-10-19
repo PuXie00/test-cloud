@@ -1,6 +1,10 @@
 import type { ResolvedActionSequence, ResolvedMotionSegment } from "@/app/project/action-sequence/resolve-sequence";
 import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
-import type { ActionSequenceConfig, TimelineBlock } from "@/app/project/action-sequence/types";
+import type {
+  ActionSequenceConfig,
+  TimelineBlock,
+  TimelineMarker,
+} from "@/app/project/action-sequence/types";
 
 /** 从运动区间点选进来：属性面板先显示运动区间 */
 export type SelectionFocus = "segments";
@@ -12,6 +16,8 @@ export type SelectionFocus = "segments";
 export type SequenceSelection =
   | { kind: "block"; blockId: string }
   | { kind: "multi-block"; blockIds: string[]; focus?: SelectionFocus }
+  /** 时间轴标记；和动作块的选中互不混用 */
+  | { kind: "markers"; markerIds: string[] }
   | null;
 
 export type SequenceSelectionLookup =
@@ -23,6 +29,7 @@ export type SequenceSelectionLookup =
       segments: ResolvedMotionSegment[];
       focus?: SelectionFocus;
     }
+  | { kind: "markers"; markers: TimelineMarker[] }
   | null;
 
 export const findAuthoredBlock = (
@@ -40,15 +47,34 @@ export const findAuthoredBlocks = (
   });
 
 export const selectionBlockIds = (selection: SequenceSelection): string[] => {
-  if (selection === null) return [];
+  if (selection === null || selection.kind === "markers") return [];
   if (selection.kind === "block") return [selection.blockId];
   return [...selection.blockIds];
 };
 
 export const isBlockSelected = (selection: SequenceSelection, blockId: string): boolean => {
-  if (selection === null) return false;
+  if (selection === null || selection.kind === "markers") return false;
   if (selection.kind === "block") return selection.blockId === blockId;
   return selection.blockIds.includes(blockId);
+};
+
+export const selectionMarkerIds = (selection: SequenceSelection): string[] =>
+  selection?.kind === "markers" ? [...selection.markerIds] : [];
+
+export const selectionFromMarkerIds = (markerIds: readonly string[]): SequenceSelection => {
+  const unique = [...new Set(markerIds)];
+  return unique.length === 0 ? null : { kind: "markers", markerIds: unique };
+};
+
+/** Ctrl/⌘ 单击标记：加选或减选；从动作块的选中切过来时重新开始 */
+export const toggleMarkerSelection = (
+  selection: SequenceSelection,
+  markerId: string,
+): SequenceSelection => {
+  const ids = selectionMarkerIds(selection);
+  return selectionFromMarkerIds(
+    ids.includes(markerId) ? ids.filter((id) => id !== markerId) : [...ids, markerId],
+  );
 };
 
 export const selectionFromBlockIds = (
@@ -146,6 +172,12 @@ export const lookupSequenceSelection = (
     if (block === undefined) return null;
     return { kind: "block", block };
   }
+  if (selection.kind === "markers") {
+    const markers = (sequence.markers ?? []).filter((marker) =>
+      selection.markerIds.includes(marker.id),
+    );
+    return markers.length === 0 ? null : { kind: "markers", markers };
+  }
   const blocks = findAuthoredBlocks(sequence, selection.blockIds);
   if (blocks.length === 0) return null;
   let segments: ResolvedMotionSegment[] = [];
@@ -172,6 +204,13 @@ export const pruneSequenceSelection = (
   if (selection === null) return null;
   if (selection.kind === "block") {
     return sequenceHasBlock(sequences, selection.blockId) ? selection : null;
+  }
+  if (selection.kind === "markers") {
+    const markerIds = selection.markerIds.filter((markerId) =>
+      sequences.some((sequence) => sequence.markers?.some((marker) => marker.id === markerId)),
+    );
+    if (markerIds.length === selection.markerIds.length) return selection;
+    return selectionFromMarkerIds(markerIds);
   }
   const blockIds = selection.blockIds.filter((blockId) => sequenceHasBlock(sequences, blockId));
   if (blockIds.length === selection.blockIds.length) return selection;

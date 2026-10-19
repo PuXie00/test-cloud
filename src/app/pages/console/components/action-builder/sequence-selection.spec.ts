@@ -7,7 +7,9 @@ import {
   segmentEndpointBlockIds,
   segmentSelection,
   selectedSegmentsOf,
+  selectionBlockIds,
   toggleBlockSelection,
+  toggleMarkerSelection,
   toggleSegmentSelection,
 } from "./sequence-selection";
 
@@ -124,5 +126,39 @@ describe("pruning", () => {
   it("returns the same selection when nothing was deleted", () => {
     const selection = { kind: "multi-block" as const, blockIds: ["p0", "p1"] };
     expect(pruneSequenceSelection([sequence], selection)).toBe(selection);
+  });
+});
+
+describe("marker selection", () => {
+  const withMarkers: ActionSequenceConfig = {
+    ...sequence,
+    markers: [
+      { id: "m1", atMs: 500, name: "灯光切换" },
+      { id: "m2", atMs: 1500, name: "演员入场" },
+    ],
+  };
+
+  it("keeps markers apart from blocks", () => {
+    expect(selectionBlockIds({ kind: "markers", markerIds: ["m1"] })).toEqual([]);
+    expect(toggleMarkerSelection({ kind: "block", blockId: "p0" }, "m1")).toEqual({
+      kind: "markers",
+      markerIds: ["m1"],
+    });
+    expect(toggleMarkerSelection({ kind: "markers", markerIds: ["m1", "m2"] }, "m1")).toEqual({
+      kind: "markers",
+      markerIds: ["m2"],
+    });
+    expect(toggleMarkerSelection({ kind: "markers", markerIds: ["m1"] }, "m1")).toBeNull();
+  });
+
+  it("looks up the selected markers and prunes deleted ones", () => {
+    expect(
+      lookupSequenceSelection(withMarkers, { kind: "markers", markerIds: ["m2"] }),
+    ).toEqual({ kind: "markers", markers: [withMarkers.markers![1]] });
+    expect(
+      pruneSequenceSelection([sequence], { kind: "markers", markerIds: ["m1"] }),
+    ).toBeNull();
+    const kept = { kind: "markers" as const, markerIds: ["m1"] };
+    expect(pruneSequenceSelection([withMarkers], kept)).toBe(kept);
   });
 });

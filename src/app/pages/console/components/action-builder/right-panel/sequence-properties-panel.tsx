@@ -20,6 +20,7 @@ import type {
   MotionSegmentSettings,
   PoseBlock,
   TimelineBlock,
+  TimelineMarker,
 } from "@/app/project/action-sequence/types";
 import { roundProjectCoordinate } from "@/app/project/project-quantity";
 import { resolveEnabledAxes } from "../motion-profile/motion-profile-status";
@@ -34,7 +35,13 @@ import {
   type SequenceSelection,
 } from "../sequence-selection";
 import type { PoseAxisWrite } from "../sequence-ops";
-import { VIRTUAL_AXIS_IDS, msToSeconds, secondsToMs } from "../timeline/timeline-data";
+import {
+  VIRTUAL_AXIS_IDS,
+  formatTime,
+  msToSeconds,
+  secondsToMs,
+} from "../timeline/timeline-data";
+import { clampMarkerName } from "../marker-ops";
 import { useActionBuilder } from "../use-action-builder";
 import { getVirtualAxisCanonicalUnit } from "../virtual-axis-display";
 import {
@@ -627,6 +634,76 @@ const MultiSelectionProperties = ({
   );
 };
 
+/** 时间轴标记：一个时改名、改时刻；多个时只能一起删 */
+const MarkerProperties = ({ markers }: { markers: TimelineMarker[] }) => {
+  const { handleRenameMarker, handleSetMarkerTime, handleDeleteMarkers } = useActionBuilder();
+  const marker = markers.length === 1 ? markers[0] : undefined;
+  const [draft, setDraft] = useState(marker?.name ?? "");
+
+  useEffect(() => {
+    if (marker) setDraft(marker.name);
+  }, [marker?.id, marker?.name]);
+
+  if (!marker) {
+    return (
+      <PropertiesShell
+        title="多选标记"
+        onDelete={() => handleDeleteMarkers(markers.map((item) => item.id))}
+      >
+        <p className="text-body-sm text-muted-foreground">已选 {markers.length} 个标记</p>
+        <ul className="mt-2 space-y-1">
+          {markers.map((item) => (
+            <li key={item.id} className="flex justify-between gap-2 text-body-sm text-foreground">
+              <span className="truncate">{item.name}</span>
+              <span className="shrink-0 font-mono text-mono-sm tabular-nums text-muted-foreground">
+                {formatTime(item.atMs)} s
+              </span>
+            </li>
+          ))}
+        </ul>
+      </PropertiesShell>
+    );
+  }
+
+  const commitName = () => {
+    if (draft.trim().length === 0) {
+      setDraft(marker.name);
+      return;
+    }
+    handleRenameMarker(marker.id, draft);
+  };
+
+  return (
+    <PropertiesShell title="标记" onDelete={() => handleDeleteMarkers([marker.id])}>
+      <Field label="名称">
+        <input
+          aria-label="标记名称"
+          value={draft}
+          onChange={(event) => setDraft(clampMarkerName(event.target.value))}
+          onBlur={commitName}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") commitName();
+            if (event.key === "Escape") setDraft(marker.name);
+          }}
+          className="h-8 w-full rounded-md border border-border/60 bg-input-background px-2 text-body-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+      </Field>
+      <Field label="时间">
+        <UnitAwareNumericInput
+          aria-label="标记时间"
+          value={msToSeconds(marker.atMs)}
+          unit="s"
+          step={0.1}
+          precision={1}
+          min={0}
+          onCommit={(seconds) => handleSetMarkerTime(marker.id, secondsToMs(seconds))}
+        />
+      </Field>
+      <p className="text-body-sm text-muted-foreground">标记只是标注，不下发设备</p>
+    </PropertiesShell>
+  );
+};
+
 const EmptyProperties = () => (
   <div className="flex min-h-0 flex-1 flex-col">
     <div className="flex h-9 shrink-0 items-center bg-muted px-3">
@@ -653,6 +730,10 @@ export const SequencePropertiesPanel = ({
 
   if (lookup === null) {
     return <EmptyProperties />;
+  }
+
+  if (lookup.kind === "markers") {
+    return <MarkerProperties markers={lookup.markers} />;
   }
 
   if (lookup.kind === "multi-block") {

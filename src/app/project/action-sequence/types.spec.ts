@@ -112,6 +112,24 @@ describe("action sequence project structure", () => {
     expect(() => assertProjectDocumentStructure(document)).toThrow(/loop/);
   });
 
+  it("accepts named timeline markers and rejects malformed ones", () => {
+    const document = createEmptyDocument({ id: "p", name: "P", author: "tester" });
+    document.motion.actionSequences = [
+      { ...sequence, markers: [{ id: "m1", atMs: 1500, name: "灯光切换" }] },
+    ];
+    expect(() => assertProjectDocumentStructure(document)).not.toThrow();
+
+    document.motion.actionSequences = [
+      { ...sequence, markers: [{ id: "m1", atMs: -1, name: "灯光切换" }] },
+    ];
+    expect(() => assertProjectDocumentStructure(document)).toThrow(/markers/);
+
+    document.motion.actionSequences = [
+      { ...sequence, markers: [{ id: "m1", atMs: 0 }] } as unknown as ActionSequenceConfig,
+    ];
+    expect(() => assertProjectDocumentStructure(document)).toThrow(/markers\[0\]\.name/);
+  });
+
   it("accepts a trapezoid motion profile on segments and dynamic presets", () => {
     const document = createEmptyDocument({ id: "p", name: "P", author: "tester" });
     const axisProfiles = {
