@@ -14,6 +14,9 @@ import {
   motionProfilePhaseBoundaries,
   ratiosFromProfile,
   sampleVelocityNorm,
+  boundaryTrapezoidKinematics,
+  boundaryTrapezoidOf,
+  trapezoidFromRates,
   trapezoidHandles,
   validateMotionProfile,
   withTrapezoidAccelMs,
@@ -286,5 +289,84 @@ describe("idle axis motion profile", () => {
   it("createIdleAxisProfile returns a distinct idle object", () => {
     expect(createIdleAxisProfile()).toEqual({ kind: "idle" });
     expect(createIdleAxisProfile()).not.toBe(createIdleAxisProfile());
+  });
+});
+
+describe("trapezoidFromRates", () => {
+  it("recovers the phase times of a plain trapezoid from its acceleration and deceleration", () => {
+    const profile: MotionProfile = { kind: "trapezoid", params: { accelMs: 1000, decelMs: 2000 } };
+    const kinematics = calculateMotionProfileKinematics(profile, 300, 6000);
+    const result = trapezoidFromRates({
+      distance: 300,
+      durationMs: 6000,
+      acceleration: kinematics.acceleration,
+      deceleration: kinematics.deceleration,
+    });
+    expect(result?.accelSec).toBeCloseTo(1, 9);
+    expect(result?.decelSec).toBeCloseTo(2, 9);
+    expect(result?.cruiseSpeed).toBeCloseTo(kinematics.peakVelocity, 9);
+  });
+
+  it("recovers the phase times when the span enters and leaves at a pass speed", () => {
+    const profile: MotionProfile = { kind: "trapezoid", params: { accelMs: 800, decelMs: 1500 } };
+    const boundary = { startSpeed: 40, endSpeed: 10 };
+    const shape = boundaryTrapezoidOf(profile, 400, 5000, boundary)!;
+    const kinematics = boundaryTrapezoidKinematics(shape);
+    const result = trapezoidFromRates({
+      distance: 400,
+      durationMs: 5000,
+      boundary,
+      acceleration: kinematics.acceleration,
+      deceleration: kinematics.deceleration,
+    });
+    expect(result?.accelSec).toBeCloseTo(0.8, 9);
+    expect(result?.decelSec).toBeCloseTo(1.5, 9);
+    expect(result?.cruiseSpeed).toBeCloseTo(shape.cruiseSpeed, 9);
+  });
+
+  it("slows down first when the entry speed is above the cruise speed it needs", () => {
+    const result = trapezoidFromRates({
+      distance: 100,
+      durationMs: 4000,
+      boundary: { startSpeed: 60, endSpeed: 0 },
+      acceleration: 100,
+      deceleration: 50,
+    });
+    expect(result).not.toBeNull();
+    expect(result!.cruiseSpeed).toBeLessThan(60);
+    const shape = boundaryTrapezoidOf(
+      {
+        kind: "trapezoid",
+        params: { accelMs: result!.accelSec * 1000, decelMs: result!.decelSec * 1000 },
+      },
+      100,
+      4000,
+      { startSpeed: 60, endSpeed: 0 },
+    );
+    expect(shape?.cruiseSpeed).toBeCloseTo(result!.cruiseSpeed, 6);
+  });
+
+  it("returns null when the rates are too small to cover the distance in time", () => {
+    // 1 s 内即使一直加速再减速，最多也只走 a·T²/4 = 2.5
+    expect(
+      trapezoidFromRates({ distance: 100, durationMs: 1000, acceleration: 10, deceleration: 10 }),
+    ).toBeNull();
+  });
+
+  it("returns null when the pass speeds are too fast to stop within the distance", () => {
+    expect(
+      trapezoidFromRates({
+        distance: 1,
+        durationMs: 2000,
+        boundary: { startSpeed: 100, endSpeed: 100 },
+        acceleration: 10,
+        deceleration: 10,
+      }),
+    ).toBeNull();
+  });
+
+  it("rejects non-positive input", () => {
+    expect(trapezoidFromRates({ distance: 0, durationMs: 1000, acceleration: 1, deceleration: 1 })).toBeNull();
+    expect(trapezoidFromRates({ distance: 1, durationMs: 1000, acceleration: 0, deceleration: 1 })).toBeNull();
   });
 });

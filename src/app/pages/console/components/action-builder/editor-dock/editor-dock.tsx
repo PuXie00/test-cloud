@@ -17,10 +17,15 @@ import {
   TIMELINE_PX_PER_SECOND_MAX,
   TIMELINE_PX_PER_SECOND_MIN,
 } from "../timeline/timeline-data";
+import {
+  keyframeTimesMs,
+  nextKeyframeMs,
+  previousKeyframeMs,
+} from "../timeline/timeline-keyframes";
 import { pickNiceMajorStepSec } from "../timeline/timeline-ticks";
 import { TimelineEditor } from "../timeline/timeline-editor";
 import { TimelineToolbar } from "../timeline/timeline-toolbar";
-import { SequenceRenameDialog } from "./sequence-rename-dialog";
+import { SequenceDeleteDialog } from "./sequence-delete-dialog";
 import { useTimelinePlayback } from "../timeline/use-timeline-playback";
 
 const isEditableTarget = (target: EventTarget | null): boolean => {
@@ -54,7 +59,6 @@ const SequenceEditor = () => {
     handleShiftTimelineBlocksEnd,
     handleResizeDynamicPreset,
     handleBlockDelete,
-    handleDeleteSequence,
     handleBlockCopy,
     handleBlockPaste,
     canPasteBlock,
@@ -86,7 +90,10 @@ const SequenceEditor = () => {
     select(objectId);
   };
   const rootRef = useRef<HTMLDivElement>(null);
-  const [renameOpen, setRenameOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [snapEnabled, setSnapEnabled] = useState(true);
+  const [fitRequestId, setFitRequestId] = useState(0);
+  const [revealCursorRequestId, setRevealCursorRequestId] = useState(0);
   const selectedBlockIds = selectionBlockIds(selection);
   const invalidTargets = useMemo(
     () => invalidTimelineTargets(sequenceIssues),
@@ -109,6 +116,21 @@ const SequenceEditor = () => {
 
   const totalMs = resolved?.totalMs ?? 0;
   const canPlay = resolved !== null && totalMs > 0;
+
+  // 选了物体时只在它们的关键帧之间跳
+  const keyframes = useMemo(
+    () => (sequence ? keyframeTimesMs(sequence, totalMs, multiSelectedIds) : []),
+    [sequence, totalMs, multiSelectedIds],
+  );
+  const prevKeyframe = previousKeyframeMs(keyframes, cursorMs);
+  const nextKeyframe = nextKeyframeMs(keyframes, cursorMs);
+  const jumpTo = (ms: number | null) => {
+    if (ms === null) return;
+    handleCursorChange(ms);
+    setRevealCursorRequestId((id) => id + 1);
+  };
+  const handleZoomFit = () => setFitRequestId((id) => id + 1);
+  const handleSnapToggle = () => setSnapEnabled((enabled) => !enabled);
   const { isPlaying, toggle: handlePlayToggle } = useTimelinePlayback({
     cursorMs,
     totalMs,
@@ -138,6 +160,24 @@ const SequenceEditor = () => {
         handlePlayToggle();
         return;
       }
+      const plain = !event.ctrlKey && !event.metaKey && !event.altKey;
+      if (event.altKey && !event.ctrlKey && !event.metaKey) {
+        if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+          event.preventDefault();
+          jumpTo(event.key === "ArrowLeft" ? prevKeyframe : nextKeyframe);
+          return;
+        }
+      }
+      if (plain && (event.key === "\\" || event.code === "Backslash")) {
+        event.preventDefault();
+        handleZoomFit();
+        return;
+      }
+      if (plain && !event.shiftKey && (event.key.toLowerCase() === "s" || event.code === "KeyS")) {
+        event.preventDefault();
+        handleSnapToggle();
+        return;
+      }
       if (event.key !== "Delete" && event.key !== "Backspace") return;
       if (selectedBlockIds.length === 0) return;
       event.preventDefault();
@@ -153,6 +193,8 @@ const SequenceEditor = () => {
     handlePlayToggle,
     isPlaying,
     selectedBlockIds.length,
+    prevKeyframe,
+    nextKeyframe,
   ]);
 
   if (!sequence) return null;
@@ -176,8 +218,6 @@ const SequenceEditor = () => {
       className="flex min-h-0 min-w-0 flex-1 flex-col outline-none"
     >
       <TimelineToolbar
-        sequenceName={sequence.name}
-        onRename={() => setRenameOpen(true)}
         trajectoryMode={sequence.trajectoryMode}
         onTrajectoryModeChange={handleTrajectoryModeChange}
         loop={sequence.loop === true}
@@ -193,11 +233,18 @@ const SequenceEditor = () => {
         atEnd={totalMs > 0 && cursorMs >= totalMs}
         onPlayToggle={handlePlayToggle}
         onSave={handleSave}
-        onDelete={handleDeleteSequence}
+        onDelete={() => setDeleteOpen(true)}
         onZoomIn={handleTimelineZoomIn}
         onZoomOut={handleTimelineZoomOut}
+        onZoomFit={handleZoomFit}
+        onPrevKeyframe={() => jumpTo(prevKeyframe)}
+        onNextKeyframe={() => jumpTo(nextKeyframe)}
+        canPrevKeyframe={prevKeyframe !== null}
+        canNextKeyframe={nextKeyframe !== null}
+        snapEnabled={snapEnabled}
+        onSnapToggle={handleSnapToggle}
       />
-      <SequenceRenameDialog open={renameOpen} onOpenChange={setRenameOpen} />
+      <SequenceDeleteDialog open={deleteOpen} onOpenChange={setDeleteOpen} />
       {resolved === null && (
         <div className="shrink-0 bg-warning-surface px-3 py-2 text-body-sm text-warning">
           预设无法解析，可继续编辑块
@@ -232,6 +279,9 @@ const SequenceEditor = () => {
             invalidTargets={invalidTargets}
             selectedObjectIds={multiSelectedIds}
             onObjectClick={handleObjectClick}
+            snapEnabled={snapEnabled}
+            fitRequestId={fitRequestId}
+            revealCursorRequestId={revealCursorRequestId}
           />
         </div>
       </ClipboardContextMenu>

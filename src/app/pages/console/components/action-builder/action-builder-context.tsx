@@ -92,7 +92,9 @@ import {
   shiftTimelineBlocks,
   updatePosesFromLive,
   updateSegmentSettings,
+  writeSegmentProfiles,
   type EditResult,
+  type SegmentProfileWrite,
 } from "./sequence-ops";
 import {
   pruneSequenceSelection,
@@ -120,6 +122,7 @@ import type {
 import { ActionBuilderContext } from "./action-builder-react-context";
 import type { ContextSelection } from "./context-bar/selection-context-bar";
 import { LivePoseBridge, type LivePoseLookup } from "./live-pose-bridge";
+import type { PhaseInputMode } from "./motion-profile/phase-rates";
 import type { ActionRightTab } from "./right-panel/action-right-panel";
 
 export { useActionBuilder } from "./use-action-builder";
@@ -559,6 +562,14 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     [updateSelectedSequence],
   );
 
+  const handleWriteSegmentProfiles = useCallback(
+    (writes: readonly SegmentProfileWrite[]): boolean =>
+      updateSelectedSequence((current) => writeSegmentProfiles(current, writes)),
+    [updateSelectedSequence],
+  );
+
+  const [phaseInputMode, setPhaseInputMode] = useState<PhaseInputMode>("time");
+
   const handleTrajectoryModeChange = useCallback(
     (trajectoryMode: TrajectoryMode) => {
       updateSelectedSequence((current) => ({ ...current, trajectoryMode }));
@@ -789,9 +800,9 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   );
 
   const handleRenameSequence = useCallback(
-    (raw: string): string | null => {
-      if (selectedSequenceId === null) return "未选择序列";
-      const current = motionRef.current.sequences.find((item) => item.id === selectedSequenceId);
+    (raw: string, sequenceId: number | null = selectedSequenceId): string | null => {
+      if (sequenceId === null) return "未选择序列";
+      const current = motionRef.current.sequences.find((item) => item.id === sequenceId);
       if (!current) return "未选择序列";
       const others = motionRef.current.sequences
         .filter((item) => item.id !== current.id)
@@ -1199,6 +1210,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       timelinePxPerSecond,
       canPasteBlock: (clipboard.blocks?.blocks.length ?? 0) > 0,
       canPasteSequence: clipboard.sequence !== null,
+      phaseInputMode,
+      handlePhaseInputModeChange: setPhaseInputMode,
       setActiveRightTab,
       handleSequenceSelect,
       handleSelectionChange,
@@ -1215,6 +1228,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleShiftTimelineBlocksEnd,
       handleResizeDynamicPreset,
       handleUpdateSegmentSettings,
+      handleWriteSegmentProfiles,
       handleBlockDelete,
       handleTrajectoryModeChange,
       handleLoopChange,
@@ -1260,6 +1274,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       dockMode,
       timelinePxPerSecond,
       clipboard,
+      phaseInputMode,
       lastPersistError,
       sequenceIssues,
       getTimelineObject,
@@ -1278,6 +1293,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleShiftTimelineBlocksEnd,
       handleResizeDynamicPreset,
       handleUpdateSegmentSettings,
+      handleWriteSegmentProfiles,
       handleBlockDelete,
       handleTrajectoryModeChange,
       handleLoopChange,

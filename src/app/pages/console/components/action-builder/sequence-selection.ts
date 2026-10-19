@@ -2,16 +2,27 @@ import type { ResolvedActionSequence, ResolvedMotionSegment } from "@/app/projec
 import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
 import type { ActionSequenceConfig, TimelineBlock } from "@/app/project/action-sequence/types";
 
+/** 从运动区间点选进来：属性面板先显示运动区间 */
+export type SelectionFocus = "segments";
+
+/**
+ * 时间轴选中的块。运动区间没有单独的选中：两端的块都选中就是选中了这个区间，
+ * 点区间等于选中它两端的块。
+ */
 export type SequenceSelection =
   | { kind: "block"; blockId: string }
-  | { kind: "segment"; objectId: number; fromRef: string; toRef: string }
-  | { kind: "multi-block"; blockIds: string[] }
+  | { kind: "multi-block"; blockIds: string[]; focus?: SelectionFocus }
   | null;
 
 export type SequenceSelectionLookup =
   | { kind: "block"; block: TimelineBlock }
-  | { kind: "segment"; segment: ResolvedMotionSegment }
-  | { kind: "multi-block"; blocks: TimelineBlock[] }
+  | {
+      kind: "multi-block";
+      blocks: TimelineBlock[];
+      /** 两端都选中的运动区间 */
+      segments: ResolvedMotionSegment[];
+      focus?: SelectionFocus;
+    }
   | null;
 
 export const findAuthoredBlock = (
@@ -28,39 +39,100 @@ export const findAuthoredBlocks = (
     return block === undefined ? [] : [block];
   });
 
-export const findResolvedSegment = (
-  resolved: ResolvedActionSequence,
-  objectId: number,
-  fromRef: string,
-  toRef: string,
-): ResolvedMotionSegment | undefined =>
-  resolved.segments.find(
-    (segment) =>
-      segment.objectId === objectId && segment.fromRef === fromRef && segment.toRef === toRef,
-  );
-
 export const selectionBlockIds = (selection: SequenceSelection): string[] => {
   if (selection === null) return [];
   if (selection.kind === "block") return [selection.blockId];
-  if (selection.kind === "multi-block") return [...selection.blockIds];
-  return [];
+  return [...selection.blockIds];
 };
 
 export const isBlockSelected = (selection: SequenceSelection, blockId: string): boolean => {
   if (selection === null) return false;
   if (selection.kind === "block") return selection.blockId === blockId;
-  if (selection.kind === "multi-block") return selection.blockIds.includes(blockId);
-  return false;
+  return selection.blockIds.includes(blockId);
 };
 
-export const selectionFromBlockIds = (blockIds: readonly string[]): SequenceSelection => {
+export const selectionFromBlockIds = (
+  blockIds: readonly string[],
+  focus?: SelectionFocus,
+): SequenceSelection => {
   const unique = [...new Set(blockIds)];
   if (unique.length === 0) return null;
   if (unique.length === 1) {
     const blockId = unique[0];
     return blockId === undefined ? null : { kind: "block", blockId };
   }
-  return { kind: "multi-block", blockIds: unique };
+  return focus ? { kind: "multi-block", blockIds: unique, focus } : { kind: "multi-block", blockIds: unique };
+};
+
+/** 运动区间两端所在的块：位姿块，或生成这个关键点的预设块 */
+export const segmentEndpointBlockIds = (
+  resolved: Pick<ResolvedActionSequence, "poses">,
+  segment: Pick<ResolvedMotionSegment, "fromRef" | "toRef">,
+): string[] => {
+  const blockOf = (ref: string) =>
+    resolved.poses.find((point) => point.sourceRef === ref)?.sourceBlockId ?? null;
+  const from = blockOf(segment.fromRef);
+  const to = blockOf(segment.toRef);
+  if (from === null || to === null) return [];
+  return from === to ? [from] : [from, to];
+};
+
+/** 两端的块都选中了的可配置运动区间 */
+export const selectedSegmentsOf = (
+  resolved: Pick<ResolvedActionSequence, "poses" | "segments">,
+  blockIds: readonly string[],
+): ResolvedMotionSegment[] => {
+  if (blockIds.length < 2) return [];
+  const selected = new Set(blockIds);
+  const blockByRef = new Map(resolved.poses.map((point) => [point.sourceRef, point.sourceBlockId]));
+  return resolved.segments.filter((segment) => {
+    if (!segment.configurable) return false;
+    const from = blockByRef.get(segment.fromRef);
+    const to = blockByRef.get(segment.toRef);
+    return from != null && to != null && selected.has(from) && selected.has(to);
+  });
+};
+
+/** 单击运动区间：只选中它两端的块 */
+export const segmentSelection = (
+  resolved: Pick<ResolvedActionSequence, "poses">,
+  segment: Pick<ResolvedMotionSegment, "fromRef" | "toRef">,
+): SequenceSelection => selectionFromBlockIds(segmentEndpointBlockIds(resolved, segment), "segments");
+
+/** Ctrl/⌘ 单击块：在选中里加上或去掉它 */
+export const toggleBlockSelection = (
+  selection: SequenceSelection,
+  blockId: string,
+): SequenceSelection => {
+  const ids = selectionBlockIds(selection);
+  return selectionFromBlockIds(
+    ids.includes(blockId) ? ids.filter((id) => id !== blockId) : [...ids, blockId],
+  );
+};
+
+/**
+ * Ctrl/⌘ 单击运动区间：没选中就加上两端；选中了就去掉两端，
+ * 但别的选中区间还要用的端点留着（两端都被别的区间用着时只能一起去掉）。
+ */
+export const toggleSegmentSelection = (
+  resolved: Pick<ResolvedActionSequence, "poses" | "segments">,
+  selection: SequenceSelection,
+  segment: Pick<ResolvedMotionSegment, "key" | "fromRef" | "toRef">,
+): SequenceSelection => {
+  const ids = selectionBlockIds(selection);
+  const endpoints = segmentEndpointBlockIds(resolved, segment);
+  if (endpoints.length === 0) return selection;
+  if (!endpoints.every((id) => ids.includes(id))) {
+    return selectionFromBlockIds([...ids, ...endpoints], "segments");
+  }
+  const stillNeeded = new Set(
+    selectedSegmentsOf(resolved, ids)
+      .filter((other) => other.key !== segment.key)
+      .flatMap((other) => segmentEndpointBlockIds(resolved, other)),
+  );
+  const releasable = endpoints.filter((id) => !stillNeeded.has(id));
+  const removed = new Set(releasable.length > 0 ? releasable : endpoints);
+  return selectionFromBlockIds(ids.filter((id) => !removed.has(id)), "segments");
 };
 
 export const lookupSequenceSelection = (
@@ -74,24 +146,20 @@ export const lookupSequenceSelection = (
     if (block === undefined) return null;
     return { kind: "block", block };
   }
-  if (selection.kind === "multi-block") {
-    const blocks = findAuthoredBlocks(sequence, selection.blockIds);
-    if (blocks.length === 0) return null;
-    return { kind: "multi-block", blocks };
-  }
+  const blocks = findAuthoredBlocks(sequence, selection.blockIds);
+  if (blocks.length === 0) return null;
+  let segments: ResolvedMotionSegment[] = [];
   try {
-    const resolvedSequence = resolved ?? resolveActionSequence(sequence);
-    const segment = findResolvedSegment(
-      resolvedSequence,
-      selection.objectId,
-      selection.fromRef,
-      selection.toRef,
+    segments = selectedSegmentsOf(
+      resolved ?? resolveActionSequence(sequence),
+      blocks.map((block) => block.id),
     );
-    if (segment === undefined) return null;
-    return { kind: "segment", segment };
   } catch {
-    return null;
+    segments = [];
   }
+  return selection.focus
+    ? { kind: "multi-block", blocks, segments, focus: selection.focus }
+    : { kind: "multi-block", blocks, segments };
 };
 
 const sequenceHasBlock = (sequences: ActionSequenceConfig[], blockId: string): boolean =>
@@ -105,24 +173,7 @@ export const pruneSequenceSelection = (
   if (selection.kind === "block") {
     return sequenceHasBlock(sequences, selection.blockId) ? selection : null;
   }
-  if (selection.kind === "multi-block") {
-    const blockIds = selection.blockIds.filter((blockId) => sequenceHasBlock(sequences, blockId));
-    if (blockIds.length === 0) return null;
-    if (blockIds.length === 1) {
-      const blockId = blockIds[0];
-      return blockId === undefined ? null : { kind: "block", blockId };
-    }
-    return { kind: "multi-block", blockIds };
-  }
-  for (const sequence of sequences) {
-    try {
-      const resolved = resolveActionSequence(sequence);
-      if (findResolvedSegment(resolved, selection.objectId, selection.fromRef, selection.toRef)) {
-        return selection;
-      }
-    } catch {
-      continue;
-    }
-  }
-  return null;
+  const blockIds = selection.blockIds.filter((blockId) => sequenceHasBlock(sequences, blockId));
+  if (blockIds.length === selection.blockIds.length) return selection;
+  return selectionFromBlockIds(blockIds, selection.focus);
 };

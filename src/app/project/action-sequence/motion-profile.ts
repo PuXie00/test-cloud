@@ -349,6 +349,60 @@ export const boundaryTrapezoidSpeedAt = (shape: BoundaryTrapezoid, sec: number):
   return cruiseSpeed - ((cruiseSpeed - endSpeed) * (t - accelSec - cruiseSec)) / decelSec;
 };
 
+/** 按加减速度反推出的梯形：匀速速度和两段变速各自的时长 */
+export type TrapezoidFromRates = { cruiseSpeed: number; accelSec: number; decelSec: number };
+
+/** 二分求单调函数的根，lo、hi 两端已经夹住 */
+const bisect = (fn: (x: number) => number, lo: number, hi: number): number => {
+  let low = lo;
+  let high = hi;
+  for (let step = 0; step < 100; step += 1) {
+    const mid = (low + high) / 2;
+    if (fn(mid) < 0) low = mid;
+    else high = mid;
+  }
+  return (low + high) / 2;
+};
+
+/**
+ * 按加减速度反推梯形：时长、行程和进出速度都不变，求匀速速度和两段变速的时长。
+ * 加减速度太小（这段时间里走不完或变不过来），或进出速度太快收不住时返回 null。
+ */
+export const trapezoidFromRates = (input: {
+  distance: number;
+  durationMs: number;
+  boundary?: MotionBoundary;
+  acceleration: number;
+  deceleration: number;
+}): TrapezoidFromRates | null => {
+  const totalSec = input.durationMs / 1000;
+  const { distance, acceleration: a, deceleration: d } = input;
+  const vs = input.boundary?.startSpeed ?? 0;
+  const ve = input.boundary?.endSpeed ?? 0;
+  if (![totalSec, distance, a, d, vs, ve].every(Number.isFinite)) return null;
+  if (!(totalSec > 0) || !(distance > 0) || !(a > 0) || !(d > 0) || vs < 0 || ve < 0) return null;
+  // 两段变速一共要多久：凸函数，在 vs、ve 中间某处最小
+  const rampSec = (vc: number) => Math.abs(vc - vs) / a + Math.abs(vc - ve) / d;
+  // 匀速取 vc 时走过的距离；在 rampSec ≤ 总时长的范围内随 vc 单调不减（导数是匀速段时长）
+  const covered = (vc: number) =>
+    vc * totalSec -
+    ((vc - vs) * Math.abs(vc - vs)) / (2 * a) -
+    ((vc - ve) * Math.abs(vc - ve)) / (2 * d);
+  const lowest = rampSec(vs) <= rampSec(ve) ? vs : ve;
+  if (rampSec(lowest) > totalSec) return null;
+  const ceiling = Math.max(vs, ve) + totalSec * (a + d);
+  const hi = bisect((vc) => rampSec(vc) - totalSec, lowest, ceiling);
+  const lo = rampSec(0) <= totalSec ? 0 : bisect((vc) => totalSec - rampSec(vc), 0, lowest);
+  if (covered(hi) < distance || covered(lo) > distance) return null;
+  const cruiseSpeed = bisect((vc) => covered(vc) - distance, lo, hi);
+  if (!(cruiseSpeed > 0)) return null;
+  return {
+    cruiseSpeed,
+    accelSec: Math.abs(cruiseSpeed - vs) / a,
+    decelSec: Math.abs(cruiseSpeed - ve) / d,
+  };
+};
+
 /** 和 calculateMotionProfileKinematics 同形：峰值取三个速度里最大的，加减速度取两段变速的变化率 */
 export const boundaryTrapezoidKinematics = (shape: BoundaryTrapezoid): MotionProfileKinematics => ({
   peakVelocity: Math.max(shape.startSpeed, shape.cruiseSpeed, shape.endSpeed),

@@ -12,13 +12,20 @@ import { unsetAxesOf } from "@/app/project/action-sequence/keyframe-pose";
 import {
   uncontrolledAxesOf,
   type ResolvedActionSequence,
+  type ResolvedMotionSegment,
 } from "@/app/project/action-sequence/resolve-sequence";
 import type { InvalidTimelineTargets } from "@/app/project/action-sequence/validate-sequence";
 import {
+  segmentEndpointBlockIds,
+  segmentSelection,
+  selectedSegmentsOf,
   selectionBlockIds,
   selectionFromBlockIds,
+  toggleBlockSelection,
+  toggleSegmentSelection,
   type SequenceSelection,
 } from "../sequence-selection";
+import { suppressNextClick } from "./suppress-click";
 import {
   clampTimelinePxPerSecond,
   pxToMs,
@@ -28,6 +35,7 @@ import {
   type ControlledObject as TimelineControlledObject,
 } from "./timeline-data";
 import { TimelineHScroll } from "./timeline-h-scroll";
+import { blockObjectIds, snapSpanStart, snapTargetTimes, snapToTargets } from "./timeline-snap";
 import { collectMarqueeBlockIds } from "./timeline-marquee";
 import { computeNiceTimeTicks } from "./timeline-ticks";
 import { TimelineRuler, TimelineRulerReadout } from "./timeline-ruler";
@@ -43,7 +51,9 @@ import {
   usedBandScreenRect,
   viewPxFromMs,
   viewStartForZoomAnchor,
+  fitAllPxPerSecond,
   followPlayheadViewStart,
+  revealCursorViewStart,
   viewWindowEndMs,
   viewportDurationMs,
 } from "./timeline-view-extent";
@@ -73,19 +83,15 @@ export type TimelineEditorProps = {
     event: React.MouseEvent<HTMLElement>,
     rowObjectIds: readonly number[],
   ) => void;
+  /** 拖动块和指针时吸附到指针、其它行的块、序列起止和整秒；拖的时候按住 Alt 临时不吸 */
+  snapEnabled?: boolean;
+  /** 变化时缩放到全部 */
+  fitRequestId?: number;
+  /** 变化时把跑到视野外的指针移回视野（跳关键帧） */
+  revealCursorRequestId?: number;
 };
 
 const TRACK_ROW_HEIGHT = 36;
-
-/** 框选从运动区间开始并在它上面结束时，浏览器还会补一次 click，别让它把框选结果换成区间选中 */
-const suppressNextClick = () => {
-  const stop = (event: MouseEvent) => {
-    event.stopPropagation();
-    event.preventDefault();
-  };
-  window.addEventListener("click", stop, { capture: true, once: true });
-  setTimeout(() => window.removeEventListener("click", stop, { capture: true }), 0);
-};
 
 const collectSequenceObjectIds = (sequence: ActionSequenceConfig): number[] => {
   const objectIds = new Set<number>();
@@ -150,17 +156,45 @@ export const TimelineEditor = ({
   invalidTargets,
   selectedObjectIds = [],
   onObjectClick,
+  snapEnabled = true,
+  fitRequestId = 0,
+  revealCursorRequestId = 0,
 }: TimelineEditorProps) => {
   const viewportRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const labelNamesRef = useRef<HTMLDivElement>(null);
   const tracksRef = useRef<HTMLDivElement>(null);
   const groupDragOriginRef = useRef<ActionSequenceConfig | null>(null);
+  // 一次拖动里只在开始时改一次选中；拖区间时记下这次拖的块和区间原来的起点
+  const dragSelectedRef = useRef(false);
+  const segmentDragRef = useRef<{ blockIds: string[]; originStartMs: number } | null>(null);
   const [viewportWidth, setViewportWidth] = useState(0);
   const [viewStartMs, setViewStartMs] = useState(0);
   const [marquee, setMarquee] = useState<MarqueeDrag | null>(null);
+  const [snapIndicatorMs, setSnapIndicatorMs] = useState<number | null>(null);
+  // 拖动时按住 Alt 不吸附：捕获阶段先记下，块自己的拖动处理再读到
+  const altHeldRef = useRef(false);
   const occupiedEndMs = resolved.totalMs;
   const pxPerSecond = timelinePxPerSecond;
+
+  useEffect(() => {
+    const track = (event: PointerEvent | KeyboardEvent) => {
+      altHeldRef.current = event.altKey;
+    };
+    const clearIndicator = () => setSnapIndicatorMs(null);
+    window.addEventListener("pointerdown", track, { capture: true });
+    window.addEventListener("pointermove", track, { capture: true });
+    window.addEventListener("keydown", track, { capture: true });
+    window.addEventListener("keyup", track, { capture: true });
+    window.addEventListener("pointerup", clearIndicator);
+    return () => {
+      window.removeEventListener("pointerdown", track, { capture: true });
+      window.removeEventListener("pointermove", track, { capture: true });
+      window.removeEventListener("keydown", track, { capture: true });
+      window.removeEventListener("keyup", track, { capture: true });
+      window.removeEventListener("pointerup", clearIndicator);
+    };
+  }, []);
 
   useEffect(() => {
     setViewStartMs(0);
@@ -182,6 +216,27 @@ export const TimelineEditor = ({
   const canvasWidth = canvasWidthPx(viewportWidth);
   const contentWidth = Math.max(canvasWidth - TIMELINE_PAD_LEFT, 1);
   const used = usedBandScreenRect(occupiedEndMs, viewStartMs, pxPerSecond);
+
+  // 缩放到全部：从 0 开始，整条序列铺满时间区
+  const fitStateRef = useRef({ totalMs: occupiedEndMs, viewportWidth, onTimelinePxPerSecondChange });
+  fitStateRef.current = { totalMs: occupiedEndMs, viewportWidth, onTimelinePxPerSecondChange };
+  useEffect(() => {
+    if (fitRequestId === 0) return;
+    const { totalMs, viewportWidth: width, onTimelinePxPerSecondChange: setPx } = fitStateRef.current;
+    setPx(fitAllPxPerSecond(totalMs, width));
+    setViewStartMs(0);
+  }, [fitRequestId]);
+
+  // 跳关键帧后指针在视野外时移回视野中间
+  const revealStateRef = useRef({ cursorMs, viewportMs });
+  revealStateRef.current = { cursorMs, viewportMs };
+  useEffect(() => {
+    if (revealCursorRequestId === 0) return;
+    const { cursorMs: target, viewportMs: span } = revealStateRef.current;
+    setViewStartMs((current) =>
+      revealCursorViewStart({ cursorMs: target, viewStartMs: current, viewportMs: span }),
+    );
+  }, [revealCursorRequestId]);
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -244,6 +299,26 @@ export const TimelineEditor = ({
     [objectIdsInRowOrder, objectNameById, resolved, sequence],
   );
 
+  const selectedSegmentKeys = useMemo(() => {
+    const segments = selectedSegmentsOf(resolved, selectionBlockIds(selection));
+    return new Set(segments.map((segment) => segment.key));
+  }, [resolved, selection]);
+
+  const handleBlockSelect = (blockId: string, additive: boolean) => {
+    onSelectionChange(
+      additive ? toggleBlockSelection(selection, blockId) : { kind: "block", blockId },
+    );
+  };
+
+  /** 点区间等于选中它两端的块 */
+  const handleSegmentSelect = (segment: ResolvedMotionSegment, additive: boolean) => {
+    onSelectionChange(
+      additive
+        ? toggleSegmentSelection(resolved, selection, segment)
+        : segmentSelection(resolved, segment),
+    );
+  };
+
   const clientToMs = (clientX: number): number => {
     const scrollEl = scrollRef.current;
     if (!scrollEl) return 0;
@@ -261,13 +336,39 @@ export const TimelineEditor = ({
     return Math.max(0, Math.floor(y / TRACK_ROW_HEIGHT));
   };
 
+  /** 磁吸：关掉或按住 Alt 时原样返回；indicate 为 true 时在吸附处画竖线 */
+  const applySnap = (ms: number, targets: readonly number[], indicate = true): number => {
+    if (!snapEnabled || altHeldRef.current) {
+      if (indicate) setSnapIndicatorMs(null);
+      return ms;
+    }
+    const result = snapToTargets(ms, targets, pxPerSecond);
+    if (indicate) setSnapIndicatorMs(result.snappedTo);
+    return result.ms;
+  };
+
+  /** 指针吸到块的时刻、序列起止和整秒 */
+  const snapCursor = (ms: number, indicate = true): number =>
+    applySnap(ms, snapTargetTimes({ sequence, totalMs: occupiedEndMs }), indicate);
+
+  /** 拖块时不吸这些块所在行的块，吸指针 */
+  const blockSnapTargets = (blockIds: ReadonlySet<string>): number[] =>
+    snapTargetTimes({
+      sequence,
+      totalMs: occupiedEndMs,
+      cursorMs,
+      excludeObjectIds: new Set(
+        sequence.blocks.filter((block) => blockIds.has(block.id)).flatMap(blockObjectIds),
+      ),
+    });
+
   const handlePlayheadDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
     onSelectionChange(null);
     const handleMove = (moveEvent: PointerEvent) => {
-      onCursorChange(clientToMs(moveEvent.clientX));
+      onCursorChange(snapCursor(clientToMs(moveEvent.clientX)));
     };
     const handleUp = () => {
       window.removeEventListener("pointermove", handleMove);
@@ -346,7 +447,7 @@ export const TimelineEditor = ({
   const handleTracksPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     const button = event.target instanceof Element ? event.target.closest("button") : null;
-    // 运动区间也可以作为框选起点；位姿、预设等块有自己的拖动
+    // 运动区间上按住 Shift 拖也是框选（直接拖是平移，由区间自己处理）；位姿、预设等块有自己的拖动
     if (button && !button.hasAttribute("data-marquee-start")) return;
     const startedOnBand = button !== null;
     event.preventDefault();
@@ -382,7 +483,7 @@ export const TimelineEditor = ({
       if (!boxing) {
         // 在运动区间上单击：交给它自己的 click 选中该区间
         if (startedOnBand) return;
-        onCursorChange(clientToMs(upEvent.clientX));
+        onCursorChange(snapCursor(clientToMs(upEvent.clientX), false));
         onSelectionChange(null);
         return;
       }
@@ -405,13 +506,41 @@ export const TimelineEditor = ({
     window.addEventListener("pointerup", handleUp);
   };
 
+  /** 一段时间（动态预设、运动区间）整体拖动：起止两端谁近吸谁 */
+  const snapSpan = (proposedStartMs: number, durationMs: number, targets: readonly number[]) => {
+    if (!snapEnabled || altHeldRef.current) {
+      setSnapIndicatorMs(null);
+      return proposedStartMs;
+    }
+    const result = snapSpanStart(proposedStartMs, durationMs, targets, pxPerSecond);
+    setSnapIndicatorMs(result.snappedTo);
+    return result.ms;
+  };
+
+  /** 拖没选中的块时，先选中它（拖完不再补 click） */
+  const selectForDrag = (blockId: string) => {
+    if (dragSelectedRef.current) return;
+    dragSelectedRef.current = true;
+    if (!selectionBlockIds(selection).includes(blockId)) {
+      onSelectionChange({ kind: "block", blockId });
+    }
+  };
+
   const handleTimedBlockMove = (
     blockId: string,
-    atMs: number,
+    proposedMs: number,
     singleMove: (blockId: string, atMs: number) => void,
   ) => {
     const ids = selectionBlockIds(selection);
-    if (onBlocksShift && ids.length > 1 && ids.includes(blockId)) {
+    const groupDrag = onBlocksShift !== undefined && ids.length > 1 && ids.includes(blockId);
+    if (!groupDrag) selectForDrag(blockId);
+    const targets = blockSnapTargets(new Set(groupDrag ? ids : [blockId]));
+    const current = sequence.blocks.find((block) => block.id === blockId);
+    const atMs =
+      current?.kind === "dynamic-preset"
+        ? snapSpan(proposedMs, current.endMs - current.startMs, targets)
+        : applySnap(proposedMs, targets);
+    if (groupDrag) {
       const origin = groupDragOriginRef.current ?? sequence;
       if (!groupDragOriginRef.current) groupDragOriginRef.current = sequence;
       const originBlock = origin.blocks.find((block) => block.id === blockId);
@@ -422,8 +551,51 @@ export const TimelineEditor = ({
     singleMove(blockId, atMs);
   };
 
+  const handleDynamicPresetResize = (
+    blockId: string,
+    startMs: number,
+    endMs: number,
+    edge?: "start" | "end",
+  ) => {
+    selectForDrag(blockId);
+    if (edge === undefined) {
+      onDynamicPresetResize(blockId, startMs, endMs);
+      return;
+    }
+    const targets = blockSnapTargets(new Set([blockId]));
+    if (edge === "start") onDynamicPresetResize(blockId, applySnap(startMs, targets), endMs);
+    else onDynamicPresetResize(blockId, startMs, applySnap(endMs, targets));
+  };
+
+  /**
+   * 拖运动区间等于拖它两端的块：区间已选中时整组选中的块一起走，
+   * 没选中时先改成只选中它两端。
+   */
+  const handleSegmentMove = (segment: ResolvedMotionSegment, proposedStartMs: number) => {
+    if (!onBlocksShift) return;
+    let drag = segmentDragRef.current;
+    if (drag === null) {
+      const endpoints = segmentEndpointBlockIds(resolved, segment);
+      if (endpoints.length === 0) return;
+      const ids = selectionBlockIds(selection);
+      const selected = endpoints.every((id) => ids.includes(id));
+      if (!selected) onSelectionChange(selectionFromBlockIds(endpoints, "segments"));
+      drag = { blockIds: selected ? ids : endpoints, originStartMs: segment.startMs };
+      segmentDragRef.current = drag;
+    }
+    const startMs = snapSpan(
+      proposedStartMs,
+      segment.durationMs,
+      blockSnapTargets(new Set(drag.blockIds)),
+    );
+    onBlocksShift(drag.blockIds, startMs - drag.originStartMs);
+  };
+
   const handleBlockMoveEnd = () => {
     groupDragOriginRef.current = null;
+    dragSelectedRef.current = false;
+    segmentDragRef.current = null;
+    setSnapIndicatorMs(null);
     onBlocksShiftEnd?.();
   };
 
@@ -512,6 +684,7 @@ export const TimelineEditor = ({
               contentWidth={contentWidth}
               pxPerSecond={pxPerSecond}
               onCursorChange={onCursorChange}
+              onScrub={(ms) => onCursorChange(snapCursor(ms))}
             />
 
             <div
@@ -557,13 +730,16 @@ export const TimelineEditor = ({
                     generatedTicksByPreset={row.generatedTicksByPreset}
                     segments={row.segments}
                     selection={selection}
+                    selectedSegmentKeys={selectedSegmentKeys}
                     viewStartMs={viewStartMs}
                     contentWidth={contentWidth}
                     pxPerSecond={pxPerSecond}
-                    onSelectionChange={onSelectionChange}
+                    onBlockSelect={handleBlockSelect}
+                    onSegmentSelect={handleSegmentSelect}
+                    onSegmentMove={onBlocksShift ? handleSegmentMove : undefined}
                     onPoseMove={(blockId, atMs) => handleTimedBlockMove(blockId, atMs, onPoseMove)}
                     onPresetMove={(blockId, atMs) => handleTimedBlockMove(blockId, atMs, onPresetMove)}
-                    onDynamicPresetResize={onDynamicPresetResize}
+                    onDynamicPresetResize={handleDynamicPresetResize}
                     onBlockMoveEnd={handleBlockMoveEnd}
                     invalidTargets={invalidTargets}
                   />
@@ -578,6 +754,16 @@ export const TimelineEditor = ({
                 />
               ) : null}
             </div>
+
+            {snapIndicatorMs !== null ? (
+              <div
+                data-testid="timeline-snap-line"
+                data-snap-ms={String(snapIndicatorMs)}
+                className="pointer-events-none absolute top-0 bottom-0 z-20 w-0 -translate-x-1/2 border-l border-dashed border-warning"
+                style={{ left: TIMELINE_PAD_LEFT + viewPxFromMs(snapIndicatorMs, viewStartMs, pxPerSecond) }}
+                aria-hidden
+              />
+            ) : null}
 
             <div
               data-testid="timeline-playhead-line"

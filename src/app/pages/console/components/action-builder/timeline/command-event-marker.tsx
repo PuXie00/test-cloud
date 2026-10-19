@@ -1,6 +1,7 @@
 import type { KeyboardEvent, MouseEvent, PointerEvent } from "react";
 import { cn } from "@/app/components/ui/utils";
 import { viewPxFromMs } from "./timeline-view-extent";
+import { isAdditiveClick } from "./suppress-click";
 
 export type CommandEventMarkerProps = {
   blockId: string;
@@ -11,7 +12,8 @@ export type CommandEventMarkerProps = {
   invalidMessage?: string;
   viewStartMs: number;
   pxPerSecond: number;
-  onSelect: () => void;
+  /** additive：Ctrl/⌘ 单击加选或减选 */
+  onSelect: (additive: boolean) => void;
 };
 
 export const CommandEventMarker = ({
@@ -27,13 +29,13 @@ export const CommandEventMarker = ({
 }: CommandEventMarkerProps) => {
   const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
-    onSelect();
+    onSelect(isAdditiveClick(event));
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
-    onSelect();
+    onSelect(false);
   };
 
   return (

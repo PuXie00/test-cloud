@@ -1,4 +1,11 @@
-import { TIMELINE_PAD_LEFT, msToPx, pxToMs, snapTimeMs } from "./timeline-data";
+import {
+  TIMELINE_PAD_LEFT,
+  TIMELINE_PX_PER_SECOND_DEFAULT,
+  clampTimelinePxPerSecond,
+  msToPx,
+  pxToMs,
+  snapTimeMs,
+} from "./timeline-data";
 
 export const MARQUEE_THRESHOLD_PX = 6;
 export const POINT_BLOCK_HIT_MIN_PX = 12;
@@ -124,4 +131,24 @@ export const viewStartFromBarClick = (input: {
   const maxViewStart = Math.max(input.totEndMs - input.viewportMs, 0);
   const ratio = input.clickXPx / Math.max(input.trackWidthPx, 1);
   return clampViewStartMs(ratio * maxViewStart);
+};
+
+/** 缩放到全部：整条序列铺满时间区，右边留 5% 空白；空序列回到默认缩放 */
+export const FIT_ALL_MARGIN = 1.05;
+
+export const fitAllPxPerSecond = (totalMs: number, viewportWidthPx: number): number => {
+  const timedPx = viewportWidthPx - TIMELINE_PAD_LEFT;
+  if (!(totalMs > 0) || !(timedPx > 0)) return TIMELINE_PX_PER_SECOND_DEFAULT;
+  return clampTimelinePxPerSecond(timedPx / ((totalMs / 1000) * FIT_ALL_MARGIN));
+};
+
+/** 指针跳到视野外时，平移视图让它落在中间；在视野内则不动 */
+export const revealCursorViewStart = (input: {
+  cursorMs: number;
+  viewStartMs: number;
+  viewportMs: number;
+}): number => {
+  const viewEndMs = viewWindowEndMs(input.viewStartMs, input.viewportMs);
+  if (input.cursorMs >= input.viewStartMs && input.cursorMs < viewEndMs) return input.viewStartMs;
+  return clampViewStartMs(input.cursorMs - input.viewportMs / 2);
 };
