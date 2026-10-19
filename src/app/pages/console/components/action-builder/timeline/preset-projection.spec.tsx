@@ -215,24 +215,28 @@ describe("dynamic preset projections", () => {
   });
 
   it("shows the drag time label above the range instead of clipping it", () => {
-    render(
+    const projection = (startMs: number) => (
       <PresetProjection
         blockId="dynamic-1"
         kind="dynamic-preset"
         label="水平升降"
-        startMs={1000}
-        endMs={2000}
+        startMs={startMs}
+        endMs={startMs + 1000}
         selected={false}
         viewStartMs={0}
         pxPerSecond={100}
         onSelect={vi.fn()}
         onMove={vi.fn()}
-      />,
+      />
     );
+    const { rerender } = render(projection(1000));
     const range = screen.getByRole("button", { name: /动态预设.*水平升降/ });
     expect(range.className.split(/\s+/)).not.toContain("overflow-hidden");
     fireEvent.pointerDown(range, { clientX: 100, button: 0 });
     fireEvent.pointerMove(window, { clientX: 150 });
+    // 标签显示块实际所在的时刻（吸附、被拒绝后都以它为准），移动生效后跟着变
+    expect(screen.getByText("1.0")).toBeTruthy();
+    rerender(projection(1500));
     expect(screen.getByText("1.5")).toBeTruthy();
   });
 

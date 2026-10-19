@@ -789,9 +789,9 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   );
 
   const handleRenameSequence = useCallback(
-    (raw: string): string | null => {
-      if (selectedSequenceId === null) return "未选择序列";
-      const current = motionRef.current.sequences.find((item) => item.id === selectedSequenceId);
+    (raw: string, sequenceId: number | null = selectedSequenceId): string | null => {
+      if (sequenceId === null) return "未选择序列";
+      const current = motionRef.current.sequences.find((item) => item.id === sequenceId);
       if (!current) return "未选择序列";
       const others = motionRef.current.sequences
         .filter((item) => item.id !== current.id)

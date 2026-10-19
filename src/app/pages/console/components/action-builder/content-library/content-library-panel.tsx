@@ -24,6 +24,7 @@ import { ForcedTrajectoryBadge, isForcedTrajectory } from "../../forced-trajecto
 import { LoopBadge } from "../../loop-badge";
 import { writeLibraryDrag } from "./library-dnd";
 import { ClipboardContextMenu } from "../action-clipboard-menu";
+import { SequenceRenameDialog } from "./sequence-rename-dialog";
 
 type LibraryEntry = { kind: "sequence"; sequence: ActionSequenceConfig };
 
@@ -72,6 +73,8 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
   const [chapterMenuFor, setChapterMenuFor] = useState<number | null>(null);
   /** 右键点到的序列；点在空白处为 null */
   const [menuSequenceId, setMenuSequenceId] = useState<number | null>(null);
+  /** 正在重命名的序列 */
+  const [renameSequenceId, setRenameSequenceId] = useState<number | null>(null);
   const longPressRef = useRef<number | null>(null);
 
   const chapters = useMemo(() => collectChapters(programs), [programs]);
@@ -208,9 +211,16 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-1.5">
               <p
+                title={selected ? "点击重命名" : undefined}
+                // 已选中的序列点名字重命名，不取消选中
+                onClick={(event) => {
+                  if (!selected || chapterMenuFor) return;
+                  event.stopPropagation();
+                  setRenameSequenceId(id);
+                }}
                 className={cn(
                   "min-w-0 truncate text-body-sm",
-                  selected ? "font-medium text-primary" : "text-foreground/90",
+                  selected ? "cursor-text font-medium text-primary" : "text-foreground/90",
                 )}
               >
                 {entry.sequence.name}
@@ -274,6 +284,15 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
         onContextMenu={handleListContextMenu}
         // 序列只走右键菜单；Ctrl+C / V 留给时间轴动作块
         showShortcuts={false}
+        actions={[
+          {
+            label: menuSequence ? `重命名「${menuSequence.name}」` : "重命名",
+            disabled: menuSequence === undefined,
+            onSelect: () => {
+              if (menuSequence) setRenameSequenceId(menuSequence.id);
+            },
+          },
+        ]}
       >
         <div
           className="custom-scrollbar min-h-0 flex-1 overflow-y-auto py-1 outline-none"
@@ -290,6 +309,13 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
           )}
         </div>
       </ClipboardContextMenu>
+      <SequenceRenameDialog
+        open={renameSequenceId !== null}
+        onOpenChange={(open) => {
+          if (!open) setRenameSequenceId(null);
+        }}
+        sequenceId={renameSequenceId}
+      />
     </aside>
   );
 };

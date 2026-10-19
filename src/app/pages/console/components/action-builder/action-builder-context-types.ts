@@ -87,7 +87,8 @@ export type ActionBuilderContextValue = {
   /** 物体的实时位姿（虚轴1–3），拿不到时为 null；调用时读取，不随遥测重渲染 */
   getLivePose: (objectId: number) => ModelPose | null;
   /** 返回错误文案；成功或名称未变化时返回 null */
-  handleRenameSequence: (name: string) => string | null;
+  /** 不传 sequenceId 时重命名选中的序列 */
+  handleRenameSequence: (name: string, sequenceId?: number) => string | null;
   handleDeleteSequence: () => void;
   handleApplyStaticPreset: (presetId: string, objectIds: number[]) => void;
   handleApplyDynamicPreset: (presetId: string, objectIds: number[]) => void;

@@ -3,12 +3,20 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/app/components/ui/context-menu";
 import { isAppleHistoryShortcutPlatform } from "@/app/project/project-history-shortcuts";
 
 export type ClipboardShortcut = "copy" | "paste";
+
+/** 复制 / 粘贴之前的其它菜单项，如序列库的「重命名」 */
+export type ContextMenuAction = {
+  label: string;
+  disabled?: boolean;
+  onSelect: () => void;
+};
 
 const isEditableTarget = (target: EventTarget | null): boolean => {
   if (!(target instanceof HTMLElement)) return false;
@@ -46,6 +54,7 @@ type ClipboardContextMenuProps = {
   onContextMenu?: (event: MouseEvent<HTMLElement>) => void;
   /** 菜单项是否显示 Ctrl/⌘+C / V 提示；没有快捷键的列表传 false */
   showShortcuts?: boolean;
+  actions?: readonly ContextMenuAction[];
 };
 
 /** 动作序列库、时间轴共用的右键“复制 / 粘贴”菜单；快捷键只作用于时间轴动作块 */
@@ -59,12 +68,24 @@ export const ClipboardContextMenu = ({
   onPaste,
   onContextMenu,
   showShortcuts = true,
+  actions = [],
 }: ClipboardContextMenuProps) => (
   <ContextMenu>
     <ContextMenuTrigger asChild onContextMenu={onContextMenu}>
       {children}
     </ContextMenuTrigger>
     <ContextMenuContent className="min-w-[11rem] border-border bg-card text-foreground shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
+      {actions.map((action) => (
+        <ContextMenuItem
+          key={action.label}
+          className="text-body-sm"
+          disabled={action.disabled}
+          onSelect={action.onSelect}
+        >
+          {action.label}
+        </ContextMenuItem>
+      ))}
+      {actions.length > 0 ? <ContextMenuSeparator /> : null}
       <ContextMenuItem className="text-body-sm" disabled={!canCopy} onSelect={onCopy}>
         {copyLabel}
         {showShortcuts ? <ContextMenuShortcut>{shortcutHint("C")}</ContextMenuShortcut> : null}
