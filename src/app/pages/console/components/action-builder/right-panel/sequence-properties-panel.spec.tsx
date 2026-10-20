@@ -81,7 +81,9 @@ const { builderState } = vi.hoisted(() => ({
         | undefined,
 
       handleApplyPoseAxisWrite: vi.fn(),
+      handleSelectionChange: vi.fn(),
       handleExplodePresets: vi.fn(),
+      handleRelayoutPreset: vi.fn(),
       handleRenameMarker: vi.fn(),
       handleSetMarkerTime: vi.fn(),
       handleDeleteMarkers: vi.fn(),
@@ -935,5 +937,81 @@ describe("SequencePropertiesPanel markers", () => {
     expect(screen.getByText("已选 2 个标记")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
     expect(builderState.current.handleDeleteMarkers).toHaveBeenCalledWith(["m1", "m2"]);
+  });
+});
+
+describe("SequencePropertiesPanel preset layout", () => {
+  const slope = (layout?: { angleDeg: number; offsets: number[] }): ActionSequenceConfig => ({
+    ...sequence,
+    blocks: [
+      {
+        id: "slope",
+        kind: "static-preset",
+        presetId: "static-slope",
+        atMs: 2000,
+        orderedObjectIds: [8, 9],
+        params: { baseV1: 0, stepV1: 10 },
+        ...(layout ? { layout } : {}),
+      },
+    ],
+  });
+
+  afterEach(() => {
+    builderState.current.handleRelayoutPreset.mockClear();
+  });
+
+  it("shows the direction and re-lays out by angle, auto direction or current positions", () => {
+    builderState.current.getTimelineObject = (objectId: number) =>
+      ({ name: `吊杆 ${objectId}` }) as never;
+    renderPanel({
+      sequence: slope({ angleDeg: 30, offsets: [0, 1] }),
+      selection: { kind: "block", blockId: "slope" },
+    });
+    const layout = within(screen.getByRole("region", { name: "排列" }));
+    expect(layout.getByText("吊杆 8 → 吊杆 9")).not.toBeNull();
+    expect(layout.getByLabelText("排列方向").textContent).toContain("30.0");
+    stepUp("排列方向");
+    expect(builderState.current.handleRelayoutPreset).toHaveBeenLastCalledWith("slope", 31);
+    fireEvent.click(layout.getByRole("button", { name: "自动方向" }));
+    expect(builderState.current.handleRelayoutPreset).toHaveBeenLastCalledWith("slope", "auto");
+    fireEvent.click(layout.getByRole("button", { name: "按当前坐标重排" }));
+    expect(builderState.current.handleRelayoutPreset).toHaveBeenLastCalledWith("slope");
+  });
+
+  it("offers to lay out an old preset that still follows the click order", () => {
+    renderPanel({ sequence: slope(), selection: { kind: "block", blockId: "slope" } });
+    const layout = within(screen.getByRole("region", { name: "排列" }));
+    expect(layout.getByText("按选择顺序等距排列（旧预设）")).not.toBeNull();
+    fireEvent.click(layout.getByRole("button", { name: "按坐标排列" }));
+    expect(builderState.current.handleRelayoutPreset).toHaveBeenCalledWith("slope", "auto");
+  });
+
+  it("has no layout section for presets whose shape ignores the order", () => {
+    renderPanel({ selection: { kind: "block", blockId: "static" } });
+    expect(screen.queryByRole("region", { name: "排列" })).toBeNull();
+  });
+});
+
+describe("SequencePropertiesPanel back", () => {
+  afterEach(() => {
+    builderState.current.handleSelectionChange.mockClear();
+  });
+
+  it("clears the selected blocks", () => {
+    renderPanel({ selection: { kind: "block", blockId: "pose" } });
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
+    expect(builderState.current.handleSelectionChange).toHaveBeenCalledWith(null);
+  });
+
+  it("is there for every kind of properties, including segments and markers", () => {
+    renderPanel({ selection: { kind: "multi-block", blockIds: ["pose", "later"], focus: "segments" } });
+    expect(screen.getByRole("button", { name: "返回" })).not.toBeNull();
+    cleanup();
+    renderPanel({
+      sequence: { ...sequence, markers: [{ id: "m1", atMs: 0, name: "灯光切换" }] },
+      selection: { kind: "markers", markerIds: ["m1"] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
+    expect(builderState.current.handleSelectionChange).toHaveBeenCalledWith(null);
   });
 });

@@ -1002,7 +1002,7 @@ describe("explodePresetBlocks", () => {
     segments: [],
   };
 
-  it("turns a travelling wave into key poses, holding the staggered object until it starts", () => {
+  it("turns a travelling wave into key poses without redundant hold poses", () => {
     const before = resolveActionSequence(wave);
     const result = explodePresetBlocks(wave, ["wave"]);
     if (!result.ok) throw new Error(result.reason);
@@ -1011,16 +1011,50 @@ describe("explodePresetBlocks", () => {
       created.flatMap((block) =>
         block.kind === "pose" && block.objectId === objectId ? [block.atMs] : [],
       );
-    const presetTimesOf = (objectId: number) =>
+    const keyTimesOf = (objectId: number) =>
       before.poses
-        .filter((point) => point.objectId === objectId && point.sourceBlockId === "wave")
+        .filter((point) => point.objectId === objectId && point.sourceBlockId === "wave" && point.visible)
         .map((point) => point.atMs);
-    // 物体 2 晚 1 s 起步：开头多一个保持点
-    expect(timesOf(1)).toEqual(presetTimesOf(1));
-    expect(timesOf(2)).toEqual(presetTimesOf(2));
-    expect(timesOf(2)[0]).toBe(1000);
-    expect(timesOf(2)).toContain(2000);
+    // 物体 1 先结束，后面 9 s 还要换位置：保留 7 s 的保持位姿，等预设结束再走
+    expect(timesOf(1)).toEqual([...keyTimesOf(1), 7000]);
+    // 物体 2 晚 1 s 起步，起步前已在基准高度：开头的保持点不生成
+    expect(timesOf(2)).toEqual(keyTimesOf(2));
     samePath(wave, result.sequence, () => ["v1"]);
+  });
+
+  it("keeps the opening hold only when the staggered object must first reach the base", () => {
+    const fromElsewhere: ActionSequenceConfig = {
+      ...wave,
+      blocks: [
+        { id: "q0", kind: "pose", objectId: 2, atMs: 0, pose: { v1: 50 } },
+        ...wave.blocks,
+      ],
+    };
+    const result = explodePresetBlocks(fromElsewhere, ["wave"]);
+    if (!result.ok) throw new Error(result.reason);
+    const opening = result.sequence.blocks.find(
+      (block) =>
+        result.createdIds.includes(block.id) &&
+        block.kind === "pose" &&
+        block.objectId === 2 &&
+        block.atMs === 1000,
+    );
+    expect(opening).toMatchObject({ pose: { v1: 50 } });
+  });
+
+  it("leaves out the closing hold when nothing follows the preset", () => {
+    const alone: ActionSequenceConfig = {
+      ...wave,
+      blocks: wave.blocks.filter((block) => block.id !== "after"),
+    };
+    const result = explodePresetBlocks(alone, ["wave"]);
+    if (!result.ok) throw new Error(result.reason);
+    const resolvedBefore = resolveActionSequence(alone);
+    const keyPoints = resolvedBefore.poses.filter(
+      (point) => point.sourceBlockId === "wave" && point.visible,
+    );
+    expect(result.createdIds).toHaveLength(keyPoints.length);
+    samePath(alone, result.sequence, () => ["v1"]);
   });
 
   it("writes the preset's curves onto the segments between its key poses", () => {

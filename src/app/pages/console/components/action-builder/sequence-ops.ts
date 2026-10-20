@@ -13,6 +13,7 @@ import {
 import type {
   ActionSequenceConfig,
   KeyframePose,
+  ModelPose,
   MotionProfile,
   MotionSegmentConfig,
   MotionSegmentSettings,
@@ -748,7 +749,8 @@ const isPresetBlock = (block: TimelineBlock): boolean =>
   block.kind === "static-preset" || block.kind === "dynamic-preset";
 
 /**
- * 拆解预设：换成它在各物体上的关键点位姿（含行进波浪错开等待时的保持点），时刻和位置不变。
+ * 拆解预设：换成它在各物体上的关键点位姿，时刻和位置不变；行进波浪错开等待时的隐藏保持点
+ * 只在影响运动时才生成。
  * 预设管的轴照填；不管的轴在这之前真正设过值（位姿设了值，或别的预设管这个轴）就照沿用的值填，
  * 只是占位的不填，拆完这个轴不受控或经过。预设内部各段沿用预设的加减速时间，
  * 前后相邻区间的设置跟着换到新位姿上。
@@ -790,11 +792,22 @@ export const explodePresetBlocks = (
     }
   }
 
+  // 行进波浪错开起步、提前结束时的隐藏保持点：下一个点和它一样时有没有它运动都不变，不生成；
+  // 只有后面还要换位置（得等预设结束再走）、或起步前要先走到基准时才保留
+  const samePose = (left: ModelPose, right: ModelPose) =>
+    ALL_VIRTUAL_AXES.every((axis) => Math.abs(left[axis] - right[axis]) < 1e-6);
+  const holdMatters = (point: (typeof resolved.poses)[number]): boolean => {
+    const series = resolved.posesByObject.get(point.objectId) ?? [];
+    const next = series[series.indexOf(point) + 1];
+    return next !== undefined && !samePose(point.pose, next.pose);
+  };
+
   const existingIds = new Set(sequence.blocks.map((block) => block.id));
   const blockIdByRef = new Map<string, string>();
   const posesByPreset = new Map<string, PoseBlock[]>();
   for (const point of resolved.poses) {
     if (point.sourceBlockId === null || !targetIds.has(point.sourceBlockId)) continue;
+    if (!point.visible && !holdMatters(point)) continue;
     const owned = ownedAxesOf(point.sourceBlockId);
     const pose: KeyframePose = {};
     for (const axis of ALL_VIRTUAL_AXES) {

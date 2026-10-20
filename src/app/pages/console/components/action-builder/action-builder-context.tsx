@@ -29,9 +29,12 @@ import { roundProjectCoordinate } from "@/app/project/project-quantity";
 import { fitPresetParams } from "@/app/project/action-sequence/preset-defaults";
 import {
   dynamicPresetProfileDurationMs,
+  getPresetDefinition,
   presetLabelOf,
   presetObjectConditionMessage,
 } from "@/app/project/action-sequence/preset-registry";
+import { layoutParticipants, type LayoutPoint } from "@/app/project/action-sequence/preset-layout";
+import { objectWorldPose } from "@/app/project/object-mount";
 import { validateActionSequence } from "@/app/project/action-sequence/validate-sequence";
 import type { SequenceIssue } from "@/app/project/action-sequence/validate-sequence";
 import { sequenceValidationContextFromSetup } from "@/app/project/project-motion-readiness";
@@ -921,6 +924,44 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   }, [selectedSequenceId, commitMotionProjection, handleSequenceSelect]);
 
   /** 物体不符合预设条件时按该条件提示，返回 true 表示不能添加 */
+  /** 物体在水平面上的世界坐标（挂载的物体按父物体换算），拿不到的按原点 */
+  const layoutPointsFor = useCallback(
+    (objectIds: readonly number[]): LayoutPoint[] => {
+      const objects = currentProject?.document?.setup.controlledObjects ?? [];
+      return objectIds.map((id) => {
+        const position = objectWorldPose(objects, id)?.position;
+        return { id, x: position?.x ?? 0, z: position?.z ?? 0 };
+      });
+    },
+    [currentProject?.document],
+  );
+
+  /** 形状跟排列有关的预设按坐标排序，其余保持选择顺序 */
+  const presetParticipants = useCallback(
+    (presetId: string, objectIds: readonly number[]) =>
+      getPresetDefinition(presetId)?.usesLayout
+        ? layoutParticipants(layoutPointsFor(objectIds))
+        : { orderedObjectIds: [...objectIds], layout: undefined },
+    [layoutPointsFor],
+  );
+
+  /**
+   * 按当前坐标重排预设：不传角度时沿用预设原来的方向（老预设取自动方向），"auto" 重新取自动方向。
+   */
+  const handleRelayoutPreset = useCallback(
+    (blockId: string, angleDeg?: number | "auto") => {
+      const block = sequence?.blocks.find((item) => item.id === blockId);
+      if (!block || (block.kind !== "static-preset" && block.kind !== "dynamic-preset")) return;
+      const angle = angleDeg === "auto" ? undefined : (angleDeg ?? block.layout?.angleDeg);
+      const { orderedObjectIds, layout } = layoutParticipants(
+        layoutPointsFor(block.orderedObjectIds),
+        angle,
+      );
+      handleReplaceTimelineBlock({ ...block, orderedObjectIds, layout });
+    },
+    [sequence, layoutPointsFor, handleReplaceTimelineBlock],
+  );
+
   const warnPresetObjectCondition = useCallback(
     (presetId: string, objectIds: readonly number[]): boolean => {
       const message = presetObjectConditionMessage(
@@ -957,14 +998,16 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         }),
       );
       if (!fitted) return;
+      const { orderedObjectIds, layout } = presetParticipants(presetId, objectIds);
       const block: TimelineBlock = {
         id: nextId("blk"),
         kind: "static-preset",
         presetId,
         atMs: cursorMs,
-        orderedObjectIds: [...objectIds],
+        orderedObjectIds,
         params: fitted.params,
         label: presetLabelOf(presetId),
+        ...(layout ? { layout } : {}),
       };
       if (!handleInsertTimelineBlock(block)) return;
       setSelection({ kind: "block", blockId: block.id });
@@ -977,6 +1020,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleInsertTimelineBlock,
       getTimelineObject,
       warnPresetObjectCondition,
+      presetParticipants,
     ],
   );
 
@@ -1010,21 +1054,23 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         }
       }
       const durationMs = fitted.durationMs > 0 ? fitted.durationMs : DEFAULT_BLOCK_MS;
+      const { orderedObjectIds, layout } = presetParticipants(presetId, objectIds);
       const block: TimelineBlock = {
         id: nextId("blk"),
         kind: "dynamic-preset",
         presetId,
         startMs: cursorMs,
         endMs: cursorMs + durationMs,
-        orderedObjectIds: [...objectIds],
+        orderedObjectIds,
         params: fitted.params,
         label: presetLabelOf(presetId),
+        ...(layout ? { layout } : {}),
         profiles: createDefaultAxisProfiles(
           dynamicPresetProfileDurationMs({
             presetId,
             startMs: cursorMs,
             endMs: cursorMs + durationMs,
-            orderedObjectIds: [...objectIds],
+            orderedObjectIds,
             params: fitted.params,
           }),
           Object.keys(mergedMinAccel).length > 0 ? mergedMinAccel : undefined,
@@ -1041,6 +1087,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleInsertTimelineBlock,
       getTimelineObject,
       warnPresetObjectCondition,
+      presetParticipants,
     ],
   );
 
@@ -1319,6 +1366,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleWriteSegmentProfiles,
       handleBlockDelete,
       handleExplodePresets,
+      handleRelayoutPreset,
       handleAddMarker,
       handleRenameMarker,
       handleSetMarkerTime,
@@ -1391,6 +1439,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleWriteSegmentProfiles,
       handleBlockDelete,
       handleExplodePresets,
+      handleRelayoutPreset,
       handleAddMarker,
       handleRenameMarker,
       handleSetMarkerTime,

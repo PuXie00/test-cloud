@@ -1,3 +1,4 @@
+import { keepLayoutOffsets } from "./action-sequence/preset-layout";
 import { getPresetDefinition } from "./action-sequence/preset-registry";
 import { sequenceObjectIds } from "./action-sequence/sequence-object-ids";
 import {
@@ -189,10 +190,14 @@ const stripPresetParticipants = (
 ): TimelineBlock | null => {
   const definition = getPresetDefinition(block.presetId);
   if (!definition) return null;
-  const orderedObjectIds = block.orderedObjectIds.filter((objectId) => !deletedIds.has(objectId));
+  const keep = block.orderedObjectIds.map((objectId) => !deletedIds.has(objectId));
+  const orderedObjectIds = block.orderedObjectIds.filter((_, index) => keep[index]);
   if (orderedObjectIds.length < definition.minObjects) return null;
   if (orderedObjectIds.length === block.orderedObjectIds.length) return block;
-  return { ...block, orderedObjectIds };
+  // 按坐标排过的预设：剩下的物体保持原来的间距比例
+  return block.layout
+    ? { ...block, orderedObjectIds, layout: keepLayoutOffsets(block.layout, keep) }
+    : { ...block, orderedObjectIds };
 };
 
 const reconcileStrippedSequence = (sequence: ActionSequenceConfig): ActionSequenceConfig => {

@@ -211,14 +211,14 @@ describe("buildDimensionEntries 相对模式", () => {
     ]);
   });
 
-  it("已设目标时以目标为基准", () => {
+  it("已设目标时仍以当前实际位置为基准", () => {
     const participants = liftAndSwing({ lift: { h: 100 }, swing: { h: 100, p: 0, y: 0 } });
     const { entries } = buildDimensionEntries(
       participants,
       { mode: "rel", axis: "v1", value: 20 },
       { "1": { v1: 300 } },
     );
-    expect(entries.find((entry) => entry.objectId === "1")?.target.v1).toBe(320);
+    expect(entries.find((entry) => entry.objectId === "1")?.target.v1).toBe(120);
     expect(entries.find((entry) => entry.objectId === "2")?.target.v1).toBe(120);
   });
 
@@ -238,9 +238,13 @@ describe("buildDimensionEntries 相对模式", () => {
     expect(result).toEqual({ entries: [], missingPosition: false });
   });
 
-  it("没有已设目标也没有监控位置的物体被跳过并标记", () => {
+  it("没有监控位置的物体被跳过并标记，已设目标也不能代替", () => {
     const participants = liftAndSwing({ lift: null, swing: { h: 100, p: 0, y: 0 } });
-    const result = buildDimensionEntries(participants, { mode: "rel", axis: "v1", value: 10 });
+    const result = buildDimensionEntries(
+      participants,
+      { mode: "rel", axis: "v1", value: 10 },
+      { "1": { v1: 300 } },
+    );
     expect(result.entries.map((entry) => entry.objectId)).toEqual(["2"]);
     expect(result.missingPosition).toBe(true);
   });

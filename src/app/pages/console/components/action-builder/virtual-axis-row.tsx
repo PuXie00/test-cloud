@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-input";
 import type { VirtualAxisId } from "@/app/project/project-document-types";
 import { virtualAxisLabel, virtualAxisStep } from "./virtual-axis-edit";
@@ -12,7 +11,6 @@ export const VirtualAxisRow = ({
   min,
   max,
   disabled,
-  trailing,
   onChange,
   onCommit,
 }: {
@@ -25,8 +23,6 @@ export const VirtualAxisRow = ({
   min?: number;
   max?: number;
   disabled?: boolean;
-  /** 输入框右侧的补充信息，如维度控制的当前位置 */
-  trailing?: ReactNode;
   onChange: (value: number) => void;
   onCommit: (value: number) => void;
 }) => {
@@ -48,7 +44,6 @@ export const VirtualAxisRow = ({
         onCommit={onCommit}
         className="w-full border-border border"
       />
-      {trailing}
     </div>
   );
 };

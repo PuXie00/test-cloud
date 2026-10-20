@@ -47,14 +47,9 @@ describe("resolveGoTargets", () => {
     expect(entries[0].target).toEqual({ v1: 120, v2: 3 });
   });
 
-  it("相对模式：有已设目标时以目标为基准", () => {
-    const entries = resolveGoTargets(
-      [snapshot(1, { h: 100, p: 5 })],
-      { height: 20 },
-      "rel",
-      { "1": { v1: 200 } },
-    );
-    expect(entries[0].target).toEqual({ v1: 220 });
+  it("相对模式：以实际位置为基准，不管已设的目标", () => {
+    const entries = resolveGoTargets([snapshot(1, { h: 100, p: 5 })], { height: 20 }, "rel");
+    expect(entries[0].target).toEqual({ v1: 120 });
   });
 
   it("相对模式：无目标且无监控值时跳过该轴", () => {
@@ -96,7 +91,6 @@ describe("resolveGoTargets", () => {
       [snapshot(1, { h: 100 })],
       { height: 1800 },
       "abs",
-      {},
       { "1": { v1: { min: 0, max: 1000 } } },
     );
     expect(entries[0]?.target).toEqual({ v1: 1000 });
@@ -107,7 +101,6 @@ describe("resolveGoTargets", () => {
       [snapshot(1, { h: 900, p: 10 })],
       { height: 200, pitch: -40 },
       "rel",
-      {},
       {
         "1": {
           v1: { min: 0, max: 1000 },

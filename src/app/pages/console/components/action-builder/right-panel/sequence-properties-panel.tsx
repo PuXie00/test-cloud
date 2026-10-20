@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ChevronLeft } from "lucide-react";
 import { clampNumeric } from "@/app/components/ics/numeric-input-utils";
 import { TabBar } from "@/app/components/ics/tab-bar";
 import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-input";
@@ -66,6 +67,26 @@ export type SequencePropertiesPanelProps = {
   onDeleteBlock: (blockId: string | string[]) => void;
 };
 
+/**
+ * 返回：清空时间轴上选中的动作块（或标记），物体选中保留，
+ * 选着物体时就回到「新建位姿、指令、预设」。
+ */
+const BackToAddButton = () => {
+  const { handleSelectionChange } = useActionBuilder();
+  if (!handleSelectionChange) return null;
+  return (
+    <button
+      type="button"
+      aria-label="返回"
+      title="取消选中的动作块，回到添加位姿、指令"
+      onClick={() => handleSelectionChange(null)}
+      className="-ml-1.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+    >
+      <ChevronLeft className="h-4 w-4" aria-hidden />
+    </button>
+  );
+};
+
 const PropertiesShell = ({
   title,
   children,
@@ -84,7 +105,10 @@ const PropertiesShell = ({
 }) => (
   <div className="flex min-h-0 flex-1 flex-col">
     <div className="flex h-9 shrink-0 items-center justify-between gap-2 bg-muted px-3">
-      <h2 className="truncate text-label-caps text-foreground">{title}</h2>
+      <div className="flex min-w-0 items-center gap-1">
+        <BackToAddButton />
+        <h2 className="truncate text-label-caps text-foreground">{title}</h2>
+      </div>
       {headerStatus}
     </div>
     <div

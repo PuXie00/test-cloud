@@ -14,8 +14,8 @@ import { virtualAxisRangeFor, type AxisRangeSource } from "./dimension-axis-rang
 /**
  * 维度控制的批量编辑规则，和动作页「多选位姿」一致：
  * - 显示所选物体虚轴的并集（按虚轴 id，不是按位置）
- * - 绝对：各物体值相同时显示该值，不同时显示 --；相对：输入从 0 开始
- *   物体的值 = 已设的 GO 目标，没设目标就是当前监控位置
+ * - 绝对：各物体值相同时显示该值，不同时显示 --；物体的值 = 已设的 GO 目标，没设目标就是当前监控位置
+ * - 相对：输入从 0 开始，相对物体当前的实际位置（不是已设的 GO 目标）
  * - 单位只有在所有会被写入的物体一致时才显示
  * - 绝对输入的上下限是各物体行程的交集，写入时再按每个物体自己的行程截断
  * - 没有该虚轴的物体不写入
@@ -42,7 +42,7 @@ export type DimensionWrite = {
 
 export type DimensionWriteResult = {
   entries: GoReadyEntry[];
-  /** 相对模式下有物体既没有已设目标、也没有监控位置，无法算出基准而被跳过 */
+  /** 相对模式下有物体没有监控位置，无法算出基准而被跳过 */
   missingPosition: boolean;
 };
 
@@ -127,17 +127,6 @@ export const sharedAxisValue = (
     ),
   );
 
-/** 各物体当前监控位置一致时返回该值（按输入框精度），不一致或没有位置数据时 undefined */
-export const sharedLiveAxisValue = (
-  participants: readonly DimensionParticipant[],
-  axis: VirtualAxisId,
-): number | undefined =>
-  sharedRoundedValue(
-    writableParticipants(participants, axis).map(
-      (item) => positionsToAxisValues(item.snapshot.positions)[axis],
-    ),
-  );
-
 const sharedRoundedValue = (raw: readonly (number | undefined)[]): number | undefined => {
   const values = raw.map((value) => (value === undefined ? undefined : roundToInputPrecision(value)));
   const [shared] = values;
@@ -147,7 +136,7 @@ const sharedRoundedValue = (raw: readonly (number | undefined)[]): number | unde
 
 /**
  * 把一次虚轴输入转成每个物体的 GO 目标：
- * - 绝对：该轴 = 输入值；相对：该轴 = 基准 + 增量，基准是已设目标，没有就取当前监控位置
+ * - 绝对：该轴 = 输入值；相对：该轴 = 当前监控位置 + 增量（已设的目标不算基准）
  * - 每个物体按自己的行程截断；没有这根虚轴的物体不写
  * - 物体第一次进入 GO 准备时，其余虚轴保持当前位置（和输入框里看到的一致），写进目标，
  *   否则按 GO 时没写的轴会被当成 0；已经有目标的物体只改这一根轴
@@ -168,7 +157,7 @@ export const buildDimensionEntries = (
 
     if (mode === "rel") {
       if (value === 0) continue;
-      const base = resolveRelativeBase(axis, armed ?? {}, current);
+      const base = resolveRelativeBase(axis, current);
       if (base === undefined) {
         missingPosition = true;
         continue;

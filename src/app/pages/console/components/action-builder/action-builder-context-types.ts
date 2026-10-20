@@ -78,6 +78,8 @@ export type ActionBuilderContextValue = {
   handleBlockDelete: (blockIds?: string | string[]) => void;
   /** 拆解预设：换成各物体的关键点位姿；不传时拆选中的预设 */
   handleExplodePresets: (blockIds?: readonly string[]) => void;
+  /** 按当前坐标重排预设；不传角度沿用原方向，"auto" 重新取自动方向 */
+  handleRelayoutPreset: (blockId: string, angleDeg?: number | "auto") => void;
   /** 在指定时刻（默认播放头）加标记并选中它，返回新标记的 id */
   handleAddMarker: (atMs?: number) => string | null;
   handleRenameMarker: (markerId: string, name: string) => boolean;

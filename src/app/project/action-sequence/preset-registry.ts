@@ -1,6 +1,7 @@
 import { CONTROL_TYPE_RULES } from "../configuration-rules";
 import type { ControlType, MotionAxisKind } from "../configuration-types";
 import type { VirtualAxisId } from "../project-document-types";
+import { participantOffsets } from "./preset-layout";
 import type {
   DynamicPresetBlock,
   ModelPose,
@@ -50,6 +51,8 @@ export type PresetDefinition = {
   maxObjects?: number;
   objectCondition: PresetObjectCondition;
   ownedAxes: readonly VirtualAxisId[];
+  /** 形状跟参与物体的排列有关（斜面、弧形、波浪）：应用时按坐标排序并按实际间距算 */
+  usesLayout?: boolean;
   paramFields: readonly PresetParamField[];
   resolve: (block: StaticPresetBlock | DynamicPresetBlock) => ResolvedPresetPose[];
   validateParams: (params: Record<string, PresetParamValue>) => string[];
@@ -58,6 +61,9 @@ export type PresetDefinition = {
 type PresetBlock = StaticPresetBlock | DynamicPresetBlock;
 
 const DEG_TO_RAD = Math.PI / 180;
+
+const PRESET_STEP_MS = 100;
+const snapToPresetStep = (ms: number): number => Math.round(ms / PRESET_STEP_MS) * PRESET_STEP_MS;
 
 const asStatic = (block: PresetBlock): StaticPresetBlock => block as StaticPresetBlock;
 const asDynamic = (block: PresetBlock): DynamicPresetBlock => block as DynamicPresetBlock;
@@ -190,13 +196,15 @@ const dynamicWaveNumericParam = (
     : DYNAMIC_WAVE_PARAM_DEFAULTS[key];
 };
 
+/** offset 是参与物体沿排列方向的相对位置（老预设就是第几个），count 是参与物体数 */
 const mapStatic = (
   block: StaticPresetBlock,
-  v1At: (participantIndex: number, count: number) => number,
+  v1At: (offset: number, count: number) => number,
 ): ResolvedPresetPose[] => {
   const count = block.orderedObjectIds.length;
+  const offsets = participantOffsets(block);
   return block.orderedObjectIds.map((objectId, participantIndex) =>
-    pointOf(block, objectId, 0, block.atMs, poseOf(v1At(participantIndex, count))),
+    pointOf(block, objectId, 0, block.atMs, poseOf(v1At(offsets[participantIndex] ?? participantIndex, count))),
   );
 };
 
@@ -220,15 +228,16 @@ const staticSlope: PresetDefinition = {
   id: "static-slope",
   kind: "static",
   label: "斜面",
-  description: "沿参与顺序按级差排布升降",
+  description: "沿排列方向按级差排布升降",
   minObjects: 2,
   objectCondition: LIFT_OBJECTS,
   ownedAxes: OWNED_V1,
+  usesLayout: true,
   paramFields: STATIC_SLOPE_FIELDS,
   validateParams: (params) => numericParams(params, fieldKeys(STATIC_SLOPE_FIELDS)),
   resolve: (block) => {
     const { baseV1, stepV1 } = numbers(asStatic(block).params);
-    return mapStatic(asStatic(block), (participantIndex) => baseV1 + participantIndex * stepV1);
+    return mapStatic(asStatic(block), (offset) => baseV1 + offset * stepV1);
   },
 };
 
@@ -236,17 +245,18 @@ const staticArc: PresetDefinition = {
   id: "static-arc",
   kind: "static",
   label: "弧形",
-  description: "沿参与顺序形成拱形",
+  description: "沿排列方向形成拱形",
   minObjects: 2,
   objectCondition: LIFT_OBJECTS,
   ownedAxes: OWNED_V1,
+  usesLayout: true,
   paramFields: STATIC_ARC_FIELDS,
   validateParams: (params) => numericParams(params, fieldKeys(STATIC_ARC_FIELDS)),
   resolve: (block) => {
     const { baseV1, amplitude } = numbers(asStatic(block).params);
-    return mapStatic(asStatic(block), (participantIndex, count) => {
+    return mapStatic(asStatic(block), (offset, count) => {
       const span = Math.max(1, count - 1);
-      return baseV1 + amplitude * Math.sin((Math.PI * participantIndex) / span);
+      return baseV1 + amplitude * Math.sin((Math.PI * offset) / span);
     });
   },
 };
@@ -255,18 +265,18 @@ const staticWave: PresetDefinition = {
   id: "static-wave",
   kind: "static",
   label: "静态波浪",
-  description: "沿参与顺序按相位采样正弦",
+  description: "沿排列方向按相位采样正弦",
   minObjects: 2,
   objectCondition: LIFT_OBJECTS,
   ownedAxes: OWNED_V1,
+  usesLayout: true,
   paramFields: STATIC_WAVE_FIELDS,
   validateParams: (params) => numericParams(params, fieldKeys(STATIC_WAVE_FIELDS)),
   resolve: (block) => {
     const { baseV1, amplitude, phaseDeg, intervalDeg } = numbers(asStatic(block).params);
     return mapStatic(
       asStatic(block),
-      (participantIndex) =>
-        baseV1 + amplitude * Math.sin((phaseDeg + participantIndex * intervalDeg) * DEG_TO_RAD),
+      (offset) => baseV1 + amplitude * Math.sin((phaseDeg + offset * intervalDeg) * DEG_TO_RAD),
     );
   },
 };
@@ -330,8 +340,9 @@ export const dynamicPresetProfileDurationMs = (
   return phaseMs > 0 ? phaseMs : durationMs;
 };
 
-const staggerIndexOf = (participantIndex: number, count: number, direction: number): number =>
-  direction === 1 ? participantIndex : count - 1 - participantIndex;
+/** 起步先后：正向按相对位置，反向从另一头数 */
+const staggerIndexOf = (offset: number, count: number, direction: number): number =>
+  direction === 1 ? offset : count - 1 - offset;
 
 const pushChasePose = (
   points: ResolvedPresetPose[],
@@ -351,10 +362,11 @@ const dynamicWave: PresetDefinition = {
   id: "dynamic-wave",
   kind: "dynamic",
   label: "行进波浪",
-  description: "沿参与顺序错开的升—降起伏",
+  description: "沿排列方向错开的升—降起伏",
   minObjects: 2,
   objectCondition: LIFT_OBJECTS,
   ownedAxes: OWNED_V1,
+  usesLayout: true,
   paramFields: DYNAMIC_WAVE_FIELDS,
   validateParams: (params) => {
     const errors = numericParams(withDynamicWaveParamDefaults(params), fieldKeys(DYNAMIC_WAVE_FIELDS));
@@ -389,9 +401,13 @@ const dynamicWave: PresetDefinition = {
       throw new Error("parameter staggerMs does not fit in the preset duration");
     }
     const peakV1 = baseV1 + amplitude;
+    const offsets = participantOffsets(dyn);
     const points: ResolvedPresetPose[] = [];
     dyn.orderedObjectIds.forEach((objectId, participantIndex) => {
-      const delayMs = staggerIndexOf(participantIndex, count, direction) * staggerMs;
+      // 按实际间距错开时落到 0.1 s（PLC 精度）上
+      const delayMs = snapToPresetStep(
+        staggerIndexOf(offsets[participantIndex] ?? participantIndex, count, direction) * staggerMs,
+      );
       const motionStartMs = dyn.startMs + delayMs;
       const nextIndex = { value: 0 };
       pushChasePose(points, dyn, objectId, nextIndex, motionStartMs, baseV1);

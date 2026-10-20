@@ -53,12 +53,25 @@ export type SetEnabledInstruction = {
 export type InstructionBlock = SetEnabledInstruction;
 
 export type PresetParamValue = number | string | boolean;
+
+/**
+ * 按坐标排列：方向（水平面角度，0° 沿 X 正向、90° 沿 Z 正向）和每个参与物体沿这个方向的
+ * 相对位置（与 orderedObjectIds 一一对应，第一个 0、最后一个 n−1，间距均匀时就是 0,1,2…）。
+ * 只在应用预设和「按当前坐标重排」时更新。
+ */
+export type PresetLayout = {
+  angleDeg: number;
+  offsets: number[];
+};
+
 export type PresetBlockBase = {
   id: string;
   presetId: string;
   orderedObjectIds: number[];
   params: Record<string, PresetParamValue>;
   label?: string;
+  /** 缺省时按选择顺序等距（老预设） */
+  layout?: PresetLayout;
 };
 
 export type StaticPresetBlock = PresetBlockBase & {
