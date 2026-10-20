@@ -238,6 +238,22 @@ describe("DimensionControl 写入", () => {
     ]);
   });
 
+  it("相对模式：已设了 GO 目标也按当前实际位置加增量", () => {
+    selectLiftAndSwing();
+    hookState.goState = {
+      phase: "armed",
+      mode: "abs",
+      entries: [{ objectId: "1", target: { v1: 400 }, current: {} }],
+    };
+    renderControl();
+    fireEvent.click(screen.getByRole("tab", { name: "相对" }));
+    stepUp("虚轴1");
+    const [entries] = hookState.arm.mock.calls[0] as [
+      { objectId: string; target: Record<string, number> }[],
+    ];
+    expect(entries.find((entry) => entry.objectId === "1")?.target.v1).toBe(101);
+  });
+
   it("相对模式：写入后输入框回到 0", () => {
     selectLiftAndSwing();
     renderControl();
@@ -295,25 +311,12 @@ describe("DimensionControl GO", () => {
   });
 });
 
-describe("DimensionControl 当前位置", () => {
-  it("每根虚轴旁显示当前位置，目标改了也照旧显示实际位置", () => {
+describe("DimensionControl 没有当前位置读数", () => {
+  it("虚轴旁不再显示当前位置，看 3D 标签", () => {
     selectLiftAndSwing();
-    hookState.goState = {
-      phase: "armed",
-      mode: "abs",
-      entries: [{ objectId: "1", target: { v1: 400 }, current: {} }],
-    };
     renderControl();
-    // 虚轴 1 两个物体都在 100；虚轴 2 只有四点摆
-    expect(screen.getByLabelText("虚轴1 当前位置").textContent).toBe("当前 100.0");
-    expect(screen.getByLabelText("虚轴2 当前位置").textContent).toBe("当前 5.0");
-  });
-
-  it("各物体当前位置不一致或没有数据时显示 --", () => {
-    selectLiftAndSwing();
-    hookState.snapshots.set(1, snapshot(1, [HEIGHT], { h: 200 }));
-    renderControl();
-    expect(screen.getByLabelText("虚轴1 当前位置").textContent).toBe("当前 --");
+    expect(screen.queryByLabelText("虚轴1 当前位置")).toBeNull();
+    expect(screen.queryByText(/^当前 /)).toBeNull();
   });
 
   it("传入 objectIds 时操作这些物体而不是全局选择", () => {

@@ -9,18 +9,7 @@ import { useControlledObjects } from "../../../hooks/use-controlled-objects";
 import { goEntriesForObjectIds, pendingGoEntries } from "../../../hooks/go-ready";
 import { useGoReady } from "../../../hooks/go-ready-provider";
 import { useProjectStore } from "../../../hooks/use-project-store";
-import { useSessionDisplayLengthUnit } from "@/app/project/display-length-unit-provider";
-import {
-  isLengthFamilyUnit,
-  resolveDisplayPrecision,
-  toDisplayLengthValue,
-  type DisplayLengthUnit,
-} from "@/app/project/display-length-units";
-import {
-  AXIS_MODE_TABS,
-  virtualAxisLabel,
-  type AxisEditMode,
-} from "../../action-builder/virtual-axis-edit";
+import { AXIS_MODE_TABS, type AxisEditMode } from "../../action-builder/virtual-axis-edit";
 import { VirtualAxisRow } from "../../action-builder/virtual-axis-row";
 import {
   axisInputRange,
@@ -28,7 +17,6 @@ import {
   buildDimensionEntries,
   buildDimensionParticipants,
   sharedAxisValue,
-  sharedLiveAxisValue,
   unionAxes,
 } from "./dimension-edit";
 
@@ -38,14 +26,8 @@ type DimensionControlProps = {
   objectIds?: readonly number[];
 };
 
-/** 输入框里还没写入 GO 目标的值：绝对是输入的位置，相对是增量 */
+/** 输入框里还没写入 GO 目标的值：绝对是输入的位置，相对是相对当前实际位置的增量 */
 type AxisDrafts = Partial<Record<VirtualAxisId, number>>;
-
-/** 当前位置按输入框的显示单位和精度（一位小数）显示 */
-const formatLive = (value: number, unit: string, display: DisplayLengthUnit): string =>
-  isLengthFamilyUnit(unit)
-    ? toDisplayLengthValue(value, display).toFixed(resolveDisplayPrecision(1, display))
-    : value.toFixed(1);
 
 const targetSignature = (target: VirtualAxisValues | undefined): string =>
   target ? `${target.v1 ?? ""},${target.v2 ?? ""},${target.v3 ?? ""}` : "-";
@@ -56,7 +38,6 @@ const targetSignature = (target: VirtualAxisValues | undefined): string =>
  */
 export const DimensionControl = ({ disabled = false, objectIds }: DimensionControlProps) => {
   const { selectedId, multiSelectedIds } = useSelection();
-  const display = useSessionDisplayLengthUnit();
   const { getById } = useControlledObjects();
   const { objects } = useProjectStore();
   const { state, arm, go, cancel } = useGoReady();
@@ -154,7 +135,6 @@ export const DimensionControl = ({ disabled = false, objectIds }: DimensionContr
               const value = mode === "rel" ? (draft ?? 0) : (draft ?? shared ?? 0);
               const mixed = mode === "abs" && draft === undefined && shared === undefined;
               const unit = axisUnit(participants, axis);
-              const live = sharedLiveAxisValue(participants, axis);
               return (
                 <VirtualAxisRow
                   key={axis}
@@ -165,14 +145,6 @@ export const DimensionControl = ({ disabled = false, objectIds }: DimensionContr
                   min={mode === "abs" ? range.min : undefined}
                   max={mode === "abs" ? range.max : undefined}
                   disabled={disabled}
-                  trailing={
-                    <span
-                      aria-label={`${virtualAxisLabel(axis)} 当前位置`}
-                      className="w-20 shrink-0 truncate text-right text-body-sm tabular-nums text-muted-foreground"
-                    >
-                      当前 {live === undefined || unit === undefined ? "--" : formatLive(live, unit, display)}
-                    </span>
-                  }
                   onChange={(next) => handleDraftChange(axis, next)}
                   onCommit={(next) => handleCommit(axis, next)}
                 />

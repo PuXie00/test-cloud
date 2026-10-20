@@ -69,34 +69,29 @@ export const positionsToAxisValues = (
 };
 
 /** 相对位移基准：优先已设目标，否则取当前监控值。 */
+/** 相对模式的基准：物体当前的实际位置（不是已设的 GO 目标）；没有监控位置时 undefined */
 export const resolveRelativeBase = (
   axis: VirtualAxisId,
-  armedTarget: VirtualAxisValues,
   current: VirtualAxisValues,
-): number | undefined => {
-  if (armedTarget[axis] !== undefined) return armedTarget[axis];
-  return current[axis];
-};
+): number | undefined => current[axis];
 
 export const resolveGoTargets = (
   snapshots: ControlledObjectSnapshot[],
   drafts: Record<string, number>,
   mode: "abs" | "rel",
-  armedTargetsByObjectId: Record<string, VirtualAxisValues> = {},
   rangesByObjectId: Record<string, Partial<Record<VirtualAxisId, AxisRange>>> = {},
 ): GoReadyEntry[] => {
   const entries: GoReadyEntry[] = [];
   for (const snapshot of snapshots) {
     const objectId = String(snapshot.descriptor.id);
     const current = positionsToAxisValues(snapshot.positions);
-    const armedTarget = armedTargetsByObjectId[objectId] ?? {};
     const ranges = rangesByObjectId[objectId];
     const target: VirtualAxisValues = {};
     for (const [dimKey, draftValue] of Object.entries(drafts)) {
       const axis = DIMENSION_KEY_TO_VIRTUAL_AXIS[dimKey];
       if (!axis) continue;
       if (mode === "rel") {
-        const base = resolveRelativeBase(axis, armedTarget, current);
+        const base = resolveRelativeBase(axis, current);
         if (base === undefined) continue;
         target[axis] = clampToAxisRange(base + draftValue, ranges?.[axis]);
       } else {
