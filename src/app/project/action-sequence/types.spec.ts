@@ -130,6 +130,26 @@ describe("action sequence project structure", () => {
     expect(() => assertProjectDocumentStructure(document)).toThrow(/markers\[0\]\.name/);
   });
 
+  it("accepts a preset layout matching its participants and rejects a mismatch", () => {
+    const document = createEmptyDocument({ id: "p", name: "P", author: "tester" });
+    const preset = {
+      id: "slope",
+      kind: "static-preset" as const,
+      presetId: "static-slope",
+      atMs: 0,
+      orderedObjectIds: [7, 8],
+      params: { baseV1: 0, stepV1: 10 },
+      layout: { angleDeg: 30, offsets: [0, 1] },
+    };
+    document.motion.actionSequences = [{ ...sequence, blocks: [preset] }];
+    expect(() => assertProjectDocumentStructure(document)).not.toThrow();
+
+    document.motion.actionSequences = [
+      { ...sequence, blocks: [{ ...preset, layout: { angleDeg: 30, offsets: [0, 1, 2] } }] },
+    ];
+    expect(() => assertProjectDocumentStructure(document)).toThrow(/layout\.offsets/);
+  });
+
   it("accepts a trapezoid motion profile on segments and dynamic presets", () => {
     const document = createEmptyDocument({ id: "p", name: "P", author: "tester" });
     const axisProfiles = {

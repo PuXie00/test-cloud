@@ -36,11 +36,72 @@ const usePresetBuilder = () => {
   const builder = useActionBuilder() as {
     getTimelineObject?: (objectId: number) => ControlledObject | undefined;
     sequenceIssues?: import("@/app/project/action-sequence/validate-sequence").SequenceIssue[];
+    handleRelayoutPreset?: (blockId: string, angleDeg?: number | "auto") => void;
   };
   return {
     getTimelineObject: builder.getTimelineObject ?? (() => undefined),
     sequenceIssues: builder.sequenceIssues ?? [],
+    handleRelayoutPreset: builder.handleRelayoutPreset,
   };
+};
+
+const layoutButtonClass =
+  "inline-flex h-8 flex-1 items-center justify-center rounded-md border border-border px-2 text-body-sm text-foreground hover:bg-accent";
+
+/** 斜面、弧形、波浪：参与物体按坐标沿某个方向排，按实际间距算 */
+const PresetLayoutFields = ({
+  block,
+  objectName,
+  onRelayout,
+}: {
+  block: StaticPresetBlock | DynamicPresetBlock;
+  objectName: (objectId: number) => string;
+  onRelayout: (blockId: string, angleDeg?: number | "auto") => void;
+}) => {
+  const order = block.orderedObjectIds.map(objectName).join(" → ");
+  if (!block.layout) {
+    return (
+      <section className="mb-3 rounded-md bg-background/40 p-2" aria-label="排列">
+        <p className="mb-1 text-body-sm text-muted-foreground">按选择顺序等距排列（旧预设）</p>
+        <p className="mb-2 truncate text-body-sm text-foreground" title={order}>
+          {order}
+        </p>
+        <button type="button" className={layoutButtonClass} onClick={() => onRelayout(block.id, "auto")}>
+          按坐标排列
+        </button>
+      </section>
+    );
+  }
+  return (
+    <section className="mb-3 rounded-md bg-background/40 p-2" aria-label="排列">
+      <Field label="方向">
+        <UnitAwareNumericInput
+          aria-label="排列方向"
+          value={block.layout.angleDeg}
+          unit="°"
+          step={1}
+          precision={1}
+          min={-180}
+          max={180}
+          onCommit={(angleDeg) => onRelayout(block.id, angleDeg)}
+        />
+      </Field>
+      <p className="mb-2 text-body-sm text-muted-foreground">
+        0° 沿 X 正向，90° 沿 Z 正向；按坐标从小到大排，间距按实际距离
+      </p>
+      <p className="mb-2 truncate text-body-sm text-foreground" title={order}>
+        {order}
+      </p>
+      <div className="flex gap-2">
+        <button type="button" className={layoutButtonClass} onClick={() => onRelayout(block.id, "auto")}>
+          自动方向
+        </button>
+        <button type="button" className={layoutButtonClass} onClick={() => onRelayout(block.id)}>
+          按当前坐标重排
+        </button>
+      </div>
+    </section>
+  );
 };
 
 const Field = ({
@@ -209,7 +270,7 @@ export const PresetBlockFields = ({
   resolved,
   onReplaceBlock,
 }: PresetBlockFieldsProps) => {
-  const { getTimelineObject, sequenceIssues } = usePresetBuilder();
+  const { getTimelineObject, sequenceIssues, handleRelayoutPreset } = usePresetBuilder();
   const definition = getPresetDefinition(block.presetId);
   const objects = block.orderedObjectIds.map((objectId) => getTimelineObject(objectId));
   const poses = generatedPosesFor(resolved, block);
@@ -250,6 +311,13 @@ export const PresetBlockFields = ({
                 : `${poses.length} 个位姿`}
             </p>
           </div>
+          {definition.usesLayout && handleRelayoutPreset ? (
+            <PresetLayoutFields
+              block={block}
+              objectName={(objectId) => getTimelineObject(objectId)?.name ?? `物体 ${objectId}`}
+              onRelayout={handleRelayoutPreset}
+            />
+          ) : null}
           {definition.paramFields.map((field) => (
             <Field key={field.key} label={field.label}>
               <PresetParamControl

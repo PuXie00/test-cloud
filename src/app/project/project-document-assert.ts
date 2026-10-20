@@ -599,6 +599,17 @@ const validatePresetBlockBase = (
   a.string(block.presetId, `${path}.presetId`);
   validateSetupEntityIdArray(block.orderedObjectIds, `${path}.orderedObjectIds`, a);
   validatePresetParams(block.params, `${path}.params`, a);
+  if (block.layout !== undefined) {
+    const layout = a.record(block.layout, `${path}.layout`);
+    a.finite(layout.angleDeg, `${path}.layout.angleDeg`);
+    const offsets = a.array(layout.offsets, `${path}.layout.offsets`);
+    offsets.forEach((offset, index) =>
+      a.nonNegativeFinite(offset, indexedPath(`${path}.layout.offsets`, index)),
+    );
+    if (Array.isArray(block.orderedObjectIds) && offsets.length !== block.orderedObjectIds.length) {
+      a.fail(`${path}.layout.offsets`, "must match orderedObjectIds");
+    }
+  }
 };
 
 const validateTimelineBlock = (value: unknown, path: string, a: StructuralAssertions): void => {

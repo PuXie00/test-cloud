@@ -445,6 +445,24 @@ describe("analyzeObjectDeletion / applyObjectDeletion", () => {
     });
   });
 
+  it("keeps the spacing of a laid-out preset after removing a participant", () => {
+    const document = cascadeDocument();
+    document.setup.controlledObjects.push(makeObject(OBJECT_C, "Object C"));
+    const keep = document.motion.actionSequences.find((sequence) => sequence.id === 13)!;
+    keep.blocks.push({
+      ...staticSlopePreset("preset-layout", [OBJECT_A, OBJECT_B, OBJECT_C]),
+      layout: { angleDeg: 0, offsets: [0, 0.5, 2] },
+    });
+    const next = applyObjectDeletion(document, [OBJECT_B]);
+    const preset = next.motion.actionSequences
+      .find((entry) => entry.id === 13)
+      ?.blocks.find((block) => block.id === "preset-layout");
+    expect(preset).toMatchObject({
+      orderedObjectIds: [OBJECT_A, OBJECT_C],
+      layout: { angleDeg: 0, offsets: [0, 1] },
+    });
+  });
+
   it("drops a preset when remaining participants fall below minObjects", () => {
     const document = cascadeDocument();
     const keep = document.motion.actionSequences.find(

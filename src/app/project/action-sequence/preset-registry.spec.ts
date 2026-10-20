@@ -471,3 +471,60 @@ describe("preset registry", () => {
     expect(countPosesPerObject(wave).get(8)).toBeGreaterThanOrEqual(2);
   });
 });
+
+describe("presets laid out by position", () => {
+  const v1Of = (points: ReturnType<typeof resolvePreset>) =>
+    new Map(points.map((point) => [point.objectId, point.pose.v1]));
+
+  it("spaces a slope by the real distances", () => {
+    const block: StaticPresetBlock = {
+      id: "slope",
+      kind: "static-preset",
+      presetId: "static-slope",
+      atMs: 0,
+      orderedObjectIds: [1, 2, 3],
+      params: { baseV1: 100, stepV1: 50 },
+      layout: { angleDeg: 0, offsets: [0, 0.5, 2] },
+    };
+    expect(v1Of(resolvePreset(block))).toEqual(new Map([[1, 100], [2, 125], [3, 200]]));
+    const { layout: _layout, ...indexed } = block;
+    expect(v1Of(resolvePreset(indexed))).toEqual(new Map([[1, 100], [2, 150], [3, 200]]));
+  });
+
+  it("keeps an arc symmetric over the real span", () => {
+    const block: StaticPresetBlock = {
+      id: "arc",
+      kind: "static-preset",
+      presetId: "static-arc",
+      atMs: 0,
+      orderedObjectIds: [1, 2, 3],
+      params: { baseV1: 0, amplitude: 100 },
+      layout: { angleDeg: 0, offsets: [0, 0.5, 2] },
+    };
+    const v1 = v1Of(resolvePreset(block));
+    expect(v1.get(1)).toBeCloseTo(0, 9);
+    expect(v1.get(2)).toBeCloseTo(100 * Math.sin(Math.PI / 4), 9);
+    expect(v1.get(3)).toBeCloseTo(0, 9);
+  });
+
+  it("staggers a travelling wave by distance, on the 0.1 s grid", () => {
+    const block: DynamicPresetBlock = {
+      id: "wave",
+      kind: "dynamic-preset",
+      presetId: "dynamic-wave",
+      startMs: 0,
+      endMs: 4000,
+      orderedObjectIds: [1, 2, 3],
+      params: { baseV1: 0, amplitude: 100, staggerMs: 1000, cycles: 1, direction: 1 },
+      profiles: createDefaultAxisProfiles(1000),
+      layout: { angleDeg: 0, offsets: [0, 0.37, 2] },
+    };
+    const startOf = (objectId: number) =>
+      resolvePreset(block).find((point) => point.objectId === objectId)?.atMs;
+    expect([startOf(1), startOf(2), startOf(3)]).toEqual([0, 400, 2000]);
+    const reversed = { ...block, params: { ...block.params, direction: -1 } };
+    const reversedStart = (objectId: number) =>
+      resolvePreset(reversed).find((point) => point.objectId === objectId)?.atMs;
+    expect([reversedStart(1), reversedStart(2), reversedStart(3)]).toEqual([2000, 1600, 0]);
+  });
+});

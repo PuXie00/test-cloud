@@ -224,3 +224,47 @@ describe("inserting blocks at an occupied time", () => {
     expect(result.current.builder.sequence!.blocks.map((block) => block.id)).toEqual(["existing"]);
   });
 });
+
+describe("presets laid out by position", () => {
+  beforeEach(() => {
+    toastSuccess.mockClear();
+    toastWarning.mockClear();
+    installMemoryProjectAPI();
+    stubCsocketOpenProject();
+  });
+
+  afterEach(() => {
+    uninstallMemoryProjectAPI();
+    delete window.csocketApi;
+  });
+
+  it("orders a slope by the objects' positions instead of the click order, and re-lays it out", async () => {
+    const { result } = renderBuilder();
+    await openWithEmptySequence(result);
+    // 升降灯架-01 在 x=0，升降摆动架-01 在 x=3000；先点后者
+    act(() => result.current.builder.handleApplyStaticPreset("static-slope", [8, 7]));
+    const preset = () =>
+      result.current.builder.sequence!.blocks.find((block) => block.kind === "static-preset");
+    expect(preset()).toMatchObject({
+      orderedObjectIds: [7, 8],
+      layout: { angleDeg: 0, offsets: [0, 1] },
+    });
+
+    act(() => result.current.builder.handleRelayoutPreset(preset()!.id, 180));
+    expect(preset()).toMatchObject({
+      orderedObjectIds: [8, 7],
+      layout: { angleDeg: 180, offsets: [0, 1] },
+    });
+  });
+
+  it("keeps the selection order for presets whose shape does not depend on it", async () => {
+    const { result } = renderBuilder();
+    await openWithEmptySequence(result);
+    act(() => result.current.builder.handleApplyStaticPreset("static-flat", [8, 7]));
+    const preset = result.current.builder.sequence!.blocks.find(
+      (block) => block.kind === "static-preset",
+    );
+    expect(preset).toMatchObject({ orderedObjectIds: [8, 7] });
+    expect(preset && "layout" in preset).toBe(false);
+  });
+});
