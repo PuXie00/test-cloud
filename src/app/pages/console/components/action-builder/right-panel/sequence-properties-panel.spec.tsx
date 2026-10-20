@@ -81,6 +81,7 @@ const { builderState } = vi.hoisted(() => ({
         | undefined,
 
       handleApplyPoseAxisWrite: vi.fn(),
+      handleSelectionChange: vi.fn(),
       handleExplodePresets: vi.fn(),
       handleRelayoutPreset: vi.fn(),
       handleRenameMarker: vi.fn(),
@@ -988,5 +989,29 @@ describe("SequencePropertiesPanel preset layout", () => {
   it("has no layout section for presets whose shape ignores the order", () => {
     renderPanel({ selection: { kind: "block", blockId: "static" } });
     expect(screen.queryByRole("region", { name: "排列" })).toBeNull();
+  });
+});
+
+describe("SequencePropertiesPanel back", () => {
+  afterEach(() => {
+    builderState.current.handleSelectionChange.mockClear();
+  });
+
+  it("clears the selected blocks", () => {
+    renderPanel({ selection: { kind: "block", blockId: "pose" } });
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
+    expect(builderState.current.handleSelectionChange).toHaveBeenCalledWith(null);
+  });
+
+  it("is there for every kind of properties, including segments and markers", () => {
+    renderPanel({ selection: { kind: "multi-block", blockIds: ["pose", "later"], focus: "segments" } });
+    expect(screen.getByRole("button", { name: "返回" })).not.toBeNull();
+    cleanup();
+    renderPanel({
+      sequence: { ...sequence, markers: [{ id: "m1", atMs: 0, name: "灯光切换" }] },
+      selection: { kind: "markers", markerIds: ["m1"] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
+    expect(builderState.current.handleSelectionChange).toHaveBeenCalledWith(null);
   });
 });
