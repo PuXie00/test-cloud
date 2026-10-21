@@ -106,7 +106,7 @@ const ToolbarIcon = ({
 );
 
 const menuButtonClass =
-  "inline-flex h-7 items-center gap-1 rounded-sm px-2 text-body-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground";
+  "inline-flex h-7 items-center gap-1 rounded-sm px-2 text-body-sm  transition-colors hover:bg-accent hover:text-foreground";
 
 /** 视图菜单里的选项触屏时加高 */
 const viewMenuItemClass = "[@media(pointer:coarse)]:py-2.5";
@@ -155,15 +155,15 @@ export const TimelineToolbar = ({
   const PlayIcon = isPlaying ? Pause : atEnd ? RotateCcw : Play;
 
   return (
-    <div className="flex h-9 shrink-0 items-center gap-2 bg-muted px-2">
+    <div className="flex h-9 shrink-0 items-center gap-0.5 bg-muted px-2">
 
     {viewMode !== undefined && onViewModeChange ? (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button type="button" aria-label="视图" className={menuButtonClass}>
-            <Eye className="h-3.5 w-3.5" aria-hidden />
+            {/* <Eye className="h-3.5 w-3.5" aria-hidden /> */}
             视图
-            <ChevronDown className="h-3 w-3" aria-hidden />
+            {/* <ChevronDown className="h-3 w-3" aria-hidden /> */}
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="min-w-[12rem] border-border bg-card text-foreground">
@@ -223,6 +223,40 @@ export const TimelineToolbar = ({
         </DropdownMenuContent>
       </DropdownMenu>
     ) : null}
+    
+    {onAddMarker ? (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button type="button" aria-label="标记" className={menuButtonClass}>
+            {/* <Flag className="h-3.5 w-3.5" aria-hidden /> */}
+            标记
+          {/*  <ChevronDown className="h-3 w-3" aria-hidden /> */}
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="start"
+          className="max-h-72 min-w-[14rem] overflow-y-auto border-border bg-card text-foreground"
+        >
+          <DropdownMenuItem onSelect={onAddMarker}>
+            添加标记
+            <DropdownMenuShortcut>M</DropdownMenuShortcut>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          {markers.length === 0 ? (
+            <DropdownMenuItem disabled>还没有标记</DropdownMenuItem>
+          ) : (
+            markers.map((marker) => (
+              <DropdownMenuItem key={marker.id} onSelect={() => onJumpToMarker?.(marker)}>
+                <span className="min-w-0 truncate">{marker.name}</span>
+                <DropdownMenuShortcut className="font-mono tabular-nums">
+                  {formatTime(marker.atMs)} s
+                </DropdownMenuShortcut>
+              </DropdownMenuItem>
+            ))
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    ) : null}
 
     {onPlayToggle ? (
       <div className="flex items-center">
@@ -254,43 +288,9 @@ export const TimelineToolbar = ({
       </div>
     ) : null}
 
-    {onAddMarker ? (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button type="button" aria-label="标记" className={menuButtonClass}>
-            <Flag className="h-3.5 w-3.5" aria-hidden />
-            标记
-            <ChevronDown className="h-3 w-3" aria-hidden />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="start"
-          className="max-h-72 min-w-[14rem] overflow-y-auto border-border bg-card text-foreground"
-        >
-          <DropdownMenuItem onSelect={onAddMarker}>
-            添加标记
-            <DropdownMenuShortcut>M</DropdownMenuShortcut>
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          {markers.length === 0 ? (
-            <DropdownMenuItem disabled>还没有标记</DropdownMenuItem>
-          ) : (
-            markers.map((marker) => (
-              <DropdownMenuItem key={marker.id} onSelect={() => onJumpToMarker?.(marker)}>
-                <span className="min-w-0 truncate">{marker.name}</span>
-                <DropdownMenuShortcut className="font-mono tabular-nums">
-                  {formatTime(marker.atMs)} s
-                </DropdownMenuShortcut>
-              </DropdownMenuItem>
-            ))
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    ) : null}
-
     {trajectoryMode !== undefined && onTrajectoryModeChange ? (
       <div className="flex items-center gap-3">
-        <label className="inline-flex h-7 items-center gap-1.5">
+        <label className="inline-flex h-7 items-center gap-0.5">
           <Route className="h-3.5 w-3.5 text-foreground" aria-hidden />
           <span className="text-body-sm text-muted-foreground">强制轨迹</span>
           <Switch
@@ -301,7 +301,7 @@ export const TimelineToolbar = ({
         </label>
         {onLoopChange ? (
           <label
-            className="inline-flex h-7 items-center gap-1.5"
+            className="inline-flex h-7 items-center gap-0.5"
             title={!canLoop ? loopDisabledHint : undefined}
           >
             <Repeat

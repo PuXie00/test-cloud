@@ -1369,19 +1369,29 @@
       "type": "formButton",
       "group": "basic",
       "addr": "0x1006",
+      "paramHead": [
+        { "id": "actionId" },
+        { "id": "runDirection", "label": "运行方向", "dataType": "enum", "byteLength": 1, "unit": "", "DefaultValue": 1, "scale": 1, "min": 1, "max": 2, "values": [[1, "正向"], [2, "反向"]] },
+        { "id": "speedScale", "label": "速度倍率", "dataType": "uint16", "byteLength": 2, "unit": "", "DefaultValue": 100, "scale": 1, "min": 0, "max": 100, "values": [] },
+        { "id": "loopCount", "label": "循环次数", "dataType": "uint16", "byteLength": 2, "unit": "", "DefaultValue": 0, "scale": 1, "min": 0, "max": 65535, "values": [] },
+        { "id": "prepareTimeMs", "label": "选中曲线时刻", "dataType": "uint32", "byteLength": 4, "unit": "ms", "DefaultValue": 0, "scale": 1, "min": 0, "max": 4294967295, "values": [] },
+        { "id": "deviceCount", "label": "设备数量", "dataType": "uint16", "byteLength": 2, "unit": "", "DefaultValue": 0, "scale": 1, "min": 0, "max": 65535, "values": [] }
+        ],
       "param": [
-        {"id": "actionId", "label": "动作ID", "dataType": "uint16", "byteLength": 2, "unit": "", "DefaultValue": 0, "scale": 1, "min": 1, "max": 65535, "values": []},
-        {"id": "syncId", "label": "同步任务ID", "dataType": "uint32", "byteLength": 4, "unit": "", "DefaultValue": 0, "scale": 1, "min": 1, "max": 4294967295, "values": []},
-        {"id": "runDirection", "label": "运行方向", "dataType": "enum", "byteLength": 1, "unit": "", "DefaultValue": 1, "scale": 1, "min": 1, "max": 2, "values": [[1, "正向"], [2, "反向"]]},
-        {"id": "speedScale", "label": "速度倍率", "dataType": "uint16", "byteLength": 2, "unit": "", "DefaultValue": 100, "scale": 0.01, "min": 0, "max": 65535, "values": []},
-        {"id": "loopCount", "label": "循环次数", "dataType": "uint16", "byteLength": 2, "unit": "", "DefaultValue": 0, "scale": 1, "min": 0, "max": 65535, "values": []}
-       ],
+        { "id": "deviceID", "label": "设备ID", "dataType": "uint16", "byteLength": 2, "unit": "", "scale": 1, "min": 1, "max": 65535, "values": [] },
+        { "id": "velocityH", "label": "准备高度速度", "dataType": "uint16", "byteLength": 2, "unit": "mm/s", "DefaultValue": 0, "scale": 0.1, "min": 0, "max": 65535, "values": [] },
+        { "id": "accelerationH", "label": "准备高度加减速度", "dataType": "uint16", "byteLength": 2, "unit": "mm/s²", "DefaultValue": 0, "scale": 0.1, "min": 0, "max": 65535, "values": [] },
+        { "id": "velocityP", "label": "准备角度速度", "dataType": "uint16", "byteLength": 2, "unit": "degree/s", "DefaultValue": 0, "scale": 0.1, "min": 0, "max": 65535, "values": [] },
+        { "id": "accelerationP", "label": "准备角度加减速度", "dataType": "uint16", "byteLength": 2, "unit": "degree/s²", "DefaultValue": 0, "scale": 0.1, "min": 0, "max": 65535, "values": [] },
+        { "id": "velocityY", "label": "准备偏转速度", "dataType": "uint16", "byteLength": 2, "unit": "degree/s", "DefaultValue": 0, "scale": 0.1, "min": 0, "max": 65535, "values": [] },
+        { "id": "accelerationY", "label": "准备偏转加减速度", "dataType": "uint16", "byteLength": 2, "unit": "degree/s²", "DefaultValue": 0, "scale": 0.1, "min": 0, "max": 65535, "values": [] }
+      ],
       "response": [
-        {"id": "actionId"},
+        { "id": "actionId" },
         {
           "id": "errorCount",
           "items": [
-            {"id": "errorCode"}
+            { "id": "errorCode" }
           ]
         }
       ],
@@ -1391,13 +1401,19 @@
     },
     {
       "id": "actionSyncRelease",
-      "label": "动作同步释放",
-      "transport": "udp",
+      "label": "动作同步启动/取消",
+      "transport": "tcp",
       "type": "button",
       "group": "basic",
       "addr": "0x1007",
+      "paramHead": [
+        { "id": "actionId", "label": "动作ID", "dataType": "uint16", "byteLength": 2, "unit": "", "DefaultValue": 1, "scale": 1, "min": 1, "max": 65535, "values": []},
+        { "id": "startFlag", "label": "普通启动/时间戳启动/取消标志位", "dataType": "enum", "byteLength": 1, "unit": "", "DefaultValue": 1, "scale": 1, "min": 0, "max": 2, "values": [[0, "取消"], [1, "普通启动"], [2, "时间戳启动"]]},
+        { "id": "startTimestamp", "label": "启动时间戳", "dataType": "uint64", "byteLength": 8, "unit": "ms", "DefaultValue": 0, "scale": 1, "min": 0, "max": 18446744073709551615, "values": []},
+        { "id": "deviceCount", "label": "设备数量", "dataType": "uint16", "byteLength": 2, "unit": "", "DefaultValue": 0, "scale": 1, "min": 0, "max": 65535, "values": []}
+      ],
       "param": [
-        {"id": "syncId", "label": "同步任务ID", "dataType": "uint32", "byteLength": 4, "unit": "", "DefaultValue": 0, "scale": 1, "min": 1, "max": 4294967295, "values": []}
+        { "id": "deviceID", "label": "设备ID", "dataType": "uint16", "byteLength": 2, "unit": "", "scale": 1, "min": 1, "max": 65535, "values": []}
       ],
       "response": [],
       "display": false,

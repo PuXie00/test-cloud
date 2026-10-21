@@ -1,0 +1,43 @@
+就近/同步准备：统一models输入版
+
+每个压缩包分别解压到独立目录。三份JSON由同一总模板拆出，models和settings完全一致；各包只带本算法需要的请求和反馈。
+
+1. 本算法取哪些字段
+command：trajectory_run、nearest_start、reverse、指定帧、曲线倍率和循环配置。
+settings：公共静态设置，系数单位统一forced_coefficient_time_unit_ms。
+models：本动作全部模型的原曲线、平铺几何、follow_axes/prepare_axes、最大能力和行程。准备仍按最大能力求解，default_*只保留旧入口兼容校验。
+runtime.models：按model_id给真实position_HPY、velocity_HPY和standstill。就近输入必须已停稳，不能缺反馈后假设停稳。
+models内不再保存当前位置或速度，更新runtime不会改变范围签名。
+
+2. 调用
+命令行/F5：python 就近接入计算.py
+显式文件：python 就近接入计算.py 算法参数.json
+API：
+  from 就近接入计算 import calculate_nearest_entry
+  nearest_result = calculate_nearest_entry(parameters)
+API不修改原参数。新算法参数.json的CLI只回写nearest_result，保留原输入与其它结果。
+默认优先算法参数.json，缺失时回退旧就近接入参数.json；旧格式文件仍兼容原独立“文件名-结果.json”输出方式。
+旧geometry嵌套与旧models内current_HPY/current_velocity_HPY入口保留；两处同时给出而冲突时拒绝。
+旧curve_time_unit_ms仍可读取，同时给两种单位且不同会拒绝，不静默换算原系数。
+
+3. 模型关联
+统一输入的model_id是全动作唯一正整数，runtime用同一ID关联；plc_id是非空字符串路由标识（本例"1"，硬件PLC ID仍为1），device_id独立负责设备路由。
+一次传整个动作的全部模型，包括多个PLC、当前位置已到位的模型；不要每台PLC各自求共同时间。
+follow_axes是要贴合曲线的轴。prepare_axes包含follow_axes，也可多出准备时需恢复的固定轴，不可把两者随意替换。
+
+4. 结果怎样执行
+捕获异常，只有status=planned才使用本次方案；planned不等于PLC已执行。
+selected_curve_time_ms是原曲线接入帧；prepare_time_ms是共同准备耗时，二者不能混用。
+强制can_dispatch=true时，按1006_payloads逐PLC发公共帧、共同准备时间及设备V/A；1007使用同一个T0释放准备。
+非强制完整执行axis_plans.move_steps和continuation_axis_moves：
+  准备步骤：T0 + start_offset_ms
+  接续步骤：T0 + prepare_time_ms + start_offset_after_join_ms
+join_position_HPY/join_velocity_HPY是交接位置/速度；move_target是最终停车目标，带速交接时可以不同。
+按计划时刻覆盖Move，不能等旧Move Done。使用effective_loop_count作为实际循环配置。
+非强制can_dispatch=false表示旧1006/1007不能直接表达带速轴队列；上位机须具备完整定时覆盖排程，不能只取第一条Move摘要。
+
+5. 本版约定
+V/A/D均按当前0.1精度协议，当前PLC D=A；直接使用输出的最终参数，不再次取整后沿用旧时间。
+非强制支持恒A/匀速连续曲线，d=e=f=0，整条首末零速，中间帧速度可非0。强制计算方式保留。
+本例默认非就近准备；开启nearest_start=true搜索就近帧。指定帧时同时开启nearest_start和use_specified_time。
+本次只统一输入和文件入口，没有修改当前已验证的求解数学，也没有修复既有连续Move覆盖时序问题。

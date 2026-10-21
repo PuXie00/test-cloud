@@ -1,0 +1,39 @@
+调速范围计算：统一models输入版
+
+每个压缩包分别解压到独立目录。包内只有算法、算法参数.json、说明和本次接口报告。
+三份JSON由同一总模板按需拆出，输入models与settings逐值及数字类型完全一致。上位机只需维护一份原动作模型数据。
+
+1. 本算法取哪些字段
+command：本例operation=range，trajectory_run选择强制/非强制。
+settings：公共静态设置，系数单位使用forced_coefficient_time_unit_ms。
+models：整个动作的全部模型、几何、能力限值和原segments。几何按示例平铺。
+本算法不需要runtime、当前Move或新请求倍率；公共models中其它算法需要的字段原样保留。
+
+2. 调用
+命令行/F5：python 调速范围计算.py
+显式文件：python 调速范围计算.py 算法参数.json
+API：
+  from 调速范围计算 import calculate_range_result
+  range_result = calculate_range_result(parameters)
+API返回字典，不写文件；CLI只回写本JSON的range_result，保留原输入及其它结果。
+默认优先算法参数.json；缺失时兼容旧调速参数.json。显式路径不存在时不自动换文件。
+
+3. 返回什么
+max_factor是相对原动作的倍率，1=100%；显示百分比时乘100。
+unlimited=true且max_factor=null表示无有限上限，不能把null当0。
+action_category是分类说明。action_signature与range_version用于在线算法校验。
+范围API没有status；捕获异常，失败时不使用旧结果。
+将完整range_result对象交给在线算法，不能只复制max_factor或伪造签名。
+
+4. 一致性规则
+三份models中的model_id使用全动作唯一正整数；plc_id是非空字符串路由标识（本例"1"，硬件PLC ID仍为1），device_id是PLC设备编号。一次计算包含本动作所有PLC的模型。
+models只放静态原动作，当前位置/速度放runtime.models。HPY数组固定三个数，不参与轴填相应常量。
+原位置、原系数、原分段及数字类型不得为不同算法自行改写。
+范围签名绑定完整models、完整settings和trajectory_run。改变其中任意字段后重新计算范围。
+当前反馈、请求倍率及反向请求不改变原动作签名。三个包的JSON字段说明可直接查阅。
+
+5. 范围边界
+强制按原曲线计算；非强制沿用单点、同步非单点、不同步非单点分类。
+每模型峰值与本模型实轴限速比较，再取全部模型的最小倍率。
+此结果不代替在线切换可行性、PLC跟随、碰撞及电机加速度检查。强制在线调速及计时仍由PLC主轴处理。
+在线prepare还会叠加max_velocity_HPY/max_acceleration_HPY/max_deceleration_HPY硬限；上位机在线可选倍率取prepared["max_factor"]，不能忽略比电机范围更严的虚轴限制。
