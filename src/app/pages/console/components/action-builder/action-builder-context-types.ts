@@ -6,10 +6,11 @@ import type {
   TimelineBlock,
 } from "@/app/project/action-sequence/types";
 import type { SequenceIssue } from "@/app/project/action-sequence/validate-sequence";
-import type { VirtualAxisValues } from "@/app/project/project-document-types";
+import type { VirtualAxisId, VirtualAxisValues } from "@/app/project/project-document-types";
 import type { CapturedPoseRequest } from "@/app/project/capture-pose-sequence";
 import type { ContextSelection } from "./context-bar/selection-context-bar";
 import type { PhaseInputMode } from "./motion-profile/phase-rates";
+import type { CurveGraph, TimelineViewMode } from "./timeline/curve-data";
 import type { ActionRightTab } from "./right-panel/action-right-panel";
 import type { PoseAxisWrite, SegmentProfileWrite } from "./sequence-ops";
 import type { SequenceSelection } from "./sequence-selection";
@@ -49,6 +50,13 @@ export type ActionBuilderContextValue = {
   /** 运动区间阶段的填法（按时间 / 按速度），本次运行期间记住 */
   phaseInputMode: PhaseInputMode;
   handlePhaseInputModeChange: (mode: PhaseInputMode) => void;
+  /** 时间轴看轨道还是曲线、曲线看哪根虚轴、看位置还是速度；离开动作页再回来也保持 */
+  timelineViewMode: TimelineViewMode;
+  handleTimelineViewModeChange: (mode: TimelineViewMode) => void;
+  curveAxis: VirtualAxisId;
+  handleCurveAxisChange: (axis: VirtualAxisId) => void;
+  curveGraph: CurveGraph;
+  handleCurveGraphChange: (graph: CurveGraph) => void;
   setActiveRightTab: (tab: ActionRightTab) => void;
   handleSequenceSelect: (sequenceId: number | null) => void;
   handleSelectionChange: (selection: SequenceSelection) => void;
@@ -67,6 +75,9 @@ export type ActionBuilderContextValue = {
   handleMoveTimelineBlock: (blockId: string, atMs: number) => void;
   handleShiftTimelineBlocks: (blockIds: string[], deltaMs: number) => void;
   handleShiftTimelineBlocksEnd: () => void;
+  /** 曲线上拖位姿的值：这些位姿的这根轴都加 deltaValue（相对拖动开始） */
+  handleDragPoseAxis: (blockIds: readonly string[], axis: VirtualAxisId, deltaValue: number) => void;
+  handleDragPoseAxisEnd: () => void;
   handleResizeDynamicPreset: (blockId: string, startMs: number, endMs: number) => boolean;
   handleUpdateSegmentSettings: (
     fromRef: string,

@@ -16,6 +16,7 @@ import {
   isPassThroughMotion,
   uncontrolledAxesOf,
   type ResolvedActionSequence,
+  type ResolvedAxisMotion,
   type ResolvedMotionSegment,
 } from "./resolve-sequence";
 import { axisMotionShape } from "./axis-motion";
@@ -440,6 +441,82 @@ const profileErrorsOfProfiles = (profiles: AxisMotionProfiles | undefined): stri
   return errors;
 };
 
+/** 一根轴一整段曲线的问题；序列校验和曲线视图用同一套规则 */
+export type AxisMotionIssue =
+  | { code: "idle-on-moving-axis" }
+  | { code: "missing-motion-limit" }
+  | { code: "insufficient-cruise" }
+  | { code: "pass-speed-infeasible" }
+  | { code: "limit-exceeded"; value: number; limit: number }
+  | { code: "acceleration-exceeded"; value: number; limit: number };
+
+export const axisMotionIssues = (
+  motion: ResolvedAxisMotion,
+  limit: Pick<AxisLimit, "maxVelocity" | "minAccelTime"> | undefined,
+): AxisMotionIssue[] => {
+  const durationMs = motion.durationMs;
+  if (durationMs <= 0) return [];
+  const travel = Math.abs(motion.to - motion.from);
+  if (travel === 0) return [];
+
+  const profile = motion.profile;
+  if (profile.kind === "idle") return [{ code: "idle-on-moving-axis" }];
+  if (validateMotionProfile(profile).length > 0) return [];
+
+  const maxVelocity = limit?.maxVelocity;
+  const minAccelTime = limit?.minAccelTime;
+  if (!isPositiveFinite(maxVelocity) || !isPositiveFinite(minAccelTime)) {
+    return [{ code: "missing-motion-limit" }];
+  }
+
+  const { accelMs, decelMs } = profile.params;
+  if (accelMs + decelMs >= durationMs) return [{ code: "insufficient-cruise" }];
+
+  let metrics: MotionProfileKinematics;
+  if (hasMotionBoundary(motion)) {
+    const shape = axisMotionShape(motion);
+    if (!shape) return [{ code: "pass-speed-infeasible" }];
+    metrics = boundaryTrapezoidKinematics(shape);
+  } else {
+    metrics = calculateMotionProfileKinematics(profile, travel, durationMs);
+  }
+  const issues: AxisMotionIssue[] = [];
+  if (metrics.peakVelocity > maxVelocity) {
+    issues.push({ code: "limit-exceeded", value: metrics.peakVelocity, limit: maxVelocity });
+  }
+  // 加减速度上限 = 虚轴最大速度 / 最短加减速时间，和下发 PLC 的最大加速度一致
+  const maxAcceleration = maxVelocity / minAccelTime;
+  const acceleration = Math.max(metrics.acceleration, metrics.deceleration);
+  if (acceleration > maxAcceleration * (1 + 1e-9)) {
+    issues.push({ code: "acceleration-exceeded", value: acceleration, limit: maxAcceleration });
+  }
+  return issues;
+};
+
+const axisMotionIssueMessage = (
+  axis: VirtualAxisId,
+  motion: ResolvedAxisMotion,
+  issue: AxisMotionIssue,
+): string => {
+  const span = `${motion.fromRef} -> ${motion.toRef}`;
+  if (issue.code === "idle-on-moving-axis") {
+    return `axis ${axis} is idle but has travel on segment ${span}`;
+  }
+  if (issue.code === "missing-motion-limit") {
+    return `axis ${axis} is missing a positive finite maxVelocity or minAccelTime`;
+  }
+  if (issue.code === "insufficient-cruise") {
+    return `axis ${axis} has insufficient cruise time for accel and decel phases on segment ${span}`;
+  }
+  if (issue.code === "pass-speed-infeasible") {
+    return `axis ${axis} cannot fit pass speeds ${motion.startSpeed} -> ${motion.endSpeed} on segment ${span}`;
+  }
+  if (issue.code === "limit-exceeded") {
+    return `axis ${axis} velocity ${issue.value} exceeds ${issue.limit}`;
+  }
+  return `axis ${axis} acceleration ${issue.value} exceeds ${issue.limit}`;
+};
+
 const checkSegmentKinematics = (
   object: ObjectInfo,
   segment: ResolvedMotionSegment,
@@ -453,85 +530,17 @@ const checkSegmentKinematics = (
     const motionKey = `${object.id}:${axis}:${motion.fromRef}->${motion.toRef}`;
     if (checked.has(motionKey)) continue;
     checked.add(motionKey);
-    const durationMs = motion.durationMs;
-    if (durationMs <= 0) continue;
-    const travel = Math.abs(motion.to - motion.from);
-    if (travel === 0) continue;
-
-    const profile = motion.profile;
     const location = {
       segmentKey: motion.segmentKeys[0] ?? segment.key,
       ...(motion.segmentKeys.length > 1 ? { segmentKeys: motion.segmentKeys } : {}),
       objectId: object.id,
       ...(blockId ? { blockId } : {}),
     };
-    if (profile.kind === "idle") {
+    for (const issue of axisMotionIssues(motion, object.limits[axis])) {
       issues.push({
         severity: "error",
-        code: "idle-on-moving-axis",
-        message: `axis ${axis} is idle but has travel on segment ${motion.fromRef} -> ${motion.toRef}`,
-        ...location,
-      });
-      continue;
-    }
-    if (validateMotionProfile(profile).length > 0) continue;
-
-    const limit = object.limits[axis];
-    const maxVelocity = limit?.maxVelocity;
-    const minAccelTime = limit?.minAccelTime;
-    if (!isPositiveFinite(maxVelocity) || !isPositiveFinite(minAccelTime)) {
-      issues.push({
-        severity: "error",
-        code: "missing-motion-limit",
-        message: `axis ${axis} is missing a positive finite maxVelocity or minAccelTime`,
-        ...location,
-      });
-      continue;
-    }
-
-    const { accelMs, decelMs } = profile.params;
-    if (accelMs + decelMs >= durationMs) {
-      issues.push({
-        severity: "error",
-        code: "insufficient-cruise",
-        message: `axis ${axis} has insufficient cruise time for accel and decel phases on segment ${motion.fromRef} -> ${motion.toRef}`,
-        ...location,
-      });
-      continue;
-    }
-
-    let metrics: MotionProfileKinematics;
-    if (hasMotionBoundary(motion)) {
-      const shape = axisMotionShape(motion);
-      if (!shape) {
-        issues.push({
-          severity: "error",
-          code: "pass-speed-infeasible",
-          message: `axis ${axis} cannot fit pass speeds ${motion.startSpeed} -> ${motion.endSpeed} on segment ${motion.fromRef} -> ${motion.toRef}`,
-          ...location,
-        });
-        continue;
-      }
-      metrics = boundaryTrapezoidKinematics(shape);
-    } else {
-      metrics = calculateMotionProfileKinematics(profile, travel, durationMs);
-    }
-    if (metrics.peakVelocity > maxVelocity) {
-      issues.push({
-        severity: "error",
-        code: "limit-exceeded",
-        message: `axis ${axis} velocity ${metrics.peakVelocity} exceeds ${maxVelocity}`,
-        ...location,
-      });
-    }
-    // 加减速度上限 = 虚轴最大速度 / 最短加减速时间，和下发 PLC 的最大加速度一致
-    const maxAcceleration = maxVelocity / minAccelTime;
-    const acceleration = Math.max(metrics.acceleration, metrics.deceleration);
-    if (acceleration > maxAcceleration * (1 + 1e-9)) {
-      issues.push({
-        severity: "error",
-        code: "acceleration-exceeded",
-        message: `axis ${axis} acceleration ${acceleration} exceeds ${maxAcceleration}`,
+        code: issue.code,
+        message: axisMotionIssueMessage(axis, motion, issue),
         ...location,
       });
     }

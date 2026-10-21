@@ -102,6 +102,12 @@ const mockBuilder = (overrides: Record<string, unknown> = {}) => {
     handleTrajectoryModeChange: vi.fn(),
     handleLoopChange: vi.fn(),
     sequenceIssues: [],
+    timelineViewMode: "tracks",
+    handleTimelineViewModeChange: vi.fn(),
+    curveAxis: "v1",
+    handleCurveAxisChange: vi.fn(),
+    curveGraph: "position",
+    handleCurveGraphChange: vi.fn(),
     ...overrides,
   };
 };
@@ -601,6 +607,78 @@ describe("timeline navigation tools", () => {
     expect(capturedEditor.current?.snapEnabled).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "吸附" }));
     expect(capturedEditor.current?.snapEnabled).toBe(true);
+  });
+});
+
+describe("curve view in the dock", () => {
+  const liftSequence: ActionSequenceConfig = {
+    id: 3,
+    name: "Lift",
+    trajectoryMode: false,
+    blocks: [
+      { id: "a", kind: "pose", objectId: 7, atMs: 0, pose: { v1: 0 } },
+      { id: "b", kind: "pose", objectId: 7, atMs: 2000, pose: { v1: 100 } },
+    ],
+    segments: [],
+  };
+
+  const openViewMenu = async () => {
+    fireEvent.pointerDown(screen.getByRole("button", { name: "视图" }), { button: 0, ctrlKey: false });
+    await screen.findByRole("menu");
+  };
+
+  it("turns the curves on from the view menu through the session state", async () => {
+    const handleTimelineViewModeChange = vi.fn();
+    mockBuilder({ sequence: liftSequence, handleTimelineViewModeChange });
+    render(<EditorDock />);
+    expect(capturedEditor.current?.viewMode).toBe("tracks");
+    await openViewMenu();
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "显示曲线" }));
+    expect(handleTimelineViewModeChange).toHaveBeenCalledWith("curves");
+  });
+
+  it("shows the curves with the value drag wired when the session is in the curve view", async () => {
+    const handleDragPoseAxis = vi.fn();
+    const handleDragPoseAxisEnd = vi.fn();
+    const handleCurveGraphChange = vi.fn();
+    mockBuilder({
+      sequence: liftSequence,
+      timelineViewMode: "curves",
+      curveGraph: "velocity",
+      handleDragPoseAxis,
+      handleDragPoseAxisEnd,
+      handleCurveGraphChange,
+    });
+    render(<EditorDock />);
+    expect(capturedEditor.current?.viewMode).toBe("curves");
+    expect(capturedEditor.current?.curveAxis).toBe("v1");
+    expect(capturedEditor.current?.curveGraph).toBe("velocity");
+    expect(capturedEditor.current?.onPoseAxisDrag).toBe(handleDragPoseAxis);
+    expect(capturedEditor.current?.onPoseAxisDragEnd).toBe(handleDragPoseAxisEnd);
+
+    await openViewMenu();
+    // 序列只动了虚轴 1
+    expect(screen.getByRole("menuitemradio", { name: /V2/ }).getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByRole("menuitemradio", { name: /V3/ }).getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "位置" }));
+    expect(handleCurveGraphChange).toHaveBeenCalledWith("position");
+  });
+
+  it("falls back to an axis the shown objects move", async () => {
+    mockBuilder({
+      timelineViewMode: "curves",
+      sequence: {
+        ...liftSequence,
+        blocks: [
+          { id: "a", kind: "pose", objectId: 7, atMs: 0, pose: { v2: 0 } },
+          { id: "b", kind: "pose", objectId: 7, atMs: 2000, pose: { v2: 10 } },
+        ],
+      },
+    });
+    render(<EditorDock />);
+    expect(capturedEditor.current?.curveAxis).toBe("v2");
+    await openViewMenu();
+    expect(screen.getByRole("menuitemradio", { name: "V2" }).getAttribute("aria-checked")).toBe("true");
   });
 });
 

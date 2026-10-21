@@ -20,7 +20,13 @@ import { isBlockSelected, selectionBlockIds, selectionMarkerIds } from "../seque
 import {
   TIMELINE_PX_PER_SECOND_MAX,
   TIMELINE_PX_PER_SECOND_MIN,
+  VIRTUAL_AXIS_IDS,
 } from "../timeline/timeline-data";
+import {
+  availableCurveAxes,
+  curveRowObjectIds,
+  visibleCurveObjectIds,
+} from "../timeline/curve-data";
 import {
   keyframeTimesMs,
   nextKeyframeMs,
@@ -63,6 +69,14 @@ const SequenceEditor = () => {
     handleMoveTimelineBlock,
     handleShiftTimelineBlocks,
     handleShiftTimelineBlocksEnd,
+    handleDragPoseAxis,
+    handleDragPoseAxisEnd,
+    timelineViewMode: viewMode,
+    handleTimelineViewModeChange: setViewMode,
+    curveAxis,
+    handleCurveAxisChange: setCurveAxis,
+    curveGraph,
+    handleCurveGraphChange,
     handleResizeDynamicPreset,
     handleBlockDelete,
     handleExplodePresets,
@@ -125,6 +139,17 @@ const SequenceEditor = () => {
       return null;
     }
   }, [sequence]);
+
+  // 曲线视图的虚轴：显示的物体（选中的，没选就是全部）里有受序列控制的才能选
+  const curveAxes = useMemo(() => {
+    if (!sequence || !resolved) return [];
+    const objectIds = visibleCurveObjectIds(curveRowObjectIds(sequence), multiSelectedIds);
+    const available = availableCurveAxes(resolved, objectIds, timelineObjects);
+    return VIRTUAL_AXIS_IDS.map((axis) => ({ axis, available: available.includes(axis) }));
+  }, [sequence, resolved, multiSelectedIds, timelineObjects]);
+  const shownCurveAxis = curveAxes.some((item) => item.axis === curveAxis && item.available)
+    ? curveAxis
+    : (curveAxes.find((item) => item.available)?.axis ?? curveAxis);
 
   const totalMs = resolved?.totalMs ?? 0;
   const canPlay = resolved !== null && totalMs > 0;
@@ -308,6 +333,13 @@ const SequenceEditor = () => {
         markers={markers}
         onAddMarker={addMarkerAtPlayhead}
         onJumpToMarker={jumpToMarker}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        curveGraph={curveGraph}
+        onCurveGraphChange={handleCurveGraphChange}
+        curveAxis={shownCurveAxis}
+        curveAxes={curveAxes}
+        onCurveAxisChange={setCurveAxis}
       />
       <SequenceDeleteDialog open={deleteOpen} onOpenChange={setDeleteOpen} />
       <MarkerRenameDialog marker={renamingMarker} onClose={() => setRenamingMarkerId(null)} />
@@ -352,6 +384,11 @@ const SequenceEditor = () => {
             onMarkersShift={handleShiftMarkers}
             onMarkersShiftEnd={handleShiftMarkersEnd}
             onMarkerRename={(marker) => setRenamingMarkerId(marker.id)}
+            viewMode={viewMode}
+            curveAxis={shownCurveAxis}
+            curveGraph={curveGraph}
+            onPoseAxisDrag={handleDragPoseAxis}
+            onPoseAxisDragEnd={handleDragPoseAxisEnd}
           />
         </div>
       </ClipboardContextMenu>
