@@ -1374,7 +1374,7 @@
         { "id": "runDirection", "label": "运行方向", "dataType": "enum", "byteLength": 1, "unit": "", "DefaultValue": 1, "scale": 1, "min": 1, "max": 2, "values": [[1, "正向"], [2, "反向"]] },
         { "id": "speedScale", "label": "速度倍率", "dataType": "uint16", "byteLength": 2, "unit": "", "DefaultValue": 100, "scale": 1, "min": 0, "max": 100, "values": [] },
         { "id": "loopCount", "label": "循环次数", "dataType": "uint16", "byteLength": 2, "unit": "", "DefaultValue": 0, "scale": 1, "min": 0, "max": 65535, "values": [] },
-        { "id": "prepareTimeMs", "label": "选中曲线时刻", "dataType": "uint32", "byteLength": 4, "unit": "ms", "DefaultValue": 0, "scale": 1, "min": 0, "max": 4294967295, "values": [] },
+        { "id": "prepareTimeMs", "label": "准备所需的时间", "dataType": "uint32", "byteLength": 4, "unit": "ms", "DefaultValue": 0, "scale": 1, "min": 0, "max": 4294967295, "values": [] },
         { "id": "deviceCount", "label": "设备数量", "dataType": "uint16", "byteLength": 2, "unit": "", "DefaultValue": 0, "scale": 1, "min": 0, "max": 65535, "values": [] }
         ],
       "param": [

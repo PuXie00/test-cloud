@@ -6,7 +6,6 @@ import {
   capturePreparedPoses,
   enabledAxesMatchStart,
   evaluateStartGate,
-  FORCED_UNSAFE_MESSAGE,
   preparedPosesMatchTelemetry,
   remainingProgramMs,
 } from "./initial-pose-gate";
@@ -115,44 +114,39 @@ describe("preparedPosesMatchTelemetry", () => {
 describe("evaluateStartGate", () => {
   const sequence = twoPoseSequence({ v1: 10, v2: 0, v3: 0 }, { v1: 400, v2: 0, v3: 0 });
 
-  it("treats an in-tolerance enabled axis as at-start even with nearest on", () => {
-    expect(gate(sequence, 10.5)).toMatchObject({
+  it("treats an in-tolerance enabled axis as at-start and keeps the algorithm's small move", () => {
+    const result = gate(sequence, 10.5);
+    expect(result).toMatchObject({
       status: "at-start",
-      plan: {
-        startMode: "at-start",
-        nearest: false,
-        direction: 1,
-        targetFrameMs: 0,
-        transitionSec: 0,
-        xSafe: null,
-        motorLimitScale: null,
-        members: [],
-      },
+      plan: { startMode: "at-start", nearest: false, direction: 1, targetFrameMs: 0 },
     });
-    expect(gate(sequence, 10.5, { nearest: true })).toMatchObject({
+    if (result.status !== "at-start") return;
+    expect(result.plan.members).toHaveLength(1);
+    expect(result.plan.members[0]!.axes).toEqual([
+      expect.objectContaining({ axis: "v1", from: 10.5, to: 10 }),
+    ]);
+    expect(result.plan.prepareTimeMs).toBe(Math.ceil(result.plan.transitionSec * 1000));
+  });
+
+  it("stays at the first frame with nearest on instead of skipping to the next keyframe", () => {
+    expect(gate(sequence, 10, { nearest: true })).toMatchObject({
       status: "at-start",
-      plan: { startMode: "at-start", nearest: true, targetFrameMs: 0, members: [] },
+      plan: { startMode: "at-start", nearest: true, targetFrameMs: 0, transitionSec: 0 },
     });
   });
 
   it("uses the last frame as the start when reversed", () => {
     expect(gate(sequence, 400, { reverse: true })).toMatchObject({
       status: "at-start",
-      plan: {
-        startMode: "at-start",
-        direction: -1,
-        targetFrameMs: 4000,
-        transitionSec: 0,
-        members: [],
-      },
+      plan: { startMode: "at-start", direction: -1, targetFrameMs: 4000, transitionSec: 0 },
     });
     expect(gate(sequence, 10, { reverse: true }).status).toBe("transition");
   });
 
-  it("skips a member that has no pose", () => {
+  it("has nothing to prepare for a sequence without poses", () => {
     expect(gate(instructionSequence(), 0)).toMatchObject({
       status: "at-start",
-      plan: { startMode: "at-start", targetFrameMs: 0, members: [] },
+      plan: { startMode: "at-start", targetFrameMs: 0, prepareTimeMs: 0, members: [] },
     });
   });
 
@@ -176,20 +170,22 @@ describe("evaluateStartGate", () => {
     expect(result.totalSeconds).toBeLessThan(result.programSeconds);
   });
 
-  it("blocks ready for a forced trajectory whose xSafe check fails", () => {
+  it("prepares a forced trajectory from off the curve instead of blocking it", () => {
     const forced = twoPoseSequence({ v1: 10, v2: 0, v3: 0 }, { v1: 400, v2: 0, v3: 0 }, true);
     const result = gate(forced, 100);
-    expect(result.status).toBe("blocked");
-    if (result.status !== "blocked") return;
-    expect(result.message).toBe(FORCED_UNSAFE_MESSAGE);
-    expect(result.plan.xSafe).toBe(false);
-    expect(result.transitionSeconds).toBeGreaterThan(0);
+    expect(result.status).toBe("transition");
+    if (result.status !== "transition") return;
+    expect(result.plan.forced).toBe(true);
+    expect(result.plan.prepareTimeMs).toBe(Math.ceil(result.transitionSeconds * 1000));
+    const [move] = result.plan.members[0]!.axes;
+    expect(move).toMatchObject({ axis: "v1", from: 100, to: 10 });
+    expect(move!.deceleration).toBe(move!.acceleration);
   });
 
   it("returns the algorithm error when a member cannot move", () => {
     const result = gate(sequence, 100, { object: singlePointObject({ maxAxisVelocity: 0 }) });
     expect(result.status).toBe("error");
-    if (result.status === "error") expect(result.message).toMatch(/最大电机速度必须为有限正数/);
+    if (result.status === "error") expect(result.message).toBe("模型1的最大电机速度必须大于0");
   });
 
   it("plans the mixed hoist fixture with every member", () => {

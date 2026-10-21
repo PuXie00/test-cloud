@@ -11,7 +11,8 @@ describe("toSyncMoveStartPlan", () => {
       startMode: "boundary",
       targetFrameMs: 0,
       transitionSec: 1.632993162,
-      xSafe: null,
+      prepareTimeMs: 1633,
+      loopCount: 1,
       motorLimitScale: null,
       members: [
         {
@@ -43,11 +44,8 @@ describe("toSyncMoveStartPlan", () => {
     expect(plan).toEqual({
       direction: true,
       nearest: false,
-      startMode: "boundary",
       targetFrameMs: 0,
       transitionSec: 1633,
-      xSafe: null,
-      motorLimitScale: null,
       modelList: [
         {
           deviceId: 2,
@@ -68,7 +66,8 @@ describe("toSyncMoveStartPlan", () => {
       startMode: "nearest",
       targetFrameMs: 4000,
       transitionSec: 2.5,
-      xSafe: null,
+      prepareTimeMs: 2500,
+      loopCount: 1,
       motorLimitScale: 1,
       members: [
         { objectId: 7, axes: [] },
@@ -91,11 +90,8 @@ describe("toSyncMoveStartPlan", () => {
 
     expect(plan.direction).toBe(false);
     expect(plan.nearest).toBe(true);
-    expect(plan.startMode).toBe("nearest");
     expect(plan.targetFrameMs).toBe(4000);
     expect(plan.transitionSec).toBe(2500);
-    expect(plan.xSafe).toBeNull();
-    expect(plan.motorLimitScale).toBe(1);
     expect(plan.modelList).toEqual([
       { deviceId: 7, virtualAxis: [zeroAxis, zeroAxis, zeroAxis] },
       {
@@ -125,7 +121,8 @@ describe("toSyncMovePrepareItems", () => {
           startMode: "nearest",
           targetFrameMs: 1040,
           transitionSec: 4.4,
-          xSafe: true,
+          prepareTimeMs: 4400,
+          loopCount: 1,
           motorLimitScale: null,
           members: [
             {
@@ -155,11 +152,8 @@ describe("toSyncMovePrepareItems", () => {
       startPlan: {
         direction: true,
         nearest: true,
-        startMode: "nearest",
         targetFrameMs: 1040,
         transitionSec: 4400,
-        xSafe: true,
-        motorLimitScale: null,
         modelList: [
           {
             deviceId: 1,
@@ -188,7 +182,8 @@ describe("toSyncMovePrepareItems", () => {
           startMode: "at-start",
           targetFrameMs: 16000,
           transitionSec: 0,
-          xSafe: null,
+          prepareTimeMs: 0,
+          loopCount: 1,
           motorLimitScale: null,
           members: [],
         },
@@ -197,11 +192,8 @@ describe("toSyncMovePrepareItems", () => {
     expect(item?.startPlan).toEqual({
       direction: false,
       nearest: false,
-      startMode: "at-start",
       targetFrameMs: 16000,
       transitionSec: 0,
-      xSafe: null,
-      motorLimitScale: null,
       modelList: [],
     });
   });

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { planNearestStart } from "@/app/project/action-sequence/nearest-start";
-import { buildNearestStartMember } from "@/app/project/action-sequence/nearest-start-model";
 import {
   fixtureCurrent,
   fixtureObjects,
@@ -16,19 +15,30 @@ import {
 } from "./sequence-preview-timeline";
 
 const resolved = resolveActionSequence(fixtureSequence(false));
+const telemetry = new Map(
+  Object.entries(fixtureCurrent).map(([id, pose]) => [Number(id), { h: pose.v1, p: pose.v2, y: pose.v3 }]),
+);
 const planFor = (nearest: boolean, reverse: boolean) =>
   planNearestStart({
     resolved,
-    members: fixtureObjects().map((object) =>
-      buildNearestStartMember(object, [], fixtureCurrent[object.id]!),
-    ),
+    objects: fixtureObjects(),
+    motors: [],
+    telemetryByObjectId: telemetry,
     forced: false,
     nearest,
     reverse,
-    loopOnce: true,
+    loopCount: 1,
   });
 
 describe("buildPreviewTimeline", () => {
+  it("starts a nearest at-start plan from the frame the algorithm chose", () => {
+    const plan = { ...planFor(true, false), startMode: "at-start" as const, targetFrameMs: 4000 };
+    const timeline = buildPreviewTimeline(16000, plan, false);
+    expect(timeline).toMatchObject({ plan: null, transitionMs: 0, programStartMs: 4000, totalMs: 12000 });
+    const boundary = { ...planFor(false, false), startMode: "at-start" as const, targetFrameMs: 1000 };
+    expect(buildPreviewTimeline(16000, boundary, false)).toMatchObject({ programStartMs: 0, totalMs: 16000 });
+  });
+
   it("plays the whole program without a transition", () => {
     const forward = buildPreviewTimeline(16000, null, false);
     expect(forward).toMatchObject({ transitionMs: 0, programStartMs: 0, totalMs: 16000, direction: 1 });

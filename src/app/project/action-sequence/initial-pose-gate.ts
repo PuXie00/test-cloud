@@ -5,15 +5,9 @@ import type {
 } from "@/app/project/project-document-types";
 import type { ActionSequenceConfig, ModelPose } from "./types";
 import { isSequenceLooping } from "./sequence-loop";
-import { planNearestStart, type NearestStartMember, type NearestStartPlan } from "./nearest-start";
-import { memberTimeline, sharedKeyframes } from "./nearest-start-frames";
-import { buildNearestStartMember } from "./nearest-start-model";
+import { planNearestStart, type NearestStartPlan } from "./nearest-start";
 import type { HpyPose } from "./nearest-start-motion";
-import {
-  pinUncontrolledAxes,
-  resolveActionSequence,
-  type ResolvedActionSequence,
-} from "./resolve-sequence";
+import { resolveActionSequence, type ResolvedActionSequence } from "./resolve-sequence";
 
 export type { HpyPose } from "./nearest-start-motion";
 
@@ -24,11 +18,6 @@ const AXIS_EPSILON: Record<VirtualAxisId, number> = {
 };
 
 const CLOSED_POSE_SLACK = 1e-9;
-
-/** 强制轨迹 xSafe=false 表示当前位置不在轨迹上，禁止准备。 */
-export const BLOCK_READY_WHEN_FORCED_UNSAFE = true;
-
-export const FORCED_UNSAFE_MESSAGE = "当前位置不在轨迹上（xSafe 未通过），禁止准备";
 
 export const hpyFromPositions = (
   positions: { h?: number; p?: number; y?: number } | null | undefined,
@@ -81,6 +70,14 @@ export const enabledAxesMatchStart = (
   );
 };
 
+/** 就近算法算出的每个准备 Move 都在 1mm / 0.1° 以内：已在接入点，不用确认过渡 */
+export const planIsAtStart = (plan: NearestStartPlan): boolean =>
+  plan.members.every((member) =>
+    member.axes.every(
+      (move) => Math.abs(move.to - move.from) <= AXIS_EPSILON[move.axis] + CLOSED_POSE_SLACK,
+    ),
+  );
+
 export type StartGateOptions = { nearest: boolean; reverse: boolean };
 
 export type StartGateInput = StartGateOptions & {
@@ -100,54 +97,24 @@ export type StartGateTiming = {
 export type StartGateResult =
   | { status: "at-start"; plan: NearestStartPlan }
   | ({ status: "transition" } & StartGateTiming)
-  | ({ status: "blocked"; message: string } & StartGateTiming)
   | { status: "error"; message: string };
 
 const errorMessage = (error: unknown, fallback: string): string =>
   error instanceof Error ? error.message : fallback;
 
-const boundaryFrameMs = (resolved: ResolvedActionSequence, reverse: boolean): number => {
-  const frames = sharedKeyframes(
-    [...resolved.posesByObject.keys()].flatMap((objectId) => {
-      const timeline = memberTimeline(resolved, objectId);
-      return timeline ? [timeline] : [];
-    }),
-  );
-  if (frames.length === 0) return reverse ? resolved.totalMs : 0;
-  return reverse ? frames[frames.length - 1]! : frames[0]!;
-};
-
-/** 已在起点：不下发成员运动，只标明从第一帧或末帧开始。 */
-export const atStartPlan = (input: {
-  resolved: ResolvedActionSequence;
-  forced: boolean;
-  nearest: boolean;
-  reverse: boolean;
-}): NearestStartPlan => ({
-  forced: input.forced,
-  nearest: input.nearest,
-  direction: input.reverse ? -1 : 1,
-  startMode: "at-start",
-  targetFrameMs: boundaryFrameMs(input.resolved, input.reverse),
-  transitionSec: 0,
-  xSafe: null,
-  motorLimitScale: null,
-  members: [],
-});
-const boundaryPoseAt = (
-  resolved: ResolvedActionSequence,
-  objectId: number,
-  reverse: boolean,
-): ModelPose | null => {
-  const timeline = memberTimeline(resolved, objectId);
-  if (!timeline) return null;
-  return reverse ? timeline.endPose : timeline.startPose;
-};
-
 /** 过渡结束后剩余的编程时长：正向从目标帧走到末尾，反向从目标帧倒回 0。 */
 export const remainingProgramMs = (plan: NearestStartPlan, totalMs: number): number =>
   plan.direction > 0 ? Math.max(0, totalMs - plan.targetFrameMs) : Math.max(0, plan.targetFrameMs);
 
+/** C++ / PLC 循环配置：0 一直循环，1 播一次 */
+export const sequenceLoopCount = (sequence: ActionSequenceConfig): 0 | 1 =>
+  isSequenceLooping(sequence) ? 0 : 1;
+
+/**
+ * 不论在不在起点都跑就近算法：它给出接入帧、准备 V/A 与共同准备时间。
+ * 先按回起点算，所有准备 Move 都在容差内就是已在起点（非强制就近即使停在起点也会跳到下一关键帧，
+ * 所以不能先就近）；不在起点且开了就近，再按就近算。在容差内的计划标为 at-start，仍保留算法的 V/A 供下发。
+ */
 export const planStartTransition = (input: {
   resolved: ResolvedActionSequence;
   sequence: ActionSequenceConfig;
@@ -157,40 +124,36 @@ export const planStartTransition = (input: {
   nearest: boolean;
   reverse: boolean;
 }): NearestStartPlan => {
-  // 序列不控制的轴就停在实时位置：起点按实时值算，接入时不动它
-  const resolved = pinUncontrolledAxes(input.resolved, (objectId, axis) => {
-    const current = input.telemetryByObjectId.get(objectId);
-    return current ? poseFromHpy(current)[axis] : undefined;
-  });
-  const members: NearestStartMember[] = [];
-  let offStart = false;
-  for (const objectId of resolved.posesByObject.keys()) {
-    const object = input.objects.find((item) => item.id === objectId);
-    if (!object) throw new Error(`缺少受控物体 ${objectId}`);
-    if (object.enabledVirtualAxes.length === 0) continue;
-    const current = input.telemetryByObjectId.get(objectId) ?? { h: 0, p: 0, y: 0 };
-    const boundary = boundaryPoseAt(resolved, objectId, input.reverse);
-    if (boundary && !enabledAxesMatchStart(object.enabledVirtualAxes, current, boundary)) {
-      offStart = true;
-    }
-    members.push(buildNearestStartMember(object, input.motors, poseFromHpy(current)));
-  }
-  if (!offStart) {
-    return atStartPlan({
-      resolved,
+  const planWith = (nearest: boolean) =>
+    planNearestStart({
+      resolved: input.resolved,
+      objects: input.objects,
+      motors: input.motors,
+      telemetryByObjectId: input.telemetryByObjectId,
       forced: input.sequence.trajectoryMode === true,
-      nearest: input.nearest,
+      nearest,
       reverse: input.reverse,
+      loopCount: sequenceLoopCount(input.sequence),
     });
-  }
-  return planNearestStart({
-    resolved,
-    members,
-    forced: input.sequence.trajectoryMode === true,
+  const atStart = (plan: NearestStartPlan): NearestStartPlan => ({
+    ...plan,
     nearest: input.nearest,
-    reverse: input.reverse,
-    loopOnce: !isSequenceLooping(input.sequence),
+    startMode: "at-start",
   });
+
+  let boundary: NearestStartPlan;
+  try {
+    boundary = planWith(false);
+  } catch (error) {
+    // 回起点算不出来时，开了就近仍可以接到别的帧
+    if (!input.nearest) throw error;
+    const nearest = planWith(true);
+    return planIsAtStart(nearest) ? atStart(nearest) : nearest;
+  }
+  if (planIsAtStart(boundary)) return atStart(boundary);
+  if (!input.nearest) return boundary;
+  const nearest = planWith(true);
+  return planIsAtStart(nearest) ? atStart(nearest) : nearest;
 };
 
 export const evaluateStartGate = (input: StartGateInput): StartGateResult => {
@@ -209,14 +172,11 @@ export const evaluateStartGate = (input: StartGateInput): StartGateResult => {
   }
   if (plan.startMode === "at-start") return { status: "at-start", plan };
 
-  const timing: StartGateTiming = {
+  return {
+    status: "transition",
     plan,
     transitionSeconds: plan.transitionSec,
     programSeconds: resolved.totalMs / 1000,
     totalSeconds: plan.transitionSec + remainingProgramMs(plan, resolved.totalMs) / 1000,
   };
-  if (BLOCK_READY_WHEN_FORCED_UNSAFE && plan.forced && plan.xSafe === false) {
-    return { status: "blocked", message: FORCED_UNSAFE_MESSAGE, ...timing };
-  }
-  return { status: "transition", ...timing };
 };

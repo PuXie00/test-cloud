@@ -50,6 +50,7 @@ const {
   readySequenceMock,
   goSequenceMock,
   startLocalAuthoredSequenceMock,
+  resolveSequenceSpeedCapMock,
   markSlotReadyMock,
   clearSlotReadyMock,
   setSlotBusyMock,
@@ -90,6 +91,12 @@ const {
     speedPercent: 100,
     sequenceHandle: { actionNo: 1 },
   })),
+  resolveSequenceSpeedCapMock: vi.fn(
+    (): { ok: true; maxPercent: number | null } | { ok: false; maxPercent: number; message: string } => ({
+      ok: true,
+      maxPercent: null,
+    }),
+  ),
   markSlotReadyMock: vi.fn(),
   clearSlotReadyMock: vi.fn(),
   setSlotBusyMock: vi.fn(),
@@ -308,6 +315,7 @@ vi.mock("../../hooks/sequence-execution", () => ({
     startLocalAuthoredSequenceMock(...args as [{ sequenceId: number }]),
   stopSequence: (...args: unknown[]) => stopSequenceMock(...args),
   releaseSequence: (...args: unknown[]) => releaseSequenceMock(...(args as [])),
+  resolveSequenceSpeedCap: (...args: unknown[]) => resolveSequenceSpeedCapMock(...(args as [])),
   getLocalSequenceTransport: () => localSequenceTransport,
   getSequenceTransport: () => localSequenceTransport,
 }));
@@ -371,6 +379,7 @@ const makeFaderSlot = (overrides: Partial<FaderSlotState> & { index: number }): 
   runOptions: { nearest: false, reverse: false, safeGroup: false },
   startPlan: null,
   preparedPoses: null,
+  maxSpeedPercent: null,
   ...overrides,
 });
 
@@ -504,6 +513,7 @@ afterEach(() => {
   goSequenceMock.mockClear();
   startLocalAuthoredSequenceMock.mockClear();
   markSlotReadyMock.mockClear();
+  resolveSequenceSpeedCapMock.mockClear();
   clearSlotReadyMock.mockClear();
   setSlotBusyMock.mockClear();
   setSlotRunningMock.mockClear();
@@ -1085,9 +1095,14 @@ describe("ExecArea launch guard", () => {
     });
     expect(launchMock).not.toHaveBeenCalled();
     expect(goSequenceMock).not.toHaveBeenCalled();
-    expect(markSlotReadyMock).toHaveBeenCalledWith(1, 15, "fp-15", null, {
-      1: { h: 10, p: 0, y: 0 },
-    });
+    expect(markSlotReadyMock).toHaveBeenCalledWith(
+      1,
+      15,
+      "fp-15",
+      expect.objectContaining({ startMode: "at-start", targetFrameMs: 2000, prepareTimeMs: 0 }),
+      { 1: { h: 10, p: 0, y: 0 } },
+      null,
+    );
     expect(screen.queryByRole("alertdialog")).toBeNull();
 
     fireEvent.click(readyButtons[0]!);
@@ -1249,19 +1264,41 @@ describe("ExecArea launch guard", () => {
     expect(screen.getByText("就近接入 · 反向")).toBeTruthy();
   });
 
-  it("blocks ready for a forced trajectory that fails the xSafe check", async () => {
+  it("prepares a forced trajectory from off the curve with the algorithm's prepare time", async () => {
     snapshotsRef.current = [{ descriptor: { id: 1 }, positions: { h: 0, p: 0, y: 0 } }];
     documentRef.current!.motion.actionSequences[1]!.trajectoryMode = true;
+    resolveSequenceSpeedCapMock.mockReturnValueOnce({ ok: true, maxPercent: 80 });
     render(withMode(<ExecArea />));
     fireEvent.click(screen.getByRole("button", { name: "F2 Ready" }));
     expect(await screen.findByRole("alertdialog")).toBeTruthy();
     expect(screen.getByText("强制")).toBeTruthy();
-    expect(screen.getByRole("alert").textContent).toBe("当前位置不在轨迹上（xSafe 未通过），禁止准备");
-    expect(screen.getByTestId("pose-transition-time").textContent).toMatch(/秒/);
+    expect(screen.queryByRole("alert")).toBeNull();
     const confirm = screen.getByRole("button", { name: "确认" }) as HTMLButtonElement;
-    expect(confirm.disabled).toBe(true);
+    expect(confirm.disabled).toBe(false);
     fireEvent.click(confirm);
-    expect(readySequenceMock).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(readySequenceMock).toHaveBeenCalledTimes(1);
+    });
+    const plan = markSlotReadyMock.mock.calls[0]?.[3];
+    expect(plan).toMatchObject({ forced: true, startMode: "boundary", targetFrameMs: 2000 });
+    expect(plan.prepareTimeMs).toBe(Math.ceil(plan.transitionSec * 1000));
+    expect(plan.members[0].axes[0]).toMatchObject({ axis: "v1", from: 0, to: 10 });
+    expect(markSlotReadyMock.mock.calls[0]?.[5]).toBe(80);
+  });
+
+  it("warns and limits the speed to 100% when the speed range fails", async () => {
+    resolveSequenceSpeedCapMock.mockReturnValueOnce({
+      ok: false,
+      maxPercent: 100,
+      message: "调速范围计算失败，速度最高 100%：几何参数无效",
+    });
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "F2 Ready" }));
+    await waitFor(() => {
+      expect(markSlotReadyMock).toHaveBeenCalledTimes(1);
+    });
+    expect(toastWarning).toHaveBeenCalledWith("调速范围计算失败，速度最高 100%：几何参数无效");
+    expect(markSlotReadyMock.mock.calls[0]?.[5]).toBe(100);
   });
 
   it("ignores a second confirm click before the dialog closes", async () => {
@@ -1297,7 +1334,7 @@ describe("ExecArea launch guard", () => {
     render(withMode(<ExecArea />));
     fireEvent.click(screen.getByRole("button", { name: "F2 Ready" }));
     expect(await screen.findByRole("alertdialog")).toBeTruthy();
-    expect(screen.getByText(/最大电机速度必须为有限正数/)).toBeTruthy();
+    expect(screen.getByText("模型1的最大电机速度必须大于0")).toBeTruthy();
     expect((screen.getByRole("button", { name: "确认" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     await waitFor(() => {
@@ -1391,9 +1428,8 @@ describe("ExecArea launch guard", () => {
         direction: 1,
         targetFrameMs: 2000,
         transitionSec: 0,
-        xSafe: null,
-        motorLimitScale: null,
-        members: [],
+        prepareTimeMs: 0,
+        members: [expect.objectContaining({ objectId: 1, axes: [] })],
       },
     });
     // 先释放上一条，再准备下一条；卡片在准备成功后移除，不再重复下发停止
@@ -1406,7 +1442,12 @@ describe("ExecArea launch guard", () => {
       readySequenceMock.mock.invocationCallOrder[0]!,
     );
     expect(closeMock).toHaveBeenCalledWith("card-stopped", { release: false });
-    expect(goSequenceMock.mock.calls[0]?.[0]).toMatchObject({ sequenceId: 15, faderPercent: 100 });
+    expect(goSequenceMock.mock.calls[0]?.[0]).toMatchObject({
+      sequenceId: 15,
+      faderPercent: 100,
+      startPlan: (readySequenceMock.mock.calls[0]?.[0] as { startPlan?: unknown } | undefined)?.startPlan,
+      maxSpeedPercent: null,
+    });
     // 槽状态和手动操作 F2 一致：先“已准备”，GO 成功后转“启动”
     expect(markSlotReadyMock).toHaveBeenCalledTimes(1);
     expect(markSlotReadyMock.mock.calls[0]?.slice(0, 3)).toEqual([1, 15, "fp-15"]);

@@ -34,6 +34,7 @@ export const buildActionCardSeed = (
     name: sequence.name,
     source: slot ? { kind: "fader", slotIndex: slot.index } : { kind: "external" },
     speedPercent: slot?.faderValue ?? 100,
+    ...(slot?.maxSpeedPercent != null ? { maxSpeedPercent: slot.maxSpeedPercent } : {}),
     sequenceId: sequence.id,
     sequenceHandle: {
       actionId,

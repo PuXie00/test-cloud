@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { compilePlcAction } from "@/app/project/action-sequence/compile-plc-action";
 import { createDefaultAxisProfiles } from "@/app/project/action-sequence/motion-profile";
 import { toActionDataSaveItems } from "@/app/project/action-sequence/plc-action-payload";
+import type { NearestStartPlan } from "@/app/project/action-sequence/nearest-start";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
 import { createEmptyDocument } from "@/app/project/project-document-empty";
 import type { ControlledObjectConfig, ProjectDocument } from "@/app/project/project-document-types";
@@ -14,6 +15,7 @@ import {
   mapFaderPercentToSpeedScale,
   readySequence,
   releaseSequence,
+  resolveSequenceSpeedCap,
   sequenceReadyFingerprint,
   startLocalAuthoredSequence,
   stopSequence,
@@ -266,7 +268,8 @@ describe("readySequence", () => {
       startMode: "boundary" as const,
       targetFrameMs: 0,
       transitionSec: 2,
-      xSafe: true,
+      prepareTimeMs: 2000,
+      loopCount: 1,
       motorLimitScale: null,
       members: [],
     };
@@ -447,7 +450,88 @@ describe("releaseSequence", () => {
   });
 });
 
+const movingSequence: ActionSequenceConfig = {
+  ...validSequence,
+  blocks: [
+    { id: "a", kind: "pose", objectId: 7, atMs: 0, pose: { v1: 0, v2: 0, v3: 0 } },
+    { id: "b", kind: "pose", objectId: 7, atMs: 2000, pose: { v1: 500, v2: 0, v3: 0 } },
+  ],
+};
+
+const preparePlan: NearestStartPlan = {
+  forced: true,
+  nearest: false,
+  direction: 1,
+  startMode: "boundary",
+  targetFrameMs: 0,
+  transitionSec: 1.632993161855452,
+  prepareTimeMs: 1633,
+  loopCount: 1,
+  motorLimitScale: 1,
+  members: [
+    {
+      objectId: 7,
+      from: { v1: 120, v2: 0, v3: 0 },
+      target: { v1: 0, v2: 0, v3: 0 },
+      axes: [
+        {
+          axis: "v1",
+          from: 120,
+          to: 0,
+          velocity: 146.96938456699073,
+          acceleration: 180,
+          deceleration: 180,
+          durationSec: 1.632993161855452,
+        },
+      ],
+      arrivalSec: 1.632993161855452,
+      waitSec: 0,
+    },
+  ],
+};
+
 describe("goSequence", () => {
+  it("sends the prepare time, per-device V/A and loop count of the nearest plan", async () => {
+    const transport = createTransport();
+    await goSequence({
+      document: documentWithSequence({ ...validSequence, loop: true }),
+      sequenceId: validSequence.id,
+      startPlan: preparePlan,
+      transport,
+    });
+    expect(transport.syncCall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prepareTimeMs: 1633,
+        // 曲线不闭合时算法回退为单次，按算法的循环配置下发
+        loopCount: 1,
+        prepareDevices: [
+          {
+            deviceId: 7,
+            velocityH: 146.96938456699073,
+            accelerationH: 180,
+            velocityP: 0,
+            accelerationP: 0,
+            velocityY: 0,
+            accelerationY: 0,
+          },
+        ],
+      }),
+    );
+  });
+
+  it("caps the fader speed at the speed range", async () => {
+    const transport = createTransport();
+    const started = await goSequence({
+      document: documentWithSequence(validSequence),
+      sequenceId: validSequence.id,
+      faderPercent: 150,
+      maxSpeedPercent: 120,
+      transport,
+    });
+    expect(transport.syncCall).toHaveBeenCalledWith(expect.objectContaining({ speedScale: 1.2 }));
+    expect(started).toMatchObject({ ok: true, speedPercent: 120 });
+  });
+
   it("syncs without saving and uses the fader speedScale", async () => {
     const transport = createTransport();
     const started = await goSequence({
@@ -724,6 +808,9 @@ describe("createCsocketSequenceTransport", () => {
   it("maps sync and stop onto actionGo/actionStop with trajectoryMode", async () => {
     const api = createMockCsocketApi({ success: true, data: [{ actionId: 9 }] });
     const transport = createCsocketSequenceTransport(api);
+    const prepareDevices = [
+      { deviceId: 7, velocityH: 120, accelerationH: 150, velocityP: 0, accelerationP: 0, velocityY: 0, accelerationY: 0 },
+    ];
     await transport.syncCall({
       actionId: 9,
       startTimestamp: 99,
@@ -732,6 +819,8 @@ describe("createCsocketSequenceTransport", () => {
       loopCount: 0,
       deviceId: [7, 8],
       runDirection: 1,
+      prepareTimeMs: 1633,
+      prepareDevices,
     });
     expect(api.actionGo).toHaveBeenCalled();
     const wireItem = api.actionGo.mock.calls[0]?.[0]?.[0] as Record<string, unknown>;
@@ -742,10 +831,38 @@ describe("createCsocketSequenceTransport", () => {
       loopCount: 0,
       trajectoryMode: true,
       deviceId: [7, 8],
+      prepareTimeMs: 1633,
+      prepareDevices,
     });
     await transport.stopAction({ actionId: 9, trajectoryMode: true, deviceId: [7, 8] });
     expect(api.actionStop.mock.calls[0]?.[0]).toEqual([
       { actionId: 9, trajectoryMode: true, deviceId: [7, 8] },
     ]);
+  });
+});
+
+describe("resolveSequenceSpeedCap", () => {
+  it("caps the fader below the motor limit of a fast move", () => {
+    const cap = resolveSequenceSpeedCap(documentWithSequence(movingSequence), movingSequence.id, new Map());
+    expect(cap.ok).toBe(true);
+    expect(cap.maxPercent).toBeGreaterThan(0);
+    expect(cap.maxPercent).toBeLessThan(100);
+  });
+
+  it("has no cap when nothing moves", () => {
+    expect(resolveSequenceSpeedCap(documentWithSequence(validSequence), validSequence.id, new Map())).toEqual({
+      ok: true,
+      maxPercent: null,
+    });
+  });
+
+  it("allows only the programmed speed when the range cannot be computed", () => {
+    const document = documentWithSequence(movingSequence);
+    document.setup.controlledObjects = [{ ...fixtureObject(), maxAxisVelocity: 0 }];
+    expect(resolveSequenceSpeedCap(document, movingSequence.id, new Map())).toEqual({
+      ok: false,
+      maxPercent: 100,
+      message: expect.stringContaining("调速范围计算失败，速度最高 100%"),
+    });
   });
 });
