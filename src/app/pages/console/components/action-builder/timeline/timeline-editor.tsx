@@ -9,6 +9,7 @@ import type {
   TimelineBlock,
   TimelineMarker,
 } from "@/app/project/action-sequence/types";
+import type { VirtualAxisId } from "@/app/project/project-document-types";
 import { sortedMarkers } from "../marker-ops";
 import { unsetAxesOf } from "@/app/project/action-sequence/keyframe-pose";
 import {
@@ -46,6 +47,22 @@ import { computeNiceTimeTicks } from "./timeline-ticks";
 import { TimelineRuler, TimelineRulerReadout } from "./timeline-ruler";
 import { visibleGeneratedAtMs } from "./preset-ticks";
 import { TimelineTrack } from "./timeline-track";
+import {
+  buildAxisCurves,
+  fitCurveScales,
+  visibleCurveObjectIds,
+  type AxisCurve,
+  type CurveGraph,
+  type CurveKey,
+  type CurveScales,
+  type TimelineViewMode,
+} from "./curve-data";
+import {
+  CurveObjectList,
+  CurveScaleGutter,
+  curvePlotLayout,
+  TimelineCurves,
+} from "./timeline-curves";
 import {
   canvasWidthPx,
   clampCursorMs,
@@ -99,7 +116,18 @@ export type TimelineEditorProps = {
   onMarkersShiftEnd?: () => void;
   /** 双击标记改名 */
   onMarkerRename?: (marker: TimelineMarker) => void;
+  /** 轨道或曲线视图；缺省轨道 */
+  viewMode?: TimelineViewMode;
+  /** 曲线视图看的虚轴 */
+  curveAxis?: VirtualAxisId;
+  /** 曲线视图看位置还是速度 */
+  curveGraph?: CurveGraph;
+  /** 曲线上拖位姿的值：这些位姿的这根轴加 deltaValue（相对拖动开始） */
+  onPoseAxisDrag?: (blockIds: string[], axis: VirtualAxisId, deltaValue: number) => void;
+  onPoseAxisDragEnd?: () => void;
 };
+
+const NO_OBJECT_IDS: readonly number[] = [];
 
 const TRACK_ROW_HEIGHT = 36;
 
@@ -164,7 +192,7 @@ export const TimelineEditor = ({
   onDynamicPresetResize,
   onTimelinePxPerSecondChange,
   invalidTargets,
-  selectedObjectIds = [],
+  selectedObjectIds = NO_OBJECT_IDS,
   onObjectClick,
   snapEnabled = true,
   fitRequestId = 0,
@@ -172,6 +200,11 @@ export const TimelineEditor = ({
   onMarkersShift,
   onMarkersShiftEnd,
   onMarkerRename,
+  viewMode = "tracks",
+  curveAxis = "v1",
+  curveGraph = "position",
+  onPoseAxisDrag,
+  onPoseAxisDragEnd,
 }: TimelineEditorProps) => {
   const viewportRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -182,6 +215,13 @@ export const TimelineEditor = ({
   const dragSelectedRef = useRef(false);
   const segmentDragRef = useRef<{ blockIds: string[]; originStartMs: number } | null>(null);
   const markerDragRef = useRef<{ markerIds: string[]; originAtMs: number } | null>(null);
+  const curvesRef = useRef<HTMLDivElement>(null);
+  // 曲线上拖值：这次拖的位姿和被拖关键帧原来的值
+  const curveDragRef = useRef<{ blockIds: string[]; originValue: number } | null>(null);
+  const [curveAreaHeight, setCurveAreaHeight] = useState(0);
+  // 拖值时纵轴刻度不动，松手再按曲线适配
+  const [frozenCurveScales, setFrozenCurveScales] = useState<CurveScales | null>(null);
+  const curveMode = viewMode === "curves";
   const [viewportWidth, setViewportWidth] = useState(0);
   const [viewStartMs, setViewStartMs] = useState(0);
   const [marquee, setMarquee] = useState<MarqueeDrag | null>(null);
@@ -223,6 +263,16 @@ export const TimelineEditor = ({
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    const el = curvesRef.current;
+    if (!curveMode || !el || typeof ResizeObserver === "undefined") return;
+    const update = () => setCurveAreaHeight(el.clientHeight);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [curveMode]);
 
   const viewportMs = viewportDurationMs(viewportWidth, pxPerSecond);
   const viewEndMs = viewWindowEndMs(viewStartMs, viewportMs);
@@ -281,6 +331,33 @@ export const TimelineEditor = ({
   }, [objects]);
 
   const objectIdsInRowOrder = useMemo(() => collectSequenceObjectIds(sequence), [sequence]);
+
+  const objectsById = useMemo(
+    () => new Map(objects.map((object) => [object.id, object])),
+    [objects],
+  );
+  const visibleCurveIds = useMemo(
+    () => visibleCurveObjectIds(objectIdsInRowOrder, selectedObjectIds),
+    [objectIdsInRowOrder, selectedObjectIds],
+  );
+  const curves = useMemo(
+    () =>
+      curveMode
+        ? buildAxisCurves({ resolved, objectIds: visibleCurveIds, axis: curveAxis, objects })
+        : [],
+    [curveMode, resolved, visibleCurveIds, curveAxis, objects],
+  );
+  const fittedCurveScales = useMemo(() => fitCurveScales(curves), [curves]);
+  // 选中的块所属的物体：曲线加粗，靠选中区分是哪条（不靠悬停，触屏也能用）
+  const emphasizedObjectIds = useMemo(() => {
+    const ids = new Set(selectionBlockIds(selection));
+    return [
+      ...new Set(sequence.blocks.filter((block) => ids.has(block.id)).flatMap(blockObjectIds)),
+    ];
+  }, [selection, sequence]);
+  const curveScales = frozenCurveScales ?? fittedCurveScales;
+  const curveRange = curveScales[curveGraph];
+  const curveLayout = curvePlotLayout(curveAreaHeight);
 
   const rows = useMemo(
     () =>
@@ -652,6 +729,53 @@ export const TimelineEditor = ({
     onBlocksShiftEnd?.();
   };
 
+  /**
+   * 曲线上拖关键帧的值：关键帧所在位姿已选中时，选中的位姿这根轴一起加同样的增量；
+   * 没选中时先只选中它。只改值，不改时间。
+   */
+  const handleCurveKeyDrag = (curve: AxisCurve, key: CurveKey, value: number) => {
+    if (!onPoseAxisDrag || key.blockId === null) return;
+    let drag = curveDragRef.current;
+    if (drag === null) {
+      const ids = selectionBlockIds(selection);
+      const grouped = ids.length > 1 && ids.includes(key.blockId);
+      if (!ids.includes(key.blockId)) onSelectionChange({ kind: "block", blockId: key.blockId });
+      drag = { blockIds: grouped ? ids : [key.blockId], originValue: key.value };
+      curveDragRef.current = drag;
+      setFrozenCurveScales(curveScales);
+    }
+    onPoseAxisDrag(drag.blockIds, curve.axis, value - drag.originValue);
+  };
+
+  const handleCurveKeyDragEnd = () => {
+    if (curveDragRef.current === null) return;
+    curveDragRef.current = null;
+    setFrozenCurveScales(null);
+    onPoseAxisDragEnd?.();
+  };
+
+  const handleCurveBackgroundClick = (clientX: number) => {
+    onCursorChange(snapCursor(clientToMs(clientX), false));
+    onSelectionChange(null);
+  };
+
+  /** 点在两个关键帧之间的曲线上：选中这一刻所在的运动区间（预设内部的选中预设） */
+  const handleCurveSelect = (curve: AxisCurve, atMs: number, additive: boolean) => {
+    const segment = resolved.segments.find(
+      (item) => item.objectId === curve.objectId && atMs >= item.startMs && atMs < item.endMs,
+    );
+    if (!segment) {
+      onCursorChange(snapCursor(atMs, false));
+      onSelectionChange(null);
+      return;
+    }
+    if (segment.configurable) {
+      handleSegmentSelect(segment, additive);
+      return;
+    }
+    if (segment.ownerPresetBlockId) handleBlockSelect(segment.ownerPresetBlockId, additive);
+  };
+
   const marqueeStyle = (() => {
     if (!marquee?.boxing || !tracksRef.current) return null;
     const rect = tracksRef.current.getBoundingClientRect();
@@ -676,36 +800,60 @@ export const TimelineEditor = ({
         style={{ width: TRACK_LABEL_WIDTH }}
       >
         <TimelineRulerReadout cursorMs={cursorMs} occupiedEndMs={occupiedEndMs} />
+        {curveMode ? (
+          <div className="flex min-h-0 flex-1 overflow-hidden bg-card">
+            <CurveObjectList
+              rows={rows}
+              curves={curves}
+              graph={curveGraph}
+              visibleObjectIds={visibleCurveIds}
+              selectedObjectIds={selectedObjectIds}
+              emphasizedObjectIds={emphasizedObjectIds}
+              cursorMs={cursorMs}
+              objectsById={objectsById}
+              onObjectClick={onObjectClick}
+            />
+            <CurveScaleGutter
+              layout={curveLayout}
+              range={curveRange}
+              graph={curveGraph}
+              curves={curves}
+              objectsById={objectsById}
+              axis={curveAxis}
+            />
+          </div>
+        ) : (
+          <div ref={labelNamesRef} className="min-h-0 flex-1 overflow-hidden bg-card">
+            {rows.map((row) => {
+              const objectSelected = selectedObjectIds.includes(row.objectId);
+              return (
+                <button
+                  key={row.objectId}
+                  type="button"
+                  aria-pressed={objectSelected}
+                  onClick={(event) => onObjectClick?.(row.objectId, event, objectIdsInRowOrder)}
+                  className={cn(
+                    "flex h-9 w-full shrink-0 items-center truncate border-l-2 px-3 text-left text-body-sm",
+                    objectSelected
+                      ? "border-l-primary bg-accent text-primary"
+                      : "border-l-transparent bg-card text-foreground/80 hover:bg-muted/40",
+                  )}
+                  title={row.objectName}
+                >
+                  {row.objectName}
+                </button>
+              );
+            })}
+          </div>
+        )}
         {markers.length > 0 ? (
           <div
-            className="flex shrink-0 items-center border-b border-border/40 bg-muted px-3 text-[11px] text-muted-foreground"
+            className="flex shrink-0 items-center border-t border-border/40 bg-muted px-3 text-[11px] text-muted-foreground"
             style={{ height: MARKER_LANE_HEIGHT_PX }}
           >
             标记
           </div>
         ) : null}
-        <div ref={labelNamesRef} className="min-h-0 flex-1 overflow-hidden bg-card">
-          {rows.map((row) => {
-            const objectSelected = selectedObjectIds.includes(row.objectId);
-            return (
-              <button
-                key={row.objectId}
-                type="button"
-                aria-pressed={objectSelected}
-                onClick={(event) => onObjectClick?.(row.objectId, event, objectIdsInRowOrder)}
-                className={cn(
-                  "flex h-9 w-full shrink-0 items-center truncate border-l-2 px-3 text-left text-body-sm",
-                  objectSelected
-                    ? "border-l-primary bg-accent text-primary"
-                    : "border-l-transparent bg-card text-foreground/80 hover:bg-muted/40",
-                )}
-                title={row.objectName}
-              >
-                {row.objectName}
-              </button>
-            );
-          })}
-        </div>
         <div
           className="shrink-0 bg-muted"
           style={{ height: TIMELINE_H_SCROLL_HEIGHT_PX }}
@@ -748,6 +896,122 @@ export const TimelineEditor = ({
               onScrub={(ms) => onCursorChange(snapCursor(ms))}
             />
 
+            {curveMode ? (
+              <div
+                ref={curvesRef}
+                data-testid="timeline-curves"
+                className="relative min-h-0 flex-1 touch-none overflow-hidden"
+                style={{ width: canvasWidth }}
+              >
+                <TimelineCurves
+                  curves={curves}
+                  graph={curveGraph}
+                  range={curveRange}
+                  layout={curveLayout}
+                  canvasWidth={canvasWidth}
+                  viewStartMs={viewStartMs}
+                  viewEndMs={viewEndMs}
+                  pxPerSecond={pxPerSecond}
+                  occupiedEndMs={occupiedEndMs}
+                  gridTimesMs={majorTicks.map((tick) => tick.ms)}
+                  markers={markers}
+                  selectedMarkerIds={selectedMarkerIds}
+                  selectedBlockIds={selectionBlockIds(selection)}
+                  objectsById={objectsById}
+                  objectName={(objectId) => objectNameById.get(objectId) ?? `模型 ${objectId}`}
+                  emphasizedObjectIds={emphasizedObjectIds}
+                  snapEnabled={snapEnabled}
+                  onBlockSelect={handleBlockSelect}
+                  onCurveSelect={handleCurveSelect}
+                  onBackgroundClick={handleCurveBackgroundClick}
+                  onMarquee={(blockIds) => onSelectionChange(selectionFromBlockIds(blockIds))}
+                  onKeyDrag={onPoseAxisDrag ? handleCurveKeyDrag : undefined}
+                  onKeyDragEnd={handleCurveKeyDragEnd}
+                />
+              </div>
+            ) : (
+              <div
+                ref={tracksRef}
+                data-testid="timeline-tracks"
+                className="relative min-h-0 flex-1"
+                style={{ width: canvasWidth }}
+                onPointerDown={handleTracksPointerDown}
+              >
+                <div className="pointer-events-none absolute inset-0 z-0 w-full" aria-hidden>
+                  {used ? (
+                    <div
+                      className="absolute inset-y-0 bg-input-background"
+                      style={{ left: used.leftPx, width: used.widthPx }}
+                    />
+                  ) : null}
+                  <div
+                    className="absolute inset-y-0 bg-background"
+                    style={{ left: used ? used.leftPx + used.widthPx : 0, right: 0 }}
+                  />
+                  {majorTicks.map((tick) => (
+                    <div
+                      key={tick.ms}
+                      data-testid="timeline-grid-line"
+                      data-tick-ms={String(tick.ms)}
+                      className="absolute top-0 h-full w-px -translate-x-1/2 bg-border/40"
+                      style={{ left: TIMELINE_PAD_LEFT + viewPxFromMs(tick.ms, viewStartMs, pxPerSecond) }}
+                    />
+                  ))}
+                  {markers.map((marker) => (
+                    <div
+                      key={marker.id}
+                      data-testid="timeline-marker-line"
+                      className={cn(
+                        "absolute top-0 h-full w-0 border-l border-dashed",
+                        selectedMarkerIds.includes(marker.id)
+                          ? "border-primary/70"
+                          : "border-foreground/20",
+                      )}
+                      style={{ left: TIMELINE_PAD_LEFT + viewPxFromMs(marker.atMs, viewStartMs, pxPerSecond) }}
+                    />
+                  ))}
+                </div>
+
+                <div className="relative" style={{ marginLeft: TIMELINE_PAD_LEFT, width: contentWidth }}>
+                  {rows.map((row) => (
+                    <TimelineTrack
+                      key={row.objectId}
+                      objectId={row.objectId}
+                      objectName={row.objectName}
+                      poses={row.poses}
+                      commands={row.commands}
+                      staticPresets={row.staticPresets}
+                      dynamicPresets={row.dynamicPresets}
+                      resolvedInitialPose={row.resolvedInitialPose}
+                      generatedTicksByPreset={row.generatedTicksByPreset}
+                      segments={row.segments}
+                      selection={selection}
+                      selectedSegmentKeys={selectedSegmentKeys}
+                      viewStartMs={viewStartMs}
+                      contentWidth={contentWidth}
+                      pxPerSecond={pxPerSecond}
+                      onBlockSelect={handleBlockSelect}
+                      onSegmentSelect={handleSegmentSelect}
+                      onSegmentMove={onBlocksShift ? handleSegmentMove : undefined}
+                      onPoseMove={(blockId, atMs) => handleTimedBlockMove(blockId, atMs, onPoseMove)}
+                      onPresetMove={(blockId, atMs) => handleTimedBlockMove(blockId, atMs, onPresetMove)}
+                      onDynamicPresetResize={handleDynamicPresetResize}
+                      onBlockMoveEnd={handleBlockMoveEnd}
+                      invalidTargets={invalidTargets}
+                    />
+                  ))}
+                </div>
+
+                {marqueeStyle ? (
+                  <div
+                    className="pointer-events-none absolute z-40 border border-primary bg-primary/20"
+                    style={marqueeStyle}
+                    aria-hidden
+                  />
+                ) : null}
+              </div>
+            )}
+
             {markers.length > 0 ? (
               <TimelineMarkerLane
                 markers={markers}
@@ -762,87 +1026,6 @@ export const TimelineEditor = ({
                 onRename={(marker) => onMarkerRename?.(marker)}
               />
             ) : null}
-
-            <div
-              ref={tracksRef}
-              data-testid="timeline-tracks"
-              className="relative min-h-0 flex-1"
-              style={{ width: canvasWidth }}
-              onPointerDown={handleTracksPointerDown}
-            >
-              <div className="pointer-events-none absolute inset-0 z-0 w-full" aria-hidden>
-                {used ? (
-                  <div
-                    className="absolute inset-y-0 bg-input-background"
-                    style={{ left: used.leftPx, width: used.widthPx }}
-                  />
-                ) : null}
-                <div
-                  className="absolute inset-y-0 bg-background"
-                  style={{ left: used ? used.leftPx + used.widthPx : 0, right: 0 }}
-                />
-                {majorTicks.map((tick) => (
-                  <div
-                    key={tick.ms}
-                    data-testid="timeline-grid-line"
-                    data-tick-ms={String(tick.ms)}
-                    className="absolute top-0 h-full w-px -translate-x-1/2 bg-border/40"
-                    style={{ left: TIMELINE_PAD_LEFT + viewPxFromMs(tick.ms, viewStartMs, pxPerSecond) }}
-                  />
-                ))}
-                {markers.map((marker) => (
-                  <div
-                    key={marker.id}
-                    data-testid="timeline-marker-line"
-                    className={cn(
-                      "absolute top-0 h-full w-0 border-l border-dashed",
-                      selectedMarkerIds.includes(marker.id)
-                        ? "border-primary/70"
-                        : "border-foreground/20",
-                    )}
-                    style={{ left: TIMELINE_PAD_LEFT + viewPxFromMs(marker.atMs, viewStartMs, pxPerSecond) }}
-                  />
-                ))}
-              </div>
-
-              <div className="relative" style={{ marginLeft: TIMELINE_PAD_LEFT, width: contentWidth }}>
-                {rows.map((row) => (
-                  <TimelineTrack
-                    key={row.objectId}
-                    objectId={row.objectId}
-                    objectName={row.objectName}
-                    poses={row.poses}
-                    commands={row.commands}
-                    staticPresets={row.staticPresets}
-                    dynamicPresets={row.dynamicPresets}
-                    resolvedInitialPose={row.resolvedInitialPose}
-                    generatedTicksByPreset={row.generatedTicksByPreset}
-                    segments={row.segments}
-                    selection={selection}
-                    selectedSegmentKeys={selectedSegmentKeys}
-                    viewStartMs={viewStartMs}
-                    contentWidth={contentWidth}
-                    pxPerSecond={pxPerSecond}
-                    onBlockSelect={handleBlockSelect}
-                    onSegmentSelect={handleSegmentSelect}
-                    onSegmentMove={onBlocksShift ? handleSegmentMove : undefined}
-                    onPoseMove={(blockId, atMs) => handleTimedBlockMove(blockId, atMs, onPoseMove)}
-                    onPresetMove={(blockId, atMs) => handleTimedBlockMove(blockId, atMs, onPresetMove)}
-                    onDynamicPresetResize={handleDynamicPresetResize}
-                    onBlockMoveEnd={handleBlockMoveEnd}
-                    invalidTargets={invalidTargets}
-                  />
-                ))}
-              </div>
-
-              {marqueeStyle ? (
-                <div
-                  className="pointer-events-none absolute z-40 border border-primary bg-primary/20"
-                  style={marqueeStyle}
-                  aria-hidden
-                />
-              ) : null}
-            </div>
 
             {snapIndicatorMs !== null ? (
               <div

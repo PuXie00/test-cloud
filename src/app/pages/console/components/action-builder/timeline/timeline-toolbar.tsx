@@ -1,6 +1,7 @@
 import type { ButtonHTMLAttributes, ElementType } from "react";
 import {
   ChevronDown,
+  Eye,
   Flag,
   Magnet,
   Maximize2,
@@ -18,8 +19,12 @@ import {
 } from "lucide-react";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
@@ -27,7 +32,9 @@ import {
 import { Switch } from "@/app/components/ui/switch";
 import { cn } from "@/app/components/ui/utils";
 import type { TimelineMarker } from "@/app/project/action-sequence/types";
+import type { VirtualAxisId } from "@/app/project/project-document-types";
 import type { TrajectoryMode } from "@shared/action-sequence";
+import { CURVE_GRAPHS, type CurveGraph, type TimelineViewMode } from "./curve-data";
 import { formatTime } from "./timeline-data";
 
 type TimelineToolbarProps = {
@@ -64,6 +71,15 @@ type TimelineToolbarProps = {
   markers?: readonly TimelineMarker[];
   onAddMarker?: () => void;
   onJumpToMarker?: (marker: TimelineMarker) => void;
+  /** 「视图」菜单：显示曲线（轨道 / 曲线视图）、曲线看位置还是速度、看哪根虚轴 */
+  viewMode?: TimelineViewMode;
+  onViewModeChange?: (mode: TimelineViewMode) => void;
+  curveGraph?: CurveGraph;
+  onCurveGraphChange?: (graph: CurveGraph) => void;
+  /** available 为 false：显示的物体都没有这根轴，或序列不控制它 */
+  curveAxis?: VirtualAxisId;
+  curveAxes?: readonly { axis: VirtualAxisId; available: boolean }[];
+  onCurveAxisChange?: (axis: VirtualAxisId) => void;
 };
 
 const formatMajorStep = (sec: number): string => {
@@ -88,6 +104,15 @@ const ToolbarIcon = ({
     <Icon className="h-3.5 w-3.5" aria-hidden />
   </button>
 );
+
+const menuButtonClass =
+  "inline-flex h-7 items-center gap-1 rounded-sm px-2 text-body-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground";
+
+/** 视图菜单里的选项触屏时加高 */
+const viewMenuItemClass = "[@media(pointer:coarse)]:py-2.5";
+
+/** 勾选、切换后菜单不关，可以连着设几项 */
+const keepMenuOpen = (event: Event) => event.preventDefault();
 
 export const TimelineToolbar = ({
   trajectoryMode,
@@ -118,12 +143,86 @@ export const TimelineToolbar = ({
   markers = [],
   onAddMarker,
   onJumpToMarker,
+  viewMode,
+  onViewModeChange,
+  curveGraph,
+  onCurveGraphChange,
+  curveAxis,
+  curveAxes,
+  onCurveAxisChange,
 }: TimelineToolbarProps) => {
   const playLabel = isPlaying ? "暂停" : atEnd ? "重新播放" : "播放";
   const PlayIcon = isPlaying ? Pause : atEnd ? RotateCcw : Play;
 
   return (
     <div className="flex h-9 shrink-0 items-center gap-2 bg-muted px-2">
+
+    {viewMode !== undefined && onViewModeChange ? (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button type="button" aria-label="视图" className={menuButtonClass}>
+            <Eye className="h-3.5 w-3.5" aria-hidden />
+            视图
+            <ChevronDown className="h-3 w-3" aria-hidden />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="min-w-[12rem] border-border bg-card text-foreground">
+          <DropdownMenuCheckboxItem
+            checked={viewMode === "curves"}
+            onCheckedChange={(checked) => onViewModeChange(checked ? "curves" : "tracks")}
+            onSelect={keepMenuOpen}
+            className={viewMenuItemClass}
+          >
+            显示曲线
+          </DropdownMenuCheckboxItem>
+          {curveGraph !== undefined && onCurveGraphChange ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">曲线</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={curveGraph}
+                onValueChange={(value) => onCurveGraphChange(value as CurveGraph)}
+              >
+                {CURVE_GRAPHS.map((graph) => (
+                  <DropdownMenuRadioItem
+                    key={graph.id}
+                    value={graph.id}
+                    disabled={viewMode !== "curves"}
+                    onSelect={keepMenuOpen}
+                    className={viewMenuItemClass}
+                  >
+                    {graph.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </>
+          ) : null}
+          {curveAxis !== undefined && curveAxes && onCurveAxisChange ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">虚轴</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={curveAxis}
+                onValueChange={(value) => onCurveAxisChange(value as VirtualAxisId)}
+              >
+                {curveAxes.map(({ axis, available }) => (
+                  <DropdownMenuRadioItem
+                    key={axis}
+                    value={axis}
+                    disabled={viewMode !== "curves" || !available}
+                    onSelect={keepMenuOpen}
+                    className={viewMenuItemClass}
+                  >
+                    {axis.toUpperCase()}
+                    {available ? null : <DropdownMenuShortcut>没有曲线</DropdownMenuShortcut>}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    ) : null}
 
     {onPlayToggle ? (
       <div className="flex items-center">
@@ -158,11 +257,7 @@ export const TimelineToolbar = ({
     {onAddMarker ? (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-label="标记"
-            className="inline-flex h-7 items-center gap-1 rounded-sm px-2 text-body-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
+          <button type="button" aria-label="标记" className={menuButtonClass}>
             <Flag className="h-3.5 w-3.5" aria-hidden />
             标记
             <ChevronDown className="h-3 w-3" aria-hidden />

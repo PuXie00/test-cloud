@@ -474,6 +474,18 @@ describe("applyPoseAxisWrite", () => {
     expect(poseOf(result.sequence, "pose-b").pose.v1).toBe(25);
   });
 
+  it("rounds relative writes to the project precision", () => {
+    const result = applyPoseAxisWrite(
+      multiPoseSequence,
+      ["pose-a"],
+      { mode: "rel", axis: "v1", value: 0.26 },
+      { objectInfo: multiPoseObjectInfo },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(poseOf(result.sequence, "pose-a").pose.v1).toBe(10.3);
+  });
+
   it("skips poses whose object does not have the axis", () => {
     const result = applyPoseAxisWrite(
       multiPoseSequence,

@@ -393,7 +393,9 @@ export const applyPoseAxisWrite = (
     const current = block.pose[write.axis];
     // 相对写入跳过不设定的轴，让它继续经过；绝对写入会设定该轴
     if (write.mode === "rel" && current === undefined) continue;
-    const nextValue = write.mode === "rel" ? (current ?? 0) + write.value : write.value;
+    // 相对写入取到工程精度，免得浮点误差（曲线上拖值时每次都是相对拖动开始加增量）
+    const nextValue =
+      write.mode === "rel" ? roundProjectCoordinate((current ?? 0) + write.value) : write.value;
     const clamped = clampNumeric(nextValue, range?.min, range?.max);
     if (clamped === current) continue;
     block.pose = { ...block.pose, [write.axis]: clamped };

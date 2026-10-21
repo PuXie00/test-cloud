@@ -136,6 +136,7 @@ import { ActionBuilderContext } from "./action-builder-react-context";
 import type { ContextSelection } from "./context-bar/selection-context-bar";
 import { LivePoseBridge, type LivePoseLookup } from "./live-pose-bridge";
 import type { PhaseInputMode } from "./motion-profile/phase-rates";
+import type { CurveGraph, TimelineViewMode } from "./timeline/curve-data";
 import type { ActionRightTab } from "./right-panel/action-right-panel";
 
 export { useActionBuilder } from "./use-action-builder";
@@ -185,9 +186,11 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   const [timelinePxPerSecond, setTimelinePxPerSecond] = useState(TIMELINE_PX_PER_SECOND_DEFAULT);
   const clipboard = useActionClipboard();
   const [lastPersistError, setLastPersistError] = useState<string | null>(null);
-  const [isShiftingBlocks, setIsShiftingBlocks] = useState(false);
+  // 拖块、在曲线上拖值的过程中不跑校验，松手再跑
+  const [isDraggingTimeline, setIsDraggingTimeline] = useState(false);
   const [sequenceIssues, setSequenceIssues] = useState<SequenceIssue[]>([]);
   const shiftOriginRef = useRef<ActionSequenceConfig | null>(null);
+  const poseDragOriginRef = useRef<ActionSequenceConfig | null>(null);
   const markerShiftOriginRef = useRef<ActionSequenceConfig | null>(null);
   const selectedBlockIds = selectionBlockIds(selection);
   const selectedBlockId = selectedBlockIds[0] ?? null;
@@ -345,7 +348,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   );
 
   useEffect(() => {
-    if (isShiftingBlocks) return;
+    if (isDraggingTimeline) return;
     const document = currentProject?.document;
     if (!sequence || !document) {
       setSequenceIssues([]);
@@ -356,7 +359,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     } catch {
       setSequenceIssues([]);
     }
-  }, [sequence, currentProject?.document, isShiftingBlocks]);
+  }, [sequence, currentProject?.document, isDraggingTimeline]);
 
   const dockMode = useMemo((): EditorDockMode => {
     if (sequence) return "sequence";
@@ -505,6 +508,30 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     [applySequenceEdit, poseObjectInfo, sequenceEditOptions],
   );
 
+  /** 曲线上拖位姿的值：所选位姿这根轴都加同样的增量，增量相对拖动开始，松手前不跑校验 */
+  const handleDragPoseAxis = useCallback(
+    (blockIds: readonly string[], axis: VirtualAxisId, deltaValue: number) => {
+      setIsDraggingTimeline(true);
+      updateSelectedSequence((current) => {
+        const origin = poseDragOriginRef.current ?? current;
+        if (poseDragOriginRef.current === null) poseDragOriginRef.current = current;
+        const result = applyPoseAxisWrite(
+          origin,
+          blockIds,
+          { mode: "rel", axis, value: deltaValue },
+          { ...sequenceEditOptions, objectInfo: poseObjectInfo },
+        );
+        return result.ok ? result.sequence : null;
+      });
+    },
+    [updateSelectedSequence, poseObjectInfo, sequenceEditOptions],
+  );
+
+  const handleDragPoseAxisEnd = useCallback(() => {
+    poseDragOriginRef.current = null;
+    setIsDraggingTimeline(false);
+  }, []);
+
   /** 取当前：把物体的实时位置写进选中位姿里设定了值的轴 */
   const handleUpdatePosesFromLive = useCallback(
     (blockIds: readonly string[], liveFor: (objectId: number) => VirtualAxisValues | null) => {
@@ -546,7 +573,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
 
   const handleShiftTimelineBlocks = useCallback(
     (blockIds: string[], deltaMs: number) => {
-      setIsShiftingBlocks(true);
+      setIsDraggingTimeline(true);
       updateSelectedSequence((current) => {
         const origin = shiftOriginRef.current ?? current;
         if (shiftOriginRef.current === null) shiftOriginRef.current = current;
@@ -558,7 +585,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
 
   const handleShiftTimelineBlocksEnd = useCallback(() => {
     shiftOriginRef.current = null;
-    setIsShiftingBlocks(false);
+    setIsDraggingTimeline(false);
   }, []);
 
   const handleResizeDynamicPreset = useCallback(
@@ -583,6 +610,10 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   );
 
   const [phaseInputMode, setPhaseInputMode] = useState<PhaseInputMode>("time");
+  // 时间轴看轨道还是曲线、曲线看哪根轴、看位置还是速度：离开动作页再回来也保持
+  const [timelineViewMode, setTimelineViewMode] = useState<TimelineViewMode>("tracks");
+  const [curveAxis, setCurveAxis] = useState<VirtualAxisId>("v1");
+  const [curveGraph, setCurveGraph] = useState<CurveGraph>("position");
 
   const handleTrajectoryModeChange = useCallback(
     (trajectoryMode: TrajectoryMode) => {
@@ -1347,6 +1378,12 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       canPasteSequence: clipboard.sequence !== null,
       phaseInputMode,
       handlePhaseInputModeChange: setPhaseInputMode,
+      timelineViewMode,
+      handleTimelineViewModeChange: setTimelineViewMode,
+      curveAxis,
+      handleCurveAxisChange: setCurveAxis,
+      curveGraph,
+      handleCurveGraphChange: setCurveGraph,
       setActiveRightTab,
       handleSequenceSelect,
       handleSelectionChange,
@@ -1361,6 +1398,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleMoveTimelineBlock,
       handleShiftTimelineBlocks,
       handleShiftTimelineBlocksEnd,
+      handleDragPoseAxis,
+      handleDragPoseAxisEnd,
       handleResizeDynamicPreset,
       handleUpdateSegmentSettings,
       handleWriteSegmentProfiles,
@@ -1418,6 +1457,9 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       timelinePxPerSecond,
       clipboard,
       phaseInputMode,
+      timelineViewMode,
+      curveAxis,
+      curveGraph,
       lastPersistError,
       sequenceIssues,
       getTimelineObject,
@@ -1434,6 +1476,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleMoveTimelineBlock,
       handleShiftTimelineBlocks,
       handleShiftTimelineBlocksEnd,
+      handleDragPoseAxis,
+      handleDragPoseAxisEnd,
       handleResizeDynamicPreset,
       handleUpdateSegmentSettings,
       handleWriteSegmentProfiles,

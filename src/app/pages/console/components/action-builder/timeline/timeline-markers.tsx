@@ -5,7 +5,7 @@ import { TIMELINE_PAD_LEFT, formatTime } from "./timeline-data";
 import { viewPxFromMs } from "./timeline-view-extent";
 import { DRAG_CLICK_THRESHOLD_PX, isAdditiveClick, useDragClickGuard } from "./suppress-click";
 
-/** 标记行高度，标尺下面一行 */
+/** 标记行高度，时间轴最下面一行（和 Blender 一样） */
 export const MARKER_LANE_HEIGHT_PX = 20;
 /** 名称最多这么宽，离下一个标记更近时再截短 */
 const LABEL_MAX_PX = 160;
@@ -96,8 +96,8 @@ const MarkerFlag = ({
       <span
         aria-hidden
         className={cn(
-          "h-0 w-0 shrink-0 -translate-x-1/2 border-x-[5px] border-t-[8px] border-x-transparent",
-          selected ? "border-t-primary" : "border-t-foreground/70",
+          "h-0 w-0 shrink-0 -translate-x-1/2 border-x-[5px] border-b-[8px] border-x-transparent",
+          selected ? "border-b-primary" : "border-b-foreground/70",
         )}
       />
       <span
@@ -110,7 +110,7 @@ const MarkerFlag = ({
         {marker.name}
       </span>
       {dragging && (
-        <span className="pointer-events-none absolute top-full left-0 z-40 mt-0.5 -translate-x-1/2 rounded-sm bg-card px-1.5 py-0.5 font-mono text-mono-sm tabular-nums text-foreground">
+        <span className="pointer-events-none absolute bottom-full left-0 z-40 mb-0.5 -translate-x-1/2 rounded-sm bg-card px-1.5 py-0.5 font-mono text-mono-sm tabular-nums text-foreground">
           {formatTime(marker.atMs)}
         </span>
       )}
@@ -133,7 +133,7 @@ export type TimelineMarkerLaneProps = {
   onRename: (marker: TimelineMarker) => void;
 };
 
-/** 标尺下面的标记行：小三角加名称，可以点选、拖动、双击改名 */
+/** 时间轴最下面的标记行：朝上的小三角加名称，可以点选、拖动、双击改名；纵向滚动时贴在底部 */
 export const TimelineMarkerLane = ({
   markers,
   selectedMarkerIds,
@@ -148,7 +148,7 @@ export const TimelineMarkerLane = ({
 }: TimelineMarkerLaneProps) => (
   <div
     data-testid="timeline-marker-lane"
-    className="sticky top-8 z-[35] shrink-0 overflow-x-clip border-b border-border/40 bg-muted"
+    className="sticky bottom-0 z-[35] shrink-0 overflow-x-clip border-t border-border/40 bg-muted"
     style={{ width: TIMELINE_PAD_LEFT + contentWidth, height: MARKER_LANE_HEIGHT_PX }}
   >
     <div className="relative h-full" style={{ marginLeft: TIMELINE_PAD_LEFT, width: contentWidth }}>

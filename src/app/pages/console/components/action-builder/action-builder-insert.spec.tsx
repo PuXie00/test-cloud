@@ -225,6 +225,62 @@ describe("inserting blocks at an occupied time", () => {
   });
 });
 
+describe("dragging pose values on the curve view", () => {
+  beforeEach(() => {
+    installMemoryProjectAPI();
+    stubCsocketOpenProject();
+  });
+
+  afterEach(() => {
+    uninstallMemoryProjectAPI();
+    delete window.csocketApi;
+  });
+
+  it("adds the drag delta to the values at the drag start and starts over after release", async () => {
+    const { result } = renderBuilder();
+    await openWithEmptySequence(result);
+    act(() => {
+      result.current.builder.handleInsertTimelineBlock(poseAt("first", 0, 0));
+      result.current.builder.handleInsertTimelineBlock(poseAt("second", 2000, 500));
+    });
+    const valueOf = (id: string) => {
+      const block = result.current.builder.sequence!.blocks.find((item) => item.id === id);
+      return block?.kind === "pose" ? block.pose.v1 : undefined;
+    };
+
+    act(() => result.current.builder.handleDragPoseAxis(["second"], "v1", 100));
+    act(() => result.current.builder.handleDragPoseAxis(["second"], "v1", 250.04));
+    // 每次都相对拖动开始，不累加；取到工程精度
+    expect(valueOf("second")).toBe(750);
+    act(() => result.current.builder.handleDragPoseAxis(["second"], "v1", 0));
+    expect(valueOf("second")).toBe(500);
+    act(() => result.current.builder.handleDragPoseAxis(["first", "second"], "v1", 50));
+    act(() => result.current.builder.handleDragPoseAxisEnd());
+    expect([valueOf("first"), valueOf("second")]).toEqual([50, 550]);
+
+    act(() => result.current.builder.handleDragPoseAxis(["second"], "v1", 50));
+    act(() => result.current.builder.handleDragPoseAxisEnd());
+    expect(valueOf("second")).toBe(600);
+  });
+
+  it("remembers the curve view and axis for the session", async () => {
+    const { result } = renderBuilder();
+    await openWithEmptySequence(result);
+    expect(result.current.builder.timelineViewMode).toBe("tracks");
+    expect(result.current.builder.curveGraph).toBe("position");
+    act(() => {
+      result.current.builder.handleTimelineViewModeChange("curves");
+      result.current.builder.handleCurveAxisChange("v2");
+      result.current.builder.handleCurveGraphChange("velocity");
+    });
+    // 换一条序列（相当于离开再回来）也不变
+    act(() => result.current.builder.handleSequenceSelect(null));
+    expect(result.current.builder.timelineViewMode).toBe("curves");
+    expect(result.current.builder.curveAxis).toBe("v2");
+    expect(result.current.builder.curveGraph).toBe("velocity");
+  });
+});
+
 describe("presets laid out by position", () => {
   beforeEach(() => {
     toastSuccess.mockClear();
