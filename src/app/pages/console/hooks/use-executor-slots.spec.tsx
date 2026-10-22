@@ -97,6 +97,36 @@ describe("ExecutorSlotsProvider", () => {
     expect(result.current.faderSlots[1]?.phase).toBe("ready");
   });
 
+  it("caps the fader at the speed range from ready until the run ends", () => {
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(
+        ExecutorSlotsProvider,
+        { pageItems: pageItemsFor([15, 16]), sequenceFingerprints: { 15: "fp-15", 16: "fp-16" } },
+        children,
+      );
+    const { result } = renderHook(() => useExecutorSlots(), { wrapper });
+
+    act(() => {
+      result.current.setFaderValue(0, 150);
+      result.current.markSlotReady(0, 15, "fp-15", null, {}, 80);
+      result.current.markSlotReady(1, 16, "fp-16", null, {}, null);
+    });
+    expect(result.current.faderSlots[0]).toMatchObject({ maxSpeedPercent: 80, faderValue: 80 });
+    expect(result.current.faderSlots[1]).toMatchObject({ maxSpeedPercent: null, faderValue: 100 });
+
+    act(() => {
+      result.current.clearSlotReady(0);
+      result.current.setSlotRunning(0, true);
+      result.current.setFaderValue(0, 120);
+    });
+    expect(result.current.faderSlots[0]).toMatchObject({ phase: "running", maxSpeedPercent: 80, faderValue: 80 });
+
+    act(() => {
+      result.current.setSlotRunning(0, false);
+    });
+    expect(result.current.faderSlots[0]).toMatchObject({ phase: "idle", maxSpeedPercent: null });
+  });
+
   it("stores the transition while ready and drops it when ready is cleared or the fingerprint changes", () => {
     const plan: NearestStartPlan = {
       forced: false,
@@ -105,7 +135,8 @@ describe("ExecutorSlotsProvider", () => {
       startMode: "boundary",
       targetFrameMs: 0,
       transitionSec: 3,
-      xSafe: null,
+      prepareTimeMs: 3000,
+      loopCount: 1,
       motorLimitScale: 1,
       members: [],
     };

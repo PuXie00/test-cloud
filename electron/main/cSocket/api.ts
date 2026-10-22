@@ -1,4 +1,10 @@
 import type { ActionDataSaveItem } from '../../../shared/csocket/action-data-save'
+import {
+  toActionSyncPrepareHead,
+  toActionSyncPrepareParams,
+  type ActionGoItem,
+  type ActionPrepareDevice,
+} from '../../../shared/csocket/action-sync-prepare'
 import { toSyncMovePrepareItems, type SyncMovePrepareSource } from '../../../shared/csocket/sync-move-start-plan'
 import type {
   CsocketConfigureContext,
@@ -459,29 +465,16 @@ export class CsocketApiService {
     return Promise.all(result)
   }
   // 动作执行 Go
-  actionGo(items: {
-    actionId: number,
-    runDirection: number,
-    speedScale: number,
-    loopCount: number,
-    trajectoryMode: boolean;
-    deviceId: number[],// 该动作下面的所有物体id
-  }[], opts?: CsocketSendOpts) {
-    const isTMapedHeadPrepare: {
-      actionId: number,
-      runDirection: number,
-      speedScale: number,
-      loopCount: number,
-      isNearest: number,
-      selectedCurveTimeMs: number,
-      deviceCount: number,
-    }[] = []
+  // 强制轨迹：1006 带就近算法的准备所需时间与各设备准备 V/A，成功后 1007 启动
+  actionGo(items: ActionGoItem[], opts?: CsocketSendOpts) {
+    const isTMapedHeadPrepare: ReturnType<typeof toActionSyncPrepareHead>[] = []
     const isTMapedHeadRelease: {
       actionId: number,
       startFlag: number,
       startTimestamp: number,
       deviceCount: number,
     }[] = []
+    const isTMapedPrepare: ActionPrepareDevice[] = []
     const isTMaped:{
       deviceId: number,
     }[] = []
@@ -492,21 +485,14 @@ export class CsocketApiService {
     }[] = []
     items.forEach(item => {
       if(item.trajectoryMode) {
-        isTMapedHeadPrepare.push({
-          actionId: item.actionId,
-          runDirection: item.runDirection === 2 ? 2 : 1,
-          speedScale: item.speedScale * 100,
-          loopCount: item.loopCount,
-          isNearest: 1,
-          selectedCurveTimeMs: 0,
-          deviceCount: item.deviceId.length,
-        })
+        isTMapedHeadPrepare.push(toActionSyncPrepareHead(item))
         isTMapedHeadRelease.push({
           actionId: item.actionId,
           startFlag: 1,
           startTimestamp: Date.now() + 100,
           deviceCount: item.deviceId.length,
         })
+        isTMapedPrepare.push(...toActionSyncPrepareParams(item))
         item.deviceId.forEach(deviceId => {
           isTMaped.push({
             deviceId: deviceId,
@@ -531,7 +517,7 @@ export class CsocketApiService {
         paramHeard: isTMapedHeadRelease,
       }
       result.push((async () => {
-        const prepared = await this.sendBuilt('Opera|actionSyncPrepare', '0x1006', isTMaped, prepareOpts)
+        const prepared = await this.sendBuilt('Opera|actionSyncPrepare', '0x1006', isTMapedPrepare, prepareOpts)
         if (!isCppAckOk(prepared)) return ackFailed(prepared)
         const released = await this.sendBuilt('Opera|actionSyncRelease', '0x1007', isTMaped, releaseOpts)
         return isCppAckOk(released) ? released : ackFailed(released)
@@ -541,6 +527,65 @@ export class CsocketApiService {
       result.push(this.syncMovebegin(isNotTMaped, opts))
     }
     return Promise.all(result)
+  }
+
+  // 调速
+  actionSpeedScale(items: {
+    actionId: number,
+    speedScale: number,
+    runDirection: number,
+    loopCount: number,
+    deviceId: number[],
+  }[], opts?: CsocketSendOpts) {
+    const isTMapedHeadRelease: {
+      actionId: number,
+      runDirection: number,
+      speedScale: number,
+      loopCount: number,
+      isNearest: number,
+      selectedCurveTimeMs: number,
+      prepareTimeMs: number,
+      deviceCount: number,
+    }[] = []
+    const isTMaped: {
+      deviceId: number,
+      velocityH: number,
+      accelerationH: number,
+      velocityP: number,
+      accelerationP: number,
+      velocityY: number,
+      accelerationY: number,
+    }[] = []
+    items.forEach(item => {
+      isTMapedHeadRelease.push({
+        actionId: item.actionId,
+        runDirection: item.runDirection === 2 ? 2 : 1,
+        // 取整，避免 0.57*100=56.999… 被截成 56
+        speedScale: Math.round(item.speedScale * 100),
+        loopCount: item.loopCount,
+        isNearest: 1,
+        selectedCurveTimeMs: 0,
+        prepareTimeMs: 0,
+        deviceCount: item.deviceId.length,
+      })
+
+      item.deviceId.forEach(deviceId => {
+        isTMaped.push({
+          deviceId: deviceId,
+          velocityH: 0,
+          accelerationH: 0,
+          velocityP: 0,
+          accelerationP: 0,
+          velocityY: 0,
+          accelerationY: 0,
+        })
+      })
+    })
+    const localOpts = {
+      ...opts,
+      paramHeard: isTMapedHeadRelease,
+    }
+    return this.sendBuilt('Opera|actionSyncRelease', '0x1006', isTMaped, localOpts)
   }
 
   // 动作停止 Stop

@@ -1,5 +1,6 @@
 import { useCallback, useRef } from "react";
 import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
+import { isSequenceLooping } from "@/app/project/action-sequence/sequence-loop";
 import { sequenceObjectIds } from "@/app/project/action-sequence/sequence-object-ids";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
 import type { ProjectDocument } from "@/app/project/project-document-types";
@@ -34,10 +35,12 @@ export const buildActionCardSeed = (
     name: sequence.name,
     source: slot ? { kind: "fader", slotIndex: slot.index } : { kind: "external" },
     speedPercent: slot?.faderValue ?? 100,
+    ...(slot?.maxSpeedPercent != null ? { maxSpeedPercent: slot.maxSpeedPercent } : {}),
     sequenceId: sequence.id,
     sequenceHandle: {
       actionId,
       deviceId: [...sequenceObjectIds(sequence)].sort((left, right) => left - right),
+      loopCount: isSequenceLooping(sequence) ? 0 : 1,
     },
     trajectoryMode: sequence.trajectoryMode,
     ...(totalMs !== undefined ? { totalMs } : {}),

@@ -21,6 +21,7 @@ const slot = (overrides: Partial<FaderSlotState> = {}): FaderSlotState => ({
   runOptions: { ...DEFAULT_SLOT_RUN_OPTIONS, reverse: true },
   startPlan: null,
   preparedPoses: null,
+  maxSpeedPercent: null,
   ...overrides,
 });
 
@@ -38,7 +39,7 @@ describe("buildActionCardSeed", () => {
       source: { kind: "fader", slotIndex: 2 },
       speedPercent: 80,
       sequenceId: sequence.id,
-      sequenceHandle: { actionId: sequence.id, deviceId },
+      sequenceHandle: { actionId: sequence.id, deviceId, loopCount: 1 },
       trajectoryMode: true,
       totalMs,
       reverse: true,

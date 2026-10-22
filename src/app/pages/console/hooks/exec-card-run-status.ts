@@ -28,6 +28,7 @@ export type ActionCardSeed = {
   name: string;
   source: ExecCardSource;
   speedPercent: number;
+  maxSpeedPercent?: number;
   sequenceId?: number;
   sequenceHandle: SequenceRuntimeHandle;
   trajectoryMode?: TrajectoryMode;
@@ -85,6 +86,7 @@ const cardFromSeed = (actionId: number, seed: ActionCardSeed, run: ExecCardRun):
   durationMs: null,
   elapsedMs: 0,
   speedPercent: seed.speedPercent,
+  ...(seed.maxSpeedPercent !== undefined ? { maxSpeedPercent: seed.maxSpeedPercent } : {}),
   status: "running",
   startedAt: run.reportedAt,
   emergencyStopped: false,

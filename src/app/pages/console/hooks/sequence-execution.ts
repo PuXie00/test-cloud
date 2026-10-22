@@ -1,15 +1,18 @@
 import type { TrajectoryMode } from "@shared/action-sequence";
 import type { ActionDataSaveItem } from "@shared/csocket/action-data-save";
+import { toActionPrepareDevices, type ActionPrepareDevice } from "@shared/csocket/action-sync-prepare";
 import type { CppAckResult, CsocketResult } from "@shared/csocket/types";
 import {
   compilePlcAction,
   type PlcCompileContext,
 } from "@/app/project/action-sequence/compile-plc-action";
+import type { HpyPose } from "@/app/project/action-sequence/initial-pose-gate";
 import type { NearestStartPlan } from "@/app/project/action-sequence/nearest-start";
 import { toActionDataSaveItems } from "@/app/project/action-sequence/plc-action-payload";
 import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
 import { sequenceObjectIds } from "@/app/project/action-sequence/sequence-object-ids";
 import { isSequenceLooping } from "@/app/project/action-sequence/sequence-loop";
+import { evaluateSequenceSpeedRange } from "@/app/project/action-sequence/sequence-speed-range";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
 import {
   hasBlockingSequenceIssues,
@@ -20,6 +23,7 @@ import {
 } from "@/app/project/action-sequence/validate-sequence";
 import type { ProjectDocument } from "@/app/project/project-document-types";
 import { sequenceValidationContextFromSetup } from "@/app/project/project-motion-readiness";
+import { capSpeedPercent } from "./speed-cap";
 
 export type SequenceExecutionObject = {
   id: number;
@@ -37,6 +41,18 @@ export type SequenceRuntimeHandle = {
   actionId: number;
   trajectoryMode?: boolean;
   deviceId?: number[];
+  /** GO 时下发的循环配置，调速时原样带上 */
+  loopCount?: number;
+};
+
+/** 运行中调速（强制轨迹走 actionSpeedScale） */
+export type SequenceSpeedInput = {
+  actionId: number;
+  /** 速度倍率，1 = 100% */
+  speedScale: number;
+  runDirection: 1 | 2;
+  loopCount: number;
+  deviceId: number[];
 };
 
 export type DownloadedSequence =
@@ -58,18 +74,25 @@ export type SequenceExecutionTransport = {
     loopCount: number;
     deviceId: number[];
     runDirection: 1 | 2;
+    /** 强制轨迹 1006：就近算法选中的曲线时刻、准备时间（ms）与各设备准备 V/A */
+    selectedCurveTimeMs?: number;
+    prepareTimeMs?: number;
+    prepareDevices?: ActionPrepareDevice[];
   }) => Promise<void>;
   stopAction: (input: {
     actionId: number;
     trajectoryMode: boolean;
     deviceId: number[];
   }) => Promise<void>;
+  /** 运行中调速；没有该能力的传输层可以不提供 */
+  setSpeed?: (input: SequenceSpeedInput) => Promise<void>;
 };
 
 export type SequenceCsocketClient = {
   actionReady: (items: ActionDataSaveItem[], opts?: unknown) => Promise<unknown>;
   actionGo: (items: unknown[], opts?: unknown) => Promise<unknown>;
   actionStop: (items: unknown[], opts?: unknown) => Promise<unknown>;
+  actionSpeedScale?: (items: unknown[], opts?: unknown) => Promise<unknown>;
 };
 
 const COMPILE_FAILURE_ISSUE: SequenceIssue = {
@@ -127,6 +150,41 @@ const uniqueSortedModelIds = (
 export const mapFaderPercentToSpeedScale = (percent: number): number => {
   const clamped = Math.min(200, Math.max(0, percent));
   return clamped / 100;
+};
+
+/** 调速范围算不出来时只允许原速 */
+export const FALLBACK_SPEED_CAP_PERCENT = 100;
+
+export type SequenceSpeedCap =
+  | { ok: true; maxPercent: number | null }
+  | { ok: false; maxPercent: number; message: string };
+
+/** 准备时按调速范围给推子封顶；与就近准备用同一份实时位置 */
+export const resolveSequenceSpeedCap = (
+  document: ProjectDocument,
+  sequenceId: number,
+  telemetryByObjectId: ReadonlyMap<number, HpyPose>,
+): SequenceSpeedCap => {
+  const sequence = document.motion.actionSequences.find((entry) => entry.id === sequenceId);
+  if (!sequence) return { ok: true, maxPercent: null };
+  try {
+    const range = evaluateSequenceSpeedRange({
+      resolved: resolveActionSequence(sequence),
+      objects: document.setup.controlledObjects,
+      motors: document.setup.motors,
+      telemetryByObjectId,
+      forced: sequence.trajectoryMode === true,
+    });
+    return { ok: true, maxPercent: range.maxPercent };
+  } catch (error) {
+    return {
+      ok: false,
+      maxPercent: FALLBACK_SPEED_CAP_PERCENT,
+      message: `调速范围计算失败，速度最高 ${FALLBACK_SPEED_CAP_PERCENT}%：${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    };
+  }
 };
 
 export const downloadSequence = async (
@@ -200,6 +258,7 @@ export const createLocalSequenceTransport = (): SequenceExecutionTransport => ({
   saveAction: async () => undefined,
   syncCall: async () => undefined,
   stopAction: async () => undefined,
+  setSpeed: async () => undefined,
 });
 
 let localSequenceTransport: SequenceExecutionTransport | null = null;
@@ -305,6 +364,11 @@ export const createCsocketSequenceTransport = (
           loopCount: input.loopCount,
           trajectoryMode: input.trajectoryMode,
           deviceId: input.deviceId,
+          ...(input.selectedCurveTimeMs !== undefined
+            ? { selectedCurveTimeMs: input.selectedCurveTimeMs }
+            : {}),
+          ...(input.prepareTimeMs !== undefined ? { prepareTimeMs: input.prepareTimeMs } : {}),
+          ...(input.prepareDevices ? { prepareDevices: input.prepareDevices } : {}),
         },
       ]),
       "actionGo",
@@ -321,6 +385,10 @@ export const createCsocketSequenceTransport = (
       ]),
       "actionStop",
     );
+  },
+  setSpeed: async (input) => {
+    if (!api.actionSpeedScale) return;
+    requireSuccessfulAcks(await api.actionSpeedScale([input]), "actionSpeedScale");
   },
 });
 
@@ -456,25 +524,37 @@ export const goSequence = async (args: {
   sequenceId: number;
   faderPercent?: number;
   reverse?: boolean;
+  /** 准备时就近算法给出的计划：1006 用它的准备所需时间、各设备 V/A 与实际循环配置 */
+  startPlan?: NearestStartPlan | null;
+  /** 调速范围给出的速度上限（百分比）；缺省或 null 为不限 */
+  maxSpeedPercent?: number | null;
   transport?: SequenceExecutionTransport;
 }): Promise<LocalSequenceStartResult> => {
   const found = lookupAuthoredSequence(args.document, args.sequenceId);
   if (!found.ok) return found;
 
-  const fromFader = args.faderPercent !== undefined;
-  const speedPercent = args.faderPercent ?? 100;
+  const speedPercent = capSpeedPercent(args.faderPercent ?? 100, args.maxSpeedPercent);
   const deviceId = [...sequenceObjectIds(found.sequence)].sort((left, right) => left - right);
   const transport = args.transport ?? getSequenceTransport();
+  const plan = args.startPlan ?? null;
+  const loopCount = plan?.loopCount ?? toActionGoLoopCount(isSequenceLooping(found.sequence));
 
   try {
     await transport.syncCall({
       actionId: found.sequence.id,
       startTimestamp: Date.now(),
-      speedScale: fromFader ? mapFaderPercentToSpeedScale(speedPercent) : 1,
+      speedScale: mapFaderPercentToSpeedScale(speedPercent),
       trajectoryMode: found.sequence.trajectoryMode,
-      loopCount: toActionGoLoopCount(isSequenceLooping(found.sequence)),
+      loopCount,
       deviceId,
       runDirection: toPlcRunDirection(args.reverse === true),
+      ...(plan
+        ? {
+            selectedCurveTimeMs: plan.targetFrameMs,
+            prepareTimeMs: plan.prepareTimeMs,
+            prepareDevices: toActionPrepareDevices(plan, deviceId),
+          }
+        : {}),
     });
 
     return {
@@ -484,6 +564,7 @@ export const goSequence = async (args: {
       sequenceHandle: {
         actionId: found.sequence.id,
         deviceId,
+        loopCount,
       },
     };
   } catch (error) {
@@ -497,6 +578,7 @@ export const goSequence = async (args: {
       sequenceHandle: {
         actionId: found.sequence.id,
         deviceId,
+        loopCount,
       },
     };
   }

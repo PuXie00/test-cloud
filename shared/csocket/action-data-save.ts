@@ -44,7 +44,7 @@ export type cCompiledModel = {
   }[] // 时间块列表，如：[ { time:0, virtualAxis:[ { pos:0, vel:0, accVel:0, decVel:0 } ] } ]
 }
 
-/** 上位机算出的就近/回起点接入计划。非强制由 syncMovePrepare 转成 PLC 报文。 */
+/** 上位机就近算法算出的接入计划。非强制由 syncMovePrepare 转成 PLC 报文，强制由 actionGo 的 1006 下发。 */
 export type ActionStartMode = 'nearest' | 'boundary' | 'at-start'
 
 export type ActionStartPlan = {
@@ -54,7 +54,10 @@ export type ActionStartPlan = {
   targetFrameMs: number
   /** 过渡时长，秒。下发前换算成毫秒。 */
   transitionSec: number
-  xSafe: boolean | null
+  /** 1006 准备所需的时间：过渡时长向上取整到毫秒 */
+  prepareTimeMs: number
+  /** 实际循环配置：曲线首尾不闭合时算法回退为 1 */
+  loopCount: number
   motorLimitScale: number | null
   members: readonly {
     objectId: number

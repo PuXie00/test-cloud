@@ -266,6 +266,9 @@ export const registerCppSocketIpc = (api: CsocketApiService): void => {
   handleItems(CSOCKET_CHANNELS.actionGo, (items, opts) =>
     api.actionGo(items as Parameters<CsocketApiService['actionGo']>[0], opts),
   )
+  handleItems(CSOCKET_CHANNELS.actionSpeedScale, (items, opts) =>
+    api.actionSpeedScale(items as Parameters<CsocketApiService['actionSpeedScale']>[0], opts),
+  )
   handleItems(CSOCKET_CHANNELS.disconnectMotionConfigPlc, (items, opts) =>
     api.disconnectMotionConfigPlc(items as { motionFlag: number }[], opts),
   )

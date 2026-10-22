@@ -23,6 +23,8 @@ export type FaderSlotState = {
   runOptions: SlotRunOptions;
   startPlan: NearestStartPlan | null;
   preparedPoses: PreparedPoses | null;
+  /** 调速范围给出的推子上限（百分比）；准备后到运行中有效，null 为不限 */
+  maxSpeedPercent: number | null;
 };
 
 type SlotReadyRecord = {
@@ -31,6 +33,9 @@ type SlotReadyRecord = {
   startPlan: NearestStartPlan | null;
   preparedPoses: PreparedPoses;
 };
+
+/** 准备时算出的调速上限；GO 后准备记录清掉了，运行中仍按它封顶 */
+type SlotSpeedCap = { sequenceId: number; maxPercent: number | null };
 
 type ExecutorSlotsValue = {
   faderSlots: FaderSlotState[];
@@ -44,6 +49,7 @@ type ExecutorSlotsValue = {
     fingerprint: string,
     startPlan: NearestStartPlan | null,
     preparedPoses: PreparedPoses,
+    maxSpeedPercent?: number | null,
   ) => void;
   clearSlotReady: (index: number) => void;
 };
@@ -57,6 +63,10 @@ type ExecutorSlotsProviderProps = {
   /** 运行选项存于节目条目；改动交给节目写回工程 */
   onSlotRunOptionsChange?: (index: number, runOptions: SlotRunOptions) => void;
 };
+
+/** 推子值不超过调速上限 */
+export const capFaderValue = (value: number, maxPercent: number | null): number =>
+  maxPercent === null ? value : Math.min(value, maxPercent);
 
 export const deriveFaderSlotPhase = (args: {
   sequenceId: number | null;
@@ -87,6 +97,7 @@ export const ExecutorSlotsProvider = ({
   const [runningFaders, setRunningFaders] = useState<Set<number>>(new Set());
   const [busyBySlot, setBusyBySlot] = useState<Record<number, number>>({});
   const [readyBySlot, setReadyBySlot] = useState<Record<number, SlotReadyRecord>>({});
+  const [speedCapBySlot, setSpeedCapBySlot] = useState<Record<number, SlotSpeedCap>>({});
 
   const faderSlots = useMemo<FaderSlotState[]>(
     () =>
@@ -102,16 +113,20 @@ export const ExecutorSlotsProvider = ({
           ready,
           isRunning,
         });
+        const cap = speedCapBySlot[idx];
+        const maxSpeedPercent =
+          phase !== "idle" && cap && cap.sequenceId === sequence?.id ? cap.maxPercent : null;
         return {
           index: idx,
           label: `F${idx + 1}`,
           sequence,
-          faderValue: faderValues[idx] ?? 100,
+          faderValue: capFaderValue(faderValues[idx] ?? 100, maxSpeedPercent),
           phase,
           isBusy: sequence !== null && busyBySlot[idx] === sequence.id,
           runOptions: resolveSlotRunOptions(item?.runOptions),
           startPlan: phase === "ready" && ready ? ready.startPlan : null,
           preparedPoses: phase === "ready" && ready ? ready.preparedPoses : null,
+          maxSpeedPercent,
         };
       }),
     [
@@ -121,6 +136,7 @@ export const ExecutorSlotsProvider = ({
       runningFaders,
       busyBySlot,
       readyBySlot,
+      speedCapBySlot,
     ],
   );
 
@@ -171,11 +187,23 @@ export const ExecutorSlotsProvider = ({
       fingerprint: string,
       startPlan: NearestStartPlan | null,
       preparedPoses: PreparedPoses,
+      maxSpeedPercent: number | null = null,
     ) => {
       setReadyBySlot((current) => ({
         ...current,
         [index]: { sequenceId, fingerprint, startPlan, preparedPoses },
       }));
+      setSpeedCapBySlot((current) => ({
+        ...current,
+        [index]: { sequenceId, maxPercent: maxSpeedPercent },
+      }));
+      // 推子已推过上限时落到上限，运行结束后也不会跳回原值
+      if (maxSpeedPercent !== null) {
+        setFaderValues((current) => {
+          const value = current[index] ?? 100;
+          return value > maxSpeedPercent ? { ...current, [index]: maxSpeedPercent } : current;
+        });
+      }
     },
     [],
   );

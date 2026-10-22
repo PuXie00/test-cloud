@@ -22,7 +22,6 @@ export type StartTransitionSummary = {
 type InitialPoseDialogProps = {
   open: boolean;
   summary: StartTransitionSummary | null;
-  blockedMessage: string | null;
   errorMessage: string | null;
   onCancel: () => void;
   onConfirm: () => void;
@@ -67,12 +66,11 @@ const SummaryRow = ({
 export const InitialPoseDialog = ({
   open,
   summary,
-  blockedMessage,
   errorMessage,
   onCancel,
   onConfirm,
 }: InitialPoseDialogProps) => {
-  const confirmDisabled = errorMessage !== null || blockedMessage !== null || summary === null;
+  const confirmDisabled = errorMessage !== null || summary === null;
   return (
     <AlertDialog
       open={open}
@@ -85,7 +83,7 @@ export const InitialPoseDialog = ({
           <AlertDialogTitle className="text-sm font-semibold leading-5 text-foreground">未在起始位姿</AlertDialogTitle>
           <AlertDialogDescription className="text-body-sm text-muted-foreground">
             {summary?.forced
-              ? "强制轨迹：各成员按默认速度到位，先到的等待，全部到位后从目标帧一起开始。"
+              ? "强制轨迹：各成员按最大能力同步到位，同时到达目标帧后一起进入曲线。"
               : "非强制轨迹：按最大速度调整各成员，同时到达目标帧，再按编程继续。"}
           </AlertDialogDescription>
         </AlertDialogHeader>
@@ -123,11 +121,6 @@ export const InitialPoseDialog = ({
                 value={`${formatDelta(summary.totalSeconds - summary.programSeconds)}（编程 ${formatSeconds(summary.programSeconds)}）`}
               />
             </dl>
-          ) : null}
-          {blockedMessage ? (
-            <p role="alert" className="mt-3 text-body-sm text-destructive">
-              {blockedMessage}
-            </p>
           ) : null}
           {errorMessage ? (
             <p role="alert" className="mt-3 text-body-sm text-destructive">

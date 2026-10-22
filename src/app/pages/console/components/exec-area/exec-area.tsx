@@ -20,7 +20,12 @@ import { useExecutorSlots, type FaderSlotState } from "../../hooks/use-executor-
 import { useExecCards } from "../../hooks/use-exec-cards";
 import { useProgram } from "../../hooks/use-program";
 import { nextChapterSequence, nextSequenceSlot } from "../../hooks/sequence-run-status";
-import { goSequence, readySequence, releaseSequence } from "../../hooks/sequence-execution";
+import {
+  goSequence,
+  readySequence,
+  releaseSequence,
+  resolveSequenceSpeedCap,
+} from "../../hooks/sequence-execution";
 import { useSequencePreview } from "../../hooks/use-sequence-preview";
 import { useBuildDebug } from "../build-debug/build-debug-context";
 import { ExecCards } from "./exec-cards/exec-cards";
@@ -49,7 +54,7 @@ const summaryOf = (
   gate: StartGateResult | null,
   options: StartGateOptions,
 ): StartTransitionSummary | null => {
-  if (!gate || (gate.status !== "transition" && gate.status !== "blocked")) return null;
+  if (!gate || gate.status !== "transition") return null;
   return {
     forced: gate.plan.forced,
     nearest: options.nearest,
@@ -129,13 +134,16 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     });
   }, [poseDialog, currentProject, faderSlots]);
 
-  /** 准备一个推子槽；成功后槽显示“已准备”。 */
+  /**
+   * 准备一个推子槽；成功后槽显示“已准备”，推子按调速范围封顶。
+   * 返回调速上限（百分比，null 为不限）；失败返回 false。
+   */
   const readySlot = async (
     slotIndex: number,
     sequenceId: number,
     startPlan: NearestStartPlan | null,
     options: { safeGroup: number; runDirection: boolean },
-  ): Promise<boolean> => {
+  ): Promise<{ maxSpeedPercent: number | null } | false> => {
     const document = currentProject?.document;
     if (!document) return false;
     const readied = await readySequence({ document, sequenceId, startPlan, ...options });
@@ -145,18 +153,26 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       return false;
     }
     const authored = document.motion.actionSequences.find((entry) => entry.id === sequenceId);
+    const speedCap = resolveSequenceSpeedCap(document, sequenceId, telemetryRef.current);
+    if (!speedCap.ok) toast.warning(speedCap.message);
     markSlotReady(
       slotIndex,
       sequenceId,
       readied.fingerprint,
       startPlan,
       capturePreparedPoses(authored ? sequenceObjectIds(authored) : [], telemetryRef.current),
+      speedCap.maxPercent,
     );
-    return true;
+    return { maxSpeedPercent: speedCap.maxPercent };
   };
 
   /** GO 一个推子槽；成功后槽显示“启动”，并出一张来源为该槽的任务卡。 */
-  const goSlot = async (slot: FaderSlotState, sequenceId: number): Promise<void> => {
+  const goSlot = async (
+    slot: FaderSlotState,
+    sequenceId: number,
+    startPlan: NearestStartPlan | null,
+    maxSpeedPercent: number | null,
+  ): Promise<void> => {
     const document = currentProject?.document;
     if (!document) return;
     const started = await goSequence({
@@ -164,6 +180,8 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       sequenceId,
       faderPercent: slot.faderValue,
       reverse: slot.runOptions.reverse,
+      startPlan,
+      maxSpeedPercent,
     });
     if (!started.ok) {
       reportSequenceResult(started);
@@ -178,6 +196,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       durationMs: null,
       source: { kind: "fader", slotIndex: slot.index },
       speedPercent: started.speedPercent,
+      ...(maxSpeedPercent !== null ? { maxSpeedPercent } : {}),
       sequenceId,
       sequenceHandle: started.sequenceHandle,
       trajectoryMode: slot.sequence?.trajectoryMode,
@@ -235,7 +254,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
         const readied = await readySlot(slot.index, sequenceId, startPlan, slotReadyOptions(slot));
         if (!readied) return;
         close(cardId, { release: false });
-        await goSlot(slot, sequenceId);
+        await goSlot(slot, sequenceId, startPlan, readied.maxSpeedPercent);
       } finally {
         setSlotBusy(slot.index, false);
       }
@@ -347,7 +366,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       setSlotBusy(slotIndex, true);
       void (async () => {
         try {
-          await goSlot(slot, sequenceId);
+          await goSlot(slot, sequenceId, slot.startPlan, slot.maxSpeedPercent);
         } finally {
           setSlotBusy(slotIndex, false);
         }
@@ -392,7 +411,6 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       <InitialPoseDialog
         open={poseDialog !== null}
         summary={poseDialog ? summaryOf(dialogGate, poseDialog) : null}
-        blockedMessage={dialogGate?.status === "blocked" ? dialogGate.message : null}
         errorMessage={dialogGate?.status === "error" ? dialogGate.message : null}
         onCancel={() => setPoseDialog(null)}
         onConfirm={handleConfirmPose}

@@ -44,7 +44,9 @@ export const buildPreviewTimeline = (
     };
   }
   const direction: 1 | -1 = reverse ? -1 : 1;
-  const programStartMs = active ? active.targetFrameMs : direction > 0 ? 0 : programTotalMs;
+  // 就近接入已在曲线上（含曲线中间）时没有过渡段，直接从算法选的帧开始；回起点从头（反向从尾）播
+  const programStartMs =
+    active || plan?.nearest ? plan!.targetFrameMs : direction > 0 ? 0 : programTotalMs;
   const programSpan = direction > 0 ? programTotalMs - programStartMs : programStartMs;
   return {
     plan: null,

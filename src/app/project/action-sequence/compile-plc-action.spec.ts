@@ -267,6 +267,61 @@ describe("compilePlcAction", () => {
     }
   });
 
+  describe("an object that finishes before the sequence ends", () => {
+    /** PLC 每一行一直算到下一行开始；t 的单位是 100ms */
+    const positionAt = (rows: readonly { startTime: number; a: number; b: number; c: number }[], frameMs: number) => {
+      const row = [...rows].reverse().find((item) => item.startTime <= frameMs)!;
+      const t = (frameMs - row.startTime) / 100;
+      return row.a + row.b * t + row.c * t * t;
+    };
+    const twoObjects = compileContext([
+      { id: 7, enabledVirtualAxes: ["v1"] as const },
+      { id: 8, enabledVirtualAxes: ["v1"] as const },
+    ]);
+    const endsEarly = (blocks: TimelineBlock[]) =>
+      sequenceOf([
+        { id: "a", kind: "pose", objectId: 7, atMs: 0, pose: origin },
+        { id: "b", kind: "pose", objectId: 7, atMs: 4000, pose: { v1: 400, v2: 0, v3: 0 } },
+        ...blocks,
+      ]);
+
+    it("holds its last pose instead of extending the last curve row", () => {
+      const compiled = compilePlcAction(
+        endsEarly([
+          { id: "c", kind: "pose", objectId: 8, atMs: 0, pose: origin },
+          { id: "d", kind: "pose", objectId: 8, atMs: 8000, pose: { v1: 400, v2: 0, v3: 0 } },
+        ]),
+        twoObjects,
+      );
+      const rows = compiled.timelines.find((timeline) => timeline.modelId === 7)!.segments;
+      expect(rows.slice(-2)).toEqual([
+        { startTime: 4000, position: 400, a: 400, b: 0, c: 0, d: 0, e: 0, f: 0 },
+        { startTime: 8000, position: 400, a: 400, b: 0, c: 0, d: 0, e: 0, f: 0 },
+      ]);
+      for (const frameMs of [4000, 5000, 6500, 7999]) {
+        expect(positionAt(rows, frameMs)).toBeCloseTo(400, 6);
+      }
+      // 一直跑到总时长的物体不加保持行
+      const longest = compiled.timelines.find((timeline) => timeline.modelId === 8)!.segments;
+      expect(longest.filter((row) => row.b === 0 && row.c === 0).map((row) => row.startTime)).toEqual([8000]);
+    });
+
+    it("holds until a later instruction block ends the sequence", () => {
+      const compiled = compilePlcAction(
+        endsEarly([
+          { id: "on", kind: "instruction", presetId: "set-enabled", objectId: 7, atMs: 6000, instr: { enabled: true } },
+        ]),
+        compileContext([{ id: 7, enabledVirtualAxes: ["v1"] as const }]),
+      );
+      const rows = compiled.timelines[0]!.segments;
+      expect(rows.slice(-2).map((row) => [row.startTime, row.position, row.b, row.c])).toEqual([
+        [4000, 400, 0, 0],
+        [6000, 400, 0, 0],
+      ]);
+      expect(positionAt(rows, 5999)).toBeCloseTo(400, 6);
+    });
+  });
+
   it("throws when a timeline exceeds 100 segments", () => {
     const poseCount = 36;
     const blocks = Array.from({ length: poseCount }, (_, index) => ({

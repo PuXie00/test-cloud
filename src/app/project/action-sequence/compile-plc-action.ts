@@ -137,8 +137,9 @@ export const compilePlcAction = (
       return object.enabledVirtualAxes.filter((axis) => !uncontrolled.includes(axis)).map((axis) => {
         const virtualAxisNo = VIRTUAL_AXIS_NO[axis];
         // 轴在中间位姿不设定时，跨过的几段是同一条曲线，只写一次
+        const motions = objectAxisMotions(objectSegments, axis);
         const segments =
-          objectSegments.length === 0
+          motions.length === 0
             ? trapezoidToCurveSegments(
                 { kind: "idle" },
                 first.atMs,
@@ -146,7 +147,7 @@ export const compilePlcAction = (
                 first.pose[axis],
                 0,
               )
-            : objectAxisMotions(objectSegments, axis).flatMap((motion) =>
+            : motions.flatMap((motion) =>
                 trapezoidToCurveSegments(
                   motion.profile,
                   motion.startMs,
@@ -157,7 +158,13 @@ export const compilePlcAction = (
                 ),
               );
         const endPose = poses[poses.length - 1]?.pose[axis] ?? first.pose[axis];
-        const closed = finalizePlcTimeline(segments, resolved.totalMs, endPose);
+        const lastMotion = motions[motions.length - 1];
+        const closed = finalizePlcTimeline(
+          segments,
+          resolved.totalMs,
+          endPose,
+          lastMotion ? { atMs: lastMotion.endMs, position: lastMotion.to } : undefined,
+        );
         if (closed.length > MAX_PLC_CURVE_SEGMENTS) {
           throw new Error(`PLC timeline segmentCount exceeds ${MAX_PLC_CURVE_SEGMENTS}`);
         }

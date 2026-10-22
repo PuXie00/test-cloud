@@ -94,6 +94,7 @@ export const createCsocketApi = () => ({
   clearConfigPlc: invokeOptionalSend(CSOCKET_CHANNELS.clearConfigPlc),
   actionReady: invokeSend(CSOCKET_CHANNELS.actionReady) as ActionDataSaveFn,
   actionGo: invokeSend(CSOCKET_CHANNELS.actionGo),
+  actionSpeedScale: invokeSend(CSOCKET_CHANNELS.actionSpeedScale),
   disconnectMotionConfigPlc: invokeSend(CSOCKET_CHANNELS.disconnectMotionConfigPlc),
 
   // PLC 读取 / 状态查询

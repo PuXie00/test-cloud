@@ -5,6 +5,7 @@ import { cn } from "@/app/components/ui/utils";
 import { useConsoleMode } from "../../../hooks/use-console-mode";
 import type { FaderSlotState, SlotRunOptions } from "../../../hooks/use-executor-slots";
 import { VerticalFader } from "./vertical-fader";
+import { FADER_MAX } from "./vertical-fader-math";
 import { ForcedTrajectoryBadge, isForcedTrajectory } from "../../forced-trajectory-badge";
 import { LoopBadge } from "../../loop-badge";
 import { NearestBadge, ReverseBadge } from "../../run-option-badges";
@@ -264,6 +265,7 @@ export const FaderSlot = ({
         <VerticalFader
           value={slot.faderValue}
           onChange={onFaderChange}
+          limit={slot.maxSpeedPercent}
           disabled={!isReady && !isRunning}
           aria-label={`${slot.label} 速度`}
         />
@@ -277,6 +279,11 @@ export const FaderSlot = ({
             {slot.faderValue}%
           </span>
         )}
+        {!isEmpty && slot.maxSpeedPercent !== null && slot.maxSpeedPercent < FADER_MAX ? (
+          <span className="text-center font-mono text-mono-sm tabular-nums text-warning">
+            上限 {slot.maxSpeedPercent}%
+          </span>
+        ) : null}
       </div>
       <button
         type="button"

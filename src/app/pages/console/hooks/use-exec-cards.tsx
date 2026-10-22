@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { toast } from "sonner";
 import { advanceRunningCards } from "./advance-running-cards";
 import {
   addLaunchedCard,
@@ -26,6 +27,8 @@ import {
   stopSequence,
   type SequenceRuntimeHandle,
 } from "./sequence-execution";
+import { createSpeedSender } from "./sequence-speed";
+import { capSpeedPercent } from "./speed-cap";
 
 export type ExecCardSource =
   | { kind: "fader"; slotIndex: number }
@@ -58,6 +61,8 @@ export type ExecCard = {
   durationMs: number | null;
   elapsedMs: number;
   speedPercent: number;
+  /** 调速范围给出的速度上限（百分比）；缺省为不限 */
+  maxSpeedPercent?: number;
   status: ExecCardStatus;
   startedAt: number;
   emergencyStopped: boolean;
@@ -83,6 +88,7 @@ type ExecCardsContextValue = {
     durationMs: number | null;
     source: ExecCardSource;
     speedPercent?: number;
+    maxSpeedPercent?: number;
     sequenceId?: number;
     sequenceHandle?: SequenceRuntimeHandle;
     trajectoryMode?: TrajectoryMode;
@@ -223,6 +229,7 @@ export const ExecCardsProvider = ({
       durationMs,
       source,
       speedPercent = 100,
+      maxSpeedPercent,
       sequenceId,
       sequenceHandle,
       trajectoryMode,
@@ -240,6 +247,7 @@ export const ExecCardsProvider = ({
         status: "running",
         startedAt: Date.now(),
         emergencyStopped: false,
+        ...(maxSpeedPercent !== undefined ? { maxSpeedPercent } : {}),
         ...(sequenceId !== undefined ? { sequenceId } : {}),
         ...(sequenceHandle ? { sequenceHandle } : {}),
         ...(trajectoryMode !== undefined ? { trajectoryMode } : {}),
@@ -304,14 +312,18 @@ export const ExecCardsProvider = ({
 
   const skipNext = useCallback(() => {}, []);
 
+  const sendSpeedRef = useRef(createSpeedSender((message) => toast.error(message)));
+
   const setSpeed = useCallback((id: string, percent: number) => {
+    const card = cardsRef.current.find((entry) => entry.id === id);
+    // 过渡（回迹）中、停止中不能调速
+    if (!card || isExecCardInTransition(card) || card.status === "stopping") return;
+    const speedPercent = capSpeedPercent(percent, card.maxSpeedPercent);
+    if (speedPercent === card.speedPercent) return;
+    // PLC 还在执行（暂停只是本地状态）时才下发新倍率
+    if (card.status === "running" || card.status === "paused") sendSpeedRef.current(card, speedPercent);
     setCards((current) =>
-      current.map((card) =>
-        // 过渡（回迹）中、停止中不能调速
-        card.id === id && !isExecCardInTransition(card) && card.status !== "stopping"
-          ? { ...card, speedPercent: percent }
-          : card,
-      ),
+      current.map((entry) => (entry.id === id ? { ...entry, speedPercent } : entry)),
     );
   }, []);
 
