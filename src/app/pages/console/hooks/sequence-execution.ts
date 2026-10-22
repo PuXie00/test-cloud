@@ -41,6 +41,18 @@ export type SequenceRuntimeHandle = {
   actionId: number;
   trajectoryMode?: boolean;
   deviceId?: number[];
+  /** GO 时下发的循环配置，调速时原样带上 */
+  loopCount?: number;
+};
+
+/** 运行中调速（强制轨迹走 actionSpeedScale） */
+export type SequenceSpeedInput = {
+  actionId: number;
+  /** 速度倍率，1 = 100% */
+  speedScale: number;
+  runDirection: 1 | 2;
+  loopCount: number;
+  deviceId: number[];
 };
 
 export type DownloadedSequence =
@@ -62,7 +74,8 @@ export type SequenceExecutionTransport = {
     loopCount: number;
     deviceId: number[];
     runDirection: 1 | 2;
-    /** 强制轨迹 1006：就近算法的准备所需时间（ms）与各设备准备 V/A */
+    /** 强制轨迹 1006：就近算法选中的曲线时刻、准备时间（ms）与各设备准备 V/A */
+    selectedCurveTimeMs?: number;
     prepareTimeMs?: number;
     prepareDevices?: ActionPrepareDevice[];
   }) => Promise<void>;
@@ -71,12 +84,15 @@ export type SequenceExecutionTransport = {
     trajectoryMode: boolean;
     deviceId: number[];
   }) => Promise<void>;
+  /** 运行中调速；没有该能力的传输层可以不提供 */
+  setSpeed?: (input: SequenceSpeedInput) => Promise<void>;
 };
 
 export type SequenceCsocketClient = {
   actionReady: (items: ActionDataSaveItem[], opts?: unknown) => Promise<unknown>;
   actionGo: (items: unknown[], opts?: unknown) => Promise<unknown>;
   actionStop: (items: unknown[], opts?: unknown) => Promise<unknown>;
+  actionSpeedScale?: (items: unknown[], opts?: unknown) => Promise<unknown>;
 };
 
 const COMPILE_FAILURE_ISSUE: SequenceIssue = {
@@ -242,6 +258,7 @@ export const createLocalSequenceTransport = (): SequenceExecutionTransport => ({
   saveAction: async () => undefined,
   syncCall: async () => undefined,
   stopAction: async () => undefined,
+  setSpeed: async () => undefined,
 });
 
 let localSequenceTransport: SequenceExecutionTransport | null = null;
@@ -347,6 +364,9 @@ export const createCsocketSequenceTransport = (
           loopCount: input.loopCount,
           trajectoryMode: input.trajectoryMode,
           deviceId: input.deviceId,
+          ...(input.selectedCurveTimeMs !== undefined
+            ? { selectedCurveTimeMs: input.selectedCurveTimeMs }
+            : {}),
           ...(input.prepareTimeMs !== undefined ? { prepareTimeMs: input.prepareTimeMs } : {}),
           ...(input.prepareDevices ? { prepareDevices: input.prepareDevices } : {}),
         },
@@ -365,6 +385,10 @@ export const createCsocketSequenceTransport = (
       ]),
       "actionStop",
     );
+  },
+  setSpeed: async (input) => {
+    if (!api.actionSpeedScale) return;
+    requireSuccessfulAcks(await api.actionSpeedScale([input]), "actionSpeedScale");
   },
 });
 
@@ -513,6 +537,7 @@ export const goSequence = async (args: {
   const deviceId = [...sequenceObjectIds(found.sequence)].sort((left, right) => left - right);
   const transport = args.transport ?? getSequenceTransport();
   const plan = args.startPlan ?? null;
+  const loopCount = plan?.loopCount ?? toActionGoLoopCount(isSequenceLooping(found.sequence));
 
   try {
     await transport.syncCall({
@@ -520,11 +545,15 @@ export const goSequence = async (args: {
       startTimestamp: Date.now(),
       speedScale: mapFaderPercentToSpeedScale(speedPercent),
       trajectoryMode: found.sequence.trajectoryMode,
-      loopCount: plan?.loopCount ?? toActionGoLoopCount(isSequenceLooping(found.sequence)),
+      loopCount,
       deviceId,
       runDirection: toPlcRunDirection(args.reverse === true),
       ...(plan
-        ? { prepareTimeMs: plan.prepareTimeMs, prepareDevices: toActionPrepareDevices(plan, deviceId) }
+        ? {
+            selectedCurveTimeMs: plan.targetFrameMs,
+            prepareTimeMs: plan.prepareTimeMs,
+            prepareDevices: toActionPrepareDevices(plan, deviceId),
+          }
         : {}),
     });
 
@@ -535,6 +564,7 @@ export const goSequence = async (args: {
       sequenceHandle: {
         actionId: found.sequence.id,
         deviceId,
+        loopCount,
       },
     };
   } catch (error) {
@@ -548,6 +578,7 @@ export const goSequence = async (args: {
       sequenceHandle: {
         actionId: found.sequence.id,
         deviceId,
+        loopCount,
       },
     };
   }

@@ -23,6 +23,7 @@ const item: ActionGoItem = {
   loopCount: 1,
   trajectoryMode: true,
   deviceId: [1, 2, 3],
+  selectedCurveTimeMs: 8000,
   prepareTimeMs: 4293,
   prepareDevices: [
     { ...zeroDevice(2), velocityH: 147.06, accelerationH: 1922.5, velocityP: 2.8, accelerationP: 435.5 },
@@ -30,25 +31,37 @@ const item: ActionGoItem = {
 };
 
 describe("toActionSyncPrepareHead", () => {
-  it("carries the prepare time from the nearest plan and the speed as a percentage", () => {
-    expect(toActionSyncPrepareHead(item)).toEqual({
+  it("carries the selected frame and prepare time from the nearest plan in protocol order", () => {
+    const head = toActionSyncPrepareHead(item);
+    expect(head).toEqual({
       actionId: 12,
       runDirection: 2,
       speedScale: 73,
       loopCount: 1,
-      prepareTimeMs: 4293,
+      selectedCurveTimeMs: 8000,
       deviceCount: 3,
+      prepareTimeMs: 4293,
     });
+    expect(Object.keys(head)).toEqual([
+      "actionId",
+      "runDirection",
+      "speedScale",
+      "loopCount",
+      "selectedCurveTimeMs",
+      "deviceCount",
+      "prepareTimeMs",
+    ]);
   });
 
   it("sends the fader speed as-is above 100%", () => {
     expect(toActionSyncPrepareHead({ ...item, speedScale: 1.5 }).speedScale).toBe(150);
   });
 
-  it("falls back to forward and no prepare time", () => {
-    const { prepareTimeMs: _, ...rest } = item;
+  it("falls back to forward, frame 0 and no prepare time", () => {
+    const { prepareTimeMs: _, selectedCurveTimeMs: __, ...rest } = item;
     expect(toActionSyncPrepareHead({ ...rest, runDirection: 0 })).toMatchObject({
       runDirection: 1,
+      selectedCurveTimeMs: 0,
       prepareTimeMs: 0,
     });
   });

@@ -529,6 +529,65 @@ export class CsocketApiService {
     return Promise.all(result)
   }
 
+  // 调速
+  actionSpeedScale(items: {
+    actionId: number,
+    speedScale: number,
+    runDirection: number,
+    loopCount: number,
+    deviceId: number[],
+  }[], opts?: CsocketSendOpts) {
+    const isTMapedHeadRelease: {
+      actionId: number,
+      runDirection: number,
+      speedScale: number,
+      loopCount: number,
+      isNearest: number,
+      selectedCurveTimeMs: number,
+      prepareTimeMs: number,
+      deviceCount: number,
+    }[] = []
+    const isTMaped: {
+      deviceId: number,
+      velocityH: number,
+      accelerationH: number,
+      velocityP: number,
+      accelerationP: number,
+      velocityY: number,
+      accelerationY: number,
+    }[] = []
+    items.forEach(item => {
+      isTMapedHeadRelease.push({
+        actionId: item.actionId,
+        runDirection: item.runDirection === 2 ? 2 : 1,
+        // 取整，避免 0.57*100=56.999… 被截成 56
+        speedScale: Math.round(item.speedScale * 100),
+        loopCount: item.loopCount,
+        isNearest: 1,
+        selectedCurveTimeMs: 0,
+        prepareTimeMs: 0,
+        deviceCount: item.deviceId.length,
+      })
+
+      item.deviceId.forEach(deviceId => {
+        isTMaped.push({
+          deviceId: deviceId,
+          velocityH: 0,
+          accelerationH: 0,
+          velocityP: 0,
+          accelerationP: 0,
+          velocityY: 0,
+          accelerationY: 0,
+        })
+      })
+    })
+    const localOpts = {
+      ...opts,
+      paramHeard: isTMapedHeadRelease,
+    }
+    return this.sendBuilt('Opera|actionSyncRelease', '0x1006', isTMaped, localOpts)
+  }
+
   // 动作停止 Stop
   actionStop(items: {
     actionId: number,

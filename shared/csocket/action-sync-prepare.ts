@@ -23,7 +23,9 @@ export type ActionGoItem = {
   trajectoryMode: boolean
   /** 该动作下面的所有物体 id */
   deviceId: number[]
-  /** 准备所需的时间，ms（就近算法的共同准备时间，已向上取整） */
+  /** 选中曲线时刻，ms（就近算法选出的原曲线接入帧） */
+  selectedCurveTimeMs?: number
+  /** 准备时间，ms（就近算法的共同准备时间，已向上取整） */
   prepareTimeMs?: number
   /** 各设备准备 V/A；缺的设备按 0 下发 */
   prepareDevices?: ActionPrepareDevice[]
@@ -62,14 +64,15 @@ export const toActionPrepareDevices = (
     return device
   })
 
-/** 1006 报文头：动作、方向、倍率（百分比）、循环、准备所需的时间、设备数 */
+/** 1006 报文头，按协议字段顺序：动作、方向、倍率（百分比）、循环、选中曲线时刻、设备数、准备时间 */
 export const toActionSyncPrepareHead = (item: ActionGoItem) => ({
   actionId: item.actionId,
   runDirection: item.runDirection === 2 ? 2 : 1,
   speedScale: Math.round(item.speedScale * 100),
   loopCount: item.loopCount,
-  prepareTimeMs: item.prepareTimeMs ?? 0,
+  selectedCurveTimeMs: Math.round(item.selectedCurveTimeMs ?? 0),
   deviceCount: item.deviceId.length,
+  prepareTimeMs: item.prepareTimeMs ?? 0,
 })
 
 /** 1006 设备参数：按 deviceId 顺序，每台一组准备 V/A */

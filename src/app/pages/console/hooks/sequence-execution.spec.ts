@@ -3,6 +3,7 @@ import { compilePlcAction } from "@/app/project/action-sequence/compile-plc-acti
 import { createDefaultAxisProfiles } from "@/app/project/action-sequence/motion-profile";
 import { toActionDataSaveItems } from "@/app/project/action-sequence/plc-action-payload";
 import type { NearestStartPlan } from "@/app/project/action-sequence/nearest-start";
+import { adjustSequenceSpeed, createSpeedSender } from "./sequence-speed";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
 import { createEmptyDocument } from "@/app/project/project-document-empty";
 import type { ControlledObjectConfig, ProjectDocument } from "@/app/project/project-document-types";
@@ -501,6 +502,7 @@ describe("goSequence", () => {
     });
     expect(transport.syncCall).toHaveBeenCalledWith(
       expect.objectContaining({
+        selectedCurveTimeMs: 0,
         prepareTimeMs: 1633,
         // 曲线不闭合时算法回退为单次，按算法的循环配置下发
         loopCount: 1,
@@ -556,7 +558,7 @@ describe("goSequence", () => {
       ok: true,
       name: "Seq",
       speedPercent: 150,
-      sequenceHandle: { actionId: validSequence.id, deviceId: [7] },
+      sequenceHandle: { actionId: validSequence.id, deviceId: [7], loopCount: 1 },
     });
   });
 
@@ -586,7 +588,7 @@ describe("goSequence", () => {
       ok: true,
       name: "Seq",
       speedPercent: 80,
-      sequenceHandle: { actionId: validSequence.id, deviceId: [7] },
+      sequenceHandle: { actionId: validSequence.id, deviceId: [7], loopCount: 1 },
     });
   });
 
@@ -604,7 +606,7 @@ describe("goSequence", () => {
         ok: true,
         name: "Seq",
         speedPercent: 100,
-        sequenceHandle: { actionId: validSequence.id, deviceId: [7] },
+        sequenceHandle: { actionId: validSequence.id, deviceId: [7], loopCount: 1 },
       });
       expect(api.actionGo).toHaveBeenCalledTimes(1);
       expect(api.actionGo.mock.calls[0]?.[0]?.[0]).toMatchObject({ loopCount: 1 });
@@ -665,7 +667,7 @@ describe("startLocalAuthoredSequence", () => {
       ok: true,
       name: "Seq",
       speedPercent: 100,
-      sequenceHandle: { actionId: validSequence.id, deviceId: [7] },
+      sequenceHandle: { actionId: validSequence.id, deviceId: [7], loopCount: 1 },
     });
     expect(started).not.toHaveProperty("durationMs");
   });
@@ -819,6 +821,7 @@ describe("createCsocketSequenceTransport", () => {
       loopCount: 0,
       deviceId: [7, 8],
       runDirection: 1,
+      selectedCurveTimeMs: 4000,
       prepareTimeMs: 1633,
       prepareDevices,
     });
@@ -831,6 +834,7 @@ describe("createCsocketSequenceTransport", () => {
       loopCount: 0,
       trajectoryMode: true,
       deviceId: [7, 8],
+      selectedCurveTimeMs: 4000,
       prepareTimeMs: 1633,
       prepareDevices,
     });
@@ -864,5 +868,81 @@ describe("resolveSequenceSpeedCap", () => {
       maxPercent: 100,
       message: expect.stringContaining("调速范围计算失败，速度最高 100%"),
     });
+  });
+});
+
+describe("adjustSequenceSpeed", () => {
+  const card = {
+    sequenceHandle: { actionId: 9, deviceId: [7, 8], loopCount: 0 },
+    trajectoryMode: true,
+    reverse: true,
+  };
+
+  it("sends the new speed of a forced trajectory through actionSpeedScale", async () => {
+    const api = { ...createMockCsocketApi({ success: true, data: [] }), actionSpeedScale: vi.fn().mockResolvedValue([{ success: true }]) };
+    await adjustSequenceSpeed(card, 80, createCsocketSequenceTransport(api));
+    expect(api.actionSpeedScale).toHaveBeenCalledWith([
+      { actionId: 9, speedScale: 0.8, runDirection: 2, loopCount: 0, deviceId: [7, 8] },
+    ]);
+  });
+
+  it("only changes the local speed of a non-forced action", async () => {
+    const api = { ...createMockCsocketApi({ success: true, data: [] }), actionSpeedScale: vi.fn() };
+    await adjustSequenceSpeed({ ...card, trajectoryMode: false }, 80, createCsocketSequenceTransport(api));
+    expect(api.actionSpeedScale).not.toHaveBeenCalled();
+  });
+
+  it("reports a speed change the PLC rejects", async () => {
+    const api = {
+      ...createMockCsocketApi({ success: true, data: [] }),
+      actionSpeedScale: vi.fn().mockResolvedValue([{ success: false, code: 3, message: "调速失败" }]),
+    };
+    await expect(adjustSequenceSpeed(card, 80, createCsocketSequenceTransport(api))).rejects.toThrow("调速失败");
+  });
+});
+
+describe("createSpeedSender", () => {
+  const card = {
+    sequenceHandle: { actionId: 9, deviceId: [7], loopCount: 1 },
+    trajectoryMode: true,
+  };
+
+  it("sends one speed at a time per action and only the latest change after the reply", async () => {
+    const replies: Array<() => void> = [];
+    const setSpeed = vi.fn(
+      () => new Promise<void>((resolve) => replies.push(resolve)),
+    );
+    const transport = { ...createTransport(), setSpeed };
+    const send = createSpeedSender(vi.fn(), () => transport);
+    send(card, 90);
+    send(card, 80);
+    send(card, 70);
+    expect(setSpeed).toHaveBeenCalledTimes(1);
+    replies.shift()!();
+    await vi.waitFor(() => expect(setSpeed).toHaveBeenCalledTimes(2));
+    expect(setSpeed.mock.calls.map((call) => (call as unknown as [{ speedScale: number }])[0].speedScale)).toEqual([
+      0.9, 0.7,
+    ]);
+    replies.shift()!();
+  });
+
+  it("reports a rejected speed change and ignores an unreachable PLC", async () => {
+    const onRejected = vi.fn();
+    const rejecting = {
+      ...createMockCsocketApi({ success: true, data: [] }),
+      actionSpeedScale: vi.fn().mockResolvedValue([{ success: false, code: 3, message: "调速失败" }]),
+    };
+    createSpeedSender(onRejected, () => createCsocketSequenceTransport(rejecting))(card, 80);
+    await vi.waitFor(() => expect(onRejected).toHaveBeenCalledWith("调速失败：调速失败"));
+
+    const offline = {
+      ...createMockCsocketApi({ success: true, data: [] }),
+      actionSpeedScale: vi.fn().mockResolvedValue([{ success: false, code: "SEND_FAILED", message: "SEND_FAILED" }]),
+    };
+    const quiet = vi.fn();
+    createSpeedSender(quiet, () => createCsocketSequenceTransport(offline))(card, 80);
+    await vi.waitFor(() => expect(offline.actionSpeedScale).toHaveBeenCalled());
+    await Promise.resolve();
+    expect(quiet).not.toHaveBeenCalled();
   });
 });
