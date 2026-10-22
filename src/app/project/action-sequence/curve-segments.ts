@@ -137,11 +137,16 @@ export const trapezoidToCurveSegments = (
   return rows;
 };
 
-/** 连续静止点只留第一点，并在总时长处补零速终点。 */
+/**
+ * 连续静止点只留第一点，并在总时长处补零速终点。
+ * PLC 的每一行一直算到下一行开始：物体最后一段运动早于总时长结束时（别的物体或指令还在后面），
+ * 要在运动结束处补一行保持，否则最后一行减速曲线会继续外推、往回走。
+ */
 export const finalizePlcTimeline = (
   segments: PlcCurveSegment[],
   endMs: number,
   endPos: number,
+  motionEnd?: { atMs: number; position: number },
 ): PlcCurveSegment[] => {
   const collapsed: PlcCurveSegment[] = [];
   for (const segment of segments) {
@@ -150,6 +155,16 @@ export const finalizePlcTimeline = (
       continue;
     }
     collapsed.push(segment);
+  }
+  const lastRow = collapsed[collapsed.length - 1];
+  if (
+    motionEnd &&
+    lastRow &&
+    !isHold(lastRow) &&
+    lastRow.startTime < motionEnd.atMs &&
+    motionEnd.atMs < endMs
+  ) {
+    collapsed.push(holdSegment(motionEnd.atMs, motionEnd.position));
   }
   const last = collapsed[collapsed.length - 1];
   if (!last || last.startTime < endMs) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { trapezoidToCurveSegments } from "./curve-segments";
+import { finalizePlcTimeline, trapezoidToCurveSegments } from "./curve-segments";
 import type { MotionProfile } from "./types";
 
 const trap = (accelMs: number, decelMs: number): MotionProfile => ({
@@ -67,5 +67,37 @@ describe("trapezoidToCurveSegments", () => {
     expect(rows[1]?.b).toBeCloseTo(4.125, 5);
     expect(rows[2]?.position).toBeCloseTo(29.035, 3);
     expect(rows[2]?.c).toBeCloseTo(-1.03125, 5);
+  });
+});
+
+describe("finalizePlcTimeline", () => {
+  const hold = (startTime: number, position: number) => ({
+    startTime,
+    position,
+    a: position,
+    b: 0,
+    c: 0,
+    ...zeroTail,
+  });
+
+  it("adds a hold where the motion ends when the sequence runs longer", () => {
+    const rows = trapezoidToCurveSegments(trap(200, 200), 0, 0, 100, 1000);
+    expect(finalizePlcTimeline(rows, 3000, 100, { atMs: 1000, position: 100 }).slice(-2)).toEqual([
+      hold(1000, 100),
+      hold(3000, 100),
+    ]);
+  });
+
+  it("keeps the timeline as is when the motion ends with the sequence or already holds", () => {
+    const rows = trapezoidToCurveSegments(trap(200, 200), 0, 0, 100, 1000);
+    expect(finalizePlcTimeline(rows, 1000, 100, { atMs: 1000, position: 100 })).toEqual([
+      ...rows,
+      hold(1000, 100),
+    ]);
+    const holding = [...rows, hold(1000, 100)];
+    expect(finalizePlcTimeline(holding, 3000, 100, { atMs: 2000, position: 100 })).toEqual([
+      ...holding,
+      hold(3000, 100),
+    ]);
   });
 });
