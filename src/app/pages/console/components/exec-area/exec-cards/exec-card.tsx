@@ -4,7 +4,7 @@ import type { ExecCard, ExecCardSource } from "../../../hooks/use-exec-cards";
 import { canCloseExecCard, isExecCardInTransition } from "../../../hooks/exec-card-run-status";
 import { formatExecTime } from "../../../hooks/sequence-run-status";
 import { ForcedTrajectoryBadge, isForcedTrajectory } from "../../forced-trajectory-badge";
-import { FADER_MAX } from "../executors/vertical-fader-math";
+import { speedTopPercent } from "../../../hooks/speed-cap";
 
 type ExecCardProps = {
   card: ExecCard;
@@ -70,8 +70,8 @@ export const ExecCardView = ({
   const isError = card.status === "error" || card.emergencyStopped;
   const skipDisabled = card.status !== "stopped" || !hasNextSequence || isError;
   const speedDisabled = isError || isStopping || isExecCardInTransition(card);
-  // 调速范围封顶；没有上限时按推子满量程
-  const maxSpeed = Math.min(FADER_MAX, card.maxSpeedPercent ?? FADER_MAX);
+  // 调速范围封顶，不超过系统上限
+  const maxSpeed = speedTopPercent(card.maxSpeedPercent);
 
   return (
     <div

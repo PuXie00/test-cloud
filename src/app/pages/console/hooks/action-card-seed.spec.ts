@@ -22,6 +22,7 @@ const slot = (overrides: Partial<FaderSlotState> = {}): FaderSlotState => ({
   startPlan: null,
   preparedPoses: null,
   maxSpeedPercent: null,
+  speedPercent: 80,
   ...overrides,
 });
 
