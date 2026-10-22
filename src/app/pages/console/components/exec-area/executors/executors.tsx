@@ -61,14 +61,14 @@ export const Executors = ({ onTriggerSequence }: ExecutorsProps) => {
                   onPreviewToggle={() =>
                     slot.sequence &&
                     togglePreview(slot.sequence.id, {
-                      faderPercent: slot.faderValue,
+                      faderPercent: slot.speedPercent,
                       ...slot.runOptions,
                     })
                   }
                   onPreviewHoldStart={() =>
                     slot.sequence &&
                     startPreview(slot.sequence.id, {
-                      faderPercent: slot.faderValue,
+                      faderPercent: slot.speedPercent,
                       autoplay: true,
                       holdMode: true,
                       ...slot.runOptions,

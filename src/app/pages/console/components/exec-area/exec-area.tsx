@@ -27,6 +27,7 @@ import {
   resolveSequenceSpeedCap,
 } from "../../hooks/sequence-execution";
 import { useSequencePreview } from "../../hooks/use-sequence-preview";
+import { faderToSpeedPercent, PROGRAMMED_SPEED_PERCENT } from "../../hooks/speed-cap";
 import { useBuildDebug } from "../build-debug/build-debug-context";
 import { ExecCards } from "./exec-cards/exec-cards";
 import { Executors } from "./executors/executors";
@@ -155,6 +156,9 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     const authored = document.motion.actionSequences.find((entry) => entry.id === sequenceId);
     const speedCap = resolveSequenceSpeedCap(document, sequenceId, telemetryRef.current);
     if (!speedCap.ok) toast.warning(speedCap.message);
+    else if (speedCap.maxPercent !== null && speedCap.maxPercent < PROGRAMMED_SPEED_PERCENT) {
+      toast.warning(`该动作最高只能 ${speedCap.maxPercent}%，低于编程速度`);
+    }
     markSlotReady(
       slotIndex,
       sequenceId,
@@ -178,7 +182,8 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     const started = await goSequence({
       document,
       sequenceId,
-      faderPercent: slot.faderValue,
+      // 用本次准备的调速上限换算：下一条连做时 slot 还是准备前的快照
+      faderPercent: faderToSpeedPercent(slot.faderValue, maxSpeedPercent),
       reverse: slot.runOptions.reverse,
       startPlan,
       maxSpeedPercent,

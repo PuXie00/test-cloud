@@ -97,7 +97,7 @@ describe("ExecutorSlotsProvider", () => {
     expect(result.current.faderSlots[1]?.phase).toBe("ready");
   });
 
-  it("caps the fader at the speed range from ready until the run ends", () => {
+  it("maps the fader to the speed range from ready until the run ends", () => {
     const wrapper = ({ children }: { children: ReactNode }) =>
       createElement(
         ExecutorSlotsProvider,
@@ -108,23 +108,25 @@ describe("ExecutorSlotsProvider", () => {
 
     act(() => {
       result.current.setFaderValue(0, 150);
-      result.current.markSlotReady(0, 15, "fp-15", null, {}, 80);
+      result.current.setFaderValue(1, 150);
+      result.current.markSlotReady(0, 15, "fp-15", null, {}, 140);
       result.current.markSlotReady(1, 16, "fp-16", null, {}, null);
     });
-    expect(result.current.faderSlots[0]).toMatchObject({ maxSpeedPercent: 80, faderValue: 80 });
-    expect(result.current.faderSlots[1]).toMatchObject({ maxSpeedPercent: null, faderValue: 100 });
+    // 推子位置保持不动，上半段按 100%–上限换算
+    expect(result.current.faderSlots[0]).toMatchObject({ maxSpeedPercent: 140, faderValue: 150, speedPercent: 120 });
+    expect(result.current.faderSlots[1]).toMatchObject({ maxSpeedPercent: null, faderValue: 150, speedPercent: 150 });
 
     act(() => {
       result.current.clearSlotReady(0);
       result.current.setSlotRunning(0, true);
-      result.current.setFaderValue(0, 120);
+      result.current.setFaderValue(0, 200);
     });
-    expect(result.current.faderSlots[0]).toMatchObject({ phase: "running", maxSpeedPercent: 80, faderValue: 80 });
+    expect(result.current.faderSlots[0]).toMatchObject({ phase: "running", faderValue: 200, speedPercent: 140 });
 
     act(() => {
       result.current.setSlotRunning(0, false);
     });
-    expect(result.current.faderSlots[0]).toMatchObject({ phase: "idle", maxSpeedPercent: null });
+    expect(result.current.faderSlots[0]).toMatchObject({ phase: "idle", maxSpeedPercent: null, speedPercent: 200 });
   });
 
   it("stores the transition while ready and drops it when ready is cleared or the fingerprint changes", () => {

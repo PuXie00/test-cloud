@@ -8,6 +8,7 @@ import {
   type SlotRunOptions,
 } from "@/app/project/program-item-run-options";
 import type { ActionSequence } from "../components/program-panel/program-data";
+import { faderToSpeedPercent } from "./speed-cap";
 
 export { DEFAULT_SLOT_RUN_OPTIONS, type SlotRunOptions } from "@/app/project/program-item-run-options";
 
@@ -17,7 +18,10 @@ export type FaderSlotState = {
   index: number;
   label: string;
   sequence: ActionSequence | null;
+  /** 推子位置 0–200 */
   faderValue: number;
+  /** 推子位置按调速范围换算出的实际速度百分比，GO 下发它 */
+  speedPercent: number;
   phase: FaderSlotPhase;
   isBusy: boolean;
   runOptions: SlotRunOptions;
@@ -63,10 +67,6 @@ type ExecutorSlotsProviderProps = {
   /** 运行选项存于节目条目；改动交给节目写回工程 */
   onSlotRunOptionsChange?: (index: number, runOptions: SlotRunOptions) => void;
 };
-
-/** 推子值不超过调速上限 */
-export const capFaderValue = (value: number, maxPercent: number | null): number =>
-  maxPercent === null ? value : Math.min(value, maxPercent);
 
 export const deriveFaderSlotPhase = (args: {
   sequenceId: number | null;
@@ -120,7 +120,8 @@ export const ExecutorSlotsProvider = ({
           index: idx,
           label: `F${idx + 1}`,
           sequence,
-          faderValue: capFaderValue(faderValues[idx] ?? 100, maxSpeedPercent),
+          faderValue: faderValues[idx] ?? 100,
+          speedPercent: faderToSpeedPercent(faderValues[idx] ?? 100, maxSpeedPercent),
           phase,
           isBusy: sequence !== null && busyBySlot[idx] === sequence.id,
           runOptions: resolveSlotRunOptions(item?.runOptions),
@@ -197,13 +198,6 @@ export const ExecutorSlotsProvider = ({
         ...current,
         [index]: { sequenceId, maxPercent: maxSpeedPercent },
       }));
-      // 推子已推过上限时落到上限，运行结束后也不会跳回原值
-      if (maxSpeedPercent !== null) {
-        setFaderValues((current) => {
-          const value = current[index] ?? 100;
-          return value > maxSpeedPercent ? { ...current, [index]: maxSpeedPercent } : current;
-        });
-      }
     },
     [],
   );

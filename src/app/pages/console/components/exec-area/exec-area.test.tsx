@@ -380,6 +380,7 @@ const makeFaderSlot = (overrides: Partial<FaderSlotState> & { index: number }): 
   startPlan: null,
   preparedPoses: null,
   maxSpeedPercent: null,
+  speedPercent: overrides.faderValue ?? 100,
   ...overrides,
 });
 
@@ -737,6 +738,33 @@ describe("FaderSlot Ready/GO gate", () => {
     fireEvent.keyDown(slider, { key: "ArrowUp" });
     expect(onFaderChange).not.toHaveBeenCalled();
     expect(screen.queryByText("强制")).toBeNull();
+  });
+
+  it("shows the mapped speed and the top of a capped fader", () => {
+    render(
+      withMode(
+        <FaderSlot
+          slot={makeFaderSlot({
+            index: 0,
+            phase: "ready",
+            faderValue: 150,
+            speedPercent: 125,
+            maxSpeedPercent: 150,
+            sequence: { id: 15, name: "开幕A", durationMs: 2000 },
+          })}
+          isPreviewing={false}
+          onPreviewToggle={vi.fn()}
+          onPreviewHoldStart={vi.fn()}
+          onPreviewHoldEnd={vi.fn()}
+          onGo={vi.fn()}
+          onFaderChange={vi.fn()}
+          onAssignFromDrag={vi.fn()}
+        />,
+      ),
+    );
+    expect(screen.getByText("125%")).toBeTruthy();
+    expect(screen.getByText("上限 150%")).toBeTruthy();
+    expect(screen.getByRole("slider", { name: "F1 速度" }).getAttribute("aria-valuenow")).toBe("150");
   });
 
   it("lets the slider move while the slot is running", () => {
