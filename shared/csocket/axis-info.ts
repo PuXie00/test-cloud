@@ -42,6 +42,10 @@ export class AxisInfoStore {
     this.lastByDeviceId.clear();
   }
 
+  snapshot(): AxisInfo[] {
+    return [...this.lastByDeviceId.values()];
+  }
+
   ingest(result: unknown): AxisInfo[] | null {
     this.armStale();
     if (!isCppAckOk(result) || !Array.isArray(result.data)) return null;

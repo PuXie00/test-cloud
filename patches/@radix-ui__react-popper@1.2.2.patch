@@ -1,0 +1,36 @@
+diff --git a/dist/index.js b/dist/index.js
+index 93cc745bb099bcb1946ec6a004ddb088bb7d9aa1..9139fd5fc86f480035b5c4e06e65c51485f0b342 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -74,8 +74,12 @@ var PopperAnchor = React.forwardRef(
+     const context = usePopperContext(ANCHOR_NAME, __scopePopper);
+     const ref = React.useRef(null);
+     const composedRefs = (0, import_react_compose_refs.useComposedRefs)(forwardedRef, ref);
++    const reportedAnchorRef = React.useRef(null);
+     React.useEffect(() => {
+-      context.onAnchorChange(virtualRef?.current || ref.current);
++      const anchor = virtualRef?.current || ref.current;
++      if (reportedAnchorRef.current === anchor) return;
++      reportedAnchorRef.current = anchor;
++      context.onAnchorChange(anchor);
+     });
+     return virtualRef ? null : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_react_primitive.Primitive.div, { ...anchorProps, ref: composedRefs });
+   }
+diff --git a/dist/index.mjs b/dist/index.mjs
+index 3cf1db5ce624b3c529cf2f4a88f0451e7ae51114..a864e35c871a0cafad680bf969aca24ca2f04bb1 100644
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -39,8 +39,12 @@ var PopperAnchor = React.forwardRef(
+     const context = usePopperContext(ANCHOR_NAME, __scopePopper);
+     const ref = React.useRef(null);
+     const composedRefs = useComposedRefs(forwardedRef, ref);
++    const reportedAnchorRef = React.useRef(null);
+     React.useEffect(() => {
+-      context.onAnchorChange(virtualRef?.current || ref.current);
++      const anchor = virtualRef?.current || ref.current;
++      if (reportedAnchorRef.current === anchor) return;
++      reportedAnchorRef.current = anchor;
++      context.onAnchorChange(anchor);
+     });
+     return virtualRef ? null : /* @__PURE__ */ jsx(Primitive.div, { ...anchorProps, ref: composedRefs });
+   }

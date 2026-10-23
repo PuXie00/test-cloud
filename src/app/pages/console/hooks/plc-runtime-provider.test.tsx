@@ -139,6 +139,58 @@ describe("PlcRuntimeProvider master status", () => {
     await waitFor(() =>
       expect(result.current.project.currentProject?.id).toBe("gz-2025"),
     );
-    expect(result.current.plc.getPlcRuntime(1).lifecycle).toBe("disconnected");
+    await waitFor(() =>
+      expect(result.current.plc.getPlcRuntime(1).connection).toBe("disconnected"),
+    );
+  });
+
+  it("re-pulls the snapshot after a project switch when the main process sends no new frame", async () => {
+    const mocks = installMasterStatusMocks();
+    mocks.getMasterStatusSnapshot.mockResolvedValue({
+      success: true,
+      data: [
+        {
+          deviceId: 1,
+          plcModel: 1,
+          masterStatus: 1,
+          simulationStatus: 0,
+          busStatus: 0,
+          ruleStartStatus: 0,
+          ruleId: 0,
+          autoRunStatus: 0,
+          autoId: 0,
+        },
+      ],
+    } as never);
+
+    const { result } = renderHook(
+      () => ({
+        plc: usePlcRuntime(),
+        project: useProject(),
+      }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.project.loading).toBe(false));
+    await act(async () => {
+      await result.current.project.openProject(GZ_2025_RECORD.folderName);
+    });
+    await waitFor(() =>
+      expect(result.current.plc.getPlcRuntime(1).lifecycle).toBe("normal"),
+    );
+    const callsBeforeSwitch = mocks.getMasterStatusSnapshot.mock.calls.length;
+
+    await act(async () => {
+      await result.current.project.openProject(SH_BALLET_RECORD.folderName);
+    });
+    await waitFor(() =>
+      expect(result.current.project.currentProject?.id).toBe("sh-ballet"),
+    );
+    await waitFor(() =>
+      expect(mocks.getMasterStatusSnapshot.mock.calls.length).toBeGreaterThan(callsBeforeSwitch),
+    );
+    await waitFor(() =>
+      expect(result.current.plc.getPlcRuntime(1).lifecycle).toBe("normal"),
+    );
   });
 });

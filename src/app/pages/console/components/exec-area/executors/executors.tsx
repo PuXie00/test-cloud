@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { getMotionItemRepairIssue } from "@/app/project/project-motion-readiness";
 import { PROGRAM_SLOTS_PER_PAGE } from "@/app/pages/console/components/program-panel/program-data";
 import { useProject } from "@/app/project/use-project";
@@ -11,7 +12,8 @@ type ExecutorsProps = {
   onTriggerSequence: (slotIndex: number, sequenceId: number) => void;
 };
 
-export const Executors = ({ onTriggerSequence }: ExecutorsProps) => {
+/** ExecArea 跟着任务卡每帧重渲染；推子槽只随自己的数据变化 */
+export const Executors = memo(({ onTriggerSequence }: ExecutorsProps) => {
   const { faderSlots, setFaderValue, clearSlotReady, setSlotRunOptions } = useExecutorSlots();
   const { program, reorderItemInChapter, moveItemAcrossChapter, currentChapterId, currentPageIndex } =
     useProgram();
@@ -88,4 +90,4 @@ export const Executors = ({ onTriggerSequence }: ExecutorsProps) => {
       </div>
     </section>
   );
-};
+});

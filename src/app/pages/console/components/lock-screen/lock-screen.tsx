@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { EmergencyStopButton } from "@/app/components/ics/emergency-stop-button";
 import { cn } from "@/app/components/ui/utils";
 import { useConsoleMode } from "../../hooks/use-console-mode";
-import { useExecCards } from "../../hooks/use-exec-cards";
+import { useExecCardActions } from "../../hooks/use-exec-cards";
 import { usePlcRuntime } from "../../hooks/plc-runtime-provider";
 import { useProgram } from "../../hooks/use-program";
 
@@ -11,7 +11,7 @@ const HOLD_MS = 3000;
 
 export const LockScreen = () => {
   const { isLocked, unlock } = useConsoleMode();
-  const { emergencyStopAll } = useExecCards();
+  const { emergencyStopAll } = useExecCardActions();
   const { allStopAll } = usePlcRuntime();
   const { program } = useProgram();
   const [holdProgress, setHoldProgress] = useState(0);

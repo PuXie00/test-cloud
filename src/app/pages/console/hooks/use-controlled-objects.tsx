@@ -16,7 +16,7 @@ import {
   buildMotorSnapshots,
   buildObjectSnapshots,
   ingestPollingFrame,
-  pruneLiveMap,
+  mergePollingSnapshot,
   type AxisInfoPollingItem,
   type ModelInfoPollingItem,
 } from "./monitor-polling";
@@ -34,49 +34,53 @@ type ControlledObjectsProviderProps = { children: ReactNode };
 
 export const ControlledObjectsProvider = ({ children }: ControlledObjectsProviderProps) => {
   const { objects, motors } = useProjectStore();
-  const objectsRef = useRef(objects);
-  objectsRef.current = objects;
-  const motorsRef = useRef(motors);
-  motorsRef.current = motors;
 
   const modelLiveRef = useRef(new Map<number, ModelInfoPollingItem>());
   const axisLiveRef = useRef(new Map<number, AxisInfoPollingItem>());
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
-    const known = new Set(objects.map((object) => object.id));
-    modelLiveRef.current = pruneLiveMap(modelLiveRef.current, known);
-    setTick((value) => value + 1);
-  }, [objects]);
-
-  useEffect(() => {
-    const known = new Set(motors.map((motor) => motor.id));
-    axisLiveRef.current = pruneLiveMap(axisLiveRef.current, known);
-    setTick((value) => value + 1);
-  }, [motors]);
-  useEffect(() => {
     const api = window.csocketApi;
     if (!api?.onReadModelInfoPolling || !api?.onReadAxisInfoPolling) return;
+    let cancelled = false;
     const bump = () => setTick((value) => value + 1);
     const offModel = api.onReadModelInfoPolling((msg) => {
-      const known = new Set(objectsRef.current.map((object) => object.id));
       modelLiveRef.current = ingestPollingFrame(
         modelLiveRef.current,
         msg as CppAckResult<ModelInfoPollingItem>,
-        known,
       );
       bump();
     });
     const offAxis = api.onReadAxisInfoPolling((msg) => {
-      const known = new Set(motorsRef.current.map((motor) => motor.id));
       axisLiveRef.current = ingestPollingFrame(
         axisLiveRef.current,
         msg as CppAckResult<AxisInfoPollingItem>,
-        known,
       );
       bump();
     });
+    // 主进程只在数值变化时转发；打开工程时物体静止就一帧都收不到，先补一次主进程缓存
+    void (async () => {
+      const [modelSnapshot, axisSnapshot] = await Promise.all([
+        api.getModelInfoSnapshot?.(),
+        api.getAxisInfoSnapshot?.(),
+      ]);
+      if (cancelled) return;
+      if (modelSnapshot) {
+        modelLiveRef.current = mergePollingSnapshot(
+          modelLiveRef.current,
+          modelSnapshot as CppAckResult<ModelInfoPollingItem>,
+        );
+      }
+      if (axisSnapshot) {
+        axisLiveRef.current = mergePollingSnapshot(
+          axisLiveRef.current,
+          axisSnapshot as CppAckResult<AxisInfoPollingItem>,
+        );
+      }
+      bump();
+    })();
     return () => {
+      cancelled = true;
       offModel();
       offAxis();
     };

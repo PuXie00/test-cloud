@@ -106,7 +106,10 @@ type ExecCardsContextValue = {
   close: (id: string, options?: { release?: boolean }) => void;
 };
 
+type ExecCardActions = Omit<ExecCardsContextValue, "cards">;
+
 const ExecCardsContext = createContext<ExecCardsContextValue | null>(null);
+const ExecCardActionsContext = createContext<ExecCardActions | null>(null);
 
 type ExecCardsProviderProps = {
   children: ReactNode;
@@ -370,16 +373,28 @@ export const ExecCardsProvider = ({
     setCards((current) => current.filter((entry) => entry.id !== id));
   }, []);
 
-  const value = useMemo(
-    () => ({ cards, launch, pause, resume, stop, restart, skipNext, setSpeed, emergencyStopAll, close }),
-    [cards, launch, pause, resume, stop, restart, skipNext, setSpeed, emergencyStopAll, close],
+  const actions = useMemo<ExecCardActions>(
+    () => ({ launch, pause, resume, stop, restart, skipNext, setSpeed, emergencyStopAll, close }),
+    [launch, pause, resume, stop, restart, skipNext, setSpeed, emergencyStopAll, close],
   );
+  const value = useMemo(() => ({ cards, ...actions }), [cards, actions]);
 
-  return <ExecCardsContext.Provider value={value}>{children}</ExecCardsContext.Provider>;
+  return (
+    <ExecCardActionsContext.Provider value={actions}>
+      <ExecCardsContext.Provider value={value}>{children}</ExecCardsContext.Provider>
+    </ExecCardActionsContext.Provider>
+  );
 };
 
 export const useExecCards = (): ExecCardsContextValue => {
   const value = useContext(ExecCardsContext);
   if (!value) throw new Error("useExecCards must be used inside ExecCardsProvider");
+  return value;
+};
+
+/** 任务卡运行时 cards 每帧都在变；只需要操作的组件用它，避免跟着每帧重渲染 */
+export const useExecCardActions = (): ExecCardActions => {
+  const value = useContext(ExecCardActionsContext);
+  if (!value) throw new Error("useExecCardActions must be used inside ExecCardsProvider");
   return value;
 };

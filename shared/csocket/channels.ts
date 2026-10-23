@@ -86,6 +86,8 @@ export const CSOCKET_CHANNELS = {
   // alarm: 'csocket:event:alarm',
   // log: 'csocket:event:log',
   getMasterStatusSnapshot: 'csocket:get-master-status-snapshot',
+  getModelInfoSnapshot: 'csocket:get-model-info-snapshot',
+  getAxisInfoSnapshot: 'csocket:get-axis-info-snapshot',
   readMasterStatusPolling: 'csocket:event:read-master-status-polling',
   readModelInfoPolling: 'csocket:event:read-model-info-polling',
   readAxisInfoPolling: 'csocket:event:read-axis-info-polling',

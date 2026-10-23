@@ -88,7 +88,6 @@ export const PlcRuntimeProvider = ({ children }: { children: ReactNode }) => {
   }, [plcs, lastOpenAck]);
 
   useEffect(() => {
-    setMasterById(new Map());
     setScannedMasters([]);
   }, [projectId]);
 
@@ -102,6 +101,7 @@ export const PlcRuntimeProvider = ({ children }: { children: ReactNode }) => {
     return off;
   }, []);
 
+  // 主进程只在主控状态变化时广播；切换工程后同一批主控状态不变就不会再推，必须按工程重拉快照
   useEffect(() => {
     const api = window.csocketApi;
     if (!api?.onReadMasterStatusPolling) return;
@@ -126,7 +126,7 @@ export const PlcRuntimeProvider = ({ children }: { children: ReactNode }) => {
       cancelled = true;
       off();
     };
-  }, []);
+  }, [projectId]);
 
   const markMismatchDialogConsumed = useCallback(() => {
     setMismatchDialogConsumed(true);

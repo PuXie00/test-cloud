@@ -48,33 +48,37 @@ const readDeviceId = (item: unknown): number | null => {
   return typeof id === "number" && Number.isFinite(id) ? id : null;
 };
 
-export const pruneLiveMap = <T>(
-  map: ReadonlyMap<number, T>,
-  knownIds: ReadonlySet<number>,
-): Map<number, T> => {
-  const next = new Map(map);
-  for (const id of next.keys()) {
-    if (!knownIds.has(id)) next.delete(id);
-  }
-  return next;
-};
-
+/**
+ * 不按当前工程的物体 / 电机过滤：主进程只在数值变化时转发，
+ * 工程还没加载完时到的帧丢掉就再也补不回来；未知 id 由 build*Snapshots 忽略。
+ */
 export const ingestPollingFrame = <T extends { deviceId: number }>(
   prev: ReadonlyMap<number, T>,
   msg: CppAckResult<T>,
-  knownIds: ReadonlySet<number>,
 ): Map<number, T> => {
   if (msg.success !== true || !Array.isArray(msg.data)) return new Map(prev);
   if (msg.data.length === 0) return new Map();
   const next = new Map(prev);
   for (const raw of msg.data) {
     const deviceId = readDeviceId(raw);
-    if (deviceId === null || !knownIds.has(deviceId)) continue;
+    if (deviceId === null) continue;
     const incoming = raw as T;
     const previous = next.get(deviceId);
     next.set(deviceId, { ...(previous as T | undefined), ...incoming, deviceId });
   }
-  return pruneLiveMap(next, knownIds);
+  return next;
+};
+
+/** 主进程缓存的快照垫在下面，已收到的实时帧字段优先 */
+export const mergePollingSnapshot = <T extends { deviceId: number }>(
+  prev: ReadonlyMap<number, T>,
+  snapshot: CppAckResult<T>,
+): Map<number, T> => {
+  const next = ingestPollingFrame(new Map<number, T>(), snapshot);
+  for (const [deviceId, live] of prev) {
+    next.set(deviceId, { ...next.get(deviceId), ...live });
+  }
+  return next;
 };
 
 const finite = (value: unknown): number | null =>

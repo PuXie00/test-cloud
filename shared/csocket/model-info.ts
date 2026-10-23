@@ -51,6 +51,10 @@ export class ModelInfoStore {
     this.lastByDeviceId.clear();
   }
 
+  snapshot(): ModelInfo[] {
+    return [...this.lastByDeviceId.values()];
+  }
+
   ingest(result: unknown): ModelInfo[] | null {
     this.armStale();
     if (!isCppAckOk(result) || !Array.isArray(result.data)) return null;

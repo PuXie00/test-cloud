@@ -310,4 +310,6 @@ export const registerCppSocketIpc = (api: CsocketApiService): void => {
   ipcMain.handle(CSOCKET_CHANNELS.getMasterStatusSnapshot, () =>
     api.getMasterStatusSnapshot(),
   )
+  ipcMain.handle(CSOCKET_CHANNELS.getModelInfoSnapshot, () => api.getModelInfoSnapshot())
+  ipcMain.handle(CSOCKET_CHANNELS.getAxisInfoSnapshot, () => api.getAxisInfoSnapshot())
 }

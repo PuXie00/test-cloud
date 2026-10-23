@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/app/components/ui/utils";
 import {
@@ -112,8 +112,10 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
           : [],
       ),
     );
+    // cards 每帧都在变；只在运行状态真的变化时才 setState，否则每帧都会排一次嵌套更新
     for (const slot of faderSlots) {
-      setSlotRunning(slot.index, runningSlots.has(slot.index));
+      const running = runningSlots.has(slot.index);
+      if ((slot.phase === "running") !== running) setSlotRunning(slot.index, running);
     }
   }, [cards, faderSlots, setSlotRunning]);
 
@@ -408,13 +410,20 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     beginReady(slotIndex, sequenceId, startPlan, slotReadyOptions(slot));
   };
 
+  const triggerSequenceRef = useRef(handleTriggerSequence);
+  triggerSequenceRef.current = handleTriggerSequence;
+  const handleStableTriggerSequence = useCallback(
+    (slotIndex: number, sequenceId: number) => triggerSequenceRef.current(slotIndex, sequenceId),
+    [],
+  );
+
   return (
     <section className={cn("flex min-h-0 overflow-hidden rounded-lg bg-card", className)}>
       <div className="flex h-full w-[330px] shrink-0 flex-col">
         <ExecCards onNextSequence={handleNextSequence} />
       </div>
       <div className="min-w-0 flex-1">
-        <Executors onTriggerSequence={handleTriggerSequence} />
+        <Executors onTriggerSequence={handleStableTriggerSequence} />
       </div>
       <InitialPoseDialog
         open={poseDialog !== null}

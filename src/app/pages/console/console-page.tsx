@@ -11,7 +11,7 @@ import { ConsoleNavProvider } from "./hooks/use-console-nav";
 import { ControlledObjectsProvider } from "./hooks/use-controlled-objects";
 import { LogStreamProvider } from "./hooks/use-log-stream";
 import { useActionCardSeed } from "./hooks/action-card-seed";
-import { ExecCardsProvider, useExecCards } from "./hooks/use-exec-cards";
+import { ExecCardsProvider, useExecCardActions } from "./hooks/use-exec-cards";
 import { ExecutorSlotsProvider, type SlotRunOptions } from "./hooks/use-executor-slots";
 import { PROGRAM_SLOTS_PER_PAGE } from "./components/program-panel/program-data";
 import { compactSlotRunOptions } from "@/app/project/program-item-run-options";
@@ -176,7 +176,7 @@ const ConsoleContent = ({
 
 const ConsoleInner = () => {
   const { mode } = useConsoleMode();
-  const { emergencyStopAll } = useExecCards();
+  const { emergencyStopAll } = useExecCardActions();
   const { allStopAll } = usePlcRuntime();
   const [activeNav, setActiveNav] = useState<LeftNavId>("control");
   const [devicesRightTab, setDevicesRightTab] = useState<RightPanelTab>("structure");

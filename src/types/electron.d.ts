@@ -185,6 +185,8 @@ export type CsocketAPI = {
   logWrite: (items: LogWriteParams[], opts?: CsocketSendOpts) => Promise<CppAckResult<LogRecord>>
 
   getMasterStatusSnapshot: () => Promise<CppAckResult>
+  getModelInfoSnapshot: () => Promise<CppAckResult>
+  getAxisInfoSnapshot: () => Promise<CppAckResult>
 
   onReadMasterStatusPolling: (cb: (msg: CppAckResult) => void) => () => void
   onReadModelInfoPolling: (cb: (msg: CppAckResult) => void) => () => void

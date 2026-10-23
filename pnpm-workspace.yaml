@@ -3,3 +3,5 @@ allowBuilds:
   electron: true
   electron-winstaller: false
   esbuild: true
+patchedDependencies:
+  '@radix-ui/react-popper@1.2.2': patches/@radix-ui__react-popper@1.2.2.patch

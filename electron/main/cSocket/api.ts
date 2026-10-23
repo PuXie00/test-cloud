@@ -174,6 +174,16 @@ export class CsocketApiService {
     return { success: true, data: this.plcMasterStatus.snapshot() }
   }
 
+  /** Info|model 只在数值变化时广播；界面挂载时用它补齐当前值 */
+  getModelInfoSnapshot(): CppAckResult {
+    return { success: true, data: this.modelInfo.snapshot() }
+  }
+
+  /** Info|axis 只在数值变化时广播；界面挂载时用它补齐当前值 */
+  getAxisInfoSnapshot(): CppAckResult {
+    return { success: true, data: this.axisInfo.snapshot() }
+  }
+
   /** 订阅 client 下行并按语义通道广播（只调用一次） */
   wireClientEvents(): void {
     if (this.wired) return
@@ -236,7 +246,7 @@ export class CsocketApiService {
         }>)
       }
       if (optCmd === 'Info|act') {
-        console.log('Info|act', JSON.stringify(msg));
+        // console.log('Info|act', JSON.stringify(msg));
         this.broadcast(CSOCKET_CHANNELS.readActionRun, msg as CppAckResult<{
           actionId: number, // 动作ID
           state: number, // 动作状态 1:过渡状态，正在走到轨迹上 3： 运行中 
@@ -543,7 +553,6 @@ export class CsocketApiService {
       runDirection: number,
       speedScale: number,
       loopCount: number,
-      isNearest: number,
       selectedCurveTimeMs: number,
       prepareTimeMs: number,
       deviceCount: number,
@@ -564,7 +573,6 @@ export class CsocketApiService {
         // 取整，避免 0.57*100=56.999… 被截成 56
         speedScale: Math.round(item.speedScale * 100),
         loopCount: item.loopCount,
-        isNearest: 1,
         selectedCurveTimeMs: 0,
         prepareTimeMs: 0,
         deviceCount: item.deviceId.length,
@@ -586,7 +594,8 @@ export class CsocketApiService {
       ...opts,
       paramHeard: isTMapedHeadRelease,
     }
-    return this.sendBuilt('Opera|actionSyncRelease', '0x1006', isTMaped, localOpts)
+    console.log("isTMaped", isTMaped);
+    return this.sendBuilt('Opera|actionSyncPrepare', '0x1006', isTMaped, localOpts)
   }
 
   // 动作停止 Stop

@@ -3,24 +3,13 @@ import {
   buildMotorSnapshots,
   buildObjectSnapshots,
   ingestPollingFrame,
-  pruneLiveMap,
+  mergePollingSnapshot,
   type AxisInfoPollingItem,
   type ModelInfoPollingItem,
 } from "./monitor-polling";
 
-describe("pruneLiveMap", () => {
-  it("removes ids not in knownIds", () => {
-    const map = new Map([[1, { deviceId: 1, modelStatus: 3 }]]);
-    const pruned = pruneLiveMap(map, new Set([2]));
-    expect(pruned.has(1)).toBe(false);
-    expect(pruned.size).toBe(0);
-  });
-});
-
 describe("ingestPollingFrame", () => {
-  const known = new Set([1, 2]);
-
-  it("merges only known deviceIds", () => {
+  it("keeps devices the project has not loaded yet", () => {
     const next = ingestPollingFrame<ModelInfoPollingItem>(
       new Map(),
       {
@@ -30,18 +19,17 @@ describe("ingestPollingFrame", () => {
           { deviceId: 99, modelStatus: 3, virtualAxisHPosition: 0, virtualAxisPPosition: 0, virtualAxisYPosition: 0 },
         ],
       },
-      known,
     );
-    expect(next.size).toBe(1);
+    expect(next.size).toBe(2);
     expect(next.get(1)?.virtualAxisHPosition).toBe(10);
-    expect(next.has(99)).toBe(false);
+    expect(next.has(99)).toBe(true);
   });
 
   it("ignores failed frames", () => {
     const prev = new Map<number, ModelInfoPollingItem>([
       [1, { deviceId: 1, modelStatus: 2, virtualAxisHPosition: 5, virtualAxisPPosition: 0, virtualAxisYPosition: 0 }],
     ]);
-    const next = ingestPollingFrame(prev, { success: false, data: [{ deviceId: 1, modelStatus: 1, virtualAxisHPosition: 0, virtualAxisPPosition: 0, virtualAxisYPosition: 0 }] }, known);
+    const next = ingestPollingFrame(prev, { success: false, data: [{ deviceId: 1, modelStatus: 1, virtualAxisHPosition: 0, virtualAxisPPosition: 0, virtualAxisYPosition: 0 }] });
     expect(next.get(1)?.modelStatus).toBe(2);
   });
 
@@ -52,7 +40,6 @@ describe("ingestPollingFrame", () => {
     const next = ingestPollingFrame(
       prev,
       { success: true, data: [{ deviceId: 1, axisStatus: 3, actualSpeed: 9 }] },
-      known,
     );
     expect(next.get(1)?.axisStatus).toBe(3);
     expect(next.get(1)?.actualPosition).toBe(1);
@@ -69,28 +56,46 @@ describe("ingestPollingFrame", () => {
           { deviceId: 1, modelStatus: 3, virtualAxisHPosition: 8, virtualAxisPPosition: 0, virtualAxisYPosition: 0 },
         ],
       },
-      known,
     );
     expect(next.get(1)?.modelStatus).toBe(3);
     expect(next.get(1)?.virtualAxisHPosition).toBe(8);
-  });
-
-  it("prunes stale ids after ingest when knownIds no longer includes them", () => {
-    const msg1 = { success: true as const, data: [{ deviceId: 1, modelStatus: 3 }] };
-    let map = ingestPollingFrame(new Map(), msg1, new Set([1]));
-    expect(map.has(1)).toBe(true);
-
-    const msg2 = { success: true as const, data: [] };
-    map = ingestPollingFrame(map, msg2, new Set([2]));
-    expect(map.has(1)).toBe(false);
   });
 
   it("clears all live items on an empty success frame", () => {
     const prev = new Map<number, ModelInfoPollingItem>([
       [1, { deviceId: 1, modelStatus: 3 }],
     ]);
-    const next = ingestPollingFrame(prev, { success: true, data: [] }, new Set([1]));
+    const next = ingestPollingFrame(prev, { success: true, data: [] });
     expect(next.size).toBe(0);
+  });
+});
+
+describe("mergePollingSnapshot", () => {
+  it("fills devices that have not sent a live frame yet", () => {
+    const next = mergePollingSnapshot<ModelInfoPollingItem>(new Map(), {
+      success: true,
+      data: [{ deviceId: 1, modelStatus: 16, virtualAxisHPosition: 120 }],
+    });
+    expect(next.get(1)?.modelStatus).toBe(16);
+    expect(next.get(1)?.virtualAxisHPosition).toBe(120);
+  });
+
+  it("keeps live fields over the snapshot and fills missing ones", () => {
+    const prev = new Map<number, ModelInfoPollingItem>([
+      [1, { deviceId: 1, virtualAxisHPosition: 130 }],
+    ]);
+    const next = mergePollingSnapshot(prev, {
+      success: true,
+      data: [{ deviceId: 1, modelStatus: 16, virtualAxisHPosition: 120 }],
+    });
+    expect(next.get(1)?.virtualAxisHPosition).toBe(130);
+    expect(next.get(1)?.modelStatus).toBe(16);
+  });
+
+  it("does not clear live items when the snapshot is empty", () => {
+    const prev = new Map<number, ModelInfoPollingItem>([[1, { deviceId: 1, modelStatus: 3 }]]);
+    const next = mergePollingSnapshot(prev, { success: true, data: [] });
+    expect(next.get(1)?.modelStatus).toBe(3);
   });
 });
 

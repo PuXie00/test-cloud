@@ -114,6 +114,10 @@ export const createCsocketApi = () => ({
 
   getMasterStatusSnapshot: () =>
     ipcRenderer.invoke(CSOCKET_CHANNELS.getMasterStatusSnapshot) as Promise<CppAckResult>,
+  getModelInfoSnapshot: () =>
+    ipcRenderer.invoke(CSOCKET_CHANNELS.getModelInfoSnapshot) as Promise<CppAckResult>,
+  getAxisInfoSnapshot: () =>
+    ipcRenderer.invoke(CSOCKET_CHANNELS.getAxisInfoSnapshot) as Promise<CppAckResult>,
 
   onReadMasterStatusPolling: (cb: MsgHandler) => onChannel(CSOCKET_CHANNELS.readMasterStatusPolling, cb),
   onReadModelInfoPolling: (cb: MsgHandler) => onChannel(CSOCKET_CHANNELS.readModelInfoPolling, cb),
