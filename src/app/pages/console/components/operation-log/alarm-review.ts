@@ -1,6 +1,5 @@
 import {
-  ALARM_SNAPSHOT_AFTER_MS,
-  ALARM_SNAPSHOT_BEFORE_MS,
+  alarmSnapshotWindow,
   deviceKey,
   type LogAlarmReview,
   type LogRecord,
@@ -10,35 +9,13 @@ import type { TimeRange } from "./timeline-scale";
 /** 趋势图最多同时画几台设备（与图表配色数一致） */
 export const MAX_TREND_DEVICES = 3;
 
-/** 报警快照时间段；C++ 没给时按前 10s 后 5s 兜底 */
-export const alarmReviewWindow = (
-  alarm: Pick<LogRecord, "timestamp" | "snapshotRange">,
-): TimeRange =>
-  alarm.snapshotRange ?? {
-    start: alarm.timestamp - ALARM_SNAPSHOT_BEFORE_MS,
-    end: alarm.timestamp + ALARM_SNAPSHOT_AFTER_MS,
-  };
+/** 报警快照时间段：固定为报警前 10s、后 5s */
+export const alarmReviewWindow = (alarm: Pick<LogRecord, "timestamp">): TimeRange =>
+  alarmSnapshotWindow(alarm.timestamp);
 
-/** 默认画哪些设备：报警设备优先，其次是报警前操作过的设备（最近的先），只取快照里有的 */
-export const pickTrendDevices = (review: LogAlarmReview): string[] => {
-  const available = new Set(review.snapshot.map(deviceKey));
-  const picked: string[] = [];
-  const add = (record: LogRecord) => {
-    for (const device of record.devices ?? []) {
-      const key = deviceKey(device);
-      if (picked.length < MAX_TREND_DEVICES && available.has(key) && !picked.includes(key)) {
-        picked.push(key);
-      }
-    }
-  };
-  add(review.alarm);
-  for (const record of review.records) {
-    if (record.category === "alarm" && record.alarmState !== "cleared") add(record);
-  }
-  review.records
-    .filter((r) => r.category === "operation" && r.timestamp <= review.alarm.timestamp)
-    .reverse()
-    .forEach(add);
-  if (picked.length === 0 && review.snapshot[0]) picked.push(deviceKey(review.snapshot[0]));
-  return picked;
-};
+/** 默认画哪些电机：快照里 id 最小的几台（快照只有电机 id，不知道哪台报警） */
+export const pickTrendDevices = (review: LogAlarmReview): string[] =>
+  [...review.snapshot]
+    .sort((a, b) => a.deviceId - b.deviceId)
+    .slice(0, MAX_TREND_DEVICES)
+    .map(deviceKey);

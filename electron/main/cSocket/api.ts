@@ -33,14 +33,39 @@ import type {
   LogRecord,
   LogWriteParams,
 } from '../../../shared/csocket/operation-log'
+import { existsSync } from 'node:fs'
+import path from 'node:path'
+import type BetterSqlite3 from 'better-sqlite3'
+import { getProjectDir } from '../project/paths'
+import { getCurrentProjectName } from '../project/service'
 import {
-  mockLogAlarmReview,
-  mockLogFilterOptions,
-  mockLogQuery,
-  mockLogWrite,
-} from './operation-log-mock'
+  LOG_DB_FILE,
+  queryLogs,
+  readFilterOptions,
+  reviewAlarm,
+  type SqlDatabase,
+} from './operation-log-db'
+import { mockLogWrite } from './operation-log-mock'
 
 type SendData = CppAckResult
+
+/** 只读打开当前工程的日志库查一次；库文件还不存在（C++ 还没写过日志）时返回 missing */
+const readLogDb = async (read: (db: SqlDatabase) => SendData, missing: SendData): Promise<SendData> => {
+  const projectName = getCurrentProjectName()
+  if (!projectName) return { success: false, message: '没有打开工程' }
+  const file = path.join(getProjectDir(projectName), LOG_DB_FILE)
+  if (!existsSync(file)) return missing
+  let db: BetterSqlite3.Database | undefined
+  try {
+    const { default: Database } = await import('better-sqlite3')
+    db = new Database(file, { readonly: true, fileMustExist: true, timeout: 2000 })
+    return read(db as unknown as SqlDatabase)
+  } catch (err) {
+    return { success: false, message: `读取日志失败：${err instanceof Error ? err.message : String(err)}` }
+  } finally {
+    db?.close()
+  }
+}
 
 const toNullResult = (r: CsocketResult<void>): CsocketResult<null> =>
   r.ok ? { ok: true, data: null } : r
@@ -1149,23 +1174,29 @@ export class CsocketApiService {
   }
 
   /*
-  * 操作日志与报警记录：C++ 写入、存储、查询（按当前打开的工程），界面只读
-  * C++ 未实现前先返回 mock（operation-log-mock.ts）；接好后放开 sendBuilt 并删掉 mock 那几行
+  * 操作日志与报警记录：C++ 写入当前工程目录下的 log.db，这里直接读库（只读）
   */
-  // 日志查询：时间范围 / 类别 / 用户 / 设备 / 操作类型 / 报警级别 / 日志级别，分页
+  // 日志查询：时间范围 / 类别 / 用户 / 操作类型 / 日志级别，分页；operation 只存库不查
   logQuery(items: LogQueryParams[], opts?: CsocketSendOpts): Promise<SendData> {
-    // return this.sendBuilt('Log|query', '', items, opts)
-    return Promise.resolve(mockLogQuery(items[0]))
+    return readLogDb(
+      (db) => ({ success: true, data: [queryLogs(db, items[0] ?? {})] }),
+      { success: true, data: [{ total: 0, records: [] }] },
+    )
   }
-  // 筛选项：当前工程日志里出现过的用户、设备、操作类型及时间范围
+  // 筛选项：当前工程日志里出现过的用户、操作类型及时间范围
   logFilterOptions(items?: unknown[], opts?: CsocketSendOpts): Promise<SendData> {
-    // return this.sendBuilt('Log|filterOptions', '', items ?? [], opts)
-    return Promise.resolve(mockLogFilterOptions())
+    return readLogDb(
+      (db) => ({ success: true, data: [readFilterOptions(db)] }),
+      { success: true, data: [{ users: [], opTypes: [], timeRange: null }] },
+    )
   }
-  // 报警回看：报警快照（前 10s + 后 5s 状态曲线）及该时段内的操作、报警
+  // 报警回看：报警前 10s ~ 后 5s 的记录和电机状态快照
   logAlarmReview(items: LogAlarmReviewParams[], opts?: CsocketSendOpts): Promise<SendData> {
-    // return this.sendBuilt('Log|alarmReview', '', items, opts)
-    return Promise.resolve(mockLogAlarmReview(items[0]))
+    const notFound: SendData = { success: false, message: '报警记录不存在' }
+    return readLogDb((db) => {
+      const review = items[0] ? reviewAlarm(db, items[0].alarmId) : null
+      return review ? { success: true, data: [review] } : notFound
+    }, notFound)
   }
   // 界面侧事件（如保存工程）交给 C++ 写入；C++ 写完后会通过 Info|log 推送
   logWrite(items: LogWriteParams[], opts?: CsocketSendOpts): Promise<SendData> {

@@ -1,15 +1,16 @@
 import { Maximize2, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import type { LogCategory, LogRecord } from "@shared/csocket/operation-log";
+import type { LogRecord, VisibleLogCategory } from "@shared/csocket/operation-log";
 import { cn } from "@/app/components/ui/utils";
+import { alarmReviewWindow } from "./alarm-review";
 import {
   CATEGORY_LABEL,
   formatClock,
   formatClockMs,
   formatDateTime,
   formatSpan,
-  isFailedOperation,
-  isRaisedAlarm,
+  isAlarm,
+  LEVEL_MARKER,
   logBadge,
 } from "./log-display";
 import {
@@ -22,9 +23,9 @@ import {
   type TimeRange,
 } from "./timeline-scale";
 
-/** 快照不是独立记录：报警发生时写入，画成该报警快照时间段的色条 */
-type Lane = LogCategory | "snapshot";
-const LANES: Lane[] = ["operation", "alarm", "snapshot", "system"];
+/** 快照不是独立记录：每条报警都有，画成报警前 10s ~ 后 5s 的色条 */
+type Lane = VisibleLogCategory | "snapshot";
+const LANES: Lane[] = ["optCall", "alarm", "snapshot", "system"];
 const LANE_LABEL: Record<Lane, string> = { ...CATEGORY_LABEL, snapshot: "快照" };
 const ZOOM_STEP = 1.5;
 const WHEEL_ZOOM = 1.25;
@@ -32,26 +33,16 @@ const WHEEL_ZOOM = 1.25;
 const DRAG_THRESHOLD_PX = 3;
 const TICK_MIN_GAP_PX = 96;
 
-const markerVisual = (record: LogRecord): string => {
+/** 形状按类别（报警为菱形），颜色只看日志级别 */
+export const markerVisual = (record: LogRecord): string => {
+  const color = LEVEL_MARKER[record.level];
   switch (record.category) {
-    case "operation":
-      return isFailedOperation(record)
-        ? "h-3.5 w-[3px] rounded-[1px] bg-destructive"
-        : "h-3.5 w-[3px] rounded-[1px] bg-primary";
     case "alarm":
-      if (record.alarmState === "cleared") return "h-2 w-2 rotate-45 border border-show bg-background";
-      return cn("h-2.5 w-2.5 rotate-45", record.alarmLevel === 1 ? "bg-warning" : "bg-destructive");
+      return cn("h-2.5 w-2.5 rotate-45", color);
     case "system":
-      return cn(
-        "h-3 w-[3px] rounded-[1px]",
-        record.level === "error"
-          ? "bg-destructive"
-          : record.level === "warning"
-            ? "bg-warning"
-            : record.level === "debug"
-              ? "bg-muted-foreground/50"
-              : "bg-muted-foreground",
-      );
+      return cn("h-3 w-[3px] rounded-[1px]", color);
+    default:
+      return cn("h-3.5 w-[3px] rounded-[1px]", color);
   }
 };
 
@@ -126,18 +117,15 @@ export const LogTimeline = ({
   }, [records, view, span]);
   const byLane = useMemo(() => {
     const lanes = new Map<Lane, LogRecord[]>(LANES.map((lane) => [lane, []]));
-    for (const record of visible) lanes.get(record.category)?.push(record);
+    for (const record of visible) lanes.get(record.category as Lane)?.push(record);
     return lanes;
   }, [visible]);
   const snapshots = useMemo(
     () =>
-      records.filter(
-        (r) =>
-          isRaisedAlarm(r) &&
-          r.snapshotRange &&
-          r.snapshotRange.end >= view.start &&
-          r.snapshotRange.start <= view.end,
-      ),
+      records
+        .filter(isAlarm)
+        .map((alarm) => ({ alarm, range: alarmReviewWindow(alarm) }))
+        .filter(({ range }) => range.end >= view.start && range.start <= view.end),
     [records, view],
   );
 
@@ -259,8 +247,7 @@ export const LogTimeline = ({
             {LANES.map((lane) => (
               <div key={lane} className="relative h-6 border-b border-border/30 last:border-b-0">
                 {lane === "snapshot" &&
-                  snapshots.map((alarm) => {
-                    const range = alarm.snapshotRange!;
+                  snapshots.map(({ alarm, range }) => {
                     const selected = alarm.id === selectedId;
                     return (
                       <button

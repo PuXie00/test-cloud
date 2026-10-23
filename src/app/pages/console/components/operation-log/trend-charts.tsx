@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import {
   deviceKey,
+  motorLabel,
   type LogSnapshotSeries,
   type LogTimeRange,
 } from "@shared/csocket/operation-log";
@@ -37,38 +38,23 @@ type TrendChartSpec = {
 
 const METRIC_TITLE: Record<Metric, string> = { torque: "转矩", position: "位置", speed: "速度" };
 
-const metricUnit = (metric: Metric, unit: string, display: DisplayLengthUnit) => {
+/** 快照只有电机：位置 mm、速度 mm/s，按显示单位换算 */
+const metricUnit = (metric: Metric, display: DisplayLengthUnit) => {
   if (metric === "torque") return "%";
-  const canonical = metric === "speed" ? `${unit}/s` : unit;
-  return getDisplayLengthFamilyUnit(canonical, display);
+  return getDisplayLengthFamilyUnit(metric === "speed" ? "mm/s" : "mm", display);
 };
 
-/** 转矩一张；位置、速度按单位分组，避免 mm 和 ° 共用一根轴 */
-const buildChartSpecs = (series: LogSnapshotSeries[], display: DisplayLengthUnit): TrendChartSpec[] => {
-  const units = [...new Set(series.map((s) => s.unit ?? "mm"))];
-  const specs: TrendChartSpec[] = [
-    { key: "torque", title: METRIC_TITLE.torque, unit: "%", metric: "torque", series },
-  ];
-  for (const metric of ["position", "speed"] as const) {
-    for (const unit of units) {
-      specs.push({
-        key: `${metric}:${unit}`,
-        title: METRIC_TITLE[metric],
-        unit: metricUnit(metric, unit, display),
-        metric,
-        series: series.filter((s) => (s.unit ?? "mm") === unit),
-      });
-    }
-  }
-  return specs;
-};
+const buildChartSpecs = (series: LogSnapshotSeries[], display: DisplayLengthUnit): TrendChartSpec[] =>
+  (["torque", "position", "speed"] as const).map((metric) => ({
+    key: metric,
+    title: METRIC_TITLE[metric],
+    unit: metricUnit(metric, display),
+    metric,
+    series,
+  }));
 
-const toDisplayValue = (
-  value: number,
-  metric: Metric,
-  unit: string | undefined,
-  display: DisplayLengthUnit,
-) => (metric === "torque" || unit === "°" ? value : toDisplayLengthValue(value, display));
+const toDisplayValue = (value: number, metric: Metric, display: DisplayLengthUnit) =>
+  metric === "torque" ? value : toDisplayLengthValue(value, display);
 
 type Row = { x: number } & Record<string, number>;
 
@@ -87,7 +73,7 @@ const buildRows = (
         byT.set(point.t, row);
       }
       const value = point[spec.metric];
-      if (value != null) row[key] = toDisplayValue(value, spec.metric, s.unit, display);
+      if (value != null) row[key] = toDisplayValue(value, spec.metric, display);
     }
   }
   return [...byT.entries()].sort((a, b) => a[0] - b[0]).map(([, row]) => row);
@@ -247,7 +233,7 @@ export const TrendCharts = ({
                     <Line
                       key={deviceKey(s)}
                       dataKey={deviceKey(s)}
-                      name={s.deviceName}
+                      name={motorLabel(s.deviceId)}
                       type="monotone"
                       stroke={colorOf(deviceKey(s))}
                       strokeWidth={2}

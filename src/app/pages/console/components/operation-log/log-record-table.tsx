@@ -1,26 +1,22 @@
 import { memo, useEffect, useMemo, useRef } from "react";
-import type { LogRecord } from "@shared/csocket/operation-log";
+import { LOG_RESULT, opTypeLabel, type LogRecord } from "@shared/csocket/operation-log";
 import { cn } from "@/app/components/ui/utils";
 import { LogBadge } from "./log-badge";
-import { devicesText, formatClockMs, formatDate, LOG_LEVEL_LABEL } from "./log-display";
+import { formatClockMs, formatDate, LOG_LEVEL_LABEL, resultText } from "./log-display";
 import { opTypeKey } from "./log-filters";
 
 const typeText = (record: LogRecord, opTypeLabels: Map<string, string>) => {
-  if (record.opGroup && record.opType) {
-    return opTypeLabels.get(opTypeKey(record.opGroup, record.opType)) ?? record.opType;
-  }
-  if (record.alarmCode != null) return `#${record.alarmCode}`;
-  return "—";
+  if (!record.opType) return "—";
+  return record.opGroup
+    ? opTypeLabels.get(opTypeKey(record.opGroup, record.opType)) ?? opTypeLabel(record.opType)
+    : opTypeLabel(record.opType);
 };
 
 const ResultCell = ({ record }: { record: LogRecord }) => {
-  if (record.category !== "operation" || !record.result) return <span className="text-muted-foreground">—</span>;
-  return record.result.ok ? (
-    <span className="text-show">成功</span>
-  ) : (
-    <span className="text-destructive" title={record.result.message}>
-      失败
-    </span>
+  const text = resultText(record);
+  if (!text) return <span className="text-muted-foreground">—</span>;
+  return (
+    <span className={record.result === LOG_RESULT.ok ? "text-show" : "text-destructive"}>{text}</span>
   );
 };
 
@@ -61,13 +57,12 @@ export const LogRecordTable = memo(({
 
   return (
     <div ref={scrollerRef} className={cn("custom-scrollbar overflow-auto bg-background", className)}>
-      <table className="w-full min-w-[800px] table-fixed text-body-sm">
+      <table className="w-full min-w-[680px] table-fixed text-body-sm">
         <colgroup>
           <col className={multiDay ? "w-[150px]" : "w-[104px]"} />
           <col className="w-[84px]" />
           <col className="w-[48px]" />
           <col className="w-[84px]" />
-          <col className="w-[132px]" />
           <col className="w-[112px]" />
           <col />
           <col className="w-[48px]" />
@@ -78,8 +73,7 @@ export const LogRecordTable = memo(({
             <th className="px-2 py-1.5 font-normal">类别</th>
             <th className="px-2 py-1.5 font-normal">级别</th>
             <th className="px-2 py-1.5 font-normal">用户</th>
-            <th className="px-2 py-1.5 font-normal">设备</th>
-            <th className="px-2 py-1.5 font-normal">操作类型 / 报警码</th>
+            <th className="px-2 py-1.5 font-normal">操作类型</th>
             <th className="px-2 py-1.5 font-normal">内容</th>
             <th className="px-2 py-1.5 font-normal">结果</th>
           </tr>
@@ -111,9 +105,6 @@ export const LogRecordTable = memo(({
                 </td>
                 <td className="truncate px-2 py-1 text-muted-foreground">{LOG_LEVEL_LABEL[record.level]}</td>
                 <td className="truncate px-2 py-1">{record.user ?? "—"}</td>
-                <td className="truncate px-2 py-1" title={devicesText(record)}>
-                  {devicesText(record)}
-                </td>
                 <td className="truncate px-2 py-1 text-muted-foreground">{typeText(record, opTypeLabels)}</td>
                 <td className="truncate px-2 py-1 text-foreground" title={record.message}>
                   {record.message}

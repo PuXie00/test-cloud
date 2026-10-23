@@ -1,14 +1,13 @@
 import { memo } from "react";
-import type { LogRecord } from "@shared/csocket/operation-log";
+import { LOG_RESULT, opTypeLabel, type LogRecord } from "@shared/csocket/operation-log";
 import { cn } from "@/app/components/ui/utils";
 import { AlarmReviewPanel } from "./alarm-review-panel";
 import { LogBadge } from "./log-badge";
 import {
-  ALARM_LEVEL_LABEL,
   CATEGORY_LABEL,
   formatClockMs,
   formatDate,
-  isRaisedAlarm,
+  isAlarm,
   LOG_LEVEL_LABEL,
   OP_GROUP_LABEL,
   resultText,
@@ -19,17 +18,16 @@ import type { AlarmReviewState } from "./use-operation-log";
 const RecordDetail = ({ record, opTypeLabels }: { record: LogRecord; opTypeLabels: Map<string, string> }) => {
   const rows: [string, string][] = [
     ["时间", `${formatDate(record.timestamp)} ${formatClockMs(record.timestamp)}`],
-    ["类别", record.opGroup ? OP_GROUP_LABEL[record.opGroup] : CATEGORY_LABEL[record.category]],
+    ["类别", CATEGORY_LABEL[record.category]],
     ["日志级别", LOG_LEVEL_LABEL[record.level]],
   ];
+  if (record.opGroup) rows.push(["分组", OP_GROUP_LABEL[record.opGroup]]);
   if (record.user) rows.push(["操作人", record.user]);
   if (record.opGroup && record.opType) {
-    rows.push(["操作类型", opTypeLabels.get(opTypeKey(record.opGroup, record.opType)) ?? record.opType]);
+    rows.push(["操作类型", opTypeLabels.get(opTypeKey(record.opGroup, record.opType)) ?? opTypeLabel(record.opType)]);
   }
   const result = resultText(record);
   if (result) rows.push(["结果", result]);
-  if (record.alarmLevel) rows.push(["报警级别", ALARM_LEVEL_LABEL[record.alarmLevel]]);
-  if (record.alarmCode != null) rows.push(["报警码", String(record.alarmCode)]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -44,7 +42,7 @@ const RecordDetail = ({ record, opTypeLabels }: { record: LogRecord; opTypeLabel
             <dd
               className={cn(
                 "break-words text-foreground",
-                label === "结果" && record.result?.ok === false && "text-destructive",
+                label === "结果" && record.result !== LOG_RESULT.ok && "text-destructive",
               )}
             >
               {value}
@@ -52,26 +50,6 @@ const RecordDetail = ({ record, opTypeLabels }: { record: LogRecord; opTypeLabel
           </div>
         ))}
       </dl>
-      {record.devices?.length ? (
-        <section className="flex flex-col gap-1">
-          <h3 className="text-label-caps text-muted-foreground">涉及设备（{record.devices.length}）</h3>
-          <ul className="flex flex-col rounded-sm border border-border/60 bg-background">
-            {record.devices.map((device) => (
-              <li
-                key={`${device.deviceType}:${device.deviceId}`}
-                className="flex items-center justify-between gap-2 border-b border-border/40 px-2 py-1 text-body-sm last:border-b-0"
-              >
-                <span className="truncate text-foreground">{device.deviceName}</span>
-                {device.ok != null && (
-                  <span className={device.ok ? "text-show" : "text-destructive"}>
-                    {device.ok ? "成功" : "失败"}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
     </div>
   );
 };
@@ -97,7 +75,7 @@ export const LogDetailPanel = memo(({
   className,
 }: LogDetailPanelProps) => (
   <aside className={cn("custom-scrollbar flex flex-col gap-4 overflow-y-auto bg-card p-3", className)}>
-    {selected && isRaisedAlarm(selected) ? (
+    {selected && isAlarm(selected) ? (
       <AlarmReviewPanel
         alarm={selected}
         state={review}

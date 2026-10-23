@@ -2,223 +2,148 @@
 
 对应需求「11.3 操作日志与报警记录」：统一时间线记录操作、报警和状态变化，核心用于异常回溯。
 
-- **职责：** 日志由 C++ 写入、存储、查询，界面只读。界面自己产生的事件（如保存工程）调用 `Log|write` 交给 C++ 写。
-- **生命周期：** 日志按工程独立。打开工程（`CONFIG|Pro|open`）开始记录，关闭工程结束，每个工程的日志文件互不相干。下面所有查询都只针对**当前打开的工程**。
-- **前端现状：** 已按本文接好。C++ 未实现前由 `electron/main/cSocket/api.ts` 返回 mock（`operation-log-mock.ts`）；接口实现后把每个 `log*` 方法里的 `sendBuilt` 行放开、删掉 mock 那几行，界面不用改。
+- **职责：** C++ 把日志写进**当前工程目录下的 SQLite 文件 `log.db`**；前端直接读这个文件查询（只读，只用 SELECT），不再经过 C++ 查询。界面自己产生的事件（如保存工程）调用 `Log|write` 交给 C++ 写。
+- **生命周期：** 日志按工程独立，一个工程一个 `log.db`，放在工程目录（`Project/<工程名>/log.db`），所以表里没有工程 id。打开工程（`CONFIG|Pro|open`）开始记录，关闭工程结束。
+- **前端现状：** 查询已接好（`electron/main/cSocket/api.ts` 的 `logQuery` / `logFilterOptions` / `logAlarmReview` 直接读库，查询代码在 `operation-log-db.ts`）。`log.db` 不存在时前端按"还没有日志"显示空列表。`Log|write` 在 C++ 实现前仍由 mock 返回。
 
-| 前端位置 | 用到的接口 |
+| 前端位置 | 数据来源 |
 |---|---|
-| 头部菜单 →「操作日志与回放」弹窗：统一时间线、多维筛选、报警回看、趋势分析 | `Log\|query`、`Log\|filterOptions`、`Log\|alarmReview` |
-| 控制页右侧「日志」：本工程最新 30 条；底部状态栏时间左侧：最新一条 | 推送 `Info\|log`（打开工程后列表为空，只靠推送追加；不显示操作人） |
+| 头部菜单 →「操作日志与回放」弹窗：统一时间线、筛选、报警回看、趋势分析 | 前端读 `log.db` |
+| 控制页右侧「日志」：本工程最新 30 条；底部状态栏时间左侧：最新一条 | C++ 推送 `Info\|log`（打开工程后列表为空，只靠推送追加；不显示操作人） |
 | 保存工程 / 工程另存为（结果成功或失败） | `Log\|write` |
 
-## 基本约定
+## C++ 需要做的
 
-沿用现有 WebSocket 报文格式，不新增字段：
+1. 打开工程时打开（没有就创建）`<工程目录>/log.db`，按下面的表结构建表，开 WAL。
+2. 每条日志写一行 `log`。
+3. 报警发生时把状态快照写进 `snapshot_sample`（见「状态快照」）。
+4. 每写一条日志推送一次 `Info|log`（可合并成一批）。
+5. 实现 `Log|write`。
 
-- 请求：`{ version, timestamp, messageId, projectId, user, OptCmd, addr, params }`，`addr` 固定为空串（C++ 自己处理，不下发 PLC），`params` 为数组。
-- 应答：`result: { success, code?, message?, data: [...] }`，`data` 始终是数组；失败时 `success: false` 并给 `message`，前端直接显示。没有打开工程时请返回失败并说明原因。
-- 时间统一为毫秒时间戳（本机时钟）。
-- 单位：直线轴位置 mm、速度 mm/s；旋转轴位置 °、速度 °/s（用 `unit` 区分）；转矩为额定转矩的百分比；温度 ℃。前端按「显示单位」设置自行换算。
+## 表结构
 
-| OptCmd | 方向 | 用途 |
-|---|---|---|
-| `Info\|log` | C++ → 前端（主动推送） | 新写入的日志 |
-| `Log\|query` | 前端 → C++ | 多维筛选 + 分页查询当前工程日志 |
-| `Log\|filterOptions` | 前端 → C++ | 筛选下拉框的可选值 |
-| `Log\|alarmReview` | 前端 → C++ | 一条报警的状态快照（前 10s + 后 5s 曲线）及该时段的记录 |
-| `Log\|write` | 前端 → C++ | 界面侧事件交给 C++ 写入 |
+```sql
+PRAGMA journal_mode = WAL;      -- 前端读、C++ 写互不阻塞
+PRAGMA synchronous = NORMAL;
 
-## C++ 需要记录什么
+-- 日志：操作 / 操作回码 / 报警 / 系统，一条一行
+CREATE TABLE IF NOT EXISTS log (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT, -- 前端转成字符串当记录 id
+  ts          INTEGER NOT NULL,                  -- 毫秒时间戳（本机时钟）
+  category    TEXT    NOT NULL CHECK (category IN ('operation','optCall','alarm','system')),
+  level       TEXT    NOT NULL CHECK (level IN ('debug','info','warning','error')),
+  message     TEXT    NOT NULL,                  -- 展示文案；报警时为报警描述
+  user_name   TEXT,                              -- 操作人，取报文里的 user
+  op_group    TEXT    CHECK (op_group IN ('config','device')),
+  op_type     TEXT,                              -- saveProject / jog / ...
+  result_ok   INTEGER CHECK (result_ok IN (0,1,2)) -- 0 失败 / 1 成功 / 2 超时
+);
+CREATE INDEX IF NOT EXISTS idx_log_ts ON log(ts);
 
-日志面向用户可感知的内容。系统内部报错、底层通讯细节等用户无感的内容用 `debug` 级别记录，前端默认隐藏（筛选「日志级别」选「调试」或「全部（含调试）」才显示），也可以视情况只写模块 15 系统日志。
+-- 状态快照采样点：按时间存，不挂在某条报警上；只有电机（轴）
+CREATE TABLE IF NOT EXISTS snapshot_sample (
+  t           INTEGER NOT NULL,                  -- 采样时刻，同一拍所有电机用同一个 t
+  device_id   INTEGER NOT NULL,                  -- 电机 id
+  position    REAL,                              -- mm
+  speed       REAL,                              -- mm/s
+  torque      REAL,                              -- 额定转矩的 %
+  temperature REAL,                              -- ℃
+  PRIMARY KEY (t, device_id)
+) WITHOUT ROWID;
+```
 
-| 内容 | `category` / `opGroup` | 说明 |
-|---|---|---|
-| 配置操作 | `operation` / `config` | 保存工程（界面经 `Log\|write` 写）、下载工程等，记录操作内容和结果 |
-| 设备操作 | `operation` / `device` | 耦合 / 解耦、启动 / 停止、使能 / 禁用、点动、执行动作序列等，记录操作内容和结果 |
-| 设备调试 | `operation` / `debug` | 点动、设定原点、规则引擎修改等，记录操作内容和结果 |
-| 设备报警 | `alarm` | 发生记一条 `alarmState: "raised"`，清除再记一条 `"cleared"`；含报警码、报警描述（`message`）、报警级别 |
-| 状态快照 | 挂在报警记录上 | 只有报警才有快照，见下方「状态快照机制」 |
-| 状态变化 / 内部细节 | `system` | 主控连接断开、工程校验结果等用 info / warning；内部细节用 debug |
+- `snapshot_sample` 不要加自增 `id`：SQLite 不允许 `AUTOINCREMENT` 和 `WITHOUT ROWID` 一起用；两个报警时间段重叠时，`INSERT OR IGNORE` 靠 `(t, device_id)` 主键跳过重复的点。
+- 前端按列名读，不依赖列顺序；可以加列，但不要改名或删列。
 
-**多设备：** 一条指令一条日志，不按设备拆。指令涉及的设备都放进 `devices`，多设备执行结果不一致时在每台设备上标 `ok`，整体结果放 `result`（例如 3 台成功 1 台失败：`result.ok = false`，`message` 写明哪台失败）。
+## 各类记录怎么填
 
-**`opType` 建议取值**（mock 里用的；可扩展，显示名由 `Log|filterOptions` 返回，前端不写死；同一个 `opType` 可以出现在不同分组，例如点动）：
+| `category` | 含义 | 前端 | 要填的字段 |
+|---|---|---|---|
+| `operation` | 下发的操作 | **只存库，不查、不显示** | C++ 自定 |
+| `optCall` | 操作回码 | 显示为「操作」 | `user_name`、`op_group`、`op_type`、`result_ok` |
+| `alarm` | 设备报警 | 显示为「报警」，每条都能回看快照 | 只要 `ts`、`level`、`message` |
+| `system` | 状态变化 / 内部细节 | 显示为「系统」 | 只要 `ts`、`level`、`message` |
 
-| opGroup | opType | 显示名 | 对应命令 |
+- 操作和操作回码各记一条。
+- 界面上类别徽标的颜色只看 `level`（信息灰、警告黄、错误红）。失败、超时的回码请用 `warning` 或 `error`，否则看不出来。
+- 没有失败原因字段，需要的话写进 `message`。
+- 报警没有级别、报警码、发生 / 清除状态。
+- 系统内部报错、底层通讯细节等用户无感的内容用 `debug` 级别，前端默认隐藏（筛选「日志级别」选「调试」或「全部（含调试）」才显示）。
+
+**`op_type` 取值**（显示名由前端 `OP_TYPE_LABELS` 给，没列出的编码按原样显示）：
+
+| op_group | op_type | 显示名 | 对应命令 |
 |---|---|---|---|
 | config | `saveProject` | 保存工程 | 界面 `Log\|write` |
 | config | `saveProjectAs` | 工程另存为 | 界面 `Log\|write` |
 | config | `downloadProject` | 下载工程 | `CONFIG\|Pro\|download` |
 | device | `couple` | 耦合 / 解耦 | `Opera\|couple` |
-| device | `enable` | 使能 / 禁用 | `Opera\|enable`（物体） |
-| device | `jog` | 点动 | `Opera\|jog`（物体 0x0104） |
+| device | `enable` | 使能 / 禁用 | `Opera\|enable` |
+| device | `jog` | 点动 | `Opera\|jog` |
 | device | `moveTarget` | 启动（目标位置） | `Opera\|moveTarget` |
 | device | `stop` | 停止 | `Opera\|stop`、`Opera\|syncMoveEnd`、`Opera\|actionCall` |
 | device | `eStop` | 急停 | `Opera\|eStop`、`Opera\|AllStop` |
 | device | `sequence` | 执行动作序列 | `Opera\|syncMovebegin`、`Opera\|actionSyncRelease` |
-| debug | `jog` | 点动 | `Opera\|jog`（电机 0x0006） |
-| debug | `setOrigin` | 设定原点 | `Opera\|setPosition` |
-| debug | `ruleEdit` | 规则引擎修改 | 规则相关命令 |
+| device | `setOrigin` | 设定原点 | `Opera\|setPosition` |
+| device | `ruleEdit` | 规则引擎修改 | 规则相关命令 |
 
-### 状态快照机制
+## 状态快照
+
+时间段固定为**报警前 10s ~ 报警后 5s**，前端按报警时刻自己算，库里不存时间段。
 
 ```
-C++ 维护一个 10s 的环形缓冲区，持续缓存设备状态（建议 100ms 采样）：
-  - 正常运行无报警 → 缓存自动丢弃，不写日志
-  - 报警发生 → 立即把缓冲区里报警前 10s 的数据写入日志
-            → 继续记录报警后 5s，一并写入
-  - 每个采样点：位置、速度、转矩、温度（没有的量可省略）
+C++ 维护一个 10s 的环形缓冲区，持续缓存电机状态（100ms 采样）：
+  - 没有报警 → 不写库
+  - 报警发生（时刻 T）→ 把缓冲区里 T-10s ~ T 的点 INSERT OR IGNORE 进 snapshot_sample
+                    → record_until = max(record_until, T + 5s)
+  - 每拍采样时若 now ≤ record_until，这一拍所有电机也 INSERT OR IGNORE（一拍一个事务）
 ```
 
-报警记录上带 `snapshotRange: { start, end }`（报警前 10s ~ 后 5s），前端据此在时间线「快照」行画出这段时间，并只对带快照的报警开放回看。报警后 5s 还没写完时，`Log|alarmReview` 返回已有的部分即可。
-
-## 数据结构
-
-类型定义在 `shared/csocket/operation-log.ts`。
-
-### LogRecord（一条日志）
-
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---|---|
-| `id` | string | 是 | 全局唯一 |
-| `timestamp` | number | 是 | 毫秒时间戳 |
-| `category` | `"operation"` \| `"alarm"` \| `"system"` | 是 | 类别 |
-| `level` | `"debug"` \| `"info"` \| `"warning"` \| `"error"` | 是 | 日志级别，debug 默认隐藏 |
-| `message` | string | 是 | 展示文案；报警时为报警描述 |
-| `user` | string | 操作类必填 | 操作人，取报文里的 `user` |
-| `devices` | LogDevice[] | 否 | 涉及的设备，可多台 |
-| `opGroup` | `"config"` \| `"device"` \| `"debug"` | 操作类必填 | 配置操作 / 设备操作 / 设备调试 |
-| `opType` | string | 操作类必填 | 操作类型编码 |
-| `result` | `{ ok: boolean, message?: string }` | 操作类必填 | 操作结果；失败时 `message` 写原因 |
-| `alarmLevel` | `1` \| `2` \| `3` | 报警类必填 | 1 一般 / 2 严重 / 3 紧急 |
-| `alarmCode` | number | 报警类必填 | 报警码 |
-| `alarmState` | `"raised"` \| `"cleared"` | 报警类必填 | 发生 / 清除 |
-| `snapshotRange` | `{ start: number, end: number }` | 有快照的报警必填 | 快照覆盖的时间段 |
-
-LogDevice：`deviceType`（`"plc"` / `"axis"` / `"model"`，即主控 / 电机 / 物体，与 `Info|plc` / `Info|axis` / `Info|model` 对应）、`deviceId`、`deviceName`（记录当时的名字，设备删除后仍能显示）、`ok?`（该设备的执行结果）。
-
-### LogSnapshotSeries（一台设备在快照时段内的曲线）
-
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `deviceType` / `deviceId` / `deviceName` | | 同上 |
-| `unit` | `"mm"` \| `"°"` | 位置单位，缺省 mm |
-| `points` | `{ t, position?, speed?, torque?, temperature? }[]` | 时间升序 |
-
----
+前端回看时取 `t BETWEEN T-10000 AND T+5000` 的全部采样点，按电机分组画曲线；报警后 5s 还没写完时，有多少显示多少。
 
 ## Info|log：新日志推送
 
-C++ 每写入一条日志就主动推送（可以合并成一批），包括界面经 `Log|write` 写入的。前端按 `id` 去重后追加到控制页列表，只保留最新 30 条，最新一条显示在状态栏。`debug` 级别的不用推（推了前端也会过滤掉）。
+C++ 每写入一条日志就主动推送（可以合并成一批），包括 `Log|write` 写入的。前端按 `id` 去重后追加到控制页列表，只保留最新 30 条，最新一条显示在状态栏。`operation` 和 `debug` 不用推（推了前端也会过滤掉）。
 
 ```json
 { "OptCmd": "Info|log", "result": { "success": true, "data": [ /* LogRecord */ ] } }
 ```
 
-## Log|query：日志查询
+LogRecord（JSON 字段 ← 表列）：
 
-```json
-"params": [{
-  "startTime": 1791860000000,
-  "endTime": 1791863600000,
-  "categories": ["operation", "alarm", "system"],
-  "users": ["管理员"],
-  "devices": [{ "deviceType": "axis", "deviceId": 3 }],
-  "opGroups": ["device"],
-  "opTypes": ["jog"],
-  "alarmLevels": [2, 3],
-  "logLevels": ["info", "warning", "error"],
-  "order": "desc",
-  "offset": 50,
-  "limit": 50
-}]
-```
+| 字段 | 类型 | 来自 |
+|---|---|---|
+| `id` | string | `id` 转字符串 |
+| `timestamp` | number | `ts` |
+| `category` | `"optCall"` \| `"alarm"` \| `"system"` | `category` |
+| `level` | `"debug"` \| `"info"` \| `"warning"` \| `"error"` | `level` |
+| `message` | string | `message` |
+| `user` | string，可缺省 | `user_name` |
+| `opGroup` | `"config"` \| `"device"`，可缺省 | `op_group` |
+| `opType` | string，可缺省 | `op_type` |
+| `result` | `0` \| `1` \| `2`，可缺省 | `result_ok` |
 
-所有筛选字段都可缺省，缺省或空数组表示不限。前端默认会带 `logLevels: ["info","warning","error"]`（不含 debug）。`order` 缺省 `asc`；`offset` / `limit` 按 `order` 的方向计算，返回的 `records` 也按 `order` 排序。
-
-**分页：** 前端按页取，最新的在第一页：`order` 固定 `desc`，`limit` = 每页条数（50 / 100 / 500，默认 50），`offset` = 页码（从 0 开始）× 每页条数。上面的示例是每页 50 条的第 2 页。翻页时其余参数不变，包括 `startTime` / `endTime`：用"最近 15 分钟"这类相对时间时，前端在改筛选或刷新时才重新计算时间，翻页沿用同一个时间范围。
-
-筛选语义（各维度之间为“且”，请保持一致，前端时间线依赖它）：
-
-- `startTime` / `endTime`：闭区间，作用于所有记录。
-- `categories`、`logLevels`：作用于所有记录。
-- `users`、`opGroups`、`opTypes`：**只约束操作类**，报警和系统记录不受影响。这样筛某个人或某类操作时，报警仍留在时间线上，便于看因果。
-- `alarmLevels`：**只约束报警类**。
-- `devices`：只约束带 `devices` 的记录，涉及的设备中**任一**命中即可；不带设备的记录不受影响。
-
-```json
-"result": { "success": true, "data": [{ "total": 343, "records": [ /* LogRecord */ ] }] }
-```
-
-`total` 为满足条件的总条数（不受 `offset` / `limit` 影响），前端用它算总页数，请保证准确。`offset` 超出总数时返回空的 `records`、`total` 照常给出，前端会退回到最后一页。
-
-## Log|filterOptions：筛选项
-
-返回当前工程日志里实际出现过的取值。
-
-```json
-"params": []
-```
-
-```json
-"result": { "success": true, "data": [{
-  "users": ["管理员", "操作员-01"],
-  "devices": [{ "deviceType": "model", "deviceId": 101, "deviceName": "升降灯架-01" }],
-  "opTypes": [
-    { "group": "device", "code": "jog", "label": "点动" },
-    { "group": "debug", "code": "jog", "label": "点动" }
-  ],
-  "timeRange": { "start": 1791860000000, "end": 1791862400000 }
-}] }
-```
-
-`timeRange` 为最早 / 最晚一条记录的时间，没有记录时为 `null`。
-
-## Log|alarmReview：报警回看
-
-点击带快照的报警记录时调用，一次返回回看所需的全部数据：快照曲线（用于状态快照表和转矩 / 位置 / 速度趋势图）和该时段内的记录（用于分析操作与报警的因果）。
-
-```json
-"params": [{ "alarmId": "log-00123" }]
-```
-
-```json
-"result": { "success": true, "data": [{
-  "alarm": { /* LogRecord */ },
-  "range": { "start": 1791861224567, "end": 1791861239567 },
-  "records": [ /* range 内的操作 / 报警 / 系统记录（含 debug），时间升序，含 alarm 本身 */ ],
-  "snapshot": [{
-    "deviceType": "axis", "deviceId": 3, "deviceName": "电机-03", "unit": "mm",
-    "points": [{ "t": 1791861224567, "position": 6012.3, "speed": 35.2, "torque": 41.8, "temperature": 42.0 }]
-  }]
-}] }
-```
-
-- `range` 即报警记录的 `snapshotRange`。
-- `snapshot` 每台设备一条，建议包含缓冲区里的全部运动设备；同一报警里各设备的采样时刻尽量对齐。前端默认画报警设备和报警前操作过的设备（最多 3 台），用户可以切换。
-- 报警不存在或没有快照时返回 `success: false`，`message` 如「该报警没有状态快照」。
+列为 NULL 时 JSON 里不出这个字段。
 
 ## Log|write：界面写日志
 
-界面自己产生、C++ 看不到的事件交给 C++ 写入当前工程日志。C++ 补上 `id`、`user`（取报文里的 `user`），写完后照常 `Info|log` 推送。
+界面自己产生、C++ 看不到的事件交给 C++ 写入当前工程的 `log.db`。C++ 补上 `id`、`user_name`（取报文里的 `user`），写完后照常 `Info|log` 推送。请求沿用现有报文格式，`addr` 为空串。
 
 ```json
 "params": [{
-  "category": "operation",
+  "category": "optCall",
   "level": "warning",
   "opGroup": "config",
   "opType": "saveProject",
-  "message": "保存工程「演示工程」",
-  "result": { "ok": false, "message": "磁盘空间不足" },
+  "message": "保存工程「演示工程」：磁盘空间不足",
+  "result": 0,
   "timestamp": 1791861234567
 }]
 ```
 
-`category` 只能是 `operation` 或 `system`；`timestamp` 为事件发生时间，缺省用 C++ 收到的时间。应答 `data` 返回写入后的 LogRecord。
+`category` 只能是 `optCall` 或 `system`；`timestamp` 为事件发生时间，缺省用 C++ 收到的时间。应答 `data` 返回写入后的 LogRecord。
 
-目前界面会写的：保存工程、工程另存为（成功和失败都写）。规则编辑器还没有接 C++，接好后「规则引擎修改」也走这里或由 C++ 直接记录。
+目前界面会写的：保存工程、工程另存为（成功和失败都写）。
 
 ---
 

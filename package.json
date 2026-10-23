@@ -21,11 +21,13 @@
     "build:linux:rpm": "vite build && electron-builder --linux rpm",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
+    "postinstall": "electron-builder install-app-deps",
     "pretest": "vite build --mode=test",
     "test": "vitest run"
   },
   "dependencies": {
     "archiver": "^8.0.0",
+    "better-sqlite3": "12.11.1",
     "electron-updater": "^6.3.9",
     "extract-zip": "^2.0.1",
     "ws": "^8.21.1"
@@ -71,6 +73,7 @@
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
     "@types/archiver": "^8.0.0",
+    "@types/better-sqlite3": "7.6.13",
     "@types/extract-zip": "^2.0.3",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
@@ -115,6 +118,7 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "better-sqlite3",
       "electron",
       "esbuild",
       "@swc/core"

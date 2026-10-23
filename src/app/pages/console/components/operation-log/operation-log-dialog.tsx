@@ -11,7 +11,7 @@ import {
 } from "@/app/components/ui/dialog";
 import { cn } from "@/app/components/ui/utils";
 import { alarmReviewWindow } from "./alarm-review";
-import { isRaisedAlarm } from "./log-display";
+import { isAlarm } from "./log-display";
 import { LogDetailPanel } from "./log-detail-panel";
 import { LogFilterBar } from "./log-filter-bar";
 import {
@@ -88,7 +88,7 @@ const OperationLogBody = () => {
     () => records.find((record) => record.id === selectedId) ?? null,
     [records, selectedId],
   );
-  const reviewAlarm = selected && isRaisedAlarm(selected) ? selected : null;
+  const reviewAlarm = selected && isAlarm(selected) ? selected : null;
   const review = useAlarmReview(reviewAlarm?.id ?? null);
   const highlight = reviewAlarm ? alarmReviewWindow(reviewAlarm) : null;
 
@@ -96,7 +96,7 @@ const OperationLogBody = () => {
     setSelectedId(record.id);
     setCursor(record.timestamp);
     setView((current) =>
-      isRaisedAlarm(record)
+      isAlarm(record)
         ? viewAround(alarmReviewWindow(record))
         : ensureVisible(current, record.timestamp),
     );

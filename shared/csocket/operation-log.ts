@@ -1,40 +1,33 @@
 /**
- * 操作日志与报警记录：C++ 负责写入、存储、查询；界面只读，界面侧事件通过 Log|write 交给 C++ 写。
- * 日志按工程独立：打开工程开始记录，关闭工程结束。接口说明见 docs/cpp-operation-log-api.md
+ * 操作日志与报警记录：C++ 写入当前工程目录下的 SQLite（log.db），界面直接读库查询；
+ * 界面侧事件通过 Log|write 交给 C++ 写。日志按工程独立。表结构见 docs/cpp-operation-log-api.md
  */
 
-/** 记录类别：操作 / 报警 / 系统（状态变化、内部细节） */
-export type LogCategory = 'operation' | 'alarm' | 'system'
+/** 记录类别：操作（只存库，不查不显示）/ 操作回码 / 报警 / 系统 */
+export type LogCategory = 'operation' | 'optCall' | 'alarm' | 'system'
+
+/** 界面查询和显示的类别 */
+export type VisibleLogCategory = Exclude<LogCategory, 'operation'>
+
+export const VISIBLE_LOG_CATEGORIES: VisibleLogCategory[] = ['optCall', 'alarm', 'system']
 
 /** 日志级别；debug 为用户无感的内部细节，默认隐藏 */
 export type LogLevel = 'debug' | 'info' | 'warning' | 'error'
 
-/** 操作分组：配置操作 / 设备操作 / 设备调试 */
-export type LogOpGroup = 'config' | 'device' | 'debug'
+/** 操作分组：配置操作 / 设备操作 */
+export type LogOpGroup = 'config' | 'device'
 
-/** 报警级别：1 一般 2 严重 3 紧急 */
-export type AlarmLevel = 1 | 2 | 3
+export const LOG_OP_GROUPS: LogOpGroup[] = ['config', 'device']
 
-/** 设备类型：主控 / 电机（轴） / 物体（模型），与 Info|plc / Info|axis / Info|model 对应 */
-export type LogDeviceType = 'plc' | 'axis' | 'model'
+/** 操作结果：0 失败 1 成功 2 超时 */
+export type LogResult = 0 | 1 | 2
 
-export type LogDeviceRef = {
-  deviceType: LogDeviceType
-  deviceId: number
-}
-
-/** 日志里涉及的设备；一条操作可以涉及多台 */
-export type LogDevice = LogDeviceRef & {
-  /** 记录当时的设备名，设备删除后仍可显示 */
-  deviceName: string
-  /** 多设备操作时该设备的执行结果；缺省看整体 result */
-  ok?: boolean
-}
+export const LOG_RESULT = { failed: 0, ok: 1, timeout: 2 } as const
 
 export type LogTimeRange = { start: number; end: number }
 
 export type LogRecord = {
-  /** 全局唯一，字符串 */
+  /** 库里的自增 id，转成字符串 */
   id: string
   /** 毫秒时间戳 */
   timestamp: number
@@ -42,34 +35,26 @@ export type LogRecord = {
   level: LogLevel
   /** 展示文案（报警时为报警描述），C++ 拼好 */
   message: string
-  /** 操作人；操作类必填 */
+  /** 操作人（操作回码填） */
   user?: string
-  devices?: LogDevice[]
-  /** 操作类必填 */
+  /** 操作分组（操作回码填） */
   opGroup?: LogOpGroup
-  /** 操作类型编码（操作类必填），取值见 Log|filterOptions.opTypes */
+  /** 操作类型编码（操作回码填），显示名见 OP_TYPE_LABELS */
   opType?: string
-  /** 操作结果（操作类必填） */
-  result?: { ok: boolean; message?: string }
-  /** 报警类必填 */
-  alarmLevel?: AlarmLevel
-  alarmCode?: number
-  /** raised 报警发生 / cleared 报警清除 */
-  alarmState?: 'raised' | 'cleared'
-  /** 报警发生时写入的状态快照覆盖的时间段（报警前 10s ~ 后 5s）；无快照则缺省 */
-  snapshotRange?: LogTimeRange
+  /** 操作结果（操作回码填） */
+  result?: LogResult
 }
 
-/** Log|query：多维筛选；数组为空或缺省表示不限 */
+/** 日志查询：多维筛选；数组为空或缺省表示不限 */
 export type LogQueryParams = {
   startTime?: number
   endTime?: number
-  categories?: LogCategory[]
+  /** 缺省为全部可见类别；operation 永远不查 */
+  categories?: VisibleLogCategory[]
+  /** users / opGroups / opTypes 只约束操作回码 */
   users?: string[]
-  devices?: LogDeviceRef[]
   opGroups?: LogOpGroup[]
   opTypes?: string[]
-  alarmLevels?: AlarmLevel[]
   logLevels?: LogLevel[]
   /** 时间排序，offset/limit 按此顺序取；缺省 asc。desc = 先取最新的 */
   order?: 'asc' | 'desc'
@@ -77,7 +62,6 @@ export type LogQueryParams = {
   limit?: number
 }
 
-/** Log|query 返回 data[0] */
 export type LogQueryPage = {
   /** 满足条件的总条数（不受 offset/limit 影响） */
   total: number
@@ -85,20 +69,16 @@ export type LogQueryPage = {
   records: LogRecord[]
 }
 
-export type LogDeviceOption = LogDeviceRef & { deviceName: string }
-
 export type LogOpTypeOption = { group: LogOpGroup; code: string; label: string }
 
-/** Log|filterOptions 返回 data[0]：当前工程日志里实际出现过的取值 */
+/** 筛选项：当前工程日志里实际出现过的取值 */
 export type LogFilterOptions = {
   users: string[]
-  devices: LogDeviceOption[]
   opTypes: LogOpTypeOption[]
-  /** 最早 / 最晚一条记录的时间；无记录为 null */
+  /** 最早 / 最晚一条可见记录的时间；无记录为 null */
   timeRange: LogTimeRange | null
 }
 
-/** Log|alarmReview */
 export type LogAlarmReviewParams = {
   alarmId: string
 }
@@ -106,7 +86,9 @@ export type LogAlarmReviewParams = {
 /** 快照采样点；没有的量缺省 */
 export type LogSnapshotPoint = {
   t: number
+  /** mm */
   position?: number
+  /** mm/s */
   speed?: number
   /** 额定转矩的百分比 */
   torque?: number
@@ -114,55 +96,74 @@ export type LogSnapshotPoint = {
   temperature?: number
 }
 
-/** 直线轴位置 mm、速度 mm/s；旋转轴 ° 和 °/s */
-export type LogPositionUnit = 'mm' | '°'
-
-/** 一台设备在快照时间段内的状态曲线 */
-export type LogSnapshotSeries = LogDeviceRef & {
-  deviceName: string
-  /** 缺省 mm */
-  unit?: LogPositionUnit
+/** 一台电机（轴）在快照时间段内的状态曲线 */
+export type LogSnapshotSeries = {
+  deviceId: number
   /** 时间升序 */
   points: LogSnapshotPoint[]
 }
 
-/** Log|alarmReview 返回 data[0] */
+/** 报警回看：时间段固定为报警前 10s ~ 后 5s（alarmSnapshotWindow） */
 export type LogAlarmReview = {
   alarm: LogRecord
-  /** 快照时间段：报警前 10s ~ 报警后 5s */
-  range: LogTimeRange
-  /** range 内的操作 / 报警 / 系统记录，时间升序，含 alarm 本身 */
+  /** 时间段内的操作回码 / 报警 / 系统记录（含 debug），时间升序，含 alarm 本身 */
   records: LogRecord[]
-  /** 报警写入的状态快照；报警后 5s 尚未写完时可能不完整 */
+  /** 按电机 id 升序；报警后 5s 尚未写完时可能不完整 */
   snapshot: LogSnapshotSeries[]
 }
 
 /** Log|write：界面侧事件（如保存工程）交给 C++ 写入；id、user 由 C++ 填 */
 export type LogWriteParams = {
-  category: 'operation' | 'system'
+  category: 'optCall' | 'system'
   level: LogLevel
   message: string
   opGroup?: LogOpGroup
   opType?: string
-  devices?: LogDevice[]
-  result?: { ok: boolean; message?: string }
+  result?: LogResult
   /** 事件发生时间，缺省为 C++ 收到时间 */
   timestamp?: number
 }
 
+/** 操作类型显示名；库里只存编码，没列出的编码按原样显示 */
+export const OP_TYPE_LABELS: Readonly<Record<string, string>> = {
+  saveProject: '保存工程',
+  saveProjectAs: '工程另存为',
+  downloadProject: '下载工程',
+  couple: '耦合 / 解耦',
+  enable: '使能 / 禁用',
+  jog: '点动',
+  moveTarget: '启动（目标位置）',
+  stop: '停止',
+  eStop: '急停',
+  sequence: '执行动作序列',
+  setOrigin: '设定原点',
+  ruleEdit: '规则引擎修改',
+}
+
+export const opTypeLabel = (code: string): string => OP_TYPE_LABELS[code] ?? code
+
 /** 控制页日志列表条数 */
 export const RECENT_LOG_LIMIT = 30
 
-/** 报警快照：前 10s + 后 5s（C++ 环形缓冲区决定，前端仅在缺 snapshotRange 时兜底） */
+/** 报警快照：固定为报警前 10s + 后 5s */
 export const ALARM_SNAPSHOT_BEFORE_MS = 10_000
 export const ALARM_SNAPSHOT_AFTER_MS = 5_000
+
+export const alarmSnapshotWindow = (alarmTime: number): LogTimeRange => ({
+  start: alarmTime - ALARM_SNAPSHOT_BEFORE_MS,
+  end: alarmTime + ALARM_SNAPSHOT_AFTER_MS,
+})
 
 /** 默认显示的日志级别（不含 debug） */
 export const VISIBLE_LOG_LEVELS: LogLevel[] = ['info', 'warning', 'error']
 
-export const deviceKey = (ref: LogDeviceRef): string => `${ref.deviceType}:${ref.deviceId}`
+/** 快照曲线的键 */
+export const deviceKey = (series: Pick<LogSnapshotSeries, 'deviceId'>): string => String(series.deviceId)
 
-/** 合并推送的记录：去重、去 debug、按时间升序、只保留最新 limit 条 */
+/** 快照里只有电机 id */
+export const motorLabel = (deviceId: number): string => `电机 ${deviceId}`
+
+/** 合并推送的记录：去重、去 debug 和 operation、按时间升序、只保留最新 limit 条 */
 export const mergeRecentLogs = (
   current: readonly LogRecord[],
   incoming: readonly LogRecord[],
@@ -171,7 +172,7 @@ export const mergeRecentLogs = (
   const byId = new Map<string, LogRecord>()
   for (const record of current) byId.set(record.id, record)
   for (const record of incoming) {
-    if (record.level === 'debug') continue
+    if (record.level === 'debug' || record.category === 'operation') continue
     byId.set(record.id, record)
   }
   return [...byId.values()]

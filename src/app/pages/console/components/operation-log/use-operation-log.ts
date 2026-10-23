@@ -9,7 +9,7 @@ import { filtersToQuery, type LogFilters, type LogPage } from "./log-filters";
 
 const getCsocketApi = () => (typeof window !== "undefined" ? window.csocketApi : undefined);
 
-const unavailable = () => new Error("C++ 服务不可用");
+const unavailable = () => new Error("日志服务不可用");
 
 const unwrapAck = <T>(ack: CppAckResult<T> | undefined, fallback: string): T[] => {
   if (!ack) throw unavailable();

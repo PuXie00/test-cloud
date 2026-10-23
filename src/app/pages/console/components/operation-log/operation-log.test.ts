@@ -8,7 +8,8 @@ import {
   pageCount,
   parsePageSize,
 } from "./log-filters";
-import { formatRelativeSeconds } from "./log-display";
+import { formatRelativeSeconds, isFailedOperation, logBadge, resultText } from "./log-display";
+import { markerVisual } from "./log-timeline";
 import { sampleAt } from "./snapshot-table";
 import {
   buildTicks,
@@ -20,7 +21,7 @@ import {
 } from "./timeline-scale";
 
 const record = (overrides: Partial<LogRecord> & { id: string; timestamp: number }): LogRecord => ({
-  category: "operation",
+  category: "optCall",
   level: "info",
   message: overrides.id,
   ...overrides,
@@ -70,10 +71,11 @@ describe("filtersToQuery", () => {
   });
 
   it("maps an op-type filter to its group and code", () => {
-    expect(filtersToQuery({ ...DEFAULT_LOG_FILTERS, opType: "debug" }, 0)).toMatchObject({
-      opGroups: ["debug"],
+    expect(filtersToQuery({ ...DEFAULT_LOG_FILTERS, opType: "config" }, 0)).toMatchObject({
+      opGroups: ["config"],
     });
-    expect(filtersToQuery({ ...DEFAULT_LOG_FILTERS, opType: "debug" }, 0).opTypes).toBeUndefined();
+    expect(filtersToQuery({ ...DEFAULT_LOG_FILTERS, opType: "config" }, 0).opTypes).toBeUndefined();
+    expect(filtersToQuery({ ...DEFAULT_LOG_FILTERS, opType: "debug:jog" }, 0).opGroups).toBeUndefined();
     expect(filtersToQuery({ ...DEFAULT_LOG_FILTERS, opType: "device:jog" }, 0)).toMatchObject({
       opGroups: ["device"],
       opTypes: ["jog"],
@@ -87,9 +89,7 @@ describe("filtersToQuery", () => {
         timePreset: "15m",
         categories: ["alarm"],
         user: "管理员",
-        device: "axis:3",
         opType: "device:jog",
-        alarmLevel: "2",
         logLevel: "error",
       },
       1_000_000,
@@ -99,55 +99,74 @@ describe("filtersToQuery", () => {
       endTime: 1_000_000,
       categories: ["alarm"],
       users: ["管理员"],
-      devices: [{ deviceType: "axis", deviceId: 3 }],
       opGroups: ["device"],
       opTypes: ["jog"],
-      alarmLevels: [2],
       logLevels: ["error"],
     });
   });
 });
 
-describe("alarm review helpers", () => {
-  it("uses the snapshot range, falling back to 10s before and 5s after", () => {
-    expect(alarmReviewWindow({ timestamp: 20_000 })).toEqual({ start: 10_000, end: 25_000 });
-    expect(
-      alarmReviewWindow({ timestamp: 20_000, snapshotRange: { start: 12_000, end: 24_000 } }),
-    ).toEqual({ start: 12_000, end: 24_000 });
+describe("op call results", () => {
+  it("shows success, failure and timeout, and flags the last two", () => {
+    expect(resultText(record({ id: "ok", timestamp: 0, result: 1 }))).toBe("成功");
+    expect(resultText(record({ id: "fail", timestamp: 0, result: 0 }))).toBe("失败");
+    expect(resultText(record({ id: "late", timestamp: 0, result: 2 }))).toBe("超时");
+    expect(resultText(record({ id: "none", timestamp: 0 }))).toBeNull();
+    expect(resultText(record({ id: "sys", timestamp: 0, category: "system", result: 1 }))).toBeNull();
+    expect(isFailedOperation(record({ id: "ok", timestamp: 0, result: 1 }))).toBe(false);
+    expect(isFailedOperation(record({ id: "fail", timestamp: 0, result: 0 }))).toBe(true);
+    expect(isFailedOperation(record({ id: "late", timestamp: 0, result: 2 }))).toBe(true);
   });
 
-  it("picks the alarm device first, then operated devices, only from the snapshot", () => {
-    const alarm = record({
-      id: "a",
-      timestamp: 10_000,
-      category: "alarm",
-      alarmState: "raised",
-      devices: [{ deviceType: "axis", deviceId: 1, deviceName: "a1" }],
-    });
-    const series = (deviceType: "axis" | "model", deviceId: number) => ({
-      deviceType,
-      deviceId,
-      deviceName: `${deviceType}${deviceId}`,
-      points: [],
-    });
+  it("labels the badge by category only, whatever the group or level", () => {
+    const labels = [
+      record({ id: "c", timestamp: 0, opGroup: "config" }),
+      record({ id: "d", timestamp: 0, opGroup: "device", result: 0 }),
+      record({ id: "a", timestamp: 0, category: "alarm", level: "error" }),
+      record({ id: "s", timestamp: 0, category: "system", level: "info" }),
+      record({ id: "w", timestamp: 0, category: "system", level: "warning" }),
+      record({ id: "e", timestamp: 0, category: "system", level: "error" }),
+    ].map((r) => logBadge(r).label);
+    expect(labels).toEqual(["操作", "操作", "报警", "系统", "系统", "系统"]);
+  });
+
+  it("colours the badge by log level only", () => {
+    const optCall = (level: LogRecord["level"]) => logBadge(record({ id: level, timestamp: 0, level, result: 0 }));
+    expect(optCall("info").className).toContain("text-muted-foreground");
+    expect(optCall("warning").className).toContain("text-warning");
+    expect(optCall("error").className).toContain("text-destructive");
+    expect(logBadge(record({ id: "w", timestamp: 0, category: "system", level: "warning" })).className).toBe(
+      optCall("warning").className,
+    );
+  });
+});
+
+describe("timeline markers", () => {
+  it("colour by log level only, like the category badge", () => {
+    const failed = record({ id: "f", timestamp: 0, level: "info", result: 0 });
+    expect(markerVisual(failed)).toContain("bg-muted-foreground");
+    expect(markerVisual(failed)).not.toContain("bg-destructive");
+    expect(markerVisual(record({ id: "w", timestamp: 0, level: "warning" }))).toContain("bg-warning");
+    expect(markerVisual(record({ id: "a", timestamp: 0, category: "alarm", level: "error" }))).toContain("bg-destructive");
+    expect(markerVisual(record({ id: "s", timestamp: 0, category: "system", level: "warning" }))).toContain("bg-warning");
+  });
+});
+
+describe("alarm review helpers", () => {
+  it("always reviews 10s before and 5s after the alarm", () => {
+    expect(alarmReviewWindow({ timestamp: 20_000 })).toEqual({ start: 10_000, end: 25_000 });
+  });
+
+  it("draws the motors with the lowest ids by default", () => {
+    const alarm = record({ id: "a", timestamp: 10_000, category: "alarm", level: "error" });
+    const series = (deviceId: number) => ({ deviceId, points: [] });
     const review: LogAlarmReview = {
       alarm,
-      range: { start: 0, end: 15_000 },
-      snapshot: [series("model", 9), series("model", 7), series("axis", 1)],
-      records: [
-        record({
-          id: "o1",
-          timestamp: 5_000,
-          devices: [
-            { deviceType: "model", deviceId: 7, deviceName: "m7" },
-            { deviceType: "plc", deviceId: 1, deviceName: "plc" },
-          ],
-        }),
-        alarm,
-        record({ id: "o3", timestamp: 12_000, devices: [{ deviceType: "model", deviceId: 9, deviceName: "m9" }] }),
-      ],
+      records: [alarm],
+      snapshot: [series(9), series(2), series(7), series(4)],
     };
-    expect(pickTrendDevices(review)).toEqual(["axis:1", "model:7"]);
+    expect(pickTrendDevices(review)).toEqual(["2", "4", "7"]);
+    expect(pickTrendDevices({ ...review, snapshot: [] })).toEqual([]);
   });
 
   it("samples the latest point at or before a time", () => {

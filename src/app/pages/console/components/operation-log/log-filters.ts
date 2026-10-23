@@ -1,12 +1,10 @@
 import {
+  LOG_OP_GROUPS,
   VISIBLE_LOG_LEVELS,
-  type AlarmLevel,
-  type LogCategory,
-  type LogDeviceRef,
-  type LogDeviceType,
   type LogLevel,
   type LogOpGroup,
   type LogQueryParams,
+  type VisibleLogCategory,
 } from "@shared/csocket/operation-log";
 import { ALL_CATEGORIES } from "./log-display";
 
@@ -17,14 +15,11 @@ export type LogFilters = {
   /** datetime-local 输入值，仅 custom 生效 */
   customStart: string;
   customEnd: string;
-  categories: LogCategory[];
+  categories: VisibleLogCategory[];
   /** 空串 = 全部 */
   user: string;
-  /** deviceKey，空串 = 全部 */
-  device: string;
   /** 空串 = 全部；"device" = 整个分组；"device:jog" = 分组内某个操作类型 */
   opType: string;
-  alarmLevel: "" | `${AlarmLevel}`;
   /** 空串 = 默认（不含调试）；all = 含调试的全部 */
   logLevel: "" | LogLevel | "all";
 };
@@ -80,14 +75,11 @@ export const DEFAULT_LOG_FILTERS: LogFilters = {
   customEnd: "",
   categories: ALL_CATEGORIES,
   user: "",
-  device: "",
   opType: "",
-  alarmLevel: "",
   logLevel: "",
 };
 
-const DEVICE_TYPES = new Set<LogDeviceType>(["plc", "axis", "model"]);
-const OP_GROUPS = new Set<LogOpGroup>(["config", "device", "debug"]);
+const OP_GROUPS = new Set<LogOpGroup>(LOG_OP_GROUPS);
 
 export const opTypeKey = (group: LogOpGroup, code: string): string => `${group}:${code}`;
 
@@ -105,13 +97,6 @@ const toLogLevels = (logLevel: LogFilters["logLevel"]): LogLevel[] | undefined =
   if (logLevel === "all") return undefined;
   if (logLevel === "") return VISIBLE_LOG_LEVELS;
   return [logLevel];
-};
-
-export const parseDeviceKey = (key: string): LogDeviceRef | null => {
-  const [type, id] = key.split(":");
-  const deviceId = Number(id);
-  if (!DEVICE_TYPES.has(type as LogDeviceType) || !Number.isFinite(deviceId)) return null;
-  return { deviceType: type as LogDeviceType, deviceId };
 };
 
 /** datetime-local 值按本地时间解析 */
@@ -152,7 +137,6 @@ export const filtersToQuery = (
   page: LogPage = { index: 0, size: DEFAULT_PAGE_SIZE },
 ): LogQueryParams => {
   const { startTime, endTime } = resolveTimeRange(filters, now);
-  const device = filters.device ? parseDeviceKey(filters.device) : null;
   const opType = filters.opType ? parseOpTypeFilter(filters.opType) : null;
   const logLevels = toLogLevels(filters.logLevel);
   return {
@@ -162,10 +146,8 @@ export const filtersToQuery = (
       ? { categories: filters.categories }
       : {}),
     ...(filters.user ? { users: [filters.user] } : {}),
-    ...(device ? { devices: [device] } : {}),
     ...(opType ? { opGroups: [opType.group] } : {}),
     ...(opType?.code ? { opTypes: [opType.code] } : {}),
-    ...(filters.alarmLevel ? { alarmLevels: [Number(filters.alarmLevel) as AlarmLevel] } : {}),
     ...(logLevels ? { logLevels } : {}),
     order: "desc",
     offset: Math.max(0, page.index) * page.size,
@@ -177,7 +159,5 @@ export const isDefaultFilters = (filters: LogFilters): boolean =>
   filters.timePreset === "all" &&
   filters.categories.length === ALL_CATEGORIES.length &&
   !filters.user &&
-  !filters.device &&
   !filters.opType &&
-  !filters.alarmLevel &&
   !filters.logLevel;
