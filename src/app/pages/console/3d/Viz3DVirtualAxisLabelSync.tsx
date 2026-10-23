@@ -13,10 +13,12 @@ import { collectActionPageDriveUnitLabels } from "./action-page-drive-unit-label
 import { resolveMemberObjectIds } from "./membership-dim";
 import { useActionPreviewPoses } from "./use-action-preview-poses";
 import { useViz3DContext } from "./Viz3DProvider";
+import { useViz3DReadyVersion } from "./use-viz3d-ready-version";
 import { resolveVirtualAxisLabelValues } from "./virtual-axis-label-values";
 
 export const Viz3DVirtualAxisLabelSync = () => {
   const engine = useViz3DContext();
+  const engineReadyVersion = useViz3DReadyVersion(engine);
   const { activeNav } = useConsoleNav();
   const { dockMode, sequence } = useActionBuilder();
   const { snapshots } = useControlledObjects();
@@ -92,7 +94,17 @@ export const Viz3DVirtualAxisLabelSync = () => {
       next.set(id, text || null);
     }
     applyLabels(next);
-  }, [engine, activeNav, snapshots, objects, display, poses, memberIds, controlPreviewPoses]);
+  }, [
+    engine,
+    engineReadyVersion,
+    activeNav,
+    snapshots,
+    objects,
+    display,
+    poses,
+    memberIds,
+    controlPreviewPoses,
+  ]);
 
   useEffect(() => {
     return () => {

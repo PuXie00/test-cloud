@@ -10,6 +10,7 @@ import { useControlledObjects } from "../hooks/use-controlled-objects";
 import { useProjectStore } from "../hooks/use-project-store";
 import { useViz3DContext } from "./Viz3DProvider";
 import { selectSnapshotsForTelemetryApply } from "./telemetry-sync-select";
+import { useViz3DReadyVersion } from "./use-viz3d-ready-version";
 
 const STATUS_MAP: Record<ControlledObjectStatus, SceneObjectStatus> = {
   ready: "ready",
@@ -29,6 +30,7 @@ const DEVICE_TYPE_MAP: Record<ControlledObjectType, TelemetryDeviceType> = {
 
 export const Viz3DTelemetrySync = () => {
   const engine = useViz3DContext();
+  const engineReadyVersion = useViz3DReadyVersion(engine);
   const { objects } = useProjectStore();
   const { snapshots } = useControlledObjects();
   const { activeNav } = useConsoleNav();
@@ -107,7 +109,16 @@ export const Viz3DTelemetrySync = () => {
     }
 
     if (inputs.length > 0) engine.applyTelemetry(inputs);
-  }, [engine, snapshots, mode, engineSelection, activeNav, virtualAxisObjectIds, previewSkipIds]);
+  }, [
+    engine,
+    engineReadyVersion,
+    snapshots,
+    mode,
+    engineSelection,
+    activeNav,
+    virtualAxisObjectIds,
+    previewSkipIds,
+  ]);
 
   return null;
 };
