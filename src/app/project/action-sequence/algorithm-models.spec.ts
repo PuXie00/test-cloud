@@ -59,7 +59,7 @@ describe("buildAlgorithmModels", () => {
     expect(models[2]).toMatchObject({
       max_velocity_HPY: [500, 3, 3],
       max_acceleration_HPY: [500, 3, 3],
-      max_motor_velocity: 500,
+      max_motor_velocity: 475,
     });
   });
 

@@ -8,8 +8,8 @@ const telemetry = new Map(
 );
 
 /**
- * 期望值：把 buildAlgorithmModels 对夹具生成的 models / runtime 交给
- * python/就近计算/就近接入计算.py（停稳同步准备）计算得到。
+ * 期望值：停稳同步准备在默认速度下的结果。
+ * planNearestStart 会把 max_velocity_HPY 换成 default_velocity_HPY 再交给算法。
  */
 const plan = (options: { forced: boolean; nearest: boolean; reverse: boolean; loop?: boolean }) =>
   planNearestStart({
@@ -33,15 +33,15 @@ describe("planNearestStart", () => {
   it.each([true, false])("brings every member to the first frame together (forced=%s)", (forced) => {
     const result = plan({ forced, nearest: false, reverse: false });
     expect(result).toMatchObject({ forced, nearest: false, direction: 1, startMode: "boundary", targetFrameMs: 0 });
-    expect(result.transitionSec).toBeCloseTo(1.632993161855452, 12);
-    expect(result.prepareTimeMs).toBe(1633);
+    expect(result.transitionSec).toBeCloseTo(2.5, 12);
+    expect(result.prepareTimeMs).toBe(2500);
     expect(result.loopCount).toBe(1);
     expect(result.motorLimitScale).toBe(1);
     expect(moveOf(result, 1, "v1")).toMatchObject({ from: 120, to: 0 });
-    expect(moveOf(result, 1, "v1")!.velocity).toBeCloseTo(146.96938456699073, 9);
-    expect(moveOf(result, 1, "v1")!.acceleration).toBeCloseTo(180.00000000000006, 9);
-    expect(moveOf(result, 2, "v2")!.velocity).toBeCloseTo(2.449489742783178, 12);
-    expect(moveOf(result, 4, "v3")!.acceleration).toBeCloseTo(1.5000000000000002, 12);
+    expect(moveOf(result, 1, "v1")!.velocity).toBeCloseTo(50, 9);
+    expect(moveOf(result, 1, "v1")!.acceleration).toBeCloseTo(500, 9);
+    expect(moveOf(result, 2, "v2")!.velocity).toBeCloseTo(1.3333333333333333, 12);
+    expect(moveOf(result, 4, "v3")!.acceleration).toBeCloseTo(0.64, 12);
     for (const member of result.members) {
       expect(member.arrivalSec).toBeCloseTo(result.transitionSec, 12);
       expect(member.waitSec).toBe(0);
@@ -49,35 +49,35 @@ describe("planNearestStart", () => {
     }
   });
 
-  it("slows every member by the same motor factor from the last frame", () => {
+  it("joins the last frame at the default speed cap", () => {
     const result = plan({ forced: true, nearest: false, reverse: true });
     expect(result.targetFrameMs).toBe(16000);
     expect(result.direction).toBe(-1);
-    expect(result.transitionSec).toBeCloseTo(11.47397093906666, 11);
-    expect(result.prepareTimeMs).toBe(11474);
-    expect(result.motorLimitScale).toBeCloseTo(0.5519739736981166, 12);
+    expect(result.transitionSec).toBeCloseTo(24.5, 11);
+    expect(result.prepareTimeMs).toBe(24501);
+    expect(result.motorLimitScale).toBe(1);
     expect(memberOf(result, 4).target.v1).toBeCloseTo(2300, 9);
     expect(memberOf(result, 4).target.v3).toBeCloseTo(15, 9);
-    expect(moveOf(result, 4, "v1")!.velocity).toBeCloseTo(149.904510751699, 9);
+    expect(moveOf(result, 4, "v1")!.velocity).toBeCloseTo(50, 9);
   });
 
   it("searches the nearest forced frame at 100ms then 10ms", () => {
     const result = plan({ forced: true, nearest: true, reverse: false });
     expect(result.startMode).toBe("nearest");
-    expect(result.targetFrameMs).toBe(1350);
-    expect(result.transitionSec).toBeCloseTo(0.7745966692414834, 12);
-    expect(memberOf(result, 1).target.v1).toBeCloseTo(148.4375, 9);
-    expect(memberOf(result, 4).target.v3).toBeCloseTo(-1.162308673469388, 9);
-    expect(moveOf(result, 3, "v1")!.acceleration).toBeCloseTo(500, 9);
+    expect(result.targetFrameMs).toBe(1040);
+    expect(result.transitionSec).toBeCloseTo(1.189459883650901, 12);
+    expect(memberOf(result, 1).target.v1).toBeCloseTo(100, 9);
+    expect(memberOf(result, 4).target.v3).toBeCloseTo(-0.689795918367347, 9);
+    expect(moveOf(result, 3, "v1")!.acceleration).toBeCloseTo(128.16928446771354, 9);
   });
 
   it("takes the nearest shared keyframe in the running direction when not forced", () => {
     const result = plan({ forced: false, nearest: true, reverse: false });
     expect(result.targetFrameMs).toBe(4000);
-    expect(result.transitionSec).toBeCloseTo(4.853576341631632, 11);
-    expect(result.motorLimitScale).toBeCloseTo(0.5551461962868086, 12);
+    expect(result.transitionSec).toBeCloseTo(10.43333333333333, 11);
+    expect(result.motorLimitScale).toBe(1);
     expect(memberOf(result, 2).target.v1).toBeCloseTo(1566.6666666666665, 9);
-    expect(moveOf(result, 3, "v2")!.velocity).toBeCloseTo(1.5795912389191669, 12);
+    expect(moveOf(result, 3, "v2")!.velocity).toBeCloseTo(0.575079872204473, 12);
     expect(plan({ forced: false, nearest: true, reverse: true }).targetFrameMs).toBe(0);
   });
 

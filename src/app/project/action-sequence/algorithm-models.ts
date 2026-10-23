@@ -122,6 +122,11 @@ const defaultVadFor = (
   ];
 };
 
+/** 实轴限速留 5% 余量，向下取整，不贴着电机最大速度规划 */
+const MOTOR_VELOCITY_MARGIN = 0.95;
+
+const deratedMotorVelocity = (value: number): number => Math.floor(value * MOTOR_VELOCITY_MARGIN);
+
 /** 吊点电机的最大速度取各电机最小值；没有绑定电机时用物体配置 */
 const maxMotorVelocityFor = (
   object: ControlledObjectConfig,
@@ -134,8 +139,8 @@ const maxMotorVelocityFor = (
     if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) continue;
     min = min === undefined ? value : Math.min(min, value);
   }
-  if (min !== undefined) return min;
-  return object.maxAxisVelocity > 0 ? object.maxAxisVelocity : 0;
+  const limit = min ?? (object.maxAxisVelocity > 0 ? object.maxAxisVelocity : 0);
+  return limit > 0 ? deratedMotorVelocity(limit) : 0;
 };
 
 const baseHeights = (object: ControlledObjectConfig): [number, number] =>

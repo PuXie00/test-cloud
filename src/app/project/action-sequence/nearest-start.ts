@@ -14,6 +14,7 @@ import type { ModelPose } from "./types";
 /**
  * 启动接入：按 python/就近计算 的新就近算法（强制 / 非强制都走停稳同步准备）
  * 选出接入帧，并算出各成员同时到达所需的 V/A/D 与共同准备时间。
+ * 准备速度上限用物体默认速度：算法读 max_velocity_HPY，只在传入前替换。
  */
 
 export type { AxisVad } from "./nearest-start-motion";
@@ -133,6 +134,10 @@ export const planNearestStart = (input: NearestStartInput): NearestStartPlan => 
       members: [],
     };
   }
+  const modelsAtDefaultSpeed = models.map((model) => {
+    const [h, p, y] = model.default_velocity_HPY;
+    return { ...model, max_velocity_HPY: [h, p, y] satisfies Hpy };
+  });
   const result = calculateNearestEntry({
     command: {
       trajectory_run: input.forced,
@@ -142,7 +147,7 @@ export const planNearestStart = (input: NearestStartInput): NearestStartPlan => 
       loop_count: input.loopCount,
     },
     settings: ALGORITHM_SETTINGS,
-    models,
+    models: modelsAtDefaultSpeed,
     runtime: { models: runtime },
   });
   const plan = toNearestStartPlan(result, input);
