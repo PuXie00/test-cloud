@@ -12,12 +12,12 @@ let total = 120;
 const recordAt = (n: number): LogRecord => ({
   id: `r-${n}`,
   timestamp: 10_000_000 - n * 1000,
-  category: "operation",
+  category: "optCall",
   level: "info",
   message: `记录 ${n}`,
   opGroup: "device",
   opType: "jog",
-  result: { ok: true },
+  result: 1,
 });
 
 const logQuery = vi.fn(async ([params]: LogQueryParams[]) => {
@@ -47,7 +47,7 @@ beforeEach(() => {
     logQuery,
     logFilterOptions: async () => ({
       success: true,
-      data: [{ users: [], devices: [], opTypes: [], timeRange: null }],
+      data: [{ users: [], opTypes: [], timeRange: null }],
     }),
     logAlarmReview: vi.fn(),
   };

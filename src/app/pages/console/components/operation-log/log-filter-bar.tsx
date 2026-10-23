@@ -1,14 +1,12 @@
 import { RotateCcw } from "lucide-react";
 import { memo, type ReactNode } from "react";
 import {
-  deviceKey,
-  type LogCategory,
+  LOG_OP_GROUPS,
   type LogFilterOptions,
-  type LogOpGroup,
+  type VisibleLogCategory,
 } from "@shared/csocket/operation-log";
 import { cn } from "@/app/components/ui/utils";
 import {
-  ALARM_LEVEL_LABEL,
   ALL_CATEGORIES,
   CATEGORY_LABEL,
   LOG_LEVEL_LABEL,
@@ -22,8 +20,6 @@ import {
   type LogFilters,
   type TimePreset,
 } from "./log-filters";
-
-const OP_GROUPS: LogOpGroup[] = ["config", "device", "debug"];
 
 const SELECT_CLASS =
   "h-7 min-w-0 rounded-sm border border-border bg-input-background px-2 text-body-sm text-foreground";
@@ -64,7 +60,7 @@ type LogFilterBarProps = {
 export const LogFilterBar = memo(({ filters, onChange, options }: LogFilterBarProps) => {
   const patch = (next: Partial<LogFilters>) => onChange({ ...filters, ...next });
 
-  const toggleCategory = (category: LogCategory) => {
+  const toggleCategory = (category: VisibleLogCategory) => {
     const has = filters.categories.includes(category);
     if (has && filters.categories.length === 1) return;
     patch({
@@ -138,17 +134,8 @@ export const LogFilterBar = memo(({ filters, onChange, options }: LogFilterBarPr
         onChange={(user) => patch({ user })}
         options={(options?.users ?? []).map((user) => ({ value: user, label: user }))}
       />
-      <FilterSelect
-        label="设备"
-        value={filters.device}
-        onChange={(device) => patch({ device })}
-        options={(options?.devices ?? []).map((device) => ({
-          value: deviceKey(device),
-          label: device.deviceName,
-        }))}
-      />
       <FilterSelect label="操作类型" value={filters.opType} onChange={(opType) => patch({ opType })}>
-        {OP_GROUPS.map((group) => (
+        {LOG_OP_GROUPS.map((group) => (
           <optgroup key={group} label={OP_GROUP_LABEL[group]}>
             <option value={group}>{`全部${OP_GROUP_LABEL[group]}`}</option>
             {(options?.opTypes ?? [])
@@ -161,15 +148,6 @@ export const LogFilterBar = memo(({ filters, onChange, options }: LogFilterBarPr
           </optgroup>
         ))}
       </FilterSelect>
-      <FilterSelect
-        label="报警级别"
-        value={filters.alarmLevel}
-        onChange={(alarmLevel) => patch({ alarmLevel: alarmLevel as LogFilters["alarmLevel"] })}
-        options={([1, 2, 3] as const).map((level) => ({
-          value: String(level),
-          label: ALARM_LEVEL_LABEL[level],
-        }))}
-      />
       <FilterSelect
         label="日志级别"
         allLabel="日志级别：全部（不含调试）"

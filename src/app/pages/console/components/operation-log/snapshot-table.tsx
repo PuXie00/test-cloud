@@ -1,9 +1,9 @@
 import {
   deviceKey,
+  motorLabel,
   type LogSnapshotPoint,
   type LogSnapshotSeries,
 } from "@shared/csocket/operation-log";
-import { cn } from "@/app/components/ui/utils";
 import { formatLengthFamily } from "@/app/project/display-length-units";
 import { useSessionDisplayLengthUnit } from "@/app/project/display-length-unit-provider";
 
@@ -24,11 +24,10 @@ export const sampleAt = (points: readonly LogSnapshotPoint[], t: number): LogSna
 type SnapshotTableProps = {
   snapshot: LogSnapshotSeries[];
   at: number;
-  /** 报警设备，行标红 */
-  alarmDeviceKeys: ReadonlySet<string>;
 };
 
-export const SnapshotTable = ({ snapshot, at, alarmDeviceKeys }: SnapshotTableProps) => {
+/** 快照只有电机：位置 mm、速度 mm/s */
+export const SnapshotTable = ({ snapshot, at }: SnapshotTableProps) => {
   const displayUnit = useSessionDisplayLengthUnit();
   const format = (value: number | undefined, unit: string) =>
     value == null ? "—" : formatLengthFamily(value, unit, displayUnit, { canonicalPrecision: 1 });
@@ -55,21 +54,14 @@ export const SnapshotTable = ({ snapshot, at, alarmDeviceKeys }: SnapshotTablePr
         {snapshot.map((series) => {
           const key = deviceKey(series);
           const point = sampleAt(series.points, at);
-          const unit = series.unit ?? "mm";
-          const isAlarm = alarmDeviceKeys.has(key);
           return (
-            <tr key={key} className={cn("border-t border-border/40", isAlarm && "bg-destructive/10")}>
-              <td
-                className={cn("truncate px-2 py-1", isAlarm ? "text-destructive" : "text-foreground")}
-                title={series.deviceName}
-              >
-                {series.deviceName}
+            <tr key={key} className="border-t border-border/40">
+              <td className="truncate px-2 py-1 text-foreground">{motorLabel(series.deviceId)}</td>
+              <td className="truncate px-2 py-1 text-right font-mono text-mono-sm tabular-nums">
+                {format(point?.position, "mm")}
               </td>
               <td className="truncate px-2 py-1 text-right font-mono text-mono-sm tabular-nums">
-                {format(point?.position, unit)}
-              </td>
-              <td className="truncate px-2 py-1 text-right font-mono text-mono-sm tabular-nums">
-                {format(point?.speed, `${unit}/s`)}
+                {format(point?.speed, "mm/s")}
               </td>
               <td className="truncate px-2 py-1 text-right font-mono text-mono-sm tabular-nums">
                 {point?.torque == null ? "—" : `${point.torque.toFixed(1)} %`}

@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { deviceKey, type LogRecord } from "@shared/csocket/operation-log";
+import { deviceKey, motorLabel, type LogRecord } from "@shared/csocket/operation-log";
 import { cn } from "@/app/components/ui/utils";
-import { MAX_TREND_DEVICES, pickTrendDevices } from "./alarm-review";
+import { alarmReviewWindow, MAX_TREND_DEVICES, pickTrendDevices } from "./alarm-review";
 import { LogBadge } from "./log-badge";
 import {
-  devicesText,
   formatClockMs,
   formatDateTime,
   formatRelativeSeconds,
@@ -58,20 +57,16 @@ export const AlarmReviewPanel = ({
     [review, showDebug],
   );
   const operationsBefore = records.filter(
-    (r) => r.category === "operation" && r.timestamp <= alarm.timestamp,
+    (r) => r.category === "optCall" && r.timestamp <= alarm.timestamp,
   );
   const operationOffsetsMs = useMemo(
     () =>
-      records.filter((r) => r.category === "operation").map((r) => r.timestamp - alarm.timestamp),
+      records.filter((r) => r.category === "optCall").map((r) => r.timestamp - alarm.timestamp),
     [records, alarm.timestamp],
   );
-  const alarmDeviceKeys = useMemo(
-    () => new Set((alarm.devices ?? []).map(deviceKey)),
-    [alarm.devices],
-  );
 
-  const range = review?.range;
-  const at = range && cursor != null && cursor >= range.start && cursor <= range.end ? cursor : alarm.timestamp;
+  const range = useMemo(() => alarmReviewWindow(alarm), [alarm]);
+  const at = cursor != null && cursor >= range.start && cursor <= range.end ? cursor : alarm.timestamp;
   const selectedSeries = useMemo(
     () => review?.snapshot.filter((s) => slots.includes(deviceKey(s))) ?? [],
     [review, slots],
@@ -94,11 +89,7 @@ export const AlarmReviewPanel = ({
           <LogBadge record={alarm} className="mt-0.5" />
           <p className="min-w-0 flex-1 text-body-md font-medium text-foreground">{alarm.message}</p>
         </div>
-        <p className="font-mono text-mono-sm text-muted-foreground">
-          {formatDateTime(alarm.timestamp)}
-          {alarm.alarmCode != null ? ` · 报警码 ${alarm.alarmCode}` : ""}
-          {alarm.devices?.length ? ` · ${devicesText(alarm)}` : ""}
-        </p>
+        <p className="font-mono text-mono-sm text-muted-foreground">{formatDateTime(alarm.timestamp)}</p>
       </div>
 
       {state.status === "loading" && (
@@ -106,7 +97,7 @@ export const AlarmReviewPanel = ({
       )}
       {state.status === "error" && <p className="text-body-sm text-destructive">{state.error}</p>}
 
-      {review && range && (
+      {review && (
         <>
           <Section
             title={`报警前后记录（${formatRelativeSeconds(range.start - alarm.timestamp)} ~ ${formatRelativeSeconds(range.end - alarm.timestamp)}）`}
@@ -116,7 +107,7 @@ export const AlarmReviewPanel = ({
               {records.map((record) => {
                 const isAlarm = record.id === alarm.id;
                 const isCauseCandidate =
-                  record.category === "operation" && record.timestamp <= alarm.timestamp;
+                  record.category === "optCall" && record.timestamp <= alarm.timestamp;
                 return (
                   <li key={record.id}>
                     <button
@@ -146,56 +137,62 @@ export const AlarmReviewPanel = ({
             </ol>
           </Section>
 
-          <Section title="趋势分析" hint={`转矩 / 位置 / 速度，最多 ${MAX_TREND_DEVICES} 台`}>
-            <div className="flex flex-wrap gap-1" role="group" aria-label="曲线设备">
-              {review.snapshot.map((series) => {
-                const key = deviceKey(series);
-                const selected = slots.includes(key);
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    aria-pressed={selected}
-                    disabled={!selected && slotsFull}
-                    onClick={() => toggleDevice(key)}
-                    className={cn(
-                      "inline-flex h-6 items-center gap-1.5 rounded-sm border px-1.5 text-body-sm transition-colors",
-                      selected
-                        ? "border-border bg-accent text-foreground"
-                        : "border-border/60 text-muted-foreground hover:text-foreground",
-                      "disabled:pointer-events-none disabled:opacity-40",
-                    )}
-                  >
-                    <span
-                      className="h-0.5 w-3 rounded-full"
-                      style={{ backgroundColor: selected ? colorOf(key) : "var(--border)" }}
-                      aria-hidden
-                    />
-                    {series.deviceName}
-                  </button>
-                );
-              })}
-            </div>
-            <TrendCharts
-              series={selectedSeries}
-              colorOf={colorOf}
-              alarmTime={alarm.timestamp}
-              range={range}
-              operationOffsetsMs={operationOffsetsMs}
-              cursorOffsetMs={at - alarm.timestamp}
-              onCursorChange={onCursorChange}
-            />
-          </Section>
+          {review.snapshot.length === 0 ? (
+            <p className="text-body-sm text-muted-foreground">该时段没有状态快照</p>
+          ) : (
+            <>
+              <Section title="趋势分析" hint={`转矩 / 位置 / 速度，最多 ${MAX_TREND_DEVICES} 台`}>
+                <div className="flex flex-wrap gap-1" role="group" aria-label="曲线设备">
+                  {review.snapshot.map((series) => {
+                    const key = deviceKey(series);
+                    const selected = slots.includes(key);
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        aria-pressed={selected}
+                        disabled={!selected && slotsFull}
+                        onClick={() => toggleDevice(key)}
+                        className={cn(
+                          "inline-flex h-6 items-center gap-1.5 rounded-sm border px-1.5 text-body-sm transition-colors",
+                          selected
+                            ? "border-border bg-accent text-foreground"
+                            : "border-border/60 text-muted-foreground hover:text-foreground",
+                          "disabled:pointer-events-none disabled:opacity-40",
+                        )}
+                      >
+                        <span
+                          className="h-0.5 w-3 rounded-full"
+                          style={{ backgroundColor: selected ? colorOf(key) : "var(--border)" }}
+                          aria-hidden
+                        />
+                        {motorLabel(series.deviceId)}
+                      </button>
+                    );
+                  })}
+                </div>
+                <TrendCharts
+                  series={selectedSeries}
+                  colorOf={colorOf}
+                  alarmTime={alarm.timestamp}
+                  range={range}
+                  operationOffsetsMs={operationOffsetsMs}
+                  cursorOffsetMs={at - alarm.timestamp}
+                  onCursorChange={onCursorChange}
+                />
+              </Section>
 
-          <Section
-            title="状态快照"
-            hint={`${formatClockMs(at)}（${formatRelativeSeconds(at - alarm.timestamp)}）`}
-          >
-            <SnapshotTable snapshot={review.snapshot} at={at} alarmDeviceKeys={alarmDeviceKeys} />
-            <p className="text-label-caps normal-case text-muted-foreground">
-              点击曲线、记录或时间线可切换时刻
-            </p>
-          </Section>
+              <Section
+                title="状态快照"
+                hint={`${formatClockMs(at)}（${formatRelativeSeconds(at - alarm.timestamp)}）`}
+              >
+                <SnapshotTable snapshot={review.snapshot} at={at} />
+                <p className="text-label-caps normal-case text-muted-foreground">
+                  点击曲线、记录或时间线可切换时刻
+                </p>
+              </Section>
+            </>
+          )}
         </>
       )}
     </div>

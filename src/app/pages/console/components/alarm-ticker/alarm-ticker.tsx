@@ -1,14 +1,14 @@
 import { Bell } from "lucide-react";
 import { useMemo } from "react";
 import { useLogStream } from "../../hooks/use-log-stream";
-import { isRaisedAlarm } from "../operation-log/log-display";
+import { isAlarm } from "../operation-log/log-display";
 
 export const AlarmTicker = () => {
   const { logs } = useLogStream();
   const alarmText = useMemo(
     () =>
       logs
-        .filter(isRaisedAlarm)
+        .filter(isAlarm)
         .slice(-5)
         .map((entry) => `${new Date(entry.timestamp).toLocaleTimeString()} ${entry.message}`)
         .join("    ·    "),

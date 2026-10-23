@@ -1,13 +1,17 @@
-import type {
-  AlarmLevel,
-  LogCategory,
-  LogLevel,
-  LogOpGroup,
-  LogRecord,
+import {
+  LOG_RESULT,
+  VISIBLE_LOG_CATEGORIES,
+  type LogCategory,
+  type LogLevel,
+  type LogOpGroup,
+  type LogRecord,
+  type VisibleLogCategory,
 } from "@shared/csocket/operation-log";
 
+/** operation 只存库不显示；界面上的「操作」是操作回码 */
 export const CATEGORY_LABEL: Record<LogCategory, string> = {
-  operation: "操作",
+  operation: "操作记录",
+  optCall: "操作",
   alarm: "报警",
   system: "系统",
 };
@@ -15,7 +19,6 @@ export const CATEGORY_LABEL: Record<LogCategory, string> = {
 export const OP_GROUP_LABEL: Record<LogOpGroup, string> = {
   config: "配置操作",
   device: "设备操作",
-  debug: "设备调试",
 };
 
 export const LOG_LEVEL_LABEL: Record<LogLevel, string> = {
@@ -25,74 +28,47 @@ export const LOG_LEVEL_LABEL: Record<LogLevel, string> = {
   error: "错误",
 };
 
-export const ALARM_LEVEL_LABEL: Record<AlarmLevel, string> = {
-  1: "一般",
-  2: "严重",
-  3: "紧急",
-};
+export const ALL_CATEGORIES: VisibleLogCategory[] = VISIBLE_LOG_CATEGORIES;
 
-export const ALL_CATEGORIES: LogCategory[] = ["operation", "alarm", "system"];
-
-const OP_BADGE_LABEL: Record<LogOpGroup, string> = {
-  config: "配置",
-  device: "操作",
-  debug: "调试",
-};
-
-const ALARM_BADGE: Record<AlarmLevel, string> = {
-  1: "border-warning/50 text-warning",
-  2: "border-destructive/50 text-destructive",
-  3: "border-destructive/70 bg-destructive/15 text-destructive font-bold",
-};
-
-const SYSTEM_BADGE: Record<LogLevel, string> = {
+/** 类别徽标的颜色只看日志级别 */
+const LEVEL_BADGE: Record<LogLevel, string> = {
   debug: "border-border/60 text-muted-foreground/70",
   info: "border-border text-muted-foreground",
   warning: "border-warning/50 text-warning",
   error: "border-destructive/50 text-destructive",
 };
 
-export const isRaisedAlarm = (record: LogRecord): boolean =>
-  record.category === "alarm" && record.alarmState !== "cleared";
+/** 时间线标记的颜色，与类别徽标一样只看日志级别 */
+export const LEVEL_MARKER: Record<LogLevel, string> = {
+  debug: "bg-muted-foreground/50",
+  info: "bg-muted-foreground",
+  warning: "bg-warning",
+  error: "bg-destructive",
+};
 
+export const isAlarm = (record: LogRecord): boolean => record.category === "alarm";
+
+/** 操作回码失败或超时 */
 export const isFailedOperation = (record: LogRecord): boolean =>
-  record.category === "operation" && record.result?.ok === false;
+  record.category === "optCall" && record.result != null && record.result !== LOG_RESULT.ok;
 
-/** 徽标文字和样式：操作按分组（失败标红），报警按报警级别，系统按日志级别 */
-export const logBadge = (record: LogRecord): { label: string; className: string } => {
-  switch (record.category) {
-    case "alarm":
-      if (record.alarmState === "cleared") {
-        return { label: "报警·清除", className: "border-show/50 text-show" };
-      }
-      return {
-        label: record.alarmLevel ? `报警·${ALARM_LEVEL_LABEL[record.alarmLevel]}` : "报警",
-        className: ALARM_BADGE[record.alarmLevel ?? 2],
-      };
-    case "operation":
-      return {
-        label: OP_BADGE_LABEL[record.opGroup ?? "device"],
-        className: isFailedOperation(record)
-          ? "border-destructive/50 text-destructive"
-          : "border-primary/40 text-primary",
-      };
-    case "system":
-      return {
-        label: record.level === "warning" || record.level === "error" ? LOG_LEVEL_LABEL[record.level] : "系统",
-        className: SYSTEM_BADGE[record.level],
-      };
-  }
+/** 徽标：文字按类别（操作 / 报警 / 系统），颜色按日志级别 */
+export const logBadge = (record: LogRecord): { label: string; className: string } => ({
+  label: CATEGORY_LABEL[record.category],
+  className: LEVEL_BADGE[record.level],
+});
+
+const RESULT_TEXT: Record<number, string> = {
+  [LOG_RESULT.failed]: "失败",
+  [LOG_RESULT.ok]: "成功",
+  [LOG_RESULT.timeout]: "超时",
 };
 
-/** 操作结果文字；非操作类返回 null */
+/** 操作结果文字；非操作回码或没有结果返回 null */
 export const resultText = (record: LogRecord): string | null => {
-  if (record.category !== "operation" || !record.result) return null;
-  if (record.result.ok) return "成功";
-  return record.result.message ? `失败：${record.result.message}` : "失败";
+  if (record.category !== "optCall" || record.result == null) return null;
+  return RESULT_TEXT[record.result] ?? null;
 };
-
-export const devicesText = (record: LogRecord): string =>
-  record.devices?.length ? record.devices.map((d) => d.deviceName).join("、") : "—";
 
 const pad2 = (value: number) => value.toString().padStart(2, "0");
 

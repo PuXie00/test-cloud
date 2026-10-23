@@ -1,27 +1,30 @@
+import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 import {
-  matchesLogQuery,
-  mockLogAlarmReview,
-  mockLogFilterOptions,
-  mockLogQuery,
-  mockLogWrite,
-} from "../electron/main/cSocket/operation-log-mock";
-import { mergeRecentLogs, type LogRecord } from "../shared/csocket/operation-log";
+  queryLogs,
+  readFilterOptions,
+  reviewAlarm,
+  rowToRecord,
+  type SqlDatabase,
+} from "../electron/main/cSocket/operation-log-db";
+import { mockLogWrite } from "../electron/main/cSocket/operation-log-mock";
+import { mergeRecentLogs, type LogQueryParams, type LogRecord } from "../shared/csocket/operation-log";
 
 const record = (overrides: Partial<LogRecord> & { id: string; timestamp: number }): LogRecord => ({
-  category: "operation",
+  category: "optCall",
   level: "info",
   message: overrides.id,
   ...overrides,
 });
 
 describe("mergeRecentLogs", () => {
-  it("dedupes by id, drops debug, sorts and keeps the newest N", () => {
+  it("dedupes by id, drops debug and operation, sorts and keeps the newest N", () => {
     const current = [record({ id: "a", timestamp: 1 }), record({ id: "b", timestamp: 3 })];
     const incoming = [
       record({ id: "b", timestamp: 3, message: "b2" }),
       record({ id: "c", timestamp: 2 }),
       record({ id: "d", timestamp: 4, category: "system", level: "debug" }),
+      record({ id: "e", timestamp: 5, category: "operation" }),
     ];
     const merged = mergeRecentLogs(current, incoming, 2);
     expect(merged.map((r) => r.id)).toEqual(["c", "b"]);
@@ -29,106 +32,186 @@ describe("mergeRecentLogs", () => {
   });
 });
 
-describe("matchesLogQuery", () => {
-  const op = record({
-    id: "op",
-    timestamp: 100,
-    user: "u1",
-    opGroup: "device",
-    opType: "jog",
-    devices: [
-      { deviceType: "model", deviceId: 1, deviceName: "m1" },
-      { deviceType: "model", deviceId: 2, deviceName: "m2" },
-    ],
-  });
-  const alarm = record({
-    id: "al",
-    timestamp: 200,
-    category: "alarm",
-    level: "error",
-    alarmLevel: 2,
-    devices: [{ deviceType: "axis", deviceId: 1, deviceName: "a1" }],
-  });
-  const system = record({ id: "sys", timestamp: 300, category: "system", level: "debug" });
-
-  it("scopes users / op groups / op types to operations and alarm levels to alarms", () => {
-    const params = { users: ["u2"], opGroups: ["debug" as const], alarmLevels: [3 as const] };
-    expect(matchesLogQuery(op, params)).toBe(false);
-    expect(matchesLogQuery(alarm, params)).toBe(false);
-    expect(matchesLogQuery(system, params)).toBe(true);
-    expect(matchesLogQuery(op, { opGroups: ["device"], opTypes: ["jog"] })).toBe(true);
-    expect(matchesLogQuery(op, { opGroups: ["debug"], opTypes: ["jog"] })).toBe(false);
-  });
-
-  it("matches a multi-device record when any of its devices is wanted", () => {
-    const params = { devices: [{ deviceType: "model" as const, deviceId: 2 }] };
-    expect(matchesLogQuery(op, params)).toBe(true);
-    expect(matchesLogQuery(alarm, params)).toBe(false);
-    expect(matchesLogQuery(system, params)).toBe(true);
-  });
-
-  it("filters log levels so debug can be hidden", () => {
-    expect(matchesLogQuery(system, { logLevels: ["info", "warning", "error"] })).toBe(false);
-    expect(matchesLogQuery(op, { startTime: 100, endTime: 100 })).toBe(true);
-    expect(matchesLogQuery(op, { startTime: 101 })).toBe(false);
+describe("mockLogWrite", () => {
+  it("returns the written record with the sender as operator", () => {
+    const written = mockLogWrite(
+      { category: "optCall", level: "info", opGroup: "config", opType: "saveProject", message: "保存工程", result: 1 },
+      "管理员",
+    ).data?.[0];
+    expect(written).toEqual(expect.objectContaining({ user: "管理员", opType: "saveProject", result: 1 }));
   });
 });
 
-describe("operation log mock", () => {
-  it("pages newest-first with order desc and reports the full total", () => {
-    const page = mockLogQuery({ order: "desc", limit: 5 }).data?.[0];
-    const all = mockLogQuery({ limit: 100_000 }).data?.[0];
-    expect(page?.total).toBe(all?.total);
-    expect(page?.records).toHaveLength(5);
-    expect(page?.records[0].id).toBe(all?.records.at(-1)?.id);
+/** 与 docs/cpp-operation-log-api.md 里的表结构一致 */
+const SCHEMA = `
+CREATE TABLE log (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts          INTEGER NOT NULL,
+  category    TEXT    NOT NULL CHECK (category IN ('operation','optCall','alarm','system')),
+  level       TEXT    NOT NULL CHECK (level IN ('debug','info','warning','error')),
+  message     TEXT    NOT NULL,
+  user_name   TEXT,
+  op_group    TEXT    CHECK (op_group IN ('config','device')),
+  op_type     TEXT,
+  result_ok   INTEGER CHECK (result_ok IN (0,1,2))
+);
+CREATE INDEX idx_log_ts ON log(ts);
+CREATE TABLE snapshot_sample (
+  t           INTEGER NOT NULL,
+  device_id   INTEGER NOT NULL,
+  position    REAL,
+  speed       REAL,
+  torque      REAL,
+  temperature REAL,
+  PRIMARY KEY (t, device_id)
+) WITHOUT ROWID;
+`;
+
+type NodeSqlite = typeof import("node:sqlite");
+
+/** Electron 里用 better-sqlite3（按 Electron 编译，Node 加载不了），单测用 Node 22.13+ 自带的 node:sqlite */
+const sqlite = (() => {
+  try {
+    return createRequire(import.meta.url)("node:sqlite") as NodeSqlite;
+  } catch {
+    return null;
+  }
+})();
+
+type Row = [ts: number, category: string, level: string, message: string, user?: string | null, group?: string | null, type?: string | null, result?: number | null];
+
+const ROWS: Row[] = [
+  [500, "operation", "info", "下发点动", "u1", "device", "jog", null],
+  [1_000, "optCall", "info", "点动", "u1", "device", "jog", 1],
+  [2_000, "optCall", "warning", "保存工程：磁盘已满", "u2", "config", "saveProject", 0],
+  [3_000, "optCall", "warning", "耦合", "u1", "device", "couple", 2],
+  [12_000, "optCall", "info", "启动", "u2", "device", "moveTarget", 1],
+  [15_000, "system", "info", "主控已连接"],
+  [16_000, "system", "debug", "内部细节"],
+  [18_000, "operation", "info", "下发启动", "u2", "device", "moveTarget", null],
+  [20_000, "alarm", "error", "电机过载"],
+  [40_000, "alarm", "error", "限位触发"],
+];
+
+const openDb = (): SqlDatabase => {
+  const db = new sqlite!.DatabaseSync(":memory:");
+  db.exec(SCHEMA);
+  const insert = db.prepare(
+    "INSERT INTO log (ts, category, level, message, user_name, op_group, op_type, result_ok) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  );
+  for (const [ts, category, level, message, user = null, group = null, type = null, result = null] of ROWS) {
+    insert.run(ts, category, level, message, user, group, type, result);
+  }
+  const sample = db.prepare(
+    "INSERT INTO snapshot_sample (t, device_id, position, speed, torque, temperature) VALUES (?, ?, ?, ?, ?, ?)",
+  );
+  for (let t = 9_000; t <= 26_000; t += 100) {
+    sample.run(t, 3, t / 10, 5, 40, null);
+    sample.run(t, 1, t / 100, 2, 30, 42);
+  }
+  return db as unknown as SqlDatabase;
+};
+
+const idOf = (db: SqlDatabase, message: string) =>
+  String((db.prepare("SELECT id FROM log WHERE message = ?").get(message) as { id: number }).id);
+
+const messages = (db: SqlDatabase, params: LogQueryParams) =>
+  queryLogs(db, params).records.map((r) => r.message);
+
+describe.skipIf(!sqlite)("operation log db", () => {
+  it("never returns operation rows and pages newest-first with an exact total", () => {
+    const db = openDb();
+    const all = queryLogs(db, {});
+    expect(all.total).toBe(8);
+    expect(all.records.some((r) => r.category === "operation")).toBe(false);
+    expect(all.records.map((r) => r.timestamp)).toEqual([...all.records.map((r) => r.timestamp)].sort((a, b) => a - b));
+
+    const page = queryLogs(db, { order: "desc", offset: 2, limit: 3 });
+    expect(page.total).toBe(8);
+    expect(page.records.map((r) => r.message)).toEqual(["内部细节", "主控已连接", "启动"]);
+    expect(queryLogs(db, { order: "desc", offset: 50, limit: 50 })).toEqual({ total: 8, records: [] });
   });
 
-  it("has multi-device operations with results and snapshots only on raised alarms", () => {
-    const records = mockLogQuery({ limit: 100_000 }).data?.[0].records ?? [];
-    expect(records.some((r) => r.category === "operation" && (r.devices?.length ?? 0) > 1)).toBe(true);
-    expect(records.filter((r) => r.category === "operation").every((r) => r.result)).toBe(true);
-    expect(records.filter((r) => r.snapshotRange).every((r) => r.alarmState === "raised")).toBe(true);
+  it("maps a row to a record, dropping empty columns", () => {
+    const db = openDb();
+    const [saved] = queryLogs(db, { opTypes: ["saveProject"], categories: ["optCall"] }).records;
+    expect(saved).toEqual({
+      id: idOf(db, "保存工程：磁盘已满"),
+      timestamp: 2_000,
+      category: "optCall",
+      level: "warning",
+      message: "保存工程：磁盘已满",
+      user: "u2",
+      opGroup: "config",
+      opType: "saveProject",
+      result: 0,
+    });
+    const alarm = rowToRecord({
+      id: 9, ts: 1, category: "alarm", level: "error", message: "x",
+      user_name: null, op_group: null, op_type: null, result_ok: null,
+    });
+    expect(alarm).toEqual({ id: "9", timestamp: 1, category: "alarm", level: "error", message: "x" });
   });
 
-  it("lists filter options with grouped op types", () => {
-    const options = mockLogFilterOptions().data?.[0];
-    expect(options?.users.length).toBeGreaterThan(0);
-    expect(options?.opTypes).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ group: "device", code: "jog" }),
-        expect.objectContaining({ group: "debug", code: "jog" }),
-      ]),
-    );
+  it("scopes users / op groups / op types to op calls only", () => {
+    const db = openDb();
+    expect(messages(db, { users: ["u2"], logLevels: ["info", "warning", "error"] })).toEqual([
+      "保存工程：磁盘已满",
+      "启动",
+      "主控已连接",
+      "电机过载",
+      "限位触发",
+    ]);
+    expect(messages(db, { categories: ["optCall"], opGroups: ["device"], opTypes: ["jog", "couple"] })).toEqual([
+      "点动",
+      "耦合",
+    ]);
   });
 
-  it("reviews an alarm with 10s before / 5s after of records and snapshot series", () => {
-    const records = mockLogQuery({ categories: ["alarm"], limit: 1000 }).data?.[0].records ?? [];
-    const alarm = records.find((r) => r.alarmCode === 2102 && r.alarmState === "raised")!;
-    const review = mockLogAlarmReview({ alarmId: alarm.id }).data?.[0];
-    expect(review?.range).toEqual({ start: alarm.timestamp - 10_000, end: alarm.timestamp + 5_000 });
-    expect(review?.records.some((r) => r.category === "operation" && r.timestamp < alarm.timestamp)).toBe(true);
-    const series = review?.snapshot[0];
-    expect(series?.points).toHaveLength(151);
-    expect(series?.points[0]).toEqual(
-      expect.objectContaining({ position: expect.any(Number), torque: expect.any(Number), temperature: expect.any(Number) }),
-    );
+  it("filters categories, log levels and an inclusive time range", () => {
+    const db = openDb();
+    expect(messages(db, { categories: ["alarm"] })).toEqual(["电机过载", "限位触发"]);
+    expect(messages(db, { categories: ["operation" as never] })).toEqual([]);
+    expect(messages(db, { categories: ["system"], logLevels: ["info", "warning", "error"] })).toEqual(["主控已连接"]);
+    expect(messages(db, { startTime: 2_000, endTime: 12_000 })).toEqual(["保存工程：磁盘已满", "耦合", "启动"]);
   });
 
-  it("fails the review for unknown or cleared alarms", () => {
-    expect(mockLogAlarmReview({ alarmId: "nope" }).success).toBe(false);
-    const cleared = (mockLogQuery({ categories: ["alarm"], limit: 1000 }).data?.[0].records ?? []).find(
-      (r) => r.alarmState === "cleared",
-    )!;
-    expect(mockLogAlarmReview({ alarmId: cleared.id }).success).toBe(false);
+  it("lists users and op types seen in op calls, with labels and the visible time range", () => {
+    const options = readFilterOptions(openDb());
+    expect(options.users).toEqual(["u1", "u2"]);
+    expect(options.opTypes).toEqual([
+      { group: "config", code: "saveProject", label: "保存工程" },
+      { group: "device", code: "couple", label: "耦合 / 解耦" },
+      { group: "device", code: "jog", label: "点动" },
+      { group: "device", code: "moveTarget", label: "启动（目标位置）" },
+    ]);
+    expect(options.timeRange).toEqual({ start: 1_000, end: 40_000 });
   });
 
-  it("appends written records with the sender as operator", () => {
-    const before = mockLogQuery({ limit: 1 }).data?.[0].total ?? 0;
-    const written = mockLogWrite(
-      { category: "operation", level: "info", opGroup: "config", opType: "saveProject", message: "保存工程", result: { ok: true } },
-      "管理员",
-    ).data?.[0];
-    expect(written).toEqual(expect.objectContaining({ user: "管理员", opType: "saveProject" }));
-    expect(mockLogQuery({ limit: 1 }).data?.[0].total).toBe(before + 1);
+  it("has no time range when the log is empty", () => {
+    const db = new sqlite!.DatabaseSync(":memory:");
+    db.exec(SCHEMA);
+    expect(readFilterOptions(db as unknown as SqlDatabase)).toEqual({ users: [], opTypes: [], timeRange: null });
+  });
+
+  it("reviews an alarm with 10s before / 5s after of records and motor samples", () => {
+    const db = openDb();
+    const review = reviewAlarm(db, idOf(db, "电机过载"))!;
+    expect(review.alarm.message).toBe("电机过载");
+    expect(review.records.map((r) => r.message)).toEqual(["启动", "主控已连接", "内部细节", "电机过载"]);
+    expect(review.snapshot.map((s) => s.deviceId)).toEqual([1, 3]);
+    const motor3 = review.snapshot[1];
+    expect(motor3.points).toHaveLength(151);
+    expect(motor3.points[0]).toEqual({ t: 10_000, position: 1_000, speed: 5, torque: 40 });
+    expect(motor3.points.at(-1)?.t).toBe(25_000);
+    expect(review.snapshot[0].points[0]).toEqual({ t: 10_000, position: 100, speed: 2, torque: 30, temperature: 42 });
+  });
+
+  it("returns an empty snapshot when nothing was sampled, and null for non-alarms", () => {
+    const db = openDb();
+    expect(reviewAlarm(db, idOf(db, "限位触发"))?.snapshot).toEqual([]);
+    expect(reviewAlarm(db, idOf(db, "点动"))).toBeNull();
+    expect(reviewAlarm(db, "999")).toBeNull();
+    expect(reviewAlarm(db, "log-w-0001")).toBeNull();
   });
 });
