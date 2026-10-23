@@ -517,6 +517,7 @@ export class CsocketApiService {
         paramHeard: isTMapedHeadRelease,
       }
       result.push((async () => {
+        console.log("isTMapedPrepare", isTMapedPrepare);
         const prepared = await this.sendBuilt('Opera|actionSyncPrepare', '0x1006', isTMapedPrepare, prepareOpts)
         if (!isCppAckOk(prepared)) return ackFailed(prepared)
         const released = await this.sendBuilt('Opera|actionSyncRelease', '0x1007', isTMaped, releaseOpts)

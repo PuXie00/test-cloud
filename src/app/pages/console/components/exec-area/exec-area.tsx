@@ -159,6 +159,9 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     else if (speedCap.maxPercent !== null && speedCap.maxPercent < PROGRAMMED_SPEED_PERCENT) {
       toast.warning(`该动作最高只能 ${speedCap.maxPercent}%，低于编程速度`);
     }
+    console.log("speedCap", speedCap);
+    console.log("readied.fingerprint", readied.fingerprint);
+    console.log("startPlan", startPlan);
     markSlotReady(
       slotIndex,
       sequenceId,

@@ -1,5 +1,5 @@
 /** 系统调速上限：调速范围算出的倍率再高，推子顶端也只到这里（范围算法不检查加速度、碰撞） */
-export const SPEED_CEILING_PERCENT = 200;
+export const SPEED_CEILING_PERCENT = 700;
 
 /** 推子中点：编程速度 */
 export const PROGRAMMED_SPEED_PERCENT = 100;
