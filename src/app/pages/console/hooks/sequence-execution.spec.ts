@@ -4,6 +4,7 @@ import { createDefaultAxisProfiles } from "@/app/project/action-sequence/motion-
 import { toActionDataSaveItems } from "@/app/project/action-sequence/plc-action-payload";
 import type { NearestStartPlan } from "@/app/project/action-sequence/nearest-start";
 import { adjustSequenceSpeed, createSpeedSender } from "./sequence-speed";
+import { SPEED_CEILING_PERCENT } from "./speed-cap";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
 import { createEmptyDocument } from "@/app/project/project-document-empty";
 import type { ControlledObjectConfig, ProjectDocument } from "@/app/project/project-document-types";
@@ -700,12 +701,12 @@ describe("stopSequence", () => {
 });
 
 describe("mapFaderPercentToSpeedScale", () => {
-  it("maps percent/100 and clamps to [0, 2]", () => {
+  it("maps percent/100 and clamps to [0, system ceiling]", () => {
     expect(mapFaderPercentToSpeedScale(0)).toBe(0);
     expect(mapFaderPercentToSpeedScale(100)).toBe(1);
     expect(mapFaderPercentToSpeedScale(200)).toBe(2);
     expect(mapFaderPercentToSpeedScale(-40)).toBe(0);
-    expect(mapFaderPercentToSpeedScale(350)).toBe(2);
+    expect(mapFaderPercentToSpeedScale(SPEED_CEILING_PERCENT + 150)).toBe(SPEED_CEILING_PERCENT / 100);
   });
 });
 

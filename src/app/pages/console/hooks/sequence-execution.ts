@@ -23,7 +23,7 @@ import {
 } from "@/app/project/action-sequence/validate-sequence";
 import type { ProjectDocument } from "@/app/project/project-document-types";
 import { sequenceValidationContextFromSetup } from "@/app/project/project-motion-readiness";
-import { capSpeedPercent } from "./speed-cap";
+import { capSpeedPercent, SPEED_CEILING_PERCENT } from "./speed-cap";
 
 export type SequenceExecutionObject = {
   id: number;
@@ -148,7 +148,7 @@ const uniqueSortedModelIds = (
   ].sort((left, right) => left - right);
 
 export const mapFaderPercentToSpeedScale = (percent: number): number => {
-  const clamped = Math.min(200, Math.max(0, percent));
+  const clamped = Math.min(SPEED_CEILING_PERCENT, Math.max(0, percent));
   return clamped / 100;
 };
 
