@@ -132,6 +132,11 @@ export type ActionBuilderContextValue = {
   handleProgramItemMove: (chapterId: string, fromIndex: number, toIndex: number) => void;
   /** 把选中序列的草稿保存到节目列表（不是保存工程）；待修复时提示先修复 */
   handleSave: () => void;
+  /** 动作编辑页自己的撤销 / 重做（和搭建的工程历史分开），含序列内容和重命名、新建、删除、改节目 */
+  canUndoEdit: boolean;
+  canRedoEdit: boolean;
+  handleUndoEdit: () => boolean;
+  handleRedoEdit: () => boolean;
   /** 最近一次非跟踪 motion 写回失败原因；成功后清空 */
   lastPersistError: string | null;
   /** 位姿拖拽松开 / 调参提交后刷新的序列校验（含电机叠加超速、角度保护） */

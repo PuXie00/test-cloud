@@ -215,6 +215,20 @@ describe("editor dock sequence editor", () => {
     expect(handleSave).toHaveBeenCalledTimes(1);
   });
 
+  it("shows 撤销 / 重做 enabled only when the editor history has steps", () => {
+    const handleUndoEdit = vi.fn(() => true);
+    const handleRedoEdit = vi.fn(() => true);
+    mockBuilder({ handleUndoEdit, handleRedoEdit, canUndoEdit: true, canRedoEdit: false });
+    render(<EditorDock />);
+    const undoButton = screen.getByRole("button", { name: "撤销" }) as HTMLButtonElement;
+    const redoButton = screen.getByRole("button", { name: "重做" }) as HTMLButtonElement;
+    expect(undoButton.disabled).toBe(false);
+    expect(redoButton.disabled).toBe(true);
+    fireEvent.click(undoButton);
+    expect(handleUndoEdit).toHaveBeenCalledTimes(1);
+    expect(handleRedoEdit).not.toHaveBeenCalled();
+  });
+
   it("toggles trajectory mode from the sequence editor header", () => {
     const handleTrajectoryModeChange = vi.fn();
     mockBuilder({ handleTrajectoryModeChange });

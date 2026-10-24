@@ -9,6 +9,7 @@ import {
   Pause,
   Play,
   Plus,
+  Redo2,
   Repeat,
   RotateCcw,
   Route,
@@ -16,6 +17,7 @@ import {
   SkipBack,
   SkipForward,
   Trash2,
+  Undo2,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -36,6 +38,7 @@ import type { VirtualAxisId } from "@/app/project/project-document-types";
 import type { TrajectoryMode } from "@shared/action-sequence";
 import { CURVE_GRAPHS, type CurveGraph, type TimelineViewMode } from "./curve-data";
 import { formatTime } from "./timeline-data";
+import { formatProjectHistoryShortcutHint } from "@/app/project/project-history-shortcuts";
 
 type TimelineToolbarProps = {
   trajectoryMode?: TrajectoryMode;
@@ -56,6 +59,11 @@ type TimelineToolbarProps = {
   onSave?: () => void;
   /** 有未保存的草稿才能保存 */
   canSave?: boolean;
+  /** 动作编辑页自己的撤销 / 重做 */
+  onUndo?: () => void;
+  onRedo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
   onDelete?: () => void;
   onZoomIn?: () => void;
   onZoomOut?: () => void;
@@ -133,6 +141,10 @@ export const TimelineToolbar = ({
   onPlayToggle,
   onSave,
   canSave = true,
+  onUndo,
+  onRedo,
+  canUndo = false,
+  canRedo = false,
   onDelete,
   onZoomIn,
   onZoomOut,
@@ -330,6 +342,24 @@ export const TimelineToolbar = ({
     ) : null}
 
     <div className="ml-auto flex items-center gap-1">
+      {onUndo ? (
+        <ToolbarIcon
+          icon={Undo2}
+          label="撤销"
+          title={`撤销（${formatProjectHistoryShortcutHint("undo")}）`}
+          onClick={onUndo}
+          disabled={!canUndo}
+        />
+      ) : null}
+      {onRedo ? (
+        <ToolbarIcon
+          icon={Redo2}
+          label="重做"
+          title={`重做（${formatProjectHistoryShortcutHint("redo")}）`}
+          onClick={onRedo}
+          disabled={!canRedo}
+        />
+      ) : null}
       <ToolbarIcon icon={Trash2} label="删除序列" onClick={onDelete} disabled={!canDelete} />
       <button
         type="button"
