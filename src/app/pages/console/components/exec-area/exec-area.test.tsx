@@ -133,6 +133,7 @@ const {
   },
   actionBuilderState: {
     current: {
+      draftSequenceIds: new Set<number>(),
       sequences: [
         {
           id: 14,

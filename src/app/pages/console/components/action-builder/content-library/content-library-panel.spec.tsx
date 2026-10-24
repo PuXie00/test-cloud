@@ -53,6 +53,7 @@ const noop = () => {};
 const mockBuilder = (overrides: Record<string, unknown> = {}) => {
   builderState.current = {
     sequences: [sequence],
+    draftSequenceIds: new Set<number>(),
     dockMode: "sequence",
     selectedSequenceId: 1,
     programs: [],
@@ -81,6 +82,13 @@ describe("content library panel", () => {
     expect(screen.getByRole("listbox", { name: "动作序列库列表" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "共享斜面" }).textContent).toMatch(/2 块/);
     expect(screen.getByRole("button", { name: "共享斜面" }).textContent).not.toMatch(/tracks/i);
+  });
+
+  it("marks a sequence with an unsaved draft", () => {
+    mockBuilder({ draftSequenceIds: new Set([1]) });
+    render(<ContentLibraryPanel />);
+    const row = screen.getByRole("button", { name: "共享斜面，未保存" });
+    expect(row.textContent).toMatch(/未保存/);
   });
 
   it("marks a sequence with no participants as needing repair", () => {

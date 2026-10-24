@@ -91,6 +91,7 @@ const mockBuilder = (overrides: Record<string, unknown> = {}) => {
     handleResizeDynamicPreset,
     handleBlockDelete: vi.fn(),
     sequences: [sequence],
+    draftSequenceIds: new Set<number>(),
     handleRenameSequence: vi.fn(() => null),
     handleDeleteSequence: vi.fn(),
     handleBlockCopy: vi.fn(),
@@ -197,6 +198,21 @@ describe("editor dock sequence editor", () => {
     expect(capturedEditor.current!.sequence).toBe(broken);
     expect(capturedEditor.current!.resolved.totalMs).toBe(0);
     expect(capturedEditor.current!.resolved.initialPoseByObject).toEqual(new Map());
+  });
+
+  it("enables 保存 only while the sequence has an unsaved draft", () => {
+    const handleSave = vi.fn();
+    mockBuilder({ handleSave });
+    const { unmount } = render(<EditorDock />);
+    expect((screen.getByRole("button", { name: "保存" }) as HTMLButtonElement).disabled).toBe(true);
+    unmount();
+
+    mockBuilder({ handleSave, draftSequenceIds: new Set([sequence.id]) });
+    render(<EditorDock />);
+    const save = screen.getByRole("button", { name: "保存" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
+    expect(handleSave).toHaveBeenCalledTimes(1);
   });
 
   it("toggles trajectory mode from the sequence editor header", () => {

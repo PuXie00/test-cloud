@@ -25,7 +25,10 @@ export type EditorDockMode = "sequence" | "empty";
 export type ProgramItemInput = { kind: "sequence"; refId: number };
 
 export type ActionBuilderContextValue = {
+  /** 编辑器里看到的序列：有草稿的用草稿 */
   sequences: ActionSequenceConfig[];
+  /** 有未保存草稿的序列 */
+  draftSequenceIds: ReadonlySet<number>;
   sequence: ActionSequenceConfig | null;
   selectedSequenceId: number | null;
   selection: SequenceSelection;
@@ -127,6 +130,7 @@ export type ActionBuilderContextValue = {
   handleProgramItemInsert: (chapterId: string, item: ProgramItemInput, index?: number) => void;
   handleProgramItemRemove: (chapterId: string, index: number) => void;
   handleProgramItemMove: (chapterId: string, fromIndex: number, toIndex: number) => void;
+  /** 把选中序列的草稿保存到节目列表（不是保存工程）；待修复时提示先修复 */
   handleSave: () => void;
   /** 最近一次非跟踪 motion 写回失败原因；成功后清空 */
   lastPersistError: string | null;
