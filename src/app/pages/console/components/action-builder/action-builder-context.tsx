@@ -37,7 +37,10 @@ import { layoutParticipants, type LayoutPoint } from "@/app/project/action-seque
 import { objectWorldPose } from "@/app/project/object-mount";
 import { validateActionSequence } from "@/app/project/action-sequence/validate-sequence";
 import type { SequenceIssue } from "@/app/project/action-sequence/validate-sequence";
-import { sequenceValidationContextFromSetup } from "@/app/project/project-motion-readiness";
+import {
+  getSequenceContentRepairIssue,
+  sequenceValidationContextFromSetup,
+} from "@/app/project/project-motion-readiness";
 import { allocateSequenceIdsInProject } from "@/app/project/action-sequence/sequence-id";
 import { sequenceObjectIds } from "@/app/project/action-sequence/sequence-object-ids";
 import {
@@ -170,10 +173,26 @@ type MotionProjection = {
   programs: ProgramNode[];
 };
 
+type SequenceDrafts = ReadonlyMap<number, ActionSequenceConfig>;
+
+const NO_DRAFTS: SequenceDrafts = new Map();
+
+const sameSequence = (left: ActionSequenceConfig, right: ActionSequenceConfig): boolean =>
+  left === right || JSON.stringify(left) === JSON.stringify(right);
+
+const UNREPAIRED_SAVE_MESSAGE = "动作序列有待修复的问题，请先修复再保存";
+const EMPTY_SAVE_MESSAGE = "动作序列为空，请先编排再保存";
+
 export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => {
   const { currentProject, updateCurrentDocument, documentRevision } = useProject();
 
-  const [sequences, setSequences] = useState<ActionSequenceConfig[]>([]);
+  /** 工程里已保存的序列：节目列表、执行、预览用这一份 */
+  const [appliedSequences, setAppliedSequences] = useState<ActionSequenceConfig[]>([]);
+  /**
+   * 序列内容（动作块、标记、强制轨迹、循环）的草稿，只在内存里；按「保存」才写进工程。
+   * 重命名、新建、删除、加入节目不走草稿，立即生效。
+   */
+  const [drafts, setDrafts] = useState<SequenceDrafts>(NO_DRAFTS);
   const [selectedSequenceId, setSelectedSequenceId] = useState<number | null>(null);
   const [selection, setSelection] = useState<SequenceSelection>(null);
   const [selectedObjectIds, setSelectedObjectIds] = useState<number[]>([]);
@@ -195,7 +214,36 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   const selectedBlockIds = selectionBlockIds(selection);
   const selectedBlockId = selectedBlockIds[0] ?? null;
 
-  const motionRef = useRef<MotionProjection>({ sequences, programs });
+  const motionRef = useRef<MotionProjection>({ sequences: appliedSequences, programs });
+  const draftsRef = useRef<SequenceDrafts>(drafts);
+  /** 编辑器里看到的序列：有草稿的用草稿 */
+  const sequences = useMemo(
+    () =>
+      drafts.size === 0
+        ? appliedSequences
+        : appliedSequences.map((item) => drafts.get(item.id) ?? item),
+    [appliedSequences, drafts],
+  );
+  const draftSequenceIds = useMemo<ReadonlySet<number>>(() => new Set(drafts.keys()), [drafts]);
+
+  const replaceDrafts = useCallback((next: SequenceDrafts) => {
+    if (next === draftsRef.current) return;
+    draftsRef.current = next;
+    setDrafts(next);
+  }, []);
+
+  /** next 为 null 时删掉该序列的草稿 */
+  const setDraft = useCallback(
+    (sequenceId: number, next: ActionSequenceConfig | null) => {
+      const current = draftsRef.current;
+      if (next === null && !current.has(sequenceId)) return;
+      const map = new Map(current);
+      if (next === null) map.delete(sequenceId);
+      else map.set(sequenceId, next);
+      replaceDrafts(map);
+    },
+    [replaceDrafts],
+  );
   const hydratingRef = useRef(false);
   const hydratedProjectIdRef = useRef<string | null>(null);
   const hydratedMotionRef = useRef<ProjectMotion | null>(null);
@@ -219,7 +267,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       }
       setLastPersistError(null);
       motionRef.current = next;
-      setSequences(next.sequences);
+      setAppliedSequences(next.sequences);
       setPrograms(next.programs);
       return true;
     },
@@ -233,7 +281,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         hydratedMotionRef.current = null;
         hydratingRef.current = true;
         motionRef.current = { sequences: [], programs: [] };
-        setSequences([]);
+        setAppliedSequences([]);
+        replaceDrafts(NO_DRAFTS);
         setPrograms([]);
         setTimelineObjects([]);
         setSelectedSequenceId(null);
@@ -286,7 +335,15 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       sequences: bundle.sequences,
       programs: bundle.programs,
     };
-    setSequences(bundle.sequences);
+    setAppliedSequences(bundle.sequences);
+    // 换工程清空草稿；同一工程里序列被删（撤销、删物体等）时丢掉它的草稿
+    if (projectChanged) {
+      replaceDrafts(NO_DRAFTS);
+    } else if (draftsRef.current.size > 0) {
+      const ids = new Set(bundle.sequences.map((item) => item.id));
+      const kept = [...draftsRef.current].filter(([id]) => ids.has(id));
+      if (kept.length !== draftsRef.current.size) replaceDrafts(new Map(kept));
+    }
     setPrograms(bundle.programs);
     setTimelineObjects(bundle.timelineObjects);
     setSelectedSequenceId((prev) =>
@@ -305,7 +362,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     hydratedProjectIdRef.current = currentProject.id;
     hydratedMotionRef.current = document.motion;
     hydratingRef.current = false;
-  }, [currentProject?.id, currentProject?.document, documentRevision]);
+  }, [currentProject?.id, currentProject?.document, documentRevision, replaceDrafts]);
 
   /** 当前工程的物体，按时间轴轨道顺序 */
   const projectClipboardObjects = useCallback(
@@ -379,22 +436,24 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     [commitMotionProjection],
   );
 
+  /** 序列内容的编辑只改草稿；改回和已保存的一样时草稿自动消失 */
   const updateSelectedSequence = useCallback(
     (updater: (current: ActionSequenceConfig) => ActionSequenceConfig | null): boolean => {
       if (selectedSequenceId === null) return false;
-      const current = motionRef.current.sequences.find((item) => item.id === selectedSequenceId);
-      if (!current) return false;
+      const applied = motionRef.current.sequences.find((item) => item.id === selectedSequenceId);
+      if (!applied) return false;
+      const current = draftsRef.current.get(selectedSequenceId) ?? applied;
       const next = updater(current);
       if (next === null || next === current) return false;
       const reconciled = reconcileSequenceLoop(next);
       if (reconciled.cleared) toast.warning(SEQUENCE_LOOP_CLEARED_TOAST);
-      return commitSequences(
-        motionRef.current.sequences.map((item) =>
-          item.id === selectedSequenceId ? reconciled.sequence : item,
-        ),
+      setDraft(
+        selectedSequenceId,
+        sameSequence(reconciled.sequence, applied) ? null : reconciled.sequence,
       );
+      return true;
     },
-    [selectedSequenceId, commitSequences],
+    [selectedSequenceId, setDraft],
   );
 
   const applySequenceEdit = useCallback(
@@ -938,9 +997,12 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       );
       const programs = renameSequenceInProgramTree(motionRef.current.programs, current.id, name);
       if (!commitMotionProjection({ sequences, programs })) return "重命名失败";
+      // 重命名立即生效，草稿跟着改名
+      const draft = draftsRef.current.get(current.id);
+      if (draft) setDraft(current.id, { ...draft, name });
       return null;
     },
-    [selectedSequenceId, commitMotionProjection],
+    [selectedSequenceId, commitMotionProjection, setDraft],
   );
 
   const handleDeleteSequence = useCallback(() => {
@@ -950,9 +1012,10 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     if (remaining.length === motionRef.current.sequences.length) return;
     const nextPrograms = stripSequenceFromProgramTree(motionRef.current.programs, id);
     if (!commitMotionProjection({ sequences: remaining, programs: nextPrograms })) return;
+    setDraft(id, null);
     setSelectedProgramNodeId((prev) => (prev === String(id) ? null : prev));
     handleSequenceSelect(remaining[0]?.id ?? null);
-  }, [selectedSequenceId, commitMotionProjection, handleSequenceSelect]);
+  }, [selectedSequenceId, commitMotionProjection, handleSequenceSelect, setDraft]);
 
   /** 物体不符合预设条件时按该条件提示，返回 true 表示不能添加 */
   /** 物体在水平面上的世界坐标（挂载的物体按父物体换算），拿不到的按原点 */
@@ -1203,7 +1266,10 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
 
   const handleSequenceCopy = useCallback(
     (sequenceId: number) => {
-      const source = motionRef.current.sequences.find((item) => item.id === sequenceId);
+      // 复制编辑器里看到的内容，有草稿用草稿
+      const source =
+        draftsRef.current.get(sequenceId) ??
+        motionRef.current.sequences.find((item) => item.id === sequenceId);
       if (!source) return;
       actionClipboard.setSequence({
         projectId: currentProject?.id ?? null,
@@ -1352,13 +1418,33 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     [updatePrograms],
   );
 
+  /** 把选中序列的草稿写进工程，节目列表、执行才用新内容；待修复时不保存（不是保存工程文件） */
   const handleSave = useCallback(() => {
-    // Safety validation placeholder
-  }, []);
+    const id = selectedSequenceId;
+    const document = currentProject?.document;
+    if (id === null || !document) return;
+    const draft = draftsRef.current.get(id);
+    if (!draft) {
+      toast.info("没有未保存的修改");
+      return;
+    }
+    if (getSequenceContentRepairIssue(document, draft)) {
+      toast.warning(draft.blocks.length === 0 ? EMPTY_SAVE_MESSAGE : UNREPAIRED_SAVE_MESSAGE);
+      return;
+    }
+    const nextSequences = motionRef.current.sequences.map((item) => (item.id === id ? draft : item));
+    if (!commitSequences(nextSequences)) {
+      toast.error("保存失败");
+      return;
+    }
+    setDraft(id, null);
+    toast.success(`已保存「${draft.name}」，节目列表已更新`);
+  }, [selectedSequenceId, currentProject?.document, commitSequences, setDraft]);
 
   const value = useMemo(
     (): ActionBuilderContextValue => ({
       sequences,
+      draftSequenceIds,
       sequence,
       selectedSequenceId,
       selection,
@@ -1441,6 +1527,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     }),
     [
       sequences,
+      draftSequenceIds,
       sequence,
       selectedSequenceId,
       selection,

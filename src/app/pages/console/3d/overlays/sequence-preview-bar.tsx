@@ -55,6 +55,7 @@ export const SequencePreviewBar = () => {
   const playLabel = isPlaying ? "暂停" : atEnd ? "重新播放" : "播放";
   const hasTransition = !!timeline && timeline.transitionMs > 0;
   const phase = timeline ? previewPhaseAt(timeline, cursorMs) : null;
+  const inTransition = phase?.phase === "transition";
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -122,17 +123,32 @@ export const SequencePreviewBar = () => {
         />
         {hasTransition && timeline ? <PreviewSegments timeline={timeline} /> : null}
       </div>
-      {phase?.phase === "transition" && timeline ? (
-        <span className="inline-flex items-center gap-1.5 font-mono text-mono-sm tabular-nums text-secondary">
-          <span className="rounded-full bg-secondary/15 px-1.5 font-sans text-label-caps">过渡</span>
-          {formatExecTime(phase.elapsedMs)} / {formatExecTime(timeline.transitionMs)}
+      {/* 有过渡段时「过渡」一直占位、过渡结束后只隐藏，读数宽度不变，进度条不跟着伸缩闪烁 */}
+      <span
+        className={cn(
+          "inline-flex items-center gap-1.5 font-mono text-mono-sm tabular-nums",
+          inTransition ? "text-secondary" : "text-foreground",
+        )}
+      >
+        {hasTransition ? (
+          <span
+            aria-hidden={!inTransition}
+            className={cn(
+              "rounded-full bg-secondary/15 px-1.5 font-sans text-label-caps text-secondary",
+              !inTransition && "invisible",
+            )}
+          >
+            过渡
+          </span>
+        ) : null}
+        <span>
+          {phase?.phase === "transition" && timeline
+            ? `${formatExecTime(phase.elapsedMs)} / ${formatExecTime(timeline.transitionMs)}`
+            : `${formatExecTime(phase?.phase === "program" ? phase.programMs : cursorMs)} / ${formatExecTime(
+                timeline?.programTotalMs ?? totalMs,
+              )}`}
         </span>
-      ) : (
-        <span className="font-mono text-mono-sm tabular-nums text-foreground">
-          {formatExecTime(phase?.phase === "program" ? phase.programMs : cursorMs)} /{" "}
-          {formatExecTime(timeline?.programTotalMs ?? totalMs)}
-        </span>
-      )}
+      </span>
       {SPEED_OPTIONS.map((speed) => (
         <button
           key={speed}

@@ -54,6 +54,8 @@ type TimelineToolbarProps = {
   atEnd?: boolean;
   onPlayToggle?: () => void;
   onSave?: () => void;
+  /** 有未保存的草稿才能保存 */
+  canSave?: boolean;
   onDelete?: () => void;
   onZoomIn?: () => void;
   onZoomOut?: () => void;
@@ -130,6 +132,7 @@ export const TimelineToolbar = ({
   atEnd = false,
   onPlayToggle,
   onSave,
+  canSave = true,
   onDelete,
   onZoomIn,
   onZoomOut,
@@ -331,7 +334,9 @@ export const TimelineToolbar = ({
       <button
         type="button"
         onClick={onSave}
-        className="inline-flex h-7 items-center gap-1.5 rounded-sm px-2 text-body-sm text-foreground transition-colors hover:bg-accent"
+        disabled={!canSave}
+        title={canSave ? "保存到节目列表（不是保存工程）" : "没有未保存的修改"}
+        className="inline-flex h-7 items-center gap-1.5 rounded-sm px-2 text-body-sm text-foreground transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-40"
       >
         <Save className="h-3.5 w-3.5" aria-hidden />
         保存

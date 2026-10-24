@@ -5,7 +5,7 @@ import {
   validateActionSequence,
   type SequenceValidationContext,
 } from "./action-sequence/validate-sequence";
-import { isSequenceProgramItemRef, type ControlledObjectConfig, type MotorConfig, type ProjectDocument } from "./project-document-types";
+import { isSequenceProgramItemRef, type ActionSequenceConfig, type ControlledObjectConfig, type MotorConfig, type ProjectDocument } from "./project-document-types";
 import { motionAxisIdForVirtualAxis } from "./virtual-axis-mapping";
 import { resolveVirtualAxisMaxVelocity } from "./virtual-axis-max-velocity";
 
@@ -58,10 +58,8 @@ export const sequenceValidationContextFromSetup = (
 
 const sequenceHasBlockingIssues = (
   document: ProjectDocument,
-  sequenceId: string | number,
+  sequence: ActionSequenceConfig,
 ): boolean => {
-  const sequence = document.motion.actionSequences.find((entry) => entry.id === sequenceId);
-  if (!sequence) return true;
   try {
     return hasBlockingSequenceIssues(
       validateActionSequence(sequence, sequenceValidationContextFromSetup(document)),
@@ -88,6 +86,14 @@ export const getMotionItemRepairIssue = (
       message: MISSING_SEQUENCE_MESSAGE,
     };
   }
+  return getSequenceContentRepairIssue(document, sequence);
+};
+
+/** 按给定的序列内容判断是否待修复，不读工程里已保存的版本（动作编辑器的草稿用） */
+export const getSequenceContentRepairIssue = (
+  document: ProjectDocument,
+  sequence: ActionSequenceConfig,
+): MotionRepairIssue | null => {
   if (sequence.blocks.length === 0) {
     return {
       code: "empty-sequence",
@@ -95,10 +101,10 @@ export const getMotionItemRepairIssue = (
       message: EMPTY_SEQUENCE_PENDING_MESSAGE,
     };
   }
-  if (sequenceHasBlockingIssues(document, itemId)) {
+  if (sequenceHasBlockingIssues(document, sequence)) {
     return {
       code: "empty-sequence",
-      itemId,
+      itemId: sequence.id,
       message: EMPTY_SEQUENCE_MESSAGE,
     };
   }

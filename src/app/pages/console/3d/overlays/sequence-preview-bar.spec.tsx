@@ -111,14 +111,18 @@ describe("SequencePreviewBar", () => {
     };
     preview.current = { ...preview.current, timeline, totalMs: 11000, cursorMs: 1200 };
     const { rerender } = render(<SequencePreviewBar />);
-    expect(screen.getByText("过渡")).toBeTruthy();
+    const label = screen.getByText("过渡");
+    expect(label.classList.contains("invisible")).toBe(false);
     expect(screen.getByText(/00:01\.2 \/ 00:03\.0/)).toBeTruthy();
     const segment = screen.getByTestId("preview-transition-segment") as HTMLElement;
     expect(segment.style.width).toBe(`${(3000 / 11000) * 100}%`);
 
     preview.current = { ...preview.current, cursorMs: 3500 };
     rerender(<SequencePreviewBar />);
-    expect(screen.queryByText("过渡")).toBeNull();
+    // 过渡结束后标签只隐藏不移除，读数宽度不变
+    expect(screen.getByText("过渡")).toBe(label);
+    expect(label.classList.contains("invisible")).toBe(true);
+    expect(label.getAttribute("aria-hidden")).toBe("true");
     expect(screen.getByText("00:04.5 / 00:12.0")).toBeTruthy();
   });
 

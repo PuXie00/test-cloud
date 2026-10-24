@@ -12,7 +12,7 @@ import { cn } from "@/app/components/ui/utils";
 import { useActionBuilder } from "../use-action-builder";
 import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
-import { getMotionItemRepairIssue } from "@/app/project/project-motion-readiness";
+import { getSequenceContentRepairIssue } from "@/app/project/project-motion-readiness";
 import { useProject } from "@/app/project/use-project";
 import type { ProjectDocument } from "@/app/project/project-document-types";
 import {
@@ -28,13 +28,14 @@ import { SequenceRenameDialog } from "./sequence-rename-dialog";
 
 type LibraryEntry = { kind: "sequence"; sequence: ActionSequenceConfig };
 
+/** 按编辑器里看到的内容（有草稿用草稿）判断 */
 const sequenceNeedsRepair = (
   sequence: ActionSequenceConfig,
   document: ProjectDocument | null | undefined,
 ): boolean => {
   if (sequence.blocks.length === 0) return true;
   if (!document) return false;
-  return getMotionItemRepairIssue(document, "sequence", sequence.id) !== null;
+  return getSequenceContentRepairIssue(document, sequence) !== null;
 };
 
 const sequenceDurationMs = (sequence: ActionSequenceConfig): number => {
@@ -55,6 +56,7 @@ const collectChapters = (programs: ProgramNode[]): ProgramNode[] =>
 export const ContentLibraryPanel = ({ className }: { className?: string }) => {
   const {
     sequences,
+    draftSequenceIds,
     dockMode,
     selectedSequenceId,
     programs,
@@ -167,6 +169,7 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
   const renderRow = (entry: LibraryEntry) => {
     const id = entry.sequence.id;
     const needsRepair = sequenceNeedsRepair(entry.sequence, document);
+    const unsaved = draftSequenceIds.has(id);
     const selected = dockMode === "sequence" && selectedSequenceId === id;
     const forced = isForcedTrajectory(entry.sequence.trajectoryMode);
     const loop = entry.sequence.loop === true;
@@ -174,6 +177,7 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
       entry.sequence.name,
       forced ? "强制轨迹" : null,
       loop ? "循环" : null,
+      unsaved ? "未保存" : null,
       needsRepair ? "待修复" : null,
     ]
       .filter(Boolean)
@@ -230,6 +234,9 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
             </div>
             <p className="font-mono text-[10px] tabular-nums text-muted-foreground">
               {`${formatDurationSeconds(sequenceDurationMs(entry.sequence))} · ${countSequenceBlocks(entry.sequence)} 块`}
+              {unsaved ? (
+                <span className="ml-1.5 font-sans text-body-sm text-primary">未保存</span>
+              ) : null}
               {needsRepair ? (
                 <span className="ml-1.5 font-sans text-body-sm text-warning">待修复</span>
               ) : null}
