@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
 import { TIMELINE_PAD_LEFT, msToPx } from "./timeline-data";
 import { TimelineEditor } from "./timeline-editor";
+import { lockPanAxis } from "./timeline-view-extent";
 import { createTimelineProps, installTimelinePaneWidth, TIMELINE_TEST_PANE_PX } from "./timeline-test-helpers";
 
 const sequence: ActionSequenceConfig = {
@@ -480,6 +481,40 @@ describe("timeline interaction", () => {
     expect(pose.style.left).toBe(`${msToPx(1600, 100)}px`);
     expect(canvas.style.width).toBe(widthBefore);
     expect(scroll.className.split(/\s+/)).toContain("overflow-x-clip");
+  });
+
+  it("locks a middle-mouse drag to the axis it started on", () => {
+    render(<TimelineEditor {...createTimelineProps(sequence)} />);
+    const scroll = document.querySelector("[data-testid='timeline-scroll']") as HTMLElement;
+    const pose = screen.getByRole("button", { name: /位姿 first/ });
+    const leftBefore = pose.style.left;
+    // 上下拖，手往左偏了几像素：不左右滚
+    fireEvent.pointerDown(scroll, { button: 1, clientX: 200, clientY: 40 });
+    fireEvent.pointerMove(window, { clientX: 197, clientY: 60 });
+    fireEvent.pointerMove(window, { clientX: 192, clientY: 90 });
+    fireEvent.pointerMove(window, { clientX: 188, clientY: 120 });
+    fireEvent.pointerUp(window, { button: 1 });
+    expect(pose.style.left).toBe(leftBefore);
+
+    // 移动还没到阈值时不滚
+    fireEvent.pointerDown(scroll, { button: 1, clientX: 200, clientY: 40 });
+    fireEvent.pointerMove(window, { clientX: 197, clientY: 41 });
+    fireEvent.pointerUp(window, { button: 1 });
+    expect(pose.style.left).toBe(leftBefore);
+
+    // 左右拖锁定横向，起步那几像素也算上
+    fireEvent.pointerDown(scroll, { button: 1, clientX: 200, clientY: 40 });
+    fireEvent.pointerMove(window, { clientX: 190, clientY: 42 });
+    fireEvent.pointerMove(window, { clientX: 160, clientY: 70 });
+    fireEvent.pointerUp(window, { button: 1 });
+    expect(pose.style.left).toBe(`${msToPx(1600, 100)}px`);
+  });
+
+  it("decides the pan axis only after a few pixels, by the larger move", () => {
+    expect(lockPanAxis(3, 3)).toBeNull();
+    expect(lockPanAxis(-4, 20)).toBe("y");
+    expect(lockPanAxis(20, -4)).toBe("x");
+    expect(lockPanAxis(6, 0)).toBe("x");
   });
 
   it("drags the H-bar to move the view", () => {

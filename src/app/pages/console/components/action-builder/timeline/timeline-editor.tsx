@@ -66,8 +66,10 @@ import {
 import {
   canvasWidthPx,
   clampCursorMs,
+  lockPanAxis,
   MARQUEE_THRESHOLD_PX,
   panViewStartMs,
+  type PanAxis,
   TIMELINE_H_SCROLL_HEIGHT_PX,
   totEndMs,
   usedBandScreenRect,
@@ -517,16 +519,25 @@ export const TimelineEditor = ({
     if (event.button !== 1) return;
     event.preventDefault();
     event.stopPropagation();
-    let lastX = event.clientX;
-    let lastY = event.clientY;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let lastX = startX;
+    let lastY = startY;
+    // 方向定了就只沿这个方向滚，松手再按才能换方向
+    let axis: PanAxis | null = null;
     const handleMove = (moveEvent: PointerEvent) => {
       const scrollEl = scrollRef.current;
       if (!scrollEl) return;
+      axis ??= lockPanAxis(moveEvent.clientX - startX, moveEvent.clientY - startY);
+      if (axis === null) return;
       const dx = moveEvent.clientX - lastX;
       const dy = moveEvent.clientY - lastY;
       lastX = moveEvent.clientX;
       lastY = moveEvent.clientY;
-      setViewStartMs((current) => panViewStartMs(current, dx, pxPerSecond));
+      if (axis === "x") {
+        setViewStartMs((current) => panViewStartMs(current, dx, pxPerSecond));
+        return;
+      }
       scrollEl.scrollTop -= dy;
       syncLabelScroll(scrollEl);
     };
