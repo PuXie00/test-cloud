@@ -180,6 +180,36 @@ const NO_DRAFTS: SequenceDrafts = new Map();
 const sameSequence = (left: ActionSequenceConfig, right: ActionSequenceConfig): boolean =>
   left === right || JSON.stringify(left) === JSON.stringify(right);
 
+/**
+ * 动作编辑页撤销一步记下的状态：编辑器里看到的序列（有草稿用草稿）、当时已保存的版本、节目列表。
+ * 和搭建的工程历史分开；保存不算一步，撤销时内容和当前已保存的不同就变回草稿。
+ */
+type EditorSnapshot = {
+  sequences: readonly ActionSequenceConfig[];
+  applied: ReadonlyMap<number, ActionSequenceConfig>;
+  programs: ProgramNode[];
+};
+
+type EditorHistory = { past: EditorSnapshot[]; future: EditorSnapshot[] };
+
+const EDITOR_HISTORY_LIMIT = 100;
+
+const EMPTY_EDITOR_HISTORY: EditorHistory = { past: [], future: [] };
+
+const sameSnapshot = (left: EditorSnapshot, right: EditorSnapshot): boolean =>
+  left.programs === right.programs &&
+  left.sequences.length === right.sequences.length &&
+  left.sequences.every((item, index) => item === right.sequences[index]);
+
+/** 两步之间看到的内容变了的序列，含新增和删除 */
+const changedSequenceIds = (from: EditorSnapshot, to: EditorSnapshot): number[] => {
+  const before = new Map(from.sequences.map((item) => [item.id, item]));
+  const after = new Map(to.sequences.map((item) => [item.id, item]));
+  return [...new Set([...before.keys(), ...after.keys()])].filter(
+    (id) => before.get(id) !== after.get(id),
+  );
+};
+
 const UNREPAIRED_SAVE_MESSAGE = "动作序列有待修复的问题，请先修复再保存";
 const EMPTY_SAVE_MESSAGE = "动作序列为空，请先编排再保存";
 
@@ -244,6 +274,108 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     },
     [replaceDrafts],
   );
+
+  const editorHistoryRef = useRef<EditorHistory>(EMPTY_EDITOR_HISTORY);
+  const [editorHistory, setEditorHistory] = useState<EditorHistory>(EMPTY_EDITOR_HISTORY);
+  /** 正在记的这一步开始前的状态；嵌套操作、拖动从按下到松手都并进这一步 */
+  const pendingStepRef = useRef<EditorSnapshot | null>(null);
+  /** 这一步要等松手（拖动结束或指针抬起）才记 */
+  const openStepRef = useRef(false);
+  /** 指针按着：期间的编辑（拖曲线手柄、拖块等）合成一步 */
+  const pointerDownRef = useRef(false);
+
+  const replaceEditorHistory = useCallback((next: EditorHistory) => {
+    editorHistoryRef.current = next;
+    setEditorHistory(next);
+  }, []);
+
+  const clearEditorHistory = useCallback(() => {
+    pendingStepRef.current = null;
+    openStepRef.current = false;
+    if (editorHistoryRef.current !== EMPTY_EDITOR_HISTORY) replaceEditorHistory(EMPTY_EDITOR_HISTORY);
+  }, [replaceEditorHistory]);
+
+  const captureEditor = useCallback((): EditorSnapshot => {
+    const applied = motionRef.current.sequences;
+    const drafted = draftsRef.current;
+    return {
+      sequences: drafted.size === 0 ? applied : applied.map((item) => drafted.get(item.id) ?? item),
+      applied: new Map(applied.map((item) => [item.id, item])),
+      programs: motionRef.current.programs,
+    };
+  }, []);
+
+  const pushEditorStep = useCallback(
+    (before: EditorSnapshot) => {
+      if (sameSnapshot(before, captureEditor())) return;
+      replaceEditorHistory({
+        past: [...editorHistoryRef.current.past, before].slice(-EDITOR_HISTORY_LIMIT),
+        future: [],
+      });
+    },
+    [captureEditor, replaceEditorHistory],
+  );
+
+  /** 开一步，等松手再记 */
+  const openEditorStep = useCallback(() => {
+    if (pendingStepRef.current) return;
+    pendingStepRef.current = captureEditor();
+    openStepRef.current = true;
+  }, [captureEditor]);
+
+  /** 记下等松手的那一步 */
+  const finishOpenStep = useCallback(() => {
+    if (!openStepRef.current) return;
+    const before = pendingStepRef.current;
+    openStepRef.current = false;
+    pendingStepRef.current = null;
+    if (before) pushEditorStep(before);
+  }, [pushEditorStep]);
+
+  /** 把一次操作记成一步撤销；指针按着时并进这次按住的一步 */
+  const recordEditorStep = useCallback(
+    <T,>(run: () => T): T => {
+      if (pendingStepRef.current) return run();
+      if (pointerDownRef.current) {
+        openEditorStep();
+        return run();
+      }
+      const before = captureEditor();
+      pendingStepRef.current = before;
+      try {
+        return run();
+      } finally {
+        pendingStepRef.current = null;
+        pushEditorStep(before);
+      }
+    },
+    [captureEditor, pushEditorStep, openEditorStep],
+  );
+
+  /** 时间轴拖动开始：之后每次移动都并进这一步，松手（endDragStep）才记 */
+  const beginDragStep = openEditorStep;
+  const endDragStep = finishOpenStep;
+
+  // 指针从按下到抬起之间的编辑合成一步：曲线手柄、预设面板等拖动控件不用各自接开始 / 结束
+  useEffect(() => {
+    const onDown = () => {
+      pointerDownRef.current = true;
+    };
+    const onUp = () => {
+      pointerDownRef.current = false;
+      finishOpenStep();
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("pointerup", onUp, true);
+    window.addEventListener("pointercancel", onUp, true);
+    window.addEventListener("blur", onUp);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("pointerup", onUp, true);
+      window.removeEventListener("pointercancel", onUp, true);
+      window.removeEventListener("blur", onUp);
+    };
+  }, [finishOpenStep]);
   const hydratingRef = useRef(false);
   const hydratedProjectIdRef = useRef<string | null>(null);
   const hydratedMotionRef = useRef<ProjectMotion | null>(null);
@@ -283,6 +415,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         motionRef.current = { sequences: [], programs: [] };
         setAppliedSequences([]);
         replaceDrafts(NO_DRAFTS);
+        clearEditorHistory();
         setPrograms([]);
         setTimelineObjects([]);
         setSelectedSequenceId(null);
@@ -330,6 +463,9 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       document.setup.motors,
     );
 
+    // 换工程，或动作数据在编辑器外被改了（搭建删物体、搭建撤销、AI、控制页改节目）：
+    // 旧的撤销记录对不上了，清空
+    if (projectChanged || document.motion !== hydratedMotionRef.current) clearEditorHistory();
     hydratingRef.current = true;
     motionRef.current = {
       sequences: bundle.sequences,
@@ -362,7 +498,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     hydratedProjectIdRef.current = currentProject.id;
     hydratedMotionRef.current = document.motion;
     hydratingRef.current = false;
-  }, [currentProject?.id, currentProject?.document, documentRevision, replaceDrafts]);
+  }, [currentProject?.id, currentProject?.document, documentRevision, replaceDrafts, clearEditorHistory]);
 
   /** 当前工程的物体，按时间轴轨道顺序 */
   const projectClipboardObjects = useCallback(
@@ -447,13 +583,15 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       if (next === null || next === current) return false;
       const reconciled = reconcileSequenceLoop(next);
       if (reconciled.cleared) toast.warning(SEQUENCE_LOOP_CLEARED_TOAST);
-      setDraft(
-        selectedSequenceId,
-        sameSequence(reconciled.sequence, applied) ? null : reconciled.sequence,
+      recordEditorStep(() =>
+        setDraft(
+          selectedSequenceId,
+          sameSequence(reconciled.sequence, applied) ? null : reconciled.sequence,
+        ),
       );
       return true;
     },
-    [selectedSequenceId, setDraft],
+    [selectedSequenceId, setDraft, recordEditorStep],
   );
 
   const applySequenceEdit = useCallback(
@@ -468,9 +606,11 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   const updatePrograms = useCallback(
     (updater: (current: ProgramNode[]) => ProgramNode[]): boolean => {
       const nextPrograms = updater(motionRef.current.programs);
-      return commitMotionProjection({ ...motionRef.current, programs: nextPrograms });
+      return recordEditorStep(() =>
+        commitMotionProjection({ ...motionRef.current, programs: nextPrograms }),
+      );
     },
-    [commitMotionProjection],
+    [commitMotionProjection, recordEditorStep],
   );
 
   const handleSequenceSelect = useCallback((sequenceId: number | null) => {
@@ -571,6 +711,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   const handleDragPoseAxis = useCallback(
     (blockIds: readonly string[], axis: VirtualAxisId, deltaValue: number) => {
       setIsDraggingTimeline(true);
+      beginDragStep();
       updateSelectedSequence((current) => {
         const origin = poseDragOriginRef.current ?? current;
         if (poseDragOriginRef.current === null) poseDragOriginRef.current = current;
@@ -583,13 +724,14 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         return result.ok ? result.sequence : null;
       });
     },
-    [updateSelectedSequence, poseObjectInfo, sequenceEditOptions],
+    [updateSelectedSequence, poseObjectInfo, sequenceEditOptions, beginDragStep],
   );
 
   const handleDragPoseAxisEnd = useCallback(() => {
     poseDragOriginRef.current = null;
     setIsDraggingTimeline(false);
-  }, []);
+    endDragStep();
+  }, [endDragStep]);
 
   /** 取当前：把物体的实时位置写进选中位姿里设定了值的轴 */
   const handleUpdatePosesFromLive = useCallback(
@@ -621,38 +763,45 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     [applySequenceEdit, poseObjectInfo, sequenceEditOptions],
   );
 
+  /** 拖单个块时连续调用；松手由 handleShiftTimelineBlocksEnd 结束，整次拖动记一步 */
   const handleMoveTimelineBlock = useCallback(
     (blockId: string, atMs: number) => {
+      beginDragStep();
       updateSelectedSequence((current) =>
         moveTimelineBlock(current, blockId, atMs, sequenceEditOptions),
       );
     },
-    [updateSelectedSequence, sequenceEditOptions],
+    [updateSelectedSequence, sequenceEditOptions, beginDragStep],
   );
 
   const handleShiftTimelineBlocks = useCallback(
     (blockIds: string[], deltaMs: number) => {
       setIsDraggingTimeline(true);
+      beginDragStep();
       updateSelectedSequence((current) => {
         const origin = shiftOriginRef.current ?? current;
         if (shiftOriginRef.current === null) shiftOriginRef.current = current;
         return shiftTimelineBlocks(origin, blockIds, deltaMs, sequenceEditOptions);
       });
     },
-    [updateSelectedSequence, sequenceEditOptions],
+    [updateSelectedSequence, sequenceEditOptions, beginDragStep],
   );
 
   const handleShiftTimelineBlocksEnd = useCallback(() => {
     shiftOriginRef.current = null;
     setIsDraggingTimeline(false);
-  }, []);
+    endDragStep();
+  }, [endDragStep]);
 
+  /** 拖动态预设边缘时连续调用；松手由 handleShiftTimelineBlocksEnd 结束，整次拖动记一步 */
   const handleResizeDynamicPreset = useCallback(
-    (blockId: string, startMs: number, endMs: number): boolean =>
-      applySequenceEdit((current) =>
+    (blockId: string, startMs: number, endMs: number): boolean => {
+      beginDragStep();
+      return applySequenceEdit((current) =>
         resizeDynamicPreset(current, blockId, startMs, endMs, sequenceEditOptions),
-      ),
-    [applySequenceEdit, sequenceEditOptions],
+      );
+    },
+    [applySequenceEdit, sequenceEditOptions, beginDragStep],
   );
 
   const handleUpdateSegmentSettings = useCallback(
@@ -743,18 +892,20 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   /** 拖标记：相对拖动开始时的序列平移，松手前都算一次编辑 */
   const handleShiftMarkers = useCallback(
     (markerIds: readonly string[], deltaMs: number) => {
+      beginDragStep();
       updateSelectedSequence((current) => {
         const origin = markerShiftOriginRef.current ?? current;
         if (markerShiftOriginRef.current === null) markerShiftOriginRef.current = current;
         return shiftMarkers(origin, markerIds, deltaMs);
       });
     },
-    [updateSelectedSequence],
+    [updateSelectedSequence, beginDragStep],
   );
 
   const handleShiftMarkersEnd = useCallback(() => {
     markerShiftOriginRef.current = null;
-  }, []);
+    endDragStep();
+  }, [endDragStep]);
 
   const handleDeleteMarkers = useCallback(
     (markerIds?: readonly string[]) => {
@@ -923,10 +1074,12 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         nextNewSequenceName(motionRef.current.sequences.map((sequence) => sequence.name)),
       );
       const nextSequences = [...motionRef.current.sequences, next];
-      if (!commitMotionProjection({ ...motionRef.current, sequences: nextSequences })) return;
+      if (!recordEditorStep(() => commitMotionProjection({ ...motionRef.current, sequences: nextSequences }))) {
+        return;
+      }
       handleSequenceSelect(next.id);
     },
-    [commitMotionProjection, handleSequenceSelect],
+    [commitMotionProjection, handleSequenceSelect, recordEditorStep],
   );
 
   /** 保存当前位姿：有选中序列则在播放头加位姿；否则新建序列（不加入节目）并选中 */
@@ -964,7 +1117,9 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       });
       if (!created) return;
       const nextSequences = [...motionRef.current.sequences, created];
-      if (!commitMotionProjection({ ...motionRef.current, sequences: nextSequences })) return;
+      if (!recordEditorStep(() => commitMotionProjection({ ...motionRef.current, sequences: nextSequences }))) {
+        return;
+      }
       handleSequenceSelect(created.id);
       toast.success(`已新建动作序列「${created.name}」`);
     },
@@ -996,13 +1151,15 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         item.id === current.id ? { ...item, name } : item,
       );
       const programs = renameSequenceInProgramTree(motionRef.current.programs, current.id, name);
-      if (!commitMotionProjection({ sequences, programs })) return "重命名失败";
-      // 重命名立即生效，草稿跟着改名
-      const draft = draftsRef.current.get(current.id);
-      if (draft) setDraft(current.id, { ...draft, name });
-      return null;
+      return recordEditorStep(() => {
+        if (!commitMotionProjection({ sequences, programs })) return "重命名失败";
+        // 重命名立即生效，草稿跟着改名
+        const draft = draftsRef.current.get(current.id);
+        if (draft) setDraft(current.id, { ...draft, name });
+        return null;
+      });
     },
-    [selectedSequenceId, commitMotionProjection, setDraft],
+    [selectedSequenceId, commitMotionProjection, setDraft, recordEditorStep],
   );
 
   const handleDeleteSequence = useCallback(() => {
@@ -1011,11 +1168,15 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     const remaining = motionRef.current.sequences.filter((seq) => seq.id !== id);
     if (remaining.length === motionRef.current.sequences.length) return;
     const nextPrograms = stripSequenceFromProgramTree(motionRef.current.programs, id);
-    if (!commitMotionProjection({ sequences: remaining, programs: nextPrograms })) return;
-    setDraft(id, null);
+    const deleted = recordEditorStep(() => {
+      if (!commitMotionProjection({ sequences: remaining, programs: nextPrograms })) return false;
+      setDraft(id, null);
+      return true;
+    });
+    if (!deleted) return;
     setSelectedProgramNodeId((prev) => (prev === String(id) ? null : prev));
     handleSequenceSelect(remaining[0]?.id ?? null);
-  }, [selectedSequenceId, commitMotionProjection, handleSequenceSelect, setDraft]);
+  }, [selectedSequenceId, commitMotionProjection, handleSequenceSelect, setDraft, recordEditorStep]);
 
   /** 物体不符合预设条件时按该条件提示，返回 true 表示不能添加 */
   /** 物体在水平面上的世界坐标（挂载的物体按父物体换算），拿不到的按原点 */
@@ -1307,7 +1468,9 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     );
     const reconciled = reconcileSequenceLoop(pasted.sequence);
     const nextSequences = [...motionRef.current.sequences, reconciled.sequence];
-    if (!commitMotionProjection({ ...motionRef.current, sequences: nextSequences })) return;
+    if (!recordEditorStep(() => commitMotionProjection({ ...motionRef.current, sequences: nextSequences }))) {
+      return;
+    }
     handleSequenceSelect(id);
     if (pasted.unmatchedObjectNames.length > 0) {
       toast.warning(
@@ -1441,6 +1604,78 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     toast.success(`已保存「${draft.name}」，节目列表已更新`);
   }, [selectedSequenceId, currentProject?.document, commitSequences, setDraft]);
 
+  /**
+   * 退回到某一步：序列的增删、顺序、名字和节目列表写回工程；
+   * 还在的序列保持当前已保存的版本（保存不撤销），看到的内容和它不同就作为草稿。
+   */
+  const restoreEditorSnapshot = useCallback(
+    (target: EditorSnapshot): boolean => {
+      const current = motionRef.current;
+      const currentById = new Map(current.sequences.map((item) => [item.id, item]));
+      const nextApplied: ActionSequenceConfig[] = [];
+      const nextDrafts = new Map<number, ActionSequenceConfig>();
+      for (const shown of target.sequences) {
+        // 撤销删除时用删除前已保存的版本
+        const base = currentById.get(shown.id) ?? target.applied.get(shown.id) ?? shown;
+        const applied = base.name === shown.name ? base : { ...base, name: shown.name };
+        nextApplied.push(applied);
+        if (!sameSequence(shown, applied)) nextDrafts.set(shown.id, shown);
+      }
+      const appliedChanged =
+        target.programs !== current.programs ||
+        nextApplied.length !== current.sequences.length ||
+        nextApplied.some((item, index) => item !== current.sequences[index]);
+      if (appliedChanged && !commitMotionProjection({ sequences: nextApplied, programs: target.programs })) {
+        return false;
+      }
+      replaceDrafts(nextDrafts);
+      return true;
+    },
+    [commitMotionProjection, replaceDrafts],
+  );
+
+  /** 撤销 / 重做后切到被改的序列；改的就是当前序列或只改了节目列表时不切 */
+  const focusRestoredSequence = useCallback(
+    (from: EditorSnapshot, to: EditorSnapshot) => {
+      const ids = new Set(to.sequences.map((item) => item.id));
+      const changed = changedSequenceIds(from, to).filter((id) => ids.has(id));
+      if (
+        selectedSequenceId !== null &&
+        ids.has(selectedSequenceId) &&
+        (changed.length === 0 || changed.includes(selectedSequenceId))
+      ) {
+        setSelection((prev) => pruneSequenceSelection([...to.sequences], prev));
+        return;
+      }
+      handleSequenceSelect(changed[0] ?? to.sequences[0]?.id ?? null);
+    },
+    [selectedSequenceId, handleSequenceSelect],
+  );
+
+  const stepEditorHistory = useCallback(
+    (direction: "undo" | "redo"): boolean => {
+      // 拖动没收到松手（如指针被系统取消）时先把它记完，免得一直撤销不了
+      finishOpenStep();
+      if (pendingStepRef.current) return false;
+      const { past, future } = editorHistoryRef.current;
+      const target = direction === "undo" ? past.at(-1) : future.at(-1);
+      if (!target) return false;
+      const current = captureEditor();
+      if (!restoreEditorSnapshot(target)) return false;
+      replaceEditorHistory(
+        direction === "undo"
+          ? { past: past.slice(0, -1), future: [...future, current] }
+          : { past: [...past, current], future: future.slice(0, -1) },
+      );
+      focusRestoredSequence(current, target);
+      return true;
+    },
+    [captureEditor, restoreEditorSnapshot, replaceEditorHistory, focusRestoredSequence, finishOpenStep],
+  );
+
+  const handleUndoEdit = useCallback(() => stepEditorHistory("undo"), [stepEditorHistory]);
+  const handleRedoEdit = useCallback(() => stepEditorHistory("redo"), [stepEditorHistory]);
+
   const value = useMemo(
     (): ActionBuilderContextValue => ({
       sequences,
@@ -1522,6 +1757,10 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleProgramItemRemove,
       handleProgramItemMove,
       handleSave,
+      canUndoEdit: editorHistory.past.length > 0,
+      canRedoEdit: editorHistory.future.length > 0,
+      handleUndoEdit,
+      handleRedoEdit,
       lastPersistError,
       sequenceIssues,
     }),
@@ -1600,6 +1839,9 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleProgramItemRemove,
       handleProgramItemMove,
       handleSave,
+      editorHistory,
+      handleUndoEdit,
+      handleRedoEdit,
     ],
   );
 

@@ -215,6 +215,24 @@ describe("editor dock sequence editor", () => {
     expect(handleSave).toHaveBeenCalledTimes(1);
   });
 
+  it("puts 撤销 / 重做 in the 视图 menu, enabled only when the editor history has steps", () => {
+    const handleUndoEdit = vi.fn(() => true);
+    const handleRedoEdit = vi.fn(() => true);
+    mockBuilder({ handleUndoEdit, handleRedoEdit, canUndoEdit: true, canRedoEdit: false });
+    render(<EditorDock />);
+    expect(screen.queryByRole("button", { name: "撤销" })).toBeNull();
+    fireEvent.pointerDown(screen.getByRole("button", { name: "视图" }), { button: 0, ctrlKey: false });
+    const undoItem = screen.getByRole("menuitem", { name: /撤销/ });
+    const redoItem = screen.getByRole("menuitem", { name: /重做/ });
+    expect(undoItem.getAttribute("aria-disabled")).toBeNull();
+    expect(redoItem.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(undoItem);
+    expect(handleUndoEdit).toHaveBeenCalledTimes(1);
+    expect(handleRedoEdit).not.toHaveBeenCalled();
+    // 菜单不关，可以接着撤销
+    expect(screen.getByRole("menuitem", { name: /撤销/ })).toBeTruthy();
+  });
+
   it("toggles trajectory mode from the sequence editor header", () => {
     const handleTrajectoryModeChange = vi.fn();
     mockBuilder({ handleTrajectoryModeChange });

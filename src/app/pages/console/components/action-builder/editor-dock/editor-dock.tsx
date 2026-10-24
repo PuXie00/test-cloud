@@ -92,6 +92,10 @@ const SequenceEditor = () => {
     handleTimelineZoomOut,
     handleSave,
     draftSequenceIds,
+    canUndoEdit,
+    canRedoEdit,
+    handleUndoEdit,
+    handleRedoEdit,
     handleTrajectoryModeChange,
     handleLoopChange,
     sequenceIssues,
@@ -322,6 +326,10 @@ const SequenceEditor = () => {
         onPlayToggle={handlePlayToggle}
         onSave={handleSave}
         canSave={sequence !== null && draftSequenceIds.has(sequence.id)}
+        onUndo={handleUndoEdit}
+        onRedo={handleRedoEdit}
+        canUndo={canUndoEdit}
+        canRedo={canRedoEdit}
         onDelete={() => setDeleteOpen(true)}
         onZoomIn={handleTimelineZoomIn}
         onZoomOut={handleTimelineZoomOut}

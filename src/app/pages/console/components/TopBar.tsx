@@ -18,6 +18,8 @@ import { createDefaultSavedView } from "@/app/project/saved-view";
 import { getViz3DEngine } from "@/app/viz3d";
 import { isCppAckFailed } from "@shared/csocket/ack";
 import { useConsoleMode } from "../hooks/use-console-mode";
+import { useConsoleNav } from "../hooks/use-console-nav";
+import { useActionBuilder } from "./action-builder/use-action-builder";
 import { usePlcRuntime } from "../hooks/plc-runtime-provider";
 import { useProgram } from "../hooks/use-program";
 import { useProjectStore } from "../hooks/use-project-store";
@@ -90,8 +92,12 @@ export const TopBar = ({
   const projectName = currentProject?.name ?? "未选择工程";
   const projectLabel = isDirty && currentProject ? `${projectName}*` : projectName;
   const isShow = mode === "show";
-  const undoEnabled = !isShow && canUndo;
-  const redoEnabled = !isShow && canRedo;
+  const { activeNav } = useConsoleNav();
+  const { canUndoEdit, canRedoEdit, handleUndoEdit, handleRedoEdit } = useActionBuilder();
+  // 动作编辑页的撤销 / 重做走编辑器自己的记录，不碰搭建的工程历史
+  const isActionEditor = activeNav === "sequences" && !isShow;
+  const undoEnabled = isActionEditor ? canUndoEdit : !isShow && canUndo;
+  const redoEnabled = isActionEditor ? canRedoEdit : !isShow && canRedo;
   const undoShortcutHint = formatProjectHistoryShortcutHint("undo");
   const redoShortcutHint = formatProjectHistoryShortcutHint("redo");
   const undoAriaKeyshortcuts = formatProjectHistoryAriaKeyshortcuts("undo");
@@ -104,6 +110,11 @@ export const TopBar = ({
       const enabled = action === "undo" ? undoEnabled : redoEnabled;
       if (!enabled) return;
       event.preventDefault();
+      if (isActionEditor) {
+        if (action === "undo") handleUndoEdit();
+        else handleRedoEdit();
+        return;
+      }
       const result =
         action === "undo"
           ? undoProjectConfiguration()
@@ -113,6 +124,9 @@ export const TopBar = ({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
+    handleRedoEdit,
+    handleUndoEdit,
+    isActionEditor,
     redoEnabled,
     redoProjectConfiguration,
     undoEnabled,
@@ -213,12 +227,20 @@ export const TopBar = ({
 
   const handleUndo = () => {
     if (!undoEnabled) return;
+    if (isActionEditor) {
+      handleUndoEdit();
+      return;
+    }
     const result = undoProjectConfiguration();
     if (!result.ok) toast.error(result.reason);
   };
 
   const handleRedo = () => {
     if (!redoEnabled) return;
+    if (isActionEditor) {
+      handleRedoEdit();
+      return;
+    }
     const result = redoProjectConfiguration();
     if (!result.ok) toast.error(result.reason);
   };

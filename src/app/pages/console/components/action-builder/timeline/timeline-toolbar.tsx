@@ -9,6 +9,7 @@ import {
   Pause,
   Play,
   Plus,
+  Redo2,
   Repeat,
   RotateCcw,
   Route,
@@ -16,6 +17,7 @@ import {
   SkipBack,
   SkipForward,
   Trash2,
+  Undo2,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -36,6 +38,7 @@ import type { VirtualAxisId } from "@/app/project/project-document-types";
 import type { TrajectoryMode } from "@shared/action-sequence";
 import { CURVE_GRAPHS, type CurveGraph, type TimelineViewMode } from "./curve-data";
 import { formatTime } from "./timeline-data";
+import { formatProjectHistoryShortcutHint } from "@/app/project/project-history-shortcuts";
 
 type TimelineToolbarProps = {
   trajectoryMode?: TrajectoryMode;
@@ -56,6 +59,11 @@ type TimelineToolbarProps = {
   onSave?: () => void;
   /** 有未保存的草稿才能保存 */
   canSave?: boolean;
+  /** 动作编辑页自己的撤销 / 重做 */
+  onUndo?: () => void;
+  onRedo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
   onDelete?: () => void;
   onZoomIn?: () => void;
   onZoomOut?: () => void;
@@ -133,6 +141,10 @@ export const TimelineToolbar = ({
   onPlayToggle,
   onSave,
   canSave = true,
+  onUndo,
+  onRedo,
+  canUndo = false,
+  canRedo = false,
   onDelete,
   onZoomIn,
   onZoomOut,
@@ -170,6 +182,40 @@ export const TimelineToolbar = ({
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="min-w-[12rem] border-border bg-card text-foreground">
+          {onUndo || onRedo ? (
+            <>
+              {/* 连着撤销几步时菜单不关 */}
+              {onUndo ? (
+                <DropdownMenuItem
+                  disabled={!canUndo}
+                  onSelect={(event) => {
+                    keepMenuOpen(event);
+                    onUndo();
+                  }}
+                  className={viewMenuItemClass}
+                >
+                  <Undo2 className="h-3.5 w-3.5" aria-hidden />
+                  撤销
+                  <DropdownMenuShortcut>{formatProjectHistoryShortcutHint("undo")}</DropdownMenuShortcut>
+                </DropdownMenuItem>
+              ) : null}
+              {onRedo ? (
+                <DropdownMenuItem
+                  disabled={!canRedo}
+                  onSelect={(event) => {
+                    keepMenuOpen(event);
+                    onRedo();
+                  }}
+                  className={viewMenuItemClass}
+                >
+                  <Redo2 className="h-3.5 w-3.5" aria-hidden />
+                  重做
+                  <DropdownMenuShortcut>{formatProjectHistoryShortcutHint("redo")}</DropdownMenuShortcut>
+                </DropdownMenuItem>
+              ) : null}
+              <DropdownMenuSeparator />
+            </>
+          ) : null}
           <DropdownMenuCheckboxItem
             checked={viewMode === "curves"}
             onCheckedChange={(checked) => onViewModeChange(checked ? "curves" : "tracks")}
