@@ -172,29 +172,6 @@ export const TimelineToolbar = ({
   return (
     <div className="flex h-9 shrink-0 items-center gap-0.5 bg-muted px-2">
 
-    {onUndo || onRedo ? (
-      <div className="flex items-center">
-        {onUndo ? (
-          <ToolbarIcon
-            icon={Undo2}
-            label="撤销"
-            title={`撤销（${formatProjectHistoryShortcutHint("undo")}）`}
-            onClick={onUndo}
-            disabled={!canUndo}
-          />
-        ) : null}
-        {onRedo ? (
-          <ToolbarIcon
-            icon={Redo2}
-            label="重做"
-            title={`重做（${formatProjectHistoryShortcutHint("redo")}）`}
-            onClick={onRedo}
-            disabled={!canRedo}
-          />
-        ) : null}
-      </div>
-    ) : null}
-
     {viewMode !== undefined && onViewModeChange ? (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -205,6 +182,40 @@ export const TimelineToolbar = ({
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="min-w-[12rem] border-border bg-card text-foreground">
+          {onUndo || onRedo ? (
+            <>
+              {/* 连着撤销几步时菜单不关 */}
+              {onUndo ? (
+                <DropdownMenuItem
+                  disabled={!canUndo}
+                  onSelect={(event) => {
+                    keepMenuOpen(event);
+                    onUndo();
+                  }}
+                  className={viewMenuItemClass}
+                >
+                  <Undo2 className="h-3.5 w-3.5" aria-hidden />
+                  撤销
+                  <DropdownMenuShortcut>{formatProjectHistoryShortcutHint("undo")}</DropdownMenuShortcut>
+                </DropdownMenuItem>
+              ) : null}
+              {onRedo ? (
+                <DropdownMenuItem
+                  disabled={!canRedo}
+                  onSelect={(event) => {
+                    keepMenuOpen(event);
+                    onRedo();
+                  }}
+                  className={viewMenuItemClass}
+                >
+                  <Redo2 className="h-3.5 w-3.5" aria-hidden />
+                  重做
+                  <DropdownMenuShortcut>{formatProjectHistoryShortcutHint("redo")}</DropdownMenuShortcut>
+                </DropdownMenuItem>
+              ) : null}
+              <DropdownMenuSeparator />
+            </>
+          ) : null}
           <DropdownMenuCheckboxItem
             checked={viewMode === "curves"}
             onCheckedChange={(checked) => onViewModeChange(checked ? "curves" : "tracks")}
