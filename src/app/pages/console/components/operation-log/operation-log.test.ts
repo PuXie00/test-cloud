@@ -8,7 +8,7 @@ import {
   pageCount,
   parsePageSize,
 } from "./log-filters";
-import { formatRelativeSeconds, isFailedOperation, logBadge, resultText } from "./log-display";
+import { formatRelativeSeconds, logBadge, resultText } from "./log-display";
 import { markerVisual } from "./log-timeline";
 import { sampleAt } from "./snapshot-table";
 import {
@@ -107,15 +107,12 @@ describe("filtersToQuery", () => {
 });
 
 describe("op call results", () => {
-  it("shows success, failure and timeout, and flags the last two", () => {
+  it("shows success, failure and timeout", () => {
     expect(resultText(record({ id: "ok", timestamp: 0, result: 1 }))).toBe("成功");
     expect(resultText(record({ id: "fail", timestamp: 0, result: 0 }))).toBe("失败");
     expect(resultText(record({ id: "late", timestamp: 0, result: 2 }))).toBe("超时");
     expect(resultText(record({ id: "none", timestamp: 0 }))).toBeNull();
     expect(resultText(record({ id: "sys", timestamp: 0, category: "system", result: 1 }))).toBeNull();
-    expect(isFailedOperation(record({ id: "ok", timestamp: 0, result: 1 }))).toBe(false);
-    expect(isFailedOperation(record({ id: "fail", timestamp: 0, result: 0 }))).toBe(true);
-    expect(isFailedOperation(record({ id: "late", timestamp: 0, result: 2 }))).toBe(true);
   });
 
   it("labels the badge by category only, whatever the group or level", () => {

@@ -7,8 +7,6 @@ import {
   formatClockMs,
   formatDateTime,
   formatRelativeSeconds,
-  isFailedOperation,
-  resultText,
 } from "./log-display";
 import { SnapshotTable } from "./snapshot-table";
 import { SERIES_COLORS, TrendCharts } from "./trend-charts";
@@ -126,9 +124,6 @@ export const AlarmReviewPanel = ({
                       <span className="min-w-0 flex-1 text-body-sm text-foreground">
                         {record.message}
                         {record.user ? <span className="text-muted-foreground"> · {record.user}</span> : null}
-                        {isFailedOperation(record) ? (
-                          <span className="text-destructive"> · {resultText(record)}</span>
-                        ) : null}
                       </span>
                     </button>
                   </li>

@@ -48,10 +48,6 @@ export const LEVEL_MARKER: Record<LogLevel, string> = {
 
 export const isAlarm = (record: LogRecord): boolean => record.category === "alarm";
 
-/** 操作回码失败或超时 */
-export const isFailedOperation = (record: LogRecord): boolean =>
-  record.category === "optCall" && record.result != null && record.result !== LOG_RESULT.ok;
-
 /** 徽标：文字按类别（操作 / 报警 / 系统），颜色按日志级别 */
 export const logBadge = (record: LogRecord): { label: string; className: string } => ({
   label: CATEGORY_LABEL[record.category],
