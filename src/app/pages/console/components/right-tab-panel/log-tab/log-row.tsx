@@ -1,6 +1,6 @@
 import type { LogRecord } from "@shared/csocket/operation-log";
 import { LogBadge } from "../../operation-log/log-badge";
-import { formatClock, isFailedOperation, resultText } from "../../operation-log/log-display";
+import { formatClock } from "../../operation-log/log-display";
 
 type LogRowProps = { entry: LogRecord };
 
@@ -10,11 +10,6 @@ export const LogRow = ({ entry }: LogRowProps) => (
       {formatClock(entry.timestamp)}
     </span>
     <LogBadge record={entry} />
-    <span className="min-w-0 flex-1 text-body-sm text-foreground">
-      {entry.message}
-      {isFailedOperation(entry) ? (
-        <span className="ml-1 text-destructive">· {resultText(entry)}</span>
-      ) : null}
-    </span>
+    <span className="min-w-0 flex-1 text-body-sm text-foreground">{entry.message}</span>
   </div>
 );

@@ -17,7 +17,6 @@ import { LogFilterBar } from "./log-filter-bar";
 import {
   DEFAULT_LOG_FILTERS,
   includesDebug,
-  opTypeKey,
   pageCount,
   readStoredPageSize,
   writeStoredPageSize,
@@ -68,10 +67,6 @@ const OperationLogBody = () => {
     setPageIndex(0);
   }, []);
 
-  const opTypeLabels = useMemo(
-    () => new Map((options?.opTypes ?? []).map((op) => [opTypeKey(op.group, op.code), op.label])),
-    [options],
-  );
 
   const bounds = useMemo(() => recordsExtent(records), [records]);
   const [view, setView] = useState<TimeRange>(() => fitView(null));
@@ -160,7 +155,6 @@ const OperationLogBody = () => {
               records={records}
               selectedId={selectedId}
               onSelect={handleSelect}
-              opTypeLabels={opTypeLabels}
               className={cn("min-h-0 flex-1", query.status === "loading" && "opacity-60")}
             />
           )}
@@ -180,7 +174,6 @@ const OperationLogBody = () => {
           showDebug={includesDebug(filters)}
           cursor={cursor}
           onCursorChange={setCursor}
-          opTypeLabels={opTypeLabels}
           className="w-[440px] shrink-0 border-l border-border"
         />
       </div>

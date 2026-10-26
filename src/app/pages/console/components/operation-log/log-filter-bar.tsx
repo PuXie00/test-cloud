@@ -1,7 +1,6 @@
 import { RotateCcw } from "lucide-react";
 import { memo, type ReactNode } from "react";
 import {
-  LOG_OP_GROUPS,
   type LogFilterOptions,
   type VisibleLogCategory,
 } from "@shared/csocket/operation-log";
@@ -10,12 +9,10 @@ import {
   ALL_CATEGORIES,
   CATEGORY_LABEL,
   LOG_LEVEL_LABEL,
-  OP_GROUP_LABEL,
 } from "./log-display";
 import {
   DEFAULT_LOG_FILTERS,
   isDefaultFilters,
-  opTypeKey,
   TIME_PRESET_OPTIONS,
   type LogFilters,
   type TimePreset,
@@ -134,20 +131,6 @@ export const LogFilterBar = memo(({ filters, onChange, options }: LogFilterBarPr
         onChange={(user) => patch({ user })}
         options={(options?.users ?? []).map((user) => ({ value: user, label: user }))}
       />
-      <FilterSelect label="操作类型" value={filters.opType} onChange={(opType) => patch({ opType })}>
-        {LOG_OP_GROUPS.map((group) => (
-          <optgroup key={group} label={OP_GROUP_LABEL[group]}>
-            <option value={group}>{`全部${OP_GROUP_LABEL[group]}`}</option>
-            {(options?.opTypes ?? [])
-              .filter((op) => op.group === group)
-              .map((op) => (
-                <option key={op.code} value={opTypeKey(group, op.code)}>
-                  {op.label}
-                </option>
-              ))}
-          </optgroup>
-        ))}
-      </FilterSelect>
       <FilterSelect
         label="日志级别"
         allLabel="日志级别：全部（不含调试）"

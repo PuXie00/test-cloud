@@ -7,8 +7,6 @@ import {
   formatClockMs,
   formatDateTime,
   formatRelativeSeconds,
-  isFailedOperation,
-  resultText,
 } from "./log-display";
 import { SnapshotTable } from "./snapshot-table";
 import { SERIES_COLORS, TrendCharts } from "./trend-charts";
@@ -57,11 +55,11 @@ export const AlarmReviewPanel = ({
     [review, showDebug],
   );
   const operationsBefore = records.filter(
-    (r) => r.category === "optCall" && r.timestamp <= alarm.timestamp,
+    (r) => r.category === "optRet" && r.timestamp <= alarm.timestamp,
   );
   const operationOffsetsMs = useMemo(
     () =>
-      records.filter((r) => r.category === "optCall").map((r) => r.timestamp - alarm.timestamp),
+      records.filter((r) => r.category === "optRet").map((r) => r.timestamp - alarm.timestamp),
     [records, alarm.timestamp],
   );
 
@@ -107,7 +105,7 @@ export const AlarmReviewPanel = ({
               {records.map((record) => {
                 const isAlarm = record.id === alarm.id;
                 const isCauseCandidate =
-                  record.category === "optCall" && record.timestamp <= alarm.timestamp;
+                  record.category === "optRet" && record.timestamp <= alarm.timestamp;
                 return (
                   <li key={record.id}>
                     <button
@@ -126,9 +124,6 @@ export const AlarmReviewPanel = ({
                       <span className="min-w-0 flex-1 text-body-sm text-foreground">
                         {record.message}
                         {record.user ? <span className="text-muted-foreground"> · {record.user}</span> : null}
-                        {isFailedOperation(record) ? (
-                          <span className="text-destructive"> · {resultText(record)}</span>
-                        ) : null}
                       </span>
                     </button>
                   </li>

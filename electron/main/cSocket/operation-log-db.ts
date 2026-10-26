@@ -5,7 +5,6 @@
 import {
   VISIBLE_LOG_CATEGORIES,
   alarmSnapshotWindow,
-  opTypeLabel,
   type LogAlarmReview,
   type LogCategory,
   type LogFilterOptions,
@@ -39,12 +38,11 @@ type LogRow = {
   message: string
   user_name: string | null
   op_group: LogOpGroup | null
-  op_type: string | null
   result_ok: LogResult | null
 }
 
 type SampleRow = {
-  t: number
+  ts: number
   device_id: number
   position: number | null
   speed: number | null
@@ -52,7 +50,8 @@ type SampleRow = {
   temperature: number | null
 }
 
-const LOG_COLUMNS = 'id, ts, category, level, message, user_name, op_group, op_type, result_ok'
+/** addr、op_type 只存库，界面不显示，不读 */
+const LOG_COLUMNS = 'id, ts, category, level, message, user_name, op_group, result_ok'
 
 const placeholders = (count: number) => Array.from({ length: count }, () => '?').join(', ')
 
@@ -66,13 +65,12 @@ export const rowToRecord = (row: LogRow): LogRecord => ({
   message: row.message,
   ...(row.user_name ? { user: row.user_name } : {}),
   ...(row.op_group ? { opGroup: row.op_group } : {}),
-  ...(row.op_type ? { opType: row.op_type } : {}),
   ...(row.result_ok != null ? { result: row.result_ok } : {}),
 })
 
 /**
- * 各维度之间为“且”；users / opGroups / opTypes 只约束操作回码，报警和系统记录不受影响。
- * operation 只存库，永远不查。
+ * 各维度之间为“且”；users 只约束操作回码，报警和系统记录不受影响。
+ * optCall（前端下发的指令）只存库，永远不查。
  */
 export const buildLogWhere = (params: LogQueryParams): { sql: string; args: SqlValue[] } => {
   const clauses: string[] = []
@@ -82,8 +80,8 @@ export const buildLogWhere = (params: LogQueryParams): { sql: string; args: SqlV
     args.push(...values)
     return `${column} IN (${placeholders(values.length)})`
   }
-  const onlyOptCall = (column: string, values: readonly SqlValue[]) =>
-    `(category <> 'optCall' OR ${inList(column, values)})`
+  const onlyOptRet = (column: string, values: readonly SqlValue[]) =>
+    `(category <> 'optRet' OR ${inList(column, values)})`
 
   if (params.startTime != null) {
     clauses.push('ts >= ?')
@@ -96,9 +94,7 @@ export const buildLogWhere = (params: LogQueryParams): { sql: string; args: SqlV
   const wanted = params.categories?.length ? params.categories : VISIBLE_LOG_CATEGORIES
   clauses.push(inList('category', VISIBLE_LOG_CATEGORIES.filter((c) => wanted.includes(c))))
   if (params.logLevels?.length) clauses.push(inList('level', params.logLevels))
-  if (params.users?.length) clauses.push(onlyOptCall('user_name', params.users))
-  if (params.opGroups?.length) clauses.push(onlyOptCall('op_group', params.opGroups))
-  if (params.opTypes?.length) clauses.push(onlyOptCall('op_type', params.opTypes))
+  if (params.users?.length) clauses.push(onlyOptRet('user_name', params.users))
   return { sql: `WHERE ${clauses.join(' AND ')}`, args }
 }
 
@@ -116,45 +112,35 @@ export const queryLogs = (db: SqlDatabase, params: LogQueryParams): LogQueryPage
   return { total: n, records: rows.map(rowToRecord) }
 }
 
-/** 筛选项：操作回码里出现过的操作人和操作类型，以及可见记录的时间范围 */
+/** 筛选项：操作回码里出现过的操作人，以及可见记录的时间范围 */
 export const readFilterOptions = (db: SqlDatabase): LogFilterOptions => {
   const users = (
     db
       .prepare(
         `SELECT DISTINCT user_name FROM log
-         WHERE category = 'optCall' AND user_name IS NOT NULL AND user_name <> ''
+         WHERE category = 'optRet' AND user_name IS NOT NULL AND user_name <> ''
          ORDER BY user_name`,
       )
       .all() as { user_name: string }[]
   ).map((row) => row.user_name)
-  const opTypes = (
-    db
-      .prepare(
-        `SELECT DISTINCT op_group, op_type FROM log
-         WHERE category = 'optCall' AND op_group IN ('config', 'device') AND op_type IS NOT NULL AND op_type <> ''
-         ORDER BY op_group, op_type`,
-      )
-      .all() as { op_group: LogOpGroup; op_type: string }[]
-  ).map((row) => ({ group: row.op_group, code: row.op_type, label: opTypeLabel(row.op_type) }))
   const range = db
     .prepare(`SELECT MIN(ts) AS start_ts, MAX(ts) AS end_ts FROM log WHERE ${VISIBLE_IN}`)
     .get(...VISIBLE_LOG_CATEGORIES) as { start_ts: number | null; end_ts: number | null } | undefined
   return {
     users,
-    opTypes,
     timeRange: range?.start_ts != null && range.end_ts != null ? { start: range.start_ts, end: range.end_ts } : null,
   }
 }
 
 const toPoint = (row: SampleRow): LogSnapshotPoint => ({
-  t: row.t,
+  t: row.ts,
   ...(row.position != null ? { position: row.position } : {}),
   ...(row.speed != null ? { speed: row.speed } : {}),
   ...(row.torque != null ? { torque: row.torque } : {}),
   ...(row.temperature != null ? { temperature: row.temperature } : {}),
 })
 
-/** 采样行须按 device_id、t 排序 */
+/** 采样行须按 device_id、ts 排序 */
 export const groupSamples = (rows: readonly SampleRow[]): LogSnapshotSeries[] => {
   const series: LogSnapshotSeries[] = []
   for (const row of rows) {
@@ -182,8 +168,8 @@ export const reviewAlarm = (db: SqlDatabase, alarmId: string): LogAlarmReview | 
   ).map(rowToRecord)
   const samples = db
     .prepare(
-      `SELECT t, device_id, position, speed, torque, temperature FROM snapshot_sample
-       WHERE t BETWEEN ? AND ? ORDER BY device_id, t`,
+      `SELECT ts, device_id, position, speed, torque, temperature FROM snapshot_sample
+       WHERE ts BETWEEN ? AND ? ORDER BY device_id, ts`,
     )
     .all(start, end) as SampleRow[]
   return { alarm, records, snapshot: groupSamples(samples) }

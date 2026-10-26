@@ -1,5 +1,6 @@
+import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-input";
+import { Input } from "@/app/components/ui/input";
 import { cn } from "@/app/components/ui/utils";
 import {
   cruiseMsOf,
@@ -8,11 +9,22 @@ import {
   type MotionBoundary,
 } from "@/app/project/action-sequence/motion-profile";
 import type { MotionProfile } from "@/app/project/action-sequence/types";
+import { useSessionDisplayLengthUnit } from "@/app/project/display-length-unit-provider";
+import {
+  getDisplayLengthFamilyUnit,
+  isLengthFamilyUnit,
+  resolveDisplayPrecision,
+  toCanonicalLengthValue,
+  toDisplayLengthValue,
+} from "@/app/project/display-length-units";
 import { formatTime, secondsToMs, snapTimeMs } from "../timeline/timeline-data";
 import {
   RATES_DO_NOT_FIT_MESSAGE,
   profileFromRates,
+  stepPhaseRate,
+  stepPhaseTime,
   trapezoidRatesOf,
+  type RatePhase,
   type PhaseInputMode,
 } from "./phase-rates";
 
@@ -41,129 +53,165 @@ const formatPhaseValue = (valueMs: number, timeUnit: "ms" | "s"): string => {
 const commitPhaseMs = (parsed: number, timeUnit: "ms" | "s"): number =>
   timeUnit === "s" ? secondsToMs(parsed) : snapTimeMs(parsed);
 
-type PhaseFieldProps = {
+type PhaseRowProps = {
   label: string;
-  value: number;
+  /** 不在键入时显示的文字 */
+  text: string;
+  unit?: string;
+  precision: number;
   /** 多选时各段不一样：显示 -- */
   mixed?: boolean;
   disabled?: boolean;
-  compact?: boolean;
   readOnly?: boolean;
-  timeUnit?: "ms" | "s";
-  onValueCommit?: (nextMs: number) => void;
+  /** 键入后回车或离开输入框时提交 */
+  onTextCommit?: (text: string) => void;
+  /** − + 一次一档（阶段时间差 0.1 s），由父组件写入 */
+  onStep?: (delta: number) => void;
 };
 
-export const PhaseField = ({
+/** 阶段的一行：左边名称，右边带 − + 的数字框；按时间、按速度共用 */
+const PhaseRow = ({
   label,
-  value,
+  text,
+  unit,
+  precision,
   mixed = false,
   disabled = false,
-  compact = false,
   readOnly = false,
-  timeUnit = "ms",
-  onValueCommit,
-}: PhaseFieldProps) => {
-  const handleCommit = (rawValue: string) => {
-    if (readOnly || !onValueCommit) return;
-    const parsed = Number.parseFloat(rawValue);
-    if (!Number.isFinite(parsed)) return;
-    onValueCommit(commitPhaseMs(parsed, timeUnit));
+  onTextCommit,
+  onStep,
+}: PhaseRowProps) => {
+  const [draft, setDraft] = useState<string | null>(null);
+  const editable = !readOnly && onTextCommit !== undefined;
+  const commit = () => {
+    if (draft === null) return;
+    setDraft(null);
+    if (draft.trim() !== "") onTextCommit?.(draft);
   };
-
   return (
-    <label
-      className={cn(
-        "flex min-w-0 flex-1 flex-col gap-1",
-        compact ? "gap-0.5" : "gap-1",
-      )}
-    >
-      <span className={cn("text-muted-foreground", compact ? "text-body-sm" : "text-body-sm")}>
-        {label}
-      </span>
-      <div className="relative">
-        <input
-          type="number"
-          inputMode="decimal"
-          min={0}
-          step={timeUnit === "s" ? 0.1 : 1}
-          defaultValue={mixed ? "" : formatPhaseValue(value, timeUnit)}
-          placeholder={mixed ? "--" : undefined}
-          key={`${label}-${mixed ? "mixed" : formatPhaseValue(value, timeUnit)}-${timeUnit}`}
-          disabled={disabled}
-          readOnly={readOnly}
-          aria-label={label}
-          aria-readonly={readOnly ? "true" : undefined}
-          onBlur={(event) => handleCommit(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (readOnly) return;
-            if (event.key !== "Enter") return;
-            handleCommit(event.currentTarget.value);
-          }}
-          className={cn(
-            "w-full rounded-md border border-border/60 bg-input-background pr-9 text-foreground tabular-nums focus:outline-none focus:ring-2 focus:ring-ring",
-            compact ? "h-8 px-2 text-body-sm" : "h-9 px-3 text-body-md",
-            readOnly && "cursor-default opacity-80",
-          )}
-        />
-        <span
-          aria-hidden
-          className={cn(
-            "pointer-events-none absolute inset-y-0 right-2 flex items-center text-muted-foreground",
-            compact ? "text-body-sm" : "text-body-md",
-          )}
-        >
-          {timeUnit}
-        </span>
-      </div>
-    </label>
+    <div className="flex items-center gap-2">
+      <span className="w-20 shrink-0 text-body-sm text-muted-foreground">{label}</span>
+      <Input
+        type="number"
+        showStepper
+        aria-label={label}
+        value={draft ?? (mixed ? "" : text)}
+        placeholder={mixed ? "--" : undefined}
+        unit={unit}
+        precision={precision}
+        step={10 ** -precision}
+        min={0}
+        disabled={disabled}
+        readOnly={!editable}
+        aria-readonly={editable ? undefined : "true"}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            commit();
+          }
+          if (event.key === "Escape") setDraft(null);
+        }}
+        onStep={editable ? onStep : undefined}
+        className="text-body-sm tabular-nums"
+      />
+    </div>
   );
 };
 
-type RateFieldProps = {
+type TimeRowProps = {
+  label: string;
+  valueMs: number;
+  mixed?: boolean;
+  disabled?: boolean;
+  readOnly?: boolean;
+  timeUnit?: "ms" | "s";
+  onValueCommit?: (nextMs: number) => void;
+  onStep?: (delta: number) => void;
+};
+
+/** 按时间的一行：加速时间、匀速时间或减速时间 */
+export const TimeRow = ({
+  label,
+  valueMs,
+  mixed,
+  disabled,
+  readOnly,
+  timeUnit = "s",
+  onValueCommit,
+  onStep,
+}: TimeRowProps) => (
+  <PhaseRow
+    label={label}
+    text={formatPhaseValue(valueMs, timeUnit)}
+    unit={timeUnit}
+    precision={timeUnit === "s" ? 1 : 0}
+    mixed={mixed}
+    disabled={disabled}
+    readOnly={readOnly}
+    onTextCommit={
+      onValueCommit
+        ? (text) => {
+            const parsed = Number.parseFloat(text);
+            if (Number.isFinite(parsed)) onValueCommit(commitPhaseMs(parsed, timeUnit));
+          }
+        : undefined
+    }
+    onStep={onStep}
+  />
+);
+
+type RateRowProps = {
   label: string;
   value: number | undefined;
-  /** 长度单位的速度或加速度，如 mm/s²；长度类按显示单位换算 */
+  /** 速度或加速度单位，如 mm/s²；长度类按显示单位换算 */
   unit?: string;
   mixed?: boolean;
   disabled?: boolean;
   readOnly?: boolean;
   onValueCommit?: (next: number) => void;
+  onStep?: (delta: number) => void;
 };
 
-/** 按速度时的一格：加速度、匀速速度或减速度 */
-export const RateField = ({
+/** 按速度的一行：加速度、匀速速度或减速度 */
+export const RateRow = ({
   label,
   value,
   unit,
   mixed = false,
-  disabled = false,
-  readOnly = false,
+  disabled,
+  readOnly,
   onValueCommit,
-}: RateFieldProps) => (
-  <div className="flex items-center gap-2">
-    <span className="w-20 shrink-0 text-body-sm text-muted-foreground">{label}</span>
-    <UnitAwareNumericInput
-      aria-label={label}
-      value={value ?? 0}
+  onStep,
+}: RateRowProps) => {
+  const display = useSessionDisplayLengthUnit();
+  const lengthy = isLengthFamilyUnit(unit);
+  const precision = lengthy ? resolveDisplayPrecision(1, display) : 1;
+  const shown = value === undefined ? 0 : lengthy ? toDisplayLengthValue(value, display) : value;
+  return (
+    <PhaseRow
+      label={label}
+      text={shown.toFixed(precision)}
+      unit={unit && lengthy ? getDisplayLengthFamilyUnit(unit, display) : unit}
+      precision={precision}
       mixed={mixed || value === undefined}
-      unit={unit}
-      min={0}
-      step={1}
-      precision={1}
-      snapToStep={false}
       disabled={disabled}
-      readOnly={readOnly || !onValueCommit}
-      onCommit={
+      readOnly={readOnly}
+      onTextCommit={
         onValueCommit
-          ? (next) => {
+          ? (text) => {
+              const parsed = Number.parseFloat(text);
+              if (!Number.isFinite(parsed)) return;
+              const next = lengthy ? toCanonicalLengthValue(parsed, display) : parsed;
               if (next > 0) onValueCommit(next);
             }
           : undefined
       }
-      className="min-w-0 flex-1 rounded-md border border-border/60 bg-input-background"
+      onStep={onStep}
     />
-  </div>
-);
+  );
+};
 
 /** 两端带经过速度时首尾两段不一定从 0 加速、减到 0，标签跟着换 */
 export const phaseFieldLabels = (
@@ -210,6 +258,16 @@ export const TrapezoidProfileEditor = ({
     if (nextProfile) onChange(nextProfile);
   };
 
+  // 连点 − + 时还没重新渲染就来了下一下，从刚写的那一档接着走
+  const latestRef = useRef(value);
+  latestRef.current = value;
+  const stepTime = (phase: RatePhase) => (delta: number) => {
+    const next = stepPhaseTime(latestRef.current, durationMs, phase, delta);
+    if (!next) return;
+    latestRef.current = next;
+    onChange(next);
+  };
+
   return (
     <div className={cn("flex flex-col", compact ? "gap-2" : "gap-3")}>
       {showKindSelect ? (
@@ -240,32 +298,25 @@ export const TrapezoidProfileEditor = ({
           onChange={onChange}
         />
       ) : (
-        <div className={cn("grid grid-cols-3", compact ? "gap-2" : "gap-3")}>
-          <PhaseField
+        <div className="flex flex-col gap-1.5">
+          <TimeRow
             label={labels.first}
-            value={accelMs}
+            valueMs={accelMs}
             disabled={disabled}
-            compact={compact}
             readOnly={readOnly}
             timeUnit={timeUnit}
             onValueCommit={readOnly ? undefined : handleAccelerationChange}
+            onStep={stepTime("accel")}
           />
-          <PhaseField
-            label={labels.middle}
-            value={cruiseMs}
-            disabled={disabled}
-            compact={compact}
-            readOnly
-            timeUnit={timeUnit}
-          />
-          <PhaseField
+          <TimeRow label={labels.middle} valueMs={cruiseMs} disabled={disabled} readOnly timeUnit={timeUnit} />
+          <TimeRow
             label={labels.last}
-            value={decelMs}
+            valueMs={decelMs}
             disabled={disabled}
-            compact={compact}
             readOnly={readOnly}
             timeUnit={timeUnit}
             onValueCommit={readOnly ? undefined : handleDecelerationChange}
+            onStep={stepTime("decel")}
           />
         </div>
       )}
@@ -294,6 +345,9 @@ const RateFields = ({
   const { distance, boundary, unit } = rateContext;
   const rates = trapezoidRatesOf(value, distance, durationMs, boundary);
   const editable = !readOnly && value.kind === "trapezoid" && distance > 0;
+  // 连点 − + 时还没重新渲染就来了下一下，从刚写的那一档接着走
+  const latestRef = useRef(value);
+  latestRef.current = value;
   const commit = (acceleration: number, deceleration: number) => {
     const next = profileFromRates({ distance, durationMs, boundary, acceleration, deceleration });
     if (!next) {
@@ -302,9 +356,15 @@ const RateFields = ({
     }
     onChange(next);
   };
+  const step = (phase: RatePhase) => (delta: number) => {
+    const next = stepPhaseRate({ profile: latestRef.current, distance, durationMs, boundary, phase, steps: delta });
+    if (!next) return;
+    latestRef.current = next;
+    onChange(next);
+  };
   return (
     <div className="flex flex-col gap-1.5">
-      <RateField
+      <RateRow
         label={labels.first}
         value={rates?.acceleration}
         unit={`${unit}/s²`}
@@ -313,15 +373,16 @@ const RateFields = ({
         onValueCommit={
           editable ? (next) => commit(next, rates?.deceleration ?? next) : undefined
         }
+        onStep={editable ? step("accel") : undefined}
       />
-      <RateField
+      <RateRow
         label={labels.middle}
         value={rates?.cruiseSpeed}
         unit={`${unit}/s`}
         disabled={disabled}
         readOnly
       />
-      <RateField
+      <RateRow
         label={labels.last}
         value={rates?.deceleration}
         unit={`${unit}/s²`}
@@ -330,6 +391,7 @@ const RateFields = ({
         onValueCommit={
           editable ? (next) => commit(rates?.acceleration ?? next, next) : undefined
         }
+        onStep={editable ? step("decel") : undefined}
       />
     </div>
   );

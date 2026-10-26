@@ -84,6 +84,8 @@ export const NumericInput = ({
   const [editing, setEditing] = useState(false);
   const [draftText, setDraftText] = useState("");
   const [scrubbing, setScrubbing] = useState(false);
+  // 拖动中的值放在 state 里：只在松手时提交的父组件不会重画，放 ref 里显示会停在第一下
+  const [scrubValue, setScrubValue] = useState<number | null>(null);
 
   const isInteractive = !disabled && !readOnly;
   const commitValue = useCallback(
@@ -203,6 +205,7 @@ export const NumericInput = ({
       ctrlKey: event.ctrlKey,
     });
     scrub.currentValue = commitValue(raw, false);
+    setScrubValue(scrub.currentValue);
   };
 
   const finishScrub = (event: PointerEvent<HTMLDivElement>) => {
@@ -223,6 +226,7 @@ export const NumericInput = ({
 
     scrubRef.current = null;
     setScrubbing(false);
+    setScrubValue(null);
   };
 
   const handlePointerCancel = (event: PointerEvent<HTMLDivElement>) => {
@@ -235,12 +239,13 @@ export const NumericInput = ({
     }
     scrubRef.current = null;
     setScrubbing(false);
+    setScrubValue(null);
   };
 
   const displayValue = mixed
     ? "--"
     : formatNumericDisplay(
-        scrubbing ? (scrubRef.current?.currentValue ?? value) : value,
+        scrubbing ? (scrubValue ?? value) : value,
         resolvedPrecision,
       );
   const stepButtonClass = cn(

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/app/components/ui/utils";
 import {
@@ -19,12 +19,15 @@ import { axisHasWarning, resolveEnabledAxes } from "../motion-profile/motion-pro
 import {
   RATES_DO_NOT_FIT_MESSAGE,
   profileFromRates,
+  stepPhaseRate,
+  stepPhaseTime,
+  type RatePhase,
   trapezoidRatesOf,
 } from "../motion-profile/phase-rates";
 import {
-  PhaseField,
-  RateField,
   phaseFieldLabels,
+  RateRow,
+  TimeRow,
 } from "../motion-profile/trapezoid-profile-editor";
 import type { SegmentProfileWrite } from "../sequence-ops";
 import { VIRTUAL_AXIS_IDS } from "../timeline/timeline-data";
@@ -141,6 +144,31 @@ export const MultiSegmentEditor = ({ segments }: { segments: ResolvedMotionSegme
       });
     }, true);
 
+  // 点 − + 时每段各自走一档（阶段时间差 0.1 s）；还没重新渲染就来了下一下时从刚写的接着走
+  const curveKey = (curve: AxisCurve) => `${curve.motion.fromRef}->${curve.motion.toRef}`;
+  const latestProfilesRef = useRef(new Map<string, MotionProfile>());
+  latestProfilesRef.current = new Map(curves.map((curve) => [curveKey(curve), curve.motion.profile]));
+  const stepEach = (stepOne: (curve: AxisCurve, profile: MotionProfile) => MotionProfile | null) =>
+    write((curve) => {
+      const key = curveKey(curve);
+      const next = stepOne(curve, latestProfilesRef.current.get(key) ?? curve.motion.profile);
+      if (next) latestProfilesRef.current.set(key, next);
+      return next;
+    }, false);
+  const stepRates = (phase: RatePhase) => (delta: number) =>
+    stepEach((curve, profile) =>
+      stepPhaseRate({
+        profile,
+        distance: curve.distance,
+        durationMs: curve.motion.durationMs,
+        boundary: curve.motion,
+        phase,
+        steps: delta,
+      }),
+    );
+  const stepTimes = (phase: RatePhase) => (delta: number) =>
+    stepEach((curve, profile) => stepPhaseTime(profile, curve.motion.durationMs, phase, delta));
+
   const editable = curves.length > 0;
   const allRates = curves.map(ratesOf);
   const allParams = curves.map(paramsOf);
@@ -196,35 +224,35 @@ export const MultiSegmentEditor = ({ segments }: { segments: ResolvedMotionSegme
         </div>
         {phaseInputMode === "speed" ? (
           <div className="flex flex-col gap-1.5">
-            <RateField
+            <RateRow
               label={labels.first}
               value={shared.acceleration}
               unit={unit === undefined ? undefined : `${unit}/s²`}
               readOnly={!editable}
               onValueCommit={editable ? (next) => writeRates(next, null) : undefined}
+              onStep={editable ? stepRates("accel") : undefined}
             />
-            <RateField
+            <RateRow
               label={labels.middle}
               value={shared.cruiseSpeed}
               unit={unit === undefined ? undefined : `${unit}/s`}
               readOnly
             />
-            <RateField
+            <RateRow
               label={labels.last}
               value={shared.deceleration}
               unit={unit === undefined ? undefined : `${unit}/s²`}
               readOnly={!editable}
               onValueCommit={editable ? (next) => writeRates(null, next) : undefined}
+              onStep={editable ? stepRates("decel") : undefined}
             />
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-2">
-            <PhaseField
+          <div className="flex flex-col gap-1.5">
+            <TimeRow
               label={labels.first}
-              value={shared.accelMs ?? 0}
+              valueMs={shared.accelMs ?? 0}
               mixed={shared.accelMs === undefined}
-              compact
-              timeUnit="s"
               readOnly={!editable}
               onValueCommit={
                 editable
@@ -232,21 +260,18 @@ export const MultiSegmentEditor = ({ segments }: { segments: ResolvedMotionSegme
                       write((curve) => withTrapezoidAccelMs(curve.motion.profile, nextMs), false)
                   : undefined
               }
+              onStep={editable ? stepTimes("accel") : undefined}
             />
-            <PhaseField
+            <TimeRow
               label={labels.middle}
-              value={shared.cruiseMs ?? 0}
+              valueMs={shared.cruiseMs ?? 0}
               mixed={shared.cruiseMs === undefined}
-              compact
-              timeUnit="s"
               readOnly
             />
-            <PhaseField
+            <TimeRow
               label={labels.last}
-              value={shared.decelMs ?? 0}
+              valueMs={shared.decelMs ?? 0}
               mixed={shared.decelMs === undefined}
-              compact
-              timeUnit="s"
               readOnly={!editable}
               onValueCommit={
                 editable
@@ -254,6 +279,7 @@ export const MultiSegmentEditor = ({ segments }: { segments: ResolvedMotionSegme
                       write((curve) => withTrapezoidDecelMs(curve.motion.profile, nextMs), false)
                   : undefined
               }
+              onStep={editable ? stepTimes("decel") : undefined}
             />
           </div>
         )}

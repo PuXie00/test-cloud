@@ -73,15 +73,18 @@ const renderPanel = (sequence: ActionSequenceConfig, selection: SequenceSelectio
 
 const phases = () => within(screen.getByRole("region", { name: "阶段" }));
 
-/** 点一下数值进入输入，填值后回车 */
+/** 在阶段的数字框里填值后回车 */
 const typeNumeric = (label: string, value: string) => {
-  const readout = phases().getByLabelText(label);
-  fireEvent.pointerDown(readout, { pointerId: 1, button: 0, clientX: 0 });
-  fireEvent.pointerUp(readout, { pointerId: 1, button: 0, clientX: 0 });
-  const input = phases().getByRole("textbox", { name: label });
+  const input = phases().getByRole("spinbutton", { name: label });
   fireEvent.change(input, { target: { value } });
   fireEvent.keyDown(input, { key: "Enter" });
 };
+
+const valueOf = (label: string) =>
+  (phases().getByRole("spinbutton", { name: label }) as HTMLInputElement).value;
+
+/** 阶段三行（加速、匀速、减速）各自的 − 或 + 按钮 */
+const stepButtons = (name: "增加" | "减少") => phases().getAllByRole("button", { name });
 
 beforeAll(() => {
   Object.defineProperties(HTMLElement.prototype, {
@@ -124,13 +127,45 @@ describe("segment tabs in a multi-selection", () => {
   });
 });
 
+describe("按时间 on one segment", () => {
+  it("lays the phases out in rows with − + and steps a phase by 0.1 s", () => {
+    const { onUpdateSegment } = renderPanel(oneSpan, {
+      kind: "multi-block",
+      blockIds: ["a", "b"],
+      focus: "segments",
+    });
+    expect([valueOf("加速时间"), valueOf("匀速时间"), valueOf("减速时间")]).toEqual(["1.0", "3.0", "1.0"]);
+    const [accelUp] = stepButtons("增加");
+    fireEvent.click(accelUp!);
+    expect(onUpdateSegment).toHaveBeenCalledWith("a", "b", {
+      profiles: expect.objectContaining({
+        v1: { kind: "trapezoid", params: { accelMs: 1100, decelMs: 1000 } },
+      }),
+    });
+  });
+
+  it("still takes a typed time", () => {
+    const { onUpdateSegment } = renderPanel(oneSpan, {
+      kind: "multi-block",
+      blockIds: ["a", "b"],
+      focus: "segments",
+    });
+    typeNumeric("减速时间", "0.5");
+    expect(onUpdateSegment).toHaveBeenCalledWith("a", "b", {
+      profiles: expect.objectContaining({
+        v1: { kind: "trapezoid", params: { accelMs: 1000, decelMs: 500 } },
+      }),
+    });
+  });
+});
+
 describe("按速度 on one segment", () => {
   it("shows the acceleration, cruise speed and deceleration of the curve", () => {
     builderState.current.phaseInputMode = "speed";
     renderPanel(oneSpan, { kind: "multi-block", blockIds: ["a", "b"], focus: "segments" });
-    expect(phases().getByLabelText("加速度").textContent).toBe("100.0mm/s²");
-    expect(phases().getByLabelText("匀速速度").textContent).toBe("100.0mm/s");
-    expect(phases().getByLabelText("减速度").textContent).toBe("100.0mm/s²");
+    expect([valueOf("加速度"), valueOf("匀速速度"), valueOf("减速度")]).toEqual(["100.0", "100.0", "100.0"]);
+    expect(phases().getAllByText("mm/s²")).toHaveLength(2);
+    expect(phases().getByText("mm/s")).not.toBeNull();
     expect(phases().queryByRole("spinbutton", { name: "加速时间" })).toBeNull();
   });
 
@@ -147,6 +182,40 @@ describe("按速度 on one segment", () => {
     expect(onUpdateSegment).toHaveBeenCalledWith("a", "b", {
       profiles: expect.objectContaining({
         v1: { kind: "trapezoid", params: { accelMs: 500, decelMs: 1000 } },
+      }),
+    });
+  });
+
+  it("steps the acceleration one 0.1 s level per + click", () => {
+    builderState.current.phaseInputMode = "speed";
+    const { onUpdateSegment } = renderPanel(oneSpan, {
+      kind: "multi-block",
+      blockIds: ["a", "b"],
+      focus: "segments",
+    });
+    const [accelUp, cruiseUp] = stepButtons("增加");
+    expect((cruiseUp as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(accelUp!);
+    fireEvent.click(accelUp!);
+    // 两档：加速时间 1.0 s → 0.9 s → 0.8 s
+    const accelMs = onUpdateSegment.mock.calls.map(
+      ([, , settings]) => (settings.profiles.v1 as { params: { accelMs: number } }).params.accelMs,
+    );
+    expect(accelMs).toEqual([900, 800]);
+  });
+
+  it("steps the deceleration one level per − click", () => {
+    builderState.current.phaseInputMode = "speed";
+    const { onUpdateSegment } = renderPanel(oneSpan, {
+      kind: "multi-block",
+      blockIds: ["a", "b"],
+      focus: "segments",
+    });
+    const [, , decelDown] = stepButtons("减少");
+    fireEvent.click(decelDown!);
+    expect(onUpdateSegment).toHaveBeenCalledWith("a", "b", {
+      profiles: expect.objectContaining({
+        v1: expect.objectContaining({ params: expect.objectContaining({ decelMs: 1100 }) }),
       }),
     });
   });
@@ -204,11 +273,24 @@ describe("batch editing several segments", () => {
     ]);
   });
 
+  it("steps every selected segment's phase time by 0.1 s with − +", () => {
+    renderPanel(twoSpans, both);
+    const [, , decelDown] = stepButtons("减少");
+    fireEvent.click(decelDown!);
+    const [writes] = builderState.current.handleWriteSegmentProfiles.mock.calls[0]!;
+    expect(writes).toEqual([
+      expect.objectContaining({ fromRef: "a1", profile: { kind: "trapezoid", params: { accelMs: 400, decelMs: 300 } } }),
+      expect.objectContaining({ fromRef: "a2", profile: { kind: "trapezoid", params: { accelMs: 800, decelMs: 700 } } }),
+    ]);
+  });
+
   it("gives every selected segment the same acceleration by speed", () => {
     builderState.current.phaseInputMode = "speed";
     renderPanel(twoSpans, both);
-    expect(phases().getByLabelText("匀速速度").textContent).toBe("125.0mm/s");
-    expect(phases().getByLabelText("加速度").textContent).toContain("--");
+    expect(valueOf("匀速速度")).toBe("125.0");
+    const accel = phases().getByRole("spinbutton", { name: "加速度" }) as HTMLInputElement;
+    expect(accel.value).toBe("");
+    expect(accel.placeholder).toBe("--");
 
     // 各段保持自己的减速度（312.5、156.25）；取整后不超过所填值
     typeNumeric("加速度", "250");
