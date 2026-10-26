@@ -26,53 +26,55 @@
 PRAGMA journal_mode = WAL;      -- 前端读、C++ 写互不阻塞
 PRAGMA synchronous = NORMAL;
 
--- 日志：操作 / 操作回码 / 报警 / 系统，一条一行
+-- 日志：下发指令 / 操作回码 / 报警 / 系统，一条一行
 CREATE TABLE IF NOT EXISTS log (
   id          INTEGER PRIMARY KEY AUTOINCREMENT, -- 前端转成字符串当记录 id
   ts          INTEGER NOT NULL,                  -- 毫秒时间戳（本机时钟）
-  category    TEXT    NOT NULL CHECK (category IN ('operation','optCall','alarm','system')),
+  category    TEXT    NOT NULL CHECK (category IN ('optCall','optRet','alarm','system')),
   level       TEXT    NOT NULL CHECK (level IN ('debug','info','warning','error')),
   message     TEXT    NOT NULL,                  -- 展示文案；报警时为报警描述
   user_name   TEXT,                              -- 操作人，取报文里的 user
   op_group    TEXT    CHECK (op_group IN ('config','device')),
-  op_type     TEXT,                              -- saveProject / jog / ...
+  op_type     TEXT,                              -- saveProject / jog / ...（只存库，界面暂不显示）
+  addr        TEXT,                              -- 指令地址（只存库，界面不显示）
   result_ok   INTEGER CHECK (result_ok IN (0,1,2)) -- 0 失败 / 1 成功 / 2 超时
 );
 CREATE INDEX IF NOT EXISTS idx_log_ts ON log(ts);
 
 -- 状态快照采样点：按时间存，不挂在某条报警上；只有电机（轴）
 CREATE TABLE IF NOT EXISTS snapshot_sample (
-  t           INTEGER NOT NULL,                  -- 采样时刻，同一拍所有电机用同一个 t
+  ts          INTEGER NOT NULL,                  -- 采样时刻（毫秒），同一拍所有电机用同一个 ts
   device_id   INTEGER NOT NULL,                  -- 电机 id
   position    REAL,                              -- mm
   speed       REAL,                              -- mm/s
   torque      REAL,                              -- 额定转矩的 %
   temperature REAL,                              -- ℃
-  PRIMARY KEY (t, device_id)
+  PRIMARY KEY (ts, device_id)
 ) WITHOUT ROWID;
 ```
 
-- `snapshot_sample` 不要加自增 `id`：SQLite 不允许 `AUTOINCREMENT` 和 `WITHOUT ROWID` 一起用；两个报警时间段重叠时，`INSERT OR IGNORE` 靠 `(t, device_id)` 主键跳过重复的点。
+- `snapshot_sample` 不要加自增 `id`：SQLite 不允许 `AUTOINCREMENT` 和 `WITHOUT ROWID` 一起用；两个报警时间段重叠时，`INSERT OR IGNORE` 靠 `(ts, device_id)` 主键跳过重复的点。
 - 前端按列名读，不依赖列顺序；可以加列，但不要改名或删列。
 
 ## 各类记录怎么填
 
 | `category` | 含义 | 前端 | 要填的字段 |
 |---|---|---|---|
-| `operation` | 下发的操作 | **只存库，不查、不显示** | C++ 自定 |
-| `optCall` | 操作回码 | 显示为「操作」 | `user_name`、`op_group`、`op_type`、`result_ok` |
+| `optCall` | 前端下发的指令 | **只存库，不查、不显示** | C++ 自定 |
+| `optRet` | 操作回码，PLC 回码后写 | 显示为「操作」 | `user_name`、`op_group`、`result_ok`；`op_type`、`addr` 只存库 |
 | `alarm` | 设备报警 | 显示为「报警」，每条都能回看快照 | 只要 `ts`、`level`、`message` |
 | `system` | 状态变化 / 内部细节 | 显示为「系统」 | 只要 `ts`、`level`、`message` |
 
-- 操作和操作回码各记一条。
+- 下发指令（`optCall`）和操作回码（`optRet`）各记一条。
+- `op_type`、`addr` 前端不读、不显示，暂时也不按操作类型筛选；按操作人筛选只约束 `optRet`。
 - 界面上类别徽标的颜色只看 `level`（信息灰、警告黄、错误红）。失败、超时的回码请用 `warning` 或 `error`，否则看不出来。
 - 没有失败原因字段，需要的话写进 `message`。
 - 报警没有级别、报警码、发生 / 清除状态。
 - 系统内部报错、底层通讯细节等用户无感的内容用 `debug` 级别，前端默认隐藏（筛选「日志级别」选「调试」或「全部（含调试）」才显示）。
 
-**`op_type` 取值**（显示名由前端 `OP_TYPE_LABELS` 给，没列出的编码按原样显示）：
+**`op_type` 建议取值**（只存库，界面暂不显示）：
 
-| op_group | op_type | 显示名 | 对应命令 |
+| op_group | op_type | 含义 | 对应命令 |
 |---|---|---|---|
 | config | `saveProject` | 保存工程 | 界面 `Log\|write` |
 | config | `saveProjectAs` | 工程另存为 | 界面 `Log\|write` |
@@ -99,11 +101,11 @@ C++ 维护一个 10s 的环形缓冲区，持续缓存电机状态（100ms 采�
   - 每拍采样时若 now ≤ record_until，这一拍所有电机也 INSERT OR IGNORE（一拍一个事务）
 ```
 
-前端回看时取 `t BETWEEN T-10000 AND T+5000` 的全部采样点，按电机分组画曲线；报警后 5s 还没写完时，有多少显示多少。
+前端回看时取 `ts BETWEEN T-10000 AND T+5000` 的全部采样点，按电机分组画曲线；报警后 5s 还没写完时，有多少显示多少。
 
 ## Info|log：新日志推送
 
-C++ 每写入一条日志就主动推送（可以合并成一批），包括 `Log|write` 写入的。前端按 `id` 去重后追加到控制页列表，只保留最新 30 条，最新一条显示在状态栏。`operation` 和 `debug` 不用推（推了前端也会过滤掉）。
+C++ 每写入一条日志就主动推送（可以合并成一批），包括 `Log|write` 写入的。前端按 `id` 去重后追加到控制页列表，只保留最新 30 条，最新一条显示在状态栏。`optCall` 和 `debug` 不用推（推了前端也会过滤掉）。
 
 ```json
 { "OptCmd": "Info|log", "result": { "success": true, "data": [ /* LogRecord */ ] } }
@@ -115,12 +117,11 @@ LogRecord（JSON 字段 ← 表列）：
 |---|---|---|
 | `id` | string | `id` 转字符串 |
 | `timestamp` | number | `ts` |
-| `category` | `"optCall"` \| `"alarm"` \| `"system"` | `category` |
+| `category` | `"optRet"` \| `"alarm"` \| `"system"` | `category` |
 | `level` | `"debug"` \| `"info"` \| `"warning"` \| `"error"` | `level` |
 | `message` | string | `message` |
 | `user` | string，可缺省 | `user_name` |
 | `opGroup` | `"config"` \| `"device"`，可缺省 | `op_group` |
-| `opType` | string，可缺省 | `op_type` |
 | `result` | `0` \| `1` \| `2`，可缺省 | `result_ok` |
 
 列为 NULL 时 JSON 里不出这个字段。
@@ -131,7 +132,7 @@ LogRecord（JSON 字段 ← 表列）：
 
 ```json
 "params": [{
-  "category": "optCall",
+  "category": "optRet",
   "level": "warning",
   "opGroup": "config",
   "opType": "saveProject",
@@ -141,7 +142,7 @@ LogRecord（JSON 字段 ← 表列）：
 }]
 ```
 
-`category` 只能是 `optCall` 或 `system`；`timestamp` 为事件发生时间，缺省用 C++ 收到的时间。应答 `data` 返回写入后的 LogRecord。
+`category` 只能是 `optRet` 或 `system`；`opType` 照常带上，C++ 写进 `op_type` 列存库；`timestamp` 为事件发生时间，缺省用 C++ 收到的时间。应答 `data` 返回写入后的 LogRecord。
 
 目前界面会写的：保存工程、工程另存为（成功和失败都写）。
 

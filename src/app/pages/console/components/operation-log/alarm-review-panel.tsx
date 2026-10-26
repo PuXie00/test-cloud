@@ -55,11 +55,11 @@ export const AlarmReviewPanel = ({
     [review, showDebug],
   );
   const operationsBefore = records.filter(
-    (r) => r.category === "optCall" && r.timestamp <= alarm.timestamp,
+    (r) => r.category === "optRet" && r.timestamp <= alarm.timestamp,
   );
   const operationOffsetsMs = useMemo(
     () =>
-      records.filter((r) => r.category === "optCall").map((r) => r.timestamp - alarm.timestamp),
+      records.filter((r) => r.category === "optRet").map((r) => r.timestamp - alarm.timestamp),
     [records, alarm.timestamp],
   );
 
@@ -105,7 +105,7 @@ export const AlarmReviewPanel = ({
               {records.map((record) => {
                 const isAlarm = record.id === alarm.id;
                 const isCauseCandidate =
-                  record.category === "optCall" && record.timestamp <= alarm.timestamp;
+                  record.category === "optRet" && record.timestamp <= alarm.timestamp;
                 return (
                   <li key={record.id}>
                     <button

@@ -21,7 +21,7 @@ import {
 } from "./timeline-scale";
 
 const record = (overrides: Partial<LogRecord> & { id: string; timestamp: number }): LogRecord => ({
-  category: "optCall",
+  category: "optRet",
   level: "info",
   message: overrides.id,
   ...overrides,
@@ -70,18 +70,6 @@ describe("filtersToQuery", () => {
     expect(filtersToQuery({ ...DEFAULT_LOG_FILTERS, logLevel: "all" }, 1_000).logLevels).toBeUndefined();
   });
 
-  it("maps an op-type filter to its group and code", () => {
-    expect(filtersToQuery({ ...DEFAULT_LOG_FILTERS, opType: "config" }, 0)).toMatchObject({
-      opGroups: ["config"],
-    });
-    expect(filtersToQuery({ ...DEFAULT_LOG_FILTERS, opType: "config" }, 0).opTypes).toBeUndefined();
-    expect(filtersToQuery({ ...DEFAULT_LOG_FILTERS, opType: "debug:jog" }, 0).opGroups).toBeUndefined();
-    expect(filtersToQuery({ ...DEFAULT_LOG_FILTERS, opType: "device:jog" }, 0)).toMatchObject({
-      opGroups: ["device"],
-      opTypes: ["jog"],
-    });
-  });
-
   it("maps each dimension to its query field", () => {
     const query = filtersToQuery(
       {
@@ -89,7 +77,6 @@ describe("filtersToQuery", () => {
         timePreset: "15m",
         categories: ["alarm"],
         user: "管理员",
-        opType: "device:jog",
         logLevel: "error",
       },
       1_000_000,
@@ -99,10 +86,10 @@ describe("filtersToQuery", () => {
       endTime: 1_000_000,
       categories: ["alarm"],
       users: ["管理员"],
-      opGroups: ["device"],
-      opTypes: ["jog"],
       logLevels: ["error"],
     });
+    expect(query).not.toHaveProperty("opGroups");
+    expect(query).not.toHaveProperty("opTypes");
   });
 });
 
@@ -128,12 +115,12 @@ describe("op call results", () => {
   });
 
   it("colours the badge by log level only", () => {
-    const optCall = (level: LogRecord["level"]) => logBadge(record({ id: level, timestamp: 0, level, result: 0 }));
-    expect(optCall("info").className).toContain("text-muted-foreground");
-    expect(optCall("warning").className).toContain("text-warning");
-    expect(optCall("error").className).toContain("text-destructive");
+    const optRet = (level: LogRecord["level"]) => logBadge(record({ id: level, timestamp: 0, level, result: 0 }));
+    expect(optRet("info").className).toContain("text-muted-foreground");
+    expect(optRet("warning").className).toContain("text-warning");
+    expect(optRet("error").className).toContain("text-destructive");
     expect(logBadge(record({ id: "w", timestamp: 0, category: "system", level: "warning" })).className).toBe(
-      optCall("warning").className,
+      optRet("warning").className,
     );
   });
 });

@@ -13,11 +13,10 @@ describe("LogRow", () => {
       const entry: LogRecord = {
         id: `r${result}`,
         timestamp: 0,
-        category: "optCall",
+        category: "optRet",
         level: "warning",
         message,
         opGroup: "device",
-        opType: "jog",
         result,
       };
       const { container } = render(<LogRow entry={entry} />);

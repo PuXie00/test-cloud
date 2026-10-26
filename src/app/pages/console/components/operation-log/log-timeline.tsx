@@ -25,7 +25,7 @@ import {
 
 /** 快照不是独立记录：每条报警都有，画成报警前 10s ~ 后 5s 的色条 */
 type Lane = VisibleLogCategory | "snapshot";
-const LANES: Lane[] = ["optCall", "alarm", "snapshot", "system"];
+const LANES: Lane[] = ["optRet", "alarm", "snapshot", "system"];
 const LANE_LABEL: Record<Lane, string> = { ...CATEGORY_LABEL, snapshot: "快照" };
 const ZOOM_STEP = 1.5;
 const WHEEL_ZOOM = 1.25;
