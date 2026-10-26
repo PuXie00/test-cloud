@@ -3,21 +3,22 @@
  * 界面侧事件通过 Log|write 交给 C++ 写。日志按工程独立。表结构见 docs/cpp-operation-log-api.md
  */
 
-/** 记录类别：操作（只存库，不查不显示）/ 操作回码 / 报警 / 系统 */
-export type LogCategory = 'operation' | 'optCall' | 'alarm' | 'system'
+/**
+ * 记录类别：optCall 前端下发的指令（只存库，不查不显示）/ optRet 操作回码（PLC 回码后写，界面上的「操作」）/
+ * alarm 报警 / system 系统
+ */
+export type LogCategory = 'optCall' | 'optRet' | 'alarm' | 'system'
 
 /** 界面查询和显示的类别 */
-export type VisibleLogCategory = Exclude<LogCategory, 'operation'>
+export type VisibleLogCategory = Exclude<LogCategory, 'optCall'>
 
-export const VISIBLE_LOG_CATEGORIES: VisibleLogCategory[] = ['optCall', 'alarm', 'system']
+export const VISIBLE_LOG_CATEGORIES: VisibleLogCategory[] = ['optRet', 'alarm', 'system']
 
 /** 日志级别；debug 为用户无感的内部细节，默认隐藏 */
 export type LogLevel = 'debug' | 'info' | 'warning' | 'error'
 
 /** 操作分组：配置操作 / 设备操作 */
 export type LogOpGroup = 'config' | 'device'
-
-export const LOG_OP_GROUPS: LogOpGroup[] = ['config', 'device']
 
 /** 操作结果：0 失败 1 成功 2 超时 */
 export type LogResult = 0 | 1 | 2
@@ -39,8 +40,6 @@ export type LogRecord = {
   user?: string
   /** 操作分组（操作回码填） */
   opGroup?: LogOpGroup
-  /** 操作类型编码（操作回码填），显示名见 OP_TYPE_LABELS */
-  opType?: string
   /** 操作结果（操作回码填） */
   result?: LogResult
 }
@@ -49,12 +48,10 @@ export type LogRecord = {
 export type LogQueryParams = {
   startTime?: number
   endTime?: number
-  /** 缺省为全部可见类别；operation 永远不查 */
+  /** 缺省为全部可见类别；optCall 永远不查 */
   categories?: VisibleLogCategory[]
-  /** users / opGroups / opTypes 只约束操作回码 */
+  /** 只约束操作回码 */
   users?: string[]
-  opGroups?: LogOpGroup[]
-  opTypes?: string[]
   logLevels?: LogLevel[]
   /** 时间排序，offset/limit 按此顺序取；缺省 asc。desc = 先取最新的 */
   order?: 'asc' | 'desc'
@@ -69,12 +66,9 @@ export type LogQueryPage = {
   records: LogRecord[]
 }
 
-export type LogOpTypeOption = { group: LogOpGroup; code: string; label: string }
-
 /** 筛选项：当前工程日志里实际出现过的取值 */
 export type LogFilterOptions = {
   users: string[]
-  opTypes: LogOpTypeOption[]
   /** 最早 / 最晚一条可见记录的时间；无记录为 null */
   timeRange: LogTimeRange | null
 }
@@ -114,7 +108,7 @@ export type LogAlarmReview = {
 
 /** Log|write：界面侧事件（如保存工程）交给 C++ 写入；id、user 由 C++ 填 */
 export type LogWriteParams = {
-  category: 'optCall' | 'system'
+  category: 'optRet' | 'system'
   level: LogLevel
   message: string
   opGroup?: LogOpGroup
@@ -123,24 +117,6 @@ export type LogWriteParams = {
   /** 事件发生时间，缺省为 C++ 收到时间 */
   timestamp?: number
 }
-
-/** 操作类型显示名；库里只存编码，没列出的编码按原样显示 */
-export const OP_TYPE_LABELS: Readonly<Record<string, string>> = {
-  saveProject: '保存工程',
-  saveProjectAs: '工程另存为',
-  downloadProject: '下载工程',
-  couple: '耦合 / 解耦',
-  enable: '使能 / 禁用',
-  jog: '点动',
-  moveTarget: '启动（目标位置）',
-  stop: '停止',
-  eStop: '急停',
-  sequence: '执行动作序列',
-  setOrigin: '设定原点',
-  ruleEdit: '规则引擎修改',
-}
-
-export const opTypeLabel = (code: string): string => OP_TYPE_LABELS[code] ?? code
 
 /** 控制页日志列表条数 */
 export const RECENT_LOG_LIMIT = 30
@@ -163,7 +139,7 @@ export const deviceKey = (series: Pick<LogSnapshotSeries, 'deviceId'>): string =
 /** 快照里只有电机 id */
 export const motorLabel = (deviceId: number): string => `电机 ${deviceId}`
 
-/** 合并推送的记录：去重、去 debug 和 operation、按时间升序、只保留最新 limit 条 */
+/** 合并推送的记录：去重、去 debug 和 optCall、按时间升序、只保留最新 limit 条 */
 export const mergeRecentLogs = (
   current: readonly LogRecord[],
   incoming: readonly LogRecord[],
@@ -172,7 +148,7 @@ export const mergeRecentLogs = (
   const byId = new Map<string, LogRecord>()
   for (const record of current) byId.set(record.id, record)
   for (const record of incoming) {
-    if (record.level === 'debug' || record.category === 'operation') continue
+    if (record.level === 'debug' || record.category === 'optCall') continue
     byId.set(record.id, record)
   }
   return [...byId.values()]

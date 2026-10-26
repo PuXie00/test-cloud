@@ -1,8 +1,6 @@
 import {
-  LOG_OP_GROUPS,
   VISIBLE_LOG_LEVELS,
   type LogLevel,
-  type LogOpGroup,
   type LogQueryParams,
   type VisibleLogCategory,
 } from "@shared/csocket/operation-log";
@@ -18,8 +16,6 @@ export type LogFilters = {
   categories: VisibleLogCategory[];
   /** 空串 = 全部 */
   user: string;
-  /** 空串 = 全部；"device" = 整个分组；"device:jog" = 分组内某个操作类型 */
-  opType: string;
   /** 空串 = 默认（不含调试）；all = 含调试的全部 */
   logLevel: "" | LogLevel | "all";
 };
@@ -75,18 +71,7 @@ export const DEFAULT_LOG_FILTERS: LogFilters = {
   customEnd: "",
   categories: ALL_CATEGORIES,
   user: "",
-  opType: "",
   logLevel: "",
-};
-
-const OP_GROUPS = new Set<LogOpGroup>(LOG_OP_GROUPS);
-
-export const opTypeKey = (group: LogOpGroup, code: string): string => `${group}:${code}`;
-
-export const parseOpTypeFilter = (value: string): { group: LogOpGroup; code?: string } | null => {
-  const [group, code] = value.split(":");
-  if (!OP_GROUPS.has(group as LogOpGroup)) return null;
-  return code ? { group: group as LogOpGroup, code } : { group: group as LogOpGroup };
 };
 
 /** 日志级别筛选是否显示 debug */
@@ -137,7 +122,6 @@ export const filtersToQuery = (
   page: LogPage = { index: 0, size: DEFAULT_PAGE_SIZE },
 ): LogQueryParams => {
   const { startTime, endTime } = resolveTimeRange(filters, now);
-  const opType = filters.opType ? parseOpTypeFilter(filters.opType) : null;
   const logLevels = toLogLevels(filters.logLevel);
   return {
     ...(startTime != null ? { startTime } : {}),
@@ -146,8 +130,6 @@ export const filtersToQuery = (
       ? { categories: filters.categories }
       : {}),
     ...(filters.user ? { users: [filters.user] } : {}),
-    ...(opType ? { opGroups: [opType.group] } : {}),
-    ...(opType?.code ? { opTypes: [opType.code] } : {}),
     ...(logLevels ? { logLevels } : {}),
     order: "desc",
     offset: Math.max(0, page.index) * page.size,
@@ -159,5 +141,4 @@ export const isDefaultFilters = (filters: LogFilters): boolean =>
   filters.timePreset === "all" &&
   filters.categories.length === ALL_CATEGORIES.length &&
   !filters.user &&
-  !filters.opType &&
   !filters.logLevel;

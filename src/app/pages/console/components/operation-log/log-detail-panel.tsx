@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { LOG_RESULT, opTypeLabel, type LogRecord } from "@shared/csocket/operation-log";
+import { LOG_RESULT, type LogRecord } from "@shared/csocket/operation-log";
 import { cn } from "@/app/components/ui/utils";
 import { AlarmReviewPanel } from "./alarm-review-panel";
 import { LogBadge } from "./log-badge";
@@ -12,10 +12,9 @@ import {
   OP_GROUP_LABEL,
   resultText,
 } from "./log-display";
-import { opTypeKey } from "./log-filters";
 import type { AlarmReviewState } from "./use-operation-log";
 
-const RecordDetail = ({ record, opTypeLabels }: { record: LogRecord; opTypeLabels: Map<string, string> }) => {
+const RecordDetail = ({ record }: { record: LogRecord }) => {
   const rows: [string, string][] = [
     ["时间", `${formatDate(record.timestamp)} ${formatClockMs(record.timestamp)}`],
     ["类别", CATEGORY_LABEL[record.category]],
@@ -23,9 +22,6 @@ const RecordDetail = ({ record, opTypeLabels }: { record: LogRecord; opTypeLabel
   ];
   if (record.opGroup) rows.push(["分组", OP_GROUP_LABEL[record.opGroup]]);
   if (record.user) rows.push(["操作人", record.user]);
-  if (record.opGroup && record.opType) {
-    rows.push(["操作类型", opTypeLabels.get(opTypeKey(record.opGroup, record.opType)) ?? opTypeLabel(record.opType)]);
-  }
   const result = resultText(record);
   if (result) rows.push(["结果", result]);
 
@@ -60,7 +56,6 @@ type LogDetailPanelProps = {
   showDebug: boolean;
   cursor: number | null;
   onCursorChange: (t: number) => void;
-  opTypeLabels: Map<string, string>;
   className?: string;
 };
 
@@ -71,7 +66,6 @@ export const LogDetailPanel = memo(({
   showDebug,
   cursor,
   onCursorChange,
-  opTypeLabels,
   className,
 }: LogDetailPanelProps) => (
   <aside className={cn("custom-scrollbar flex flex-col gap-4 overflow-y-auto bg-card p-3", className)}>
@@ -84,7 +78,7 @@ export const LogDetailPanel = memo(({
         onCursorChange={onCursorChange}
       />
     ) : selected ? (
-      <RecordDetail record={selected} opTypeLabels={opTypeLabels} />
+      <RecordDetail record={selected} />
     ) : (
       <p className="text-body-sm text-muted-foreground">
         点击记录查看详情。点击报警记录，自动展示报警前 10s、后 5s 的操作记录、状态快照和转矩 / 位置 / 速度曲线。

@@ -15,7 +15,7 @@ export const writeOperationLog = (entry: LogWriteParams): void => {
 /** 配置操作（保存工程等）的结果，记为操作回码；库里没有失败原因字段，原因拼进文案 */
 export const writeConfigOperationLog = (opType: string, message: string, error?: unknown): void =>
   writeOperationLog({
-    category: "optCall",
+    category: "optRet",
     level: error === undefined ? "info" : "warning",
     opGroup: "config",
     opType,

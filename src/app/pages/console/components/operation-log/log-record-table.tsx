@@ -1,16 +1,8 @@
 import { memo, useEffect, useMemo, useRef } from "react";
-import { LOG_RESULT, opTypeLabel, type LogRecord } from "@shared/csocket/operation-log";
+import { LOG_RESULT, type LogRecord } from "@shared/csocket/operation-log";
 import { cn } from "@/app/components/ui/utils";
 import { LogBadge } from "./log-badge";
 import { formatClockMs, formatDate, LOG_LEVEL_LABEL, resultText } from "./log-display";
-import { opTypeKey } from "./log-filters";
-
-const typeText = (record: LogRecord, opTypeLabels: Map<string, string>) => {
-  if (!record.opType) return "—";
-  return record.opGroup
-    ? opTypeLabels.get(opTypeKey(record.opGroup, record.opType)) ?? opTypeLabel(record.opType)
-    : opTypeLabel(record.opType);
-};
 
 const ResultCell = ({ record }: { record: LogRecord }) => {
   const text = resultText(record);
@@ -25,7 +17,6 @@ type LogRecordTableProps = {
   records: LogRecord[];
   selectedId: string | null;
   onSelect: (record: LogRecord) => void;
-  opTypeLabels: Map<string, string>;
   className?: string;
 };
 
@@ -34,7 +25,6 @@ export const LogRecordTable = memo(({
   records,
   selectedId,
   onSelect,
-  opTypeLabels,
   className,
 }: LogRecordTableProps) => {
   const rows = useMemo(() => [...records].reverse(), [records]);
@@ -57,13 +47,12 @@ export const LogRecordTable = memo(({
 
   return (
     <div ref={scrollerRef} className={cn("custom-scrollbar overflow-auto bg-background", className)}>
-      <table className="w-full min-w-[680px] table-fixed text-body-sm">
+      <table className="w-full min-w-[560px] table-fixed text-body-sm">
         <colgroup>
           <col className={multiDay ? "w-[150px]" : "w-[104px]"} />
           <col className="w-[84px]" />
           <col className="w-[48px]" />
           <col className="w-[84px]" />
-          <col className="w-[112px]" />
           <col />
           <col className="w-[48px]" />
         </colgroup>
@@ -73,7 +62,6 @@ export const LogRecordTable = memo(({
             <th className="px-2 py-1.5 font-normal">类别</th>
             <th className="px-2 py-1.5 font-normal">级别</th>
             <th className="px-2 py-1.5 font-normal">用户</th>
-            <th className="px-2 py-1.5 font-normal">操作类型</th>
             <th className="px-2 py-1.5 font-normal">内容</th>
             <th className="px-2 py-1.5 font-normal">结果</th>
           </tr>
@@ -105,7 +93,6 @@ export const LogRecordTable = memo(({
                 </td>
                 <td className="truncate px-2 py-1 text-muted-foreground">{LOG_LEVEL_LABEL[record.level]}</td>
                 <td className="truncate px-2 py-1">{record.user ?? "—"}</td>
-                <td className="truncate px-2 py-1 text-muted-foreground">{typeText(record, opTypeLabels)}</td>
                 <td className="truncate px-2 py-1 text-foreground" title={record.message}>
                   {record.message}
                 </td>

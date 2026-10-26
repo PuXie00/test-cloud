@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLogStream } from "../../hooks/use-log-stream";
 import { LogBadge } from "../operation-log/log-badge";
-import { formatClock, isFailedOperation, resultText } from "../operation-log/log-display";
+import { formatClock } from "../operation-log/log-display";
 
 const tickClock = () => new Date().toTimeString().slice(0, 8);
 
@@ -14,18 +14,17 @@ const LatestLog = () => {
       </div>
     );
   }
-  const text = isFailedOperation(latest) ? `${latest.message} · ${resultText(latest)}` : latest.message;
   return (
     <div
       className="flex min-w-0 max-w-[560px] items-center gap-2"
-      title={`${formatClock(latest.timestamp)} ${text}`}
+      title={`${formatClock(latest.timestamp)} ${latest.message}`}
       aria-label="最新日志"
     >
       <span className="shrink-0 font-mono text-mono-sm tabular-nums text-muted-foreground">
         {formatClock(latest.timestamp)}
       </span>
       <LogBadge record={latest} />
-      <span className="min-w-0 truncate text-body-sm text-foreground">{text}</span>
+      <span className="min-w-0 truncate text-body-sm text-foreground">{latest.message}</span>
     </div>
   );
 };

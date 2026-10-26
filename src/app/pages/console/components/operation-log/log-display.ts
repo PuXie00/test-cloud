@@ -8,10 +8,10 @@ import {
   type VisibleLogCategory,
 } from "@shared/csocket/operation-log";
 
-/** operation 只存库不显示；界面上的「操作」是操作回码 */
+/** optCall（前端下发的指令）只存库不显示；界面上的「操作」是操作回码 optRet */
 export const CATEGORY_LABEL: Record<LogCategory, string> = {
-  operation: "操作记录",
-  optCall: "操作",
+  optCall: "下发指令",
+  optRet: "操作",
   alarm: "报警",
   system: "系统",
 };
@@ -48,10 +48,6 @@ export const LEVEL_MARKER: Record<LogLevel, string> = {
 
 export const isAlarm = (record: LogRecord): boolean => record.category === "alarm";
 
-/** 操作回码失败或超时 */
-export const isFailedOperation = (record: LogRecord): boolean =>
-  record.category === "optCall" && record.result != null && record.result !== LOG_RESULT.ok;
-
 /** 徽标：文字按类别（操作 / 报警 / 系统），颜色按日志级别 */
 export const logBadge = (record: LogRecord): { label: string; className: string } => ({
   label: CATEGORY_LABEL[record.category],
@@ -66,7 +62,7 @@ const RESULT_TEXT: Record<number, string> = {
 
 /** 操作结果文字；非操作回码或没有结果返回 null */
 export const resultText = (record: LogRecord): string | null => {
-  if (record.category !== "optCall" || record.result == null) return null;
+  if (record.category !== "optRet" || record.result == null) return null;
   return RESULT_TEXT[record.result] ?? null;
 };
 

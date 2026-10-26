@@ -53,6 +53,20 @@ export const panViewStartMs = (
   pxPerSecond: number,
 ): number => clampViewStartMs(viewStartMs - pxToMs(deltaPx, pxPerSecond));
 
+/** 中键拖动先移过这么多像素才定方向 */
+export const PAN_AXIS_LOCK_PX = 6;
+
+export type PanAxis = "x" | "y";
+
+/**
+ * 中键拖动的方向：从按下处移够 PAN_AXIS_LOCK_PX 后取位移大的那个方向，松手前一直锁定，
+ * 上下拖时手稍微偏一点不会跟着左右滚。还没移够返回 null。
+ */
+export const lockPanAxis = (totalDx: number, totalDy: number): PanAxis | null => {
+  if (Math.hypot(totalDx, totalDy) < PAN_AXIS_LOCK_PX) return null;
+  return Math.abs(totalDy) > Math.abs(totalDx) ? "y" : "x";
+};
+
 export const viewStartForZoomAnchor = (input: {
   anchorMs: number;
   pointerXFromPad: number;
