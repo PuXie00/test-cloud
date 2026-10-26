@@ -20,6 +20,11 @@ export type InputProps = Omit<React.ComponentProps<"input">, "readOnly"> & {
    * 未传时：`type="number"` 默认整数；若 `step` 带小数则按 step 推断。
    */
   precision?: number;
+  /**
+   * − + 按档位改值（仅 showStepper 生效）：给了它，点 − + 调用 onStep(∓1)，由父组件写入，
+   * 不再按 step 加减后触发 onChange。用于值只能取离散档位的场合。
+   */
+  onStep?: (delta: number) => void;
 };
 
 const stepButtonClassName =
@@ -42,6 +47,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
       selectOnFocus,
       onFocus,
       precision,
+      onStep,
       ...props
     },
     ref,
@@ -74,7 +80,12 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
     };
 
     const handleStep = (delta: number) => {
-      if (disabled || readOnly || !onChange) return;
+      if (disabled || readOnly) return;
+      if (onStep) {
+        onStep(delta);
+        return;
+      }
+      if (!onChange) return;
       const current = Number(value ?? 0);
       const stepVal = Number(step ?? 1);
       const next = roundToInputPrecision(

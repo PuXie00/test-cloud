@@ -106,3 +106,76 @@ export const profileFromRates = (input: {
 };
 
 export const RATES_DO_NOT_FIT_MESSAGE = "加减速度太小或进出速度太快，这段时间里排不下";
+
+export type RatePhase = "accel" | "decel";
+
+/**
+ * 按速度时拖数值、点 ‹ ›：加速度（或减速度）走 steps 档。阶段时间只能是 0.1 s 的整数倍，
+ * 所以一档 = 这一段的时间差 0.1 s：steps 为正时间缩短、变化率变大，为负反之。
+ * 另一段在 0.1 s 上重新挑时间，让它的变化率尽量保持原值。到头或排不下时返回 null。
+ */
+export const stepPhaseRate = (input: {
+  profile: MotionProfile;
+  distance: number;
+  durationMs: number;
+  boundary?: MotionBoundary;
+  phase: RatePhase;
+  steps: number;
+}): MotionProfile | null => {
+  const { profile, distance, durationMs, boundary, phase, steps } = input;
+  if (profile.kind !== "trapezoid" || steps === 0) return null;
+  const current = trapezoidRatesOf(profile, distance, durationMs, boundary);
+  if (!current) return null;
+  const { accelMs, decelMs } = profile.params;
+  const ownMs = (phase === "accel" ? accelMs : decelMs) - steps * TIME_STEP_MS;
+  if (ownMs < TIME_STEP_MS) return null;
+  const targetOther = phase === "accel" ? current.deceleration : current.acceleration;
+  const build = (otherMs: number): MotionProfile => ({
+    kind: "trapezoid",
+    params: phase === "accel" ? { accelMs: ownMs, decelMs: otherMs } : { accelMs: otherMs, decelMs: ownMs },
+  });
+  const errorOf = (otherMs: number): number | null => {
+    if (otherMs < TIME_STEP_MS || ownMs + otherMs >= durationMs) return null;
+    const rates = trapezoidRatesOf(build(otherMs), distance, durationMs, boundary);
+    if (!rates) return null;
+    return Math.abs((phase === "accel" ? rates.deceleration : rates.acceleration) - targetOther);
+  };
+  // 从另一段现在的时间（放不下时先缩到放得下）出发，往误差变小的方向一档一档找
+  const otherMs = phase === "accel" ? decelMs : accelMs;
+  let bestMs = Math.min(otherMs, Math.floor((durationMs - ownMs - 1) / TIME_STEP_MS) * TIME_STEP_MS);
+  let bestError = errorOf(bestMs);
+  if (bestError === null) return null;
+  for (const direction of [-1, 1]) {
+    let ms = bestMs + direction * TIME_STEP_MS;
+    let error = errorOf(ms);
+    while (error !== null && error < bestError) {
+      bestMs = ms;
+      bestError = error;
+      ms += direction * TIME_STEP_MS;
+      error = errorOf(ms);
+    }
+  }
+  return build(bestMs);
+};
+
+/**
+ * 按时间时点 − +：这一段时间加减 steps 个 0.1 s。少于 0.1 s，或加长后两段变速占满区间时返回 null
+ * （已经占满时仍可以缩短）。
+ */
+export const stepPhaseTime = (
+  profile: MotionProfile,
+  durationMs: number,
+  phase: RatePhase,
+  steps: number,
+): MotionProfile | null => {
+  if (profile.kind !== "trapezoid" || steps === 0) return null;
+  const { accelMs, decelMs } = profile.params;
+  const ownMs = (phase === "accel" ? accelMs : decelMs) + steps * TIME_STEP_MS;
+  const otherMs = phase === "accel" ? decelMs : accelMs;
+  if (ownMs < TIME_STEP_MS) return null;
+  if (steps > 0 && ownMs + otherMs >= durationMs) return null;
+  return {
+    kind: "trapezoid",
+    params: phase === "accel" ? { accelMs: ownMs, decelMs } : { accelMs, decelMs: ownMs },
+  };
+};

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { DisplayLengthUnitProvider } from "@/app/project/display-length-unit-provider";
 import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
 import type { ActionSequenceConfig, PoseBlock } from "@/app/project/action-sequence/types";
@@ -48,6 +48,14 @@ const renderPanel = (sequence: ActionSequenceConfig, selection: SequenceSelectio
 
 const speedRow = (label: string) => screen.getByRole("group", { name: `${label} 经过速度设置` });
 
+beforeAll(() => {
+  Object.defineProperties(HTMLElement.prototype, {
+    setPointerCapture: { configurable: true, value: vi.fn() },
+    hasPointerCapture: { configurable: true, value: vi.fn(() => true) },
+    releasePointerCapture: { configurable: true, value: vi.fn() },
+  });
+});
+
 afterEach(cleanup);
 
 describe("pass speed on a pose", () => {
@@ -63,6 +71,23 @@ describe("pass speed on a pose", () => {
     fireEvent.mouseDown(within(v1).getByRole("button", { name: "增加" }));
     expect(onReplaceBlock).toHaveBeenCalledWith(
       expect.objectContaining({ id: "p1", passSpeeds: { v1: 151 } }),
+    );
+  });
+
+  it("follows the drag pixel by pixel and writes the value it showed", () => {
+    const { onReplaceBlock } = renderPanel(slowFast(), { kind: "block", blockId: "p1" });
+    const readout = within(speedRow("虚轴1")).getByLabelText("虚轴1 经过速度");
+    fireEvent.pointerDown(readout, { pointerId: 1, button: 0, clientX: 100 });
+    const shown: string[] = [];
+    for (const x of [104, 105, 106, 120]) {
+      fireEvent.pointerMove(readout, { pointerId: 1, clientX: x });
+      shown.push(readout.textContent ?? "");
+    }
+    expect(shown).toEqual(["154.0mm/s", "155.0mm/s", "156.0mm/s", "170.0mm/s"]);
+    fireEvent.pointerUp(readout, { pointerId: 1, button: 0, clientX: 120 });
+    expect(onReplaceBlock).toHaveBeenCalledTimes(1);
+    expect(onReplaceBlock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "p1", passSpeeds: { v1: 170 } }),
     );
   });
 
