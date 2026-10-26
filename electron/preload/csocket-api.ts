@@ -39,9 +39,6 @@ export const createCsocketApi = () => ({
   downloadPlcProject: invokeSend(CSOCKET_CHANNELS.downloadPlcProject),
   addDevicePlc: invokeSend(CSOCKET_CHANNELS.addDevicePlc),
   deleteDevicePlc: invokeSend(CSOCKET_CHANNELS.deleteDevicePlc),
-  modifyPlcParam: invokeSend(CSOCKET_CHANNELS.modifyPlcParam),
-  readPlcParamStatus: invokeSend(CSOCKET_CHANNELS.readPlcParamStatus),
-  handleDynamicOperation: invokeSend(CSOCKET_CHANNELS.handleDynamicOperation),
 
   // Motor
   configureAxisParamMotor: invokeSend(CSOCKET_CHANNELS.configureAxisParamMotor),

@@ -108,9 +108,6 @@ export type CsocketAPI = {
   downloadPlcProject: CsocketSendFn
   addDevicePlc: CsocketSendFn
   deleteDevicePlc: CsocketSendFn
-  modifyPlcParam: CsocketSendFn
-  readPlcParamStatus: CsocketSendFn
-  handleDynamicOperation: CsocketSendFn
 
   // Motor
   configureAxisParamMotor: CsocketSendFn

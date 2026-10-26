@@ -7,7 +7,13 @@ const tickClock = () => new Date().toTimeString().slice(0, 8);
 
 const LatestLog = () => {
   const { latest } = useLogStream();
-  if (!latest) return null;
+  if (!latest) {
+    return (
+      <div className="flex min-w-0 max-w-[560px] items-center" aria-label="最新日志">
+        <span className="text-body-sm text-muted-foreground">暂无日志</span>
+      </div>
+    );
+  }
   const text = isFailedOperation(latest) ? `${latest.message} · ${resultText(latest)}` : latest.message;
   return (
     <div

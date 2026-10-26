@@ -388,18 +388,6 @@ export class CsocketApiService {
   }[], opts?: CsocketSendOpts) {
     return this.sendBuilt('CONFIG|DEV|deletePlc', '', items, opts)
   }
-  // 修改Plc参数ip
-  modifyPlcParam(items: unknown[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('modifyPlcParam', '', items, opts)
-  }
-  // 读取plc参数状态
-  readPlcParamStatus(items: unknown[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('readPlcParamStatus', '', items, opts)
-  }
-  // 处理动态操作
-  handleDynamicOperation(items: unknown[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('handleDynamicOperation', '', items, opts)
-  }
   // 封装新增默认带默认值
   async addModelWithDefaultValues(
     items: {
@@ -474,7 +462,6 @@ export class CsocketApiService {
   }
 
   // 动作准备Ready
-
   actionReady(items: ActionDataSaveItem[], opts?: CsocketSendOpts) {
     const isTMaped: any[] = []
     const isNotTMaped: SyncMovePrepareSource[] = []

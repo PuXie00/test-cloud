@@ -62,15 +62,6 @@ export const registerCppSocketIpc = (api: CsocketApiService): void => {
   handleItems(CSOCKET_CHANNELS.deleteDevicePlc, (items, opts) =>
     api.deleteDevicePlc(items as Parameters<CsocketApiService['deleteDevicePlc']>[0], opts),
   )
-  handleItems(CSOCKET_CHANNELS.modifyPlcParam, (items, opts) =>
-    api.modifyPlcParam(items, opts),
-  )
-  handleItems(CSOCKET_CHANNELS.readPlcParamStatus, (items, opts) =>
-    api.readPlcParamStatus(items, opts),
-  )
-  handleItems(CSOCKET_CHANNELS.handleDynamicOperation, (items, opts) =>
-    api.handleDynamicOperation(items, opts),
-  )
 
   // Motor
   handleItems(CSOCKET_CHANNELS.configureAxisParamMotor, (items, opts) =>
