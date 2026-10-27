@@ -193,6 +193,23 @@ export class CppSocketClient {
     })
   }
 
+  /** 等到连上（启动时 C++ 进程起来后才连得上）；超时返回 false */
+  waitConnected(timeoutMs: number): Promise<boolean> {
+    if (this.status.state === 'connected') return Promise.resolve(true)
+    return new Promise((resolve) => {
+      const off = this.onStatus((status) => {
+        if (status.state !== 'connected') return
+        this.clearTimer(timer)
+        off()
+        resolve(true)
+      })
+      const timer = this.setTimer(() => {
+        off()
+        resolve(false)
+      }, timeoutMs)
+    })
+  }
+
   async disconnect(): Promise<CsocketResult<void>> {
     this.manualClose = true
     this.clearHeartbeatTimer()

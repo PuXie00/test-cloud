@@ -11,6 +11,8 @@ import {
 } from "@/app/components/ui/dialog";
 import { ScrollArea } from "@/app/components/ui/scroll-area";
 import { cn } from "@/app/components/ui/utils";
+import { licenseStatusLabel } from "@/app/license/license-labels";
+import { useLicense } from "@/app/license/use-license";
 import { AboutPanel } from "./panels/about-panel";
 import { CalibrationPanel } from "./panels/calibration-panel";
 import { InterfaceSettingsPanel } from "./panels/interface-settings-panel";
@@ -20,7 +22,6 @@ import { UserPanel } from "./panels/user-panel";
 import { SettingsNavItem } from "./settings-nav-item";
 import {
   DEFAULT_SETTINGS_NAV,
-  LICENSE_DISPLAY,
   SETTINGS_NAV_ITEMS,
 } from "./system-settings-constants";
 import type { SettingsNavId } from "./system-settings-types";
@@ -49,6 +50,7 @@ const renderPanel = (navId: SettingsNavId, close: () => void) => {
 
 export const SystemSettingsDialog = ({ open, onOpenChange }: SystemSettingsDialogProps) => {
   const { can } = usePermissions();
+  const { state: licenseState } = useLicense();
   const [activeNav, setActiveNav] = useState<SettingsNavId>(DEFAULT_SETTINGS_NAV);
   const navItems = useMemo(
     () => SETTINGS_NAV_ITEMS.filter((item) => !item.permission || can(item.permission)),
@@ -81,8 +83,13 @@ export const SystemSettingsDialog = ({ open, onOpenChange }: SystemSettingsDialo
                 系统设置
               </DialogTitle>
               <span className="truncate text-body-sm text-muted-foreground">
-                {LICENSE_DISPLAY.edition} · {LICENSE_DISPLAY.status} ·{" "}
-                <span className="font-mono tabular-nums">{LICENSE_DISPLAY.expiresAt}</span>
+                授权{licenseStatusLabel(licenseState)}
+                {licenseState.info?.expireAt && (
+                  <>
+                    {" · 到期 "}
+                    <span className="font-mono tabular-nums">{licenseState.info.expireAt}</span>
+                  </>
+                )}
               </span>
             </div>
             <DialogPrimitive.Close

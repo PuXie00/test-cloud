@@ -108,6 +108,14 @@ export const createCsocketApi = () => ({
   logAlarmReview: invokeSend(CSOCKET_CHANNELS.logAlarmReview),
   logWrite: invokeSend(CSOCKET_CHANNELS.logWrite),
 
+  // 软件授权
+  authLocalStatus: invokeOptionalSend(CSOCKET_CHANNELS.authLocalStatus),
+  authActivate: invokeSend(CSOCKET_CHANNELS.authActivate),
+  authVerify: invokeOptionalSend(CSOCKET_CHANNELS.authVerify),
+  authSkip: invokeOptionalSend(CSOCKET_CHANNELS.authSkip),
+  getLicenseSnapshot: () =>
+    ipcRenderer.invoke(CSOCKET_CHANNELS.getLicenseSnapshot) as Promise<CppAckResult>,
+
 
   getMasterStatusSnapshot: () =>
     ipcRenderer.invoke(CSOCKET_CHANNELS.getMasterStatusSnapshot) as Promise<CppAckResult>,
@@ -123,6 +131,7 @@ export const createCsocketApi = () => ({
   onVerifyProject: (cb: MsgHandler) => onChannel(CSOCKET_CHANNELS.verifyProject, cb),
   onClockSync: (cb: MsgHandler) => onChannel(CSOCKET_CHANNELS.clockSync, cb),
   onLog: (cb: MsgHandler) => onChannel(CSOCKET_CHANNELS.logPush, cb),
+  onLicense: (cb: MsgHandler) => onChannel(CSOCKET_CHANNELS.licensePush, cb),
 })
 
 export type CsocketApi = ReturnType<typeof createCsocketApi>

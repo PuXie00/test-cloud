@@ -6,6 +6,7 @@ import type {
   LogWriteParams,
 } from '../../../shared/csocket/operation-log'
 import { CSOCKET_CHANNELS } from '../../../shared/csocket/channels'
+import type { LicenseActivateItem } from '../../../shared/csocket/license'
 import type {
   CsocketConfigureContext,
   CsocketSendOpts,
@@ -303,4 +304,13 @@ export const registerCppSocketIpc = (api: CsocketApiService): void => {
   )
   ipcMain.handle(CSOCKET_CHANNELS.getModelInfoSnapshot, () => api.getModelInfoSnapshot())
   ipcMain.handle(CSOCKET_CHANNELS.getAxisInfoSnapshot, () => api.getAxisInfoSnapshot())
+
+  // 软件授权
+  handleOptionalItems(CSOCKET_CHANNELS.authLocalStatus, (items, opts) => api.authLocalStatus(items, opts))
+  handleItems(CSOCKET_CHANNELS.authActivate, (items, opts) =>
+    api.authActivate(items as LicenseActivateItem[], opts),
+  )
+  handleOptionalItems(CSOCKET_CHANNELS.authVerify, (items, opts) => api.authVerify(items, opts))
+  handleOptionalItems(CSOCKET_CHANNELS.authSkip, () => api.authSkip())
+  ipcMain.handle(CSOCKET_CHANNELS.getLicenseSnapshot, () => api.getLicenseSnapshot())
 }

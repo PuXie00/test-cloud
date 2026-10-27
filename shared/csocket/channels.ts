@@ -76,6 +76,13 @@ export const CSOCKET_CHANNELS = {
   logAlarmReview: 'csocket:log-alarm-review',
   logWrite: 'csocket:log-write',
 
+  // 软件授权（离线期限、到期由 C++ 判断）
+  authLocalStatus: 'csocket:auth-local-status',
+  authActivate: 'csocket:auth-activate',
+  authVerify: 'csocket:auth-verify',
+  authSkip: 'csocket:auth-skip',
+  getLicenseSnapshot: 'csocket:get-license-snapshot',
+
   // C++ 主动发送事件通道
   // connectStatus: 'csocket:event:connect-status',
   // deviceStatus: 'csocket:event:device-status',
@@ -92,4 +99,5 @@ export const CSOCKET_CHANNELS = {
   verifyProject: 'csocket:event:verify-project',
   clockSync: 'csocket:event:clock-sync',
   logPush: 'csocket:event:log',
+  licensePush: 'csocket:event:license',
 } as const

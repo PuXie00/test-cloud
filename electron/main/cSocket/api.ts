@@ -24,8 +24,15 @@ import {
 } from '../../../shared/csocket/plc-master-status'
 import { AxisInfoStore, type AxisInfo } from '../../../shared/csocket/axis-info'
 import { ModelInfoStore, type ModelInfo } from '../../../shared/csocket/model-info'
+import {
+  isLicenseNoReply,
+  LICENSE_TIMEOUTS,
+  LicenseStore,
+  type LicenseAck,
+  type LicenseActivateItem,
+} from '../../../shared/csocket/license'
 import type { CppSocketClient } from './client'
-import { BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { CSOCKET_CHANNELS } from '../../../shared/csocket/channels'
 import type {
   LogAlarmReviewParams,
@@ -162,6 +169,11 @@ export class CsocketApiService {
     this.broadcast(CSOCKET_CHANNELS.readAxisInfoPolling, EMPTY_POLLING_ACK)
     this.statusSink?.clear('motors')
   })
+  // 软件授权：未打包时允许跳过；连接断开不清（放行只进不退）
+  private readonly license = new LicenseStore(!app.isPackaged)
+  private licenseChecking: Promise<LicenseAck> | null = null
+  private licenseVerifying: Promise<LicenseAck> | null = null
+  private licenseBackgroundVerified = false
 
 
   constructor(
@@ -207,6 +219,11 @@ export class CsocketApiService {
   /** Info|axis 只在数值变化时广播；界面挂载时用它补齐当前值 */
   getAxisInfoSnapshot(): CppAckResult {
     return { success: true, data: this.axisInfo.snapshot() }
+  }
+
+  /** 授权状态只在变化时广播；渲染进程挂载 / 刷新后用它补齐 */
+  getLicenseSnapshot(): LicenseAck {
+    return { success: true, data: [this.license.snapshot()] }
   }
 
   /** 订阅 client 下行并按语义通道广播（只调用一次） */
@@ -284,6 +301,10 @@ export class CsocketApiService {
       // C++ 新写入的日志（操作 / 报警 / 系统）
       if (optCmd === 'Info|log') {
         this.broadcast(CSOCKET_CHANNELS.logPush, msg as CppAckResult<LogRecord>)
+      }
+      // 授权回复超时后才到（不再配对），补进状态（比如激活其实成功了）
+      if (optCmd.startsWith('Auth|')) {
+        this.ingestLicense(msg)
       }
       // if (optCmd === 'Info|actionRun') {
       //   this.broadcast(CSOCKET_CHANNELS.readActionRun, msg as CppAckResult<{
@@ -1158,6 +1179,103 @@ export class CsocketApiService {
   // 自动列表读取
   autoListReadPlc(items?: unknown[], opts?: CsocketSendOpts) {
     return this.sendBuilt('Information|autoListRead', '0x1052', items ?? [], opts)
+  }
+
+  /*
+  * 软件授权：离线期限（7 天）、到期都由 C++ 判断；这里转述，并保管本次运行是否已放行
+  */
+  // 查本地授权状态（每次启动）；正常就放行，并在后台联网校验一次更新授权（连不上网不影响）
+  authLocalStatus(items?: unknown[], opts?: CsocketSendOpts): Promise<LicenseAck> {
+    if (!this.licenseChecking) {
+      this.licenseChecking = this.sendAuth(
+        'Auth|localStatus',
+        [],
+        opts?.timeoutMs ?? LICENSE_TIMEOUTS.localStatusMs,
+        '读取授权状态超时：控制服务没有回复',
+      )
+        .then((result) => {
+          if (!isLicenseNoReply(result) && this.license.snapshot().info?.status === 'valid' && !this.licenseBackgroundVerified) {
+            this.licenseBackgroundVerified = true
+            void this.authVerify()
+          }
+          return result
+        })
+        .finally(() => {
+          this.licenseChecking = null
+        })
+    }
+    return this.licenseChecking
+  }
+  // 用授权码激活（未激活 / 已过期 / 续期）
+  authActivate(items: LicenseActivateItem[], opts?: CsocketSendOpts): Promise<LicenseAck> {
+    const code = typeof items?.[0]?.code === 'string' ? items[0].code.trim() : ''
+    if (!code) return Promise.resolve(this.licenseAck(false, 'INVALID_INPUT', '请输入授权码'))
+    return this.sendAuth(
+      'Auth|activate',
+      [{ code }],
+      opts?.timeoutMs ?? LICENSE_TIMEOUTS.onlineMs,
+      '激活超时：没有收到授权服务器的回复，请检查网络后重试',
+    )
+  }
+  // 联网校验授权（离线超期时必须，正常时用来更新）
+  authVerify(items?: unknown[], opts?: CsocketSendOpts): Promise<LicenseAck> {
+    if (!this.licenseVerifying) {
+      this.licenseVerifying = this.sendAuth(
+        'Auth|verify',
+        [],
+        opts?.timeoutMs ?? LICENSE_TIMEOUTS.onlineMs,
+        '联网校验超时：没有收到授权服务器的回复，请检查网络后重试',
+      ).finally(() => {
+        this.licenseVerifying = null
+      })
+    }
+    return this.licenseVerifying
+  }
+  // 开发模式（未打包）连不上 C++ 时跳过授权
+  authSkip(): Promise<LicenseAck> {
+    if (!this.license.skip()) {
+      return Promise.resolve(this.licenseAck(false, 'NOT_ALLOWED', '正式版不能跳过授权'))
+    }
+    this.broadcastLicense()
+    return Promise.resolve(this.licenseAck(true, undefined, ''))
+  }
+
+  private licenseAck(success: boolean, code: string | number | undefined, message: string): LicenseAck {
+    return { success, code, message, data: [this.license.snapshot()] }
+  }
+
+  private broadcastLicense(): void {
+    this.broadcast(CSOCKET_CHANNELS.licensePush, this.getLicenseSnapshot())
+  }
+
+  private ingestLicense(result: unknown): void {
+    if (this.license.ingest(result)) this.broadcastLicense()
+  }
+
+  // 授权指令不走 sendBuilt：要先等连接，且超时 / 断开要留着原因给授权页（sendBuilt 统一成 SEND_FAILED）
+  private async sendAuth(
+    optCmd: string,
+    params: unknown[],
+    timeoutMs: number,
+    timeoutMessage: string,
+  ): Promise<LicenseAck> {
+    if (!(await this.client.waitConnected(LICENSE_TIMEOUTS.connectWaitMs))) {
+      return this.licenseAck(false, 'NOT_CONNECTED', '连接不上控制服务（YzRuntime），读取不到授权状态')
+    }
+    const sent = await this.client.send({ OptCmd: optCmd, addr: '0x0000', params }, { timeoutMs })
+    if (!sent.ok) {
+      if (sent.code === 'ACK_TIMEOUT') return this.licenseAck(false, 'ACK_TIMEOUT', timeoutMessage)
+      if (sent.code === 'NOT_CONNECTED' || sent.code === 'DISCONNECTED') {
+        return this.licenseAck(false, 'NOT_CONNECTED', '和控制服务（YzRuntime）的连接断开了')
+      }
+      return this.licenseAck(false, 'SEND_FAILED', sent.message)
+    }
+    this.ingestLicense(sent.data)
+    return this.licenseAck(
+      sent.data.success,
+      sent.data.code,
+      sent.data.message?.trim() || this.license.snapshot().info?.message || '',
+    )
   }
 
   /*
