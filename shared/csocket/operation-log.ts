@@ -1,5 +1,5 @@
 /**
- * 操作日志与报警记录：C++ 写入当前工程目录下的 SQLite（log.db），界面直接读库查询；
+ * 操作日志与报警记录：C++ 写入当前工程目录下的 SQLite（logs.db），界面直接读库查询；
  * 界面侧事件通过 Log|write 交给 C++ 写。日志按工程独立。表结构见 docs/cpp-operation-log-api.md
  */
 

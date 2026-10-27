@@ -19,7 +19,7 @@ import {
 } from '../../../shared/csocket/operation-log'
 
 /** 日志库文件名，放在工程目录下 */
-export const LOG_DB_FILE = 'log.db'
+export const LOG_DB_FILE = 'logs.db'
 
 export type SqlValue = string | number | null
 
