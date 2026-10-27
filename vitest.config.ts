@@ -37,6 +37,8 @@ export default defineConfig({
       'src/app/pages/login/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       'src/app/pages/console/components/login-overlay/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       'src/app/pages/console/components/permissions/**/*.{test,spec}.?(c|m)[jt]s?(x)',
+      // 软件授权
+      'src/app/license/**/*.{test,spec}.?(c|m)[jt]s?(x)',
     ],
     testTimeout: 1000 * 29,
   },

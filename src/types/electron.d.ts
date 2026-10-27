@@ -21,6 +21,7 @@ import type {
   SaveProjectParams,
 } from '../../shared/project/types'
 import type { ActionDataSaveItem } from '../../shared/csocket/action-data-save'
+import type { LicenseAck, LicenseActivateItem } from '../../shared/csocket/license'
 import type {
   LogAlarmReview,
   LogAlarmReviewParams,
@@ -183,6 +184,14 @@ export type CsocketAPI = {
   /** 界面侧事件（如保存工程）交给 C++ 写入 */
   logWrite: (items: LogWriteParams[], opts?: CsocketSendOpts) => Promise<CppAckResult<LogRecord>>
 
+  // 软件授权（C++ 判断离线期限与到期；回复的 data[0] 是最新授权状态）
+  authLocalStatus: (items?: unknown[], opts?: CsocketSendOpts) => Promise<LicenseAck>
+  authActivate: (items: LicenseActivateItem[], opts?: CsocketSendOpts) => Promise<LicenseAck>
+  authVerify: (items?: unknown[], opts?: CsocketSendOpts) => Promise<LicenseAck>
+  /** 开发模式（未打包）跳过授权 */
+  authSkip: (items?: unknown[], opts?: CsocketSendOpts) => Promise<LicenseAck>
+  getLicenseSnapshot: () => Promise<LicenseAck>
+
   getMasterStatusSnapshot: () => Promise<CppAckResult>
   getModelInfoSnapshot: () => Promise<CppAckResult>
   getAxisInfoSnapshot: () => Promise<CppAckResult>
@@ -195,6 +204,8 @@ export type CsocketAPI = {
   onClockSync: (cb: (msg: CppAckResult) => void) => () => void
   /** C++ 新写入的日志（Info|log） */
   onLog: (cb: (msg: CppAckResult<LogRecord>) => void) => () => void
+  /** 授权状态变化（含 C++ 迟到的回复） */
+  onLicense: (cb: (msg: LicenseAck) => void) => () => void
 }
 
 type ConfigAPI = {

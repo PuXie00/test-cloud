@@ -10,7 +10,7 @@ import {
 } from "@/app/components/ui/dialog";
 import { cn } from "@/app/components/ui/utils";
 import { useLicense } from "@/app/license/use-license";
-import { LicenseActivatePanel } from "./license-activate-panel";
+import { LicenseActivateForm } from "./license-activate-panel";
 import { LicenseDialogFooter } from "./license-dialog-footer";
 import { LicenseDialogTabs, type LicenseDialogTab } from "./license-dialog-tabs";
 import { LicenseInfoPanel } from "./license-info-panel";
@@ -30,7 +30,7 @@ export const SoftwareLicenseDialog = ({
   defaultTab = "info",
   onActivated,
 }: SoftwareLicenseDialogProps) => {
-  const { isActivated, license } = useLicense();
+  const { state } = useLicense();
   const [tab, setTab] = useState<LicenseDialogTab>(defaultTab);
 
   useEffect(() => {
@@ -48,7 +48,7 @@ export const SoftwareLicenseDialog = ({
   };
 
   const handleConfirm = () => {
-    if (!isActivated) return;
+    if (!state.passed) return;
     onOpenChange(false);
   };
 
@@ -91,14 +91,19 @@ export const SoftwareLicenseDialog = ({
 
           <div className="min-h-[320px] px-6 py-4">
             {tab === "info" ? (
-              <LicenseInfoPanel license={license} />
+              <LicenseInfoPanel />
             ) : (
-              <LicenseActivatePanel onSuccess={handleActivated} />
+              <div className="flex flex-col gap-4 py-2">
+                <p className="text-body-sm text-muted-foreground">
+                  续期或更换授权时，输入厂商提供的新授权码，需要联网。
+                </p>
+                <LicenseActivateForm onSuccess={handleActivated} />
+              </div>
             )}
           </div>
 
           <div className="px-6 pb-6">
-            <LicenseDialogFooter isActivated={isActivated} onConfirm={handleConfirm} />
+            <LicenseDialogFooter isActivated={state.passed} onConfirm={handleConfirm} />
           </div>
         </DialogPrimitive.Content>
       </DialogPortal>
