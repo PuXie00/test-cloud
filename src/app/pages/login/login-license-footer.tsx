@@ -1,11 +1,8 @@
+import { LicenseManageButton } from "@/app/components/license";
 import { licenseDate, licenseStatusLabel } from "@/app/license/license-labels";
 import { useLicense } from "@/app/license/use-license";
 
-type LoginLicenseFooterProps = {
-  onManage: () => void;
-};
-
-export const LoginLicenseFooter = ({ onManage }: LoginLicenseFooterProps) => {
+export const LoginLicenseFooter = () => {
   const { state } = useLicense();
   const valid = state.info?.status === "valid";
 
@@ -28,13 +25,7 @@ export const LoginLicenseFooter = ({ onManage }: LoginLicenseFooterProps) => {
             到期：{licenseDate(state.info.expireAt)}
           </span>
         )}
-        <button
-          type="button"
-          onClick={onManage}
-          className="min-h-10 px-2 text-body-sm font-medium text-primary hover:text-primary/80"
-        >
-          授权管理
-        </button>
+        <LicenseManageButton className="min-h-10 px-2 text-body-sm font-medium text-primary hover:text-primary/80" />
       </div>
     </footer>
   );
