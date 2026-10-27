@@ -15,6 +15,7 @@ import {
 import { isLifecycleBusy } from "./system-status-aggregate";
 
 export const SIMULATION_SWITCH_CONNECT_TITLE = "需全部主控已连接后才能开启仿真";
+export const SIMULATION_SWITCH_PERMISSION_TITLE = "需要「主控操作」权限才能切换仿真";
 
 export type PlcMasterRuntimeFields = {
   connection: PlcConnectionState;
@@ -134,9 +135,14 @@ export const composePlcRuntime = (
 export const resolveSimulationSwitchState = (
   runtimes: readonly PlcRuntimeState[],
   inFlight: boolean,
+  /** 当前用户有「主控操作」权限；没有时开关只读，照样显示是否在仿真 */
+  allowed = true,
 ): SimulationSwitchState => {
   const total = runtimes.length;
   const checked = total > 0 && runtimes.every((row) => row.simulation);
+  if (!allowed) {
+    return { checked, disabled: true, title: SIMULATION_SWITCH_PERMISSION_TITLE };
+  }
   const busy = runtimes.some((row) => isLifecycleBusy(row.lifecycle));
   const allConnected = total > 0 && runtimes.every((row) => row.connection === "connected");
   if (total === 0 || inFlight || busy) {

@@ -1,7 +1,5 @@
 import { clampNumeric, inferPrecision } from "@/app/components/ics/numeric-input-utils";
 
-export const DISPLAY_LENGTH_UNIT_STORAGE_KEY = "yz.console.displayLengthUnit";
-
 export type DisplayLengthUnit = "mm" | "cm" | "m" | "in";
 export type CanonicalLengthFamilyUnit = "mm" | "mm/s" | "mm/s²";
 
@@ -158,23 +156,6 @@ export const parseDisplayLengthUnit = (raw: unknown): DisplayLengthUnit => {
   if (typeof raw !== "string") return "mm";
   const trimmed = raw.trim() as DisplayLengthUnit;
   return DISPLAY_LENGTH_UNITS.has(trimmed) ? trimmed : "mm";
-};
-
-export const readStoredDisplayLengthUnit = (): DisplayLengthUnit => {
-  try {
-    return parseDisplayLengthUnit(localStorage.getItem(DISPLAY_LENGTH_UNIT_STORAGE_KEY));
-  } catch {
-    return "mm";
-  }
-};
-
-export const writeStoredDisplayLengthUnit = (unit: DisplayLengthUnit): boolean => {
-  try {
-    localStorage.setItem(DISPLAY_LENGTH_UNIT_STORAGE_KEY, unit);
-    return true;
-  } catch {
-    return false;
-  }
 };
 
 export const normalizeCanonicalLengthValue = (

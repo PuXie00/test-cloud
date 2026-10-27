@@ -32,6 +32,11 @@ export default defineConfig({
       'src/app/components/ics/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       'src/app/components/ui/input-numeric.test.ts',
       'src/app/viz3d/**/*.{test,spec}.?(c|m)[jt]s?(x)',
+      // 用户与权限
+      'src/app/auth/**/*.{test,spec}.?(c|m)[jt]s?(x)',
+      'src/app/pages/login/**/*.{test,spec}.?(c|m)[jt]s?(x)',
+      'src/app/pages/console/components/login-overlay/**/*.{test,spec}.?(c|m)[jt]s?(x)',
+      'src/app/pages/console/components/permissions/**/*.{test,spec}.?(c|m)[jt]s?(x)',
     ],
     testTimeout: 1000 * 29,
   },

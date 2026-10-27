@@ -12,6 +12,8 @@ import {
 } from "@/app/components/ui/alert-dialog";
 import { ObjectStatusBadge } from "../../monitor-grid/object-status-badge";
 import type { ControlledObjectStatus } from "../../monitor-grid/monitor-data";
+import type { PermissionId } from "@shared/auth/permissions";
+import { usePermissions } from "@/app/auth/permissions";
 import { cn } from "@/app/components/ui/utils";
 import { NO_SELECTION_NOTICE, type ManualOperation } from "./manual-control-availability";
 
@@ -48,6 +50,16 @@ const MAIN_ACTIONS: {
   { id: "home", label: "回原", tone: "default" },
   { id: "level", label: "走平", tone: "default" },
 ];
+
+/** 主操作按钮对应的权限：没有就不显示 */
+const ACTION_PERMISSION: Record<MainActionId, PermissionId> = {
+  couple: "control.couple",
+  enable: "control.device",
+  reset: "control.device",
+  clearAlarm: "control.device",
+  home: "control.manual",
+  level: "control.manual",
+};
 
 const CHOICE_DIALOG: Record<
   ChoiceActionId,
@@ -104,6 +116,8 @@ export const StatusControlBar = ({
   onHome,
 }: StatusControlBarProps) => {
   const [pending, setPending] = useState<MainActionId | null>(null);
+  const { can } = usePermissions();
+  const visibleActions = MAIN_ACTIONS.filter((action) => can(ACTION_PERMISSION[action.id]));
 
   const handleOpenChange = (open: boolean) => {
     if (!open) setPending(null);
@@ -154,13 +168,14 @@ export const StatusControlBar = ({
       </div>
       {notice ? <p className="text-body-sm text-warning">{notice}</p> : null}
 
+      {visibleActions.length > 0 && (
       <div className=" rounded-md overflow-hidden">
         <div className="px-3 h-9 flex items-center bg-muted">
           主操作
         </div>
         <div className="bg-background p-3 ">
           <div className="grid grid-cols-2 gap-2">
-            {MAIN_ACTIONS.map((action) => (
+            {visibleActions.map((action) => (
               <button
                 key={action.id}
                 type="button"
@@ -178,7 +193,7 @@ export const StatusControlBar = ({
           </div>
         </div>
       </div>
-      
+      )}
 
       <AlertDialog open={pending !== null} onOpenChange={handleOpenChange}>
         <AlertDialogContent className="bg-card">

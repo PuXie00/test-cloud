@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { cn } from "@/app/components/ui/utils";
 
 type JogButtonProps = {
@@ -32,6 +32,29 @@ export const JogButton = ({
     holding.current = false;
     onHoldEnd();
   };
+
+  // 按住时按钮被卸载（换人后没了调试权限、切页）或窗口失焦，抬起事件不会来：先停下，不能让电机一直走
+  const onHoldEndRef = useRef(onHoldEnd);
+  onHoldEndRef.current = onHoldEnd;
+  useEffect(() => {
+    const stopIfHolding = () => {
+      if (!holding.current) return;
+      holding.current = false;
+      onHoldEndRef.current();
+    };
+    window.addEventListener("blur", stopIfHolding);
+    return () => {
+      window.removeEventListener("blur", stopIfHolding);
+      stopIfHolding();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (disabled && holding.current) {
+      holding.current = false;
+      onHoldEndRef.current();
+    }
+  }, [disabled]);
 
   return (
     <button

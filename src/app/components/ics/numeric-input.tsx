@@ -1,3 +1,4 @@
+import { useReadOnlyScope } from "./read-only-scope";
 import {
   useCallback,
   useEffect,
@@ -87,7 +88,9 @@ export const NumericInput = ({
   // 拖动中的值放在 state 里：只在松手时提交的父组件不会重画，放 ref 里显示会停在第一下
   const [scrubValue, setScrubValue] = useState<number | null>(null);
 
-  const isInteractive = !disabled && !readOnly;
+  // 权限只读范围里也不能拖动 / 步进（自绘控件不受 fieldset disabled 影响）
+  const inReadOnlyScope = useReadOnlyScope();
+  const isInteractive = !disabled && !readOnly && !inReadOnlyScope;
   const commitValue = useCallback(
     (raw: number, emitCommit = true) => {
       const next = normalizeNumeric(raw, {

@@ -18,6 +18,7 @@ import {
   type CapturedPoseRequest,
 } from "@/app/project/capture-pose-sequence";
 import { useProject } from "@/app/project/use-project";
+import { usePermissions } from "@/app/auth/permissions";
 import { evaluateResolvedSequence } from "@/app/project/action-sequence/evaluate-sequence";
 import { createDefaultAxisProfiles } from "@/app/project/action-sequence/motion-profile";
 import {
@@ -213,8 +214,16 @@ const changedSequenceIds = (from: EditorSnapshot, to: EditorSnapshot): number[] 
 const UNREPAIRED_SAVE_MESSAGE = "动作序列有待修复的问题，请先修复再保存";
 const EMPTY_SAVE_MESSAGE = "动作序列为空，请先编排再保存";
 
+const EDIT_FORBIDDEN_TOAST_ID = "action-edit-forbidden";
+
 export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => {
   const { currentProject, updateCurrentDocument, documentRevision } = useProject();
+  // 编辑入口的总闸：界面已按权限隐藏，这里再拦一次，快捷键、拖放、右键等漏掉的入口也改不了
+  const { can } = usePermissions();
+  const canEditRef = useRef(can("action.edit"));
+  canEditRef.current = can("action.edit");
+  const canEditProgramRef = useRef(can("program.edit"));
+  canEditProgramRef.current = can("program.edit");
 
   /** 工程里已保存的序列：节目列表、执行、预览用这一份 */
   const [appliedSequences, setAppliedSequences] = useState<ActionSequenceConfig[]>([]);
@@ -383,6 +392,18 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   const commitMotionProjection = useCallback(
     (next: MotionProjection): boolean => {
       if (hydratingRef.current) return false;
+      // 改序列（含删除序列时顺带从章节里拿掉）看动作编辑；只改节目列表看节目编排
+      const sequencesChanged = next.sequences !== motionRef.current.sequences;
+      const programsChanged = next.programs !== motionRef.current.programs;
+      const allowed = sequencesChanged
+        ? canEditRef.current
+        : !programsChanged || canEditProgramRef.current;
+      if (!allowed) {
+        toast.error(sequencesChanged ? "没有「编辑动作序列」权限" : "没有「节目编排」权限", {
+          id: EDIT_FORBIDDEN_TOAST_ID,
+        });
+        return false;
+      }
       const result = updateCurrentDocument(
         (doc) => ({
           ...doc,
@@ -575,7 +596,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   /** 序列内容的编辑只改草稿；改回和已保存的一样时草稿自动消失 */
   const updateSelectedSequence = useCallback(
     (updater: (current: ActionSequenceConfig) => ActionSequenceConfig | null): boolean => {
-      if (selectedSequenceId === null) return false;
+      if (selectedSequenceId === null || !canEditRef.current) return false;
       const applied = motionRef.current.sequences.find((item) => item.id === selectedSequenceId);
       if (!applied) return false;
       const current = draftsRef.current.get(selectedSequenceId) ?? applied;
@@ -1654,6 +1675,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
 
   const stepEditorHistory = useCallback(
     (direction: "undo" | "redo"): boolean => {
+      if (!canEditRef.current) return false;
       // 拖动没收到松手（如指针被系统取消）时先把它记完，免得一直撤销不了
       finishOpenStep();
       if (pendingStepRef.current) return false;

@@ -142,6 +142,7 @@ const isJsonContentType = (header: string | undefined): boolean =>
 const WRITE_ERROR_STATUS: Record<AiWriteErrorCode, number> = {
   NO_PROJECT: 409,
   SHOW_MODE: 409,
+  FORBIDDEN: 403,
   BUSY: 409,
   INVALID_SEQUENCE: 400,
   VALIDATION_FAILED: 422,

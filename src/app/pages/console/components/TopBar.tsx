@@ -2,7 +2,7 @@ import { Loader2, Menu, Play } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router";
-import { useAuth } from "@/app/auth/use-auth";
+import { usePermissions } from "@/app/auth/permissions";
 import { AppMenuPanel } from "@/app/components/ics/app-menu-panel";
 import { EmergencyStopButton } from "@/app/components/ics/emergency-stop-button";
 import { ProjectCenterDialog } from "@/app/components/project-center";
@@ -29,6 +29,7 @@ import { ProjectMismatchDialog } from "./system-status/project-mismatch-dialog";
 import { CollabDialog } from "./collaboration/collab-dialog";
 import { OperationLogDialog } from "./operation-log/operation-log-dialog";
 import { CollabQuickPopover } from "./collaboration/collab-quick-popover";
+import { useConsoleLogin } from "./login-overlay/console-login-context";
 import { PermissionsDialog } from "./permissions/permissions-dialog";
 import { SystemSettingsDialog } from "./system-settings/system-settings-dialog";
 import { useAlignmentChecklist } from "./drive-debug/alignment-checklist/alignment-checklist-provider";
@@ -59,8 +60,8 @@ export const TopBar = ({
   const [projectCenterOpen, setProjectCenterOpen] = useState(false);
   const [saveAsOpen, setSaveAsOpen] = useState(false);
   const [confirmDirection, setConfirmDirection] = useState<"enter" | "exit">("enter");
-  const { user, logout } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const { can, canAny, isAdmin } = usePermissions();
+  const { openSwitchUser, logoutInPlace } = useConsoleLogin();
   const navigate = useNavigate();
   const { mode, isLocked, enterShow, exitShow, lock } = useConsoleMode();
   const { allConfirmed: alignmentConfirmed, openDialog: openAlignmentDialog, dialogOpen: alignmentDialogOpen } =
@@ -96,8 +97,12 @@ export const TopBar = ({
   const { canUndoEdit, canRedoEdit, handleUndoEdit, handleRedoEdit } = useActionBuilder();
   // 动作编辑页的撤销 / 重做走编辑器自己的记录，不碰搭建的工程历史
   const isActionEditor = activeNav === "sequences" && !isShow;
-  const undoEnabled = isActionEditor ? canUndoEdit : !isShow && canUndo;
-  const redoEnabled = isActionEditor ? canRedoEdit : !isShow && canRedo;
+  // 撤销 / 重做跟着页面的编辑权限：动作页看动作编辑，其他页面的记录只有工程配置和规则
+  const undoPermitted = isActionEditor
+    ? can("action.edit")
+    : canAny("build.edit", "build.rules");
+  const undoEnabled = undoPermitted && (isActionEditor ? canUndoEdit : !isShow && canUndo);
+  const redoEnabled = undoPermitted && (isActionEditor ? canRedoEdit : !isShow && canRedo);
   const undoShortcutHint = formatProjectHistoryShortcutHint("undo");
   const redoShortcutHint = formatProjectHistoryShortcutHint("redo");
   const undoAriaKeyshortcuts = formatProjectHistoryAriaKeyshortcuts("undo");
@@ -133,10 +138,10 @@ export const TopBar = ({
     undoProjectConfiguration,
   ]);
 
+  // 原地退出：控制台不卸载，登录框盖在上面，设备照常运行
   const handleLogout = () => {
-    logout();
     setMenuOpen(false);
-    navigate("/login", { replace: true });
+    void logoutInPlace();
   };
 
   const handleProjectManage = () => {
@@ -145,7 +150,7 @@ export const TopBar = ({
   };
 
   const handleSaveProject = async () => {
-    if (isSaving) return;
+    if (isSaving || !can("project.save")) return;
     try {
       const engine = getViz3DEngine();
       const view = engine.getSavedView() ?? createDefaultSavedView();
@@ -160,6 +165,7 @@ export const TopBar = ({
   };
 
   const handleSaveProjectAs = () => {
+    if (!can("project.files")) return;
     setSaveAsOpen(true);
   };
 
@@ -185,7 +191,7 @@ export const TopBar = ({
   };
 
   const handleDownloadPlcProject = async () => {
-    if (downloadPlcInFlightRef.current) return;
+    if (downloadPlcInFlightRef.current || !can("build.plc")) return;
     downloadPlcInFlightRef.current = true;
     markMismatchDialogConsumed();
     try {
@@ -244,6 +250,19 @@ export const TopBar = ({
     const result = redoProjectConfiguration();
     if (!result.ok) toast.error(result.reason);
   };
+
+  const hiddenMenuItems = new Set<string>();
+  if (!can("project.save")) hiddenMenuItems.add("save");
+  if (!can("project.files")) hiddenMenuItems.add("save-as");
+  if (!undoPermitted) {
+    hiddenMenuItems.add("undo");
+    hiddenMenuItems.add("redo");
+  }
+  if (!can("log.view")) hiddenMenuItems.add("log");
+  if (!can("collab.manage")) hiddenMenuItems.add("collab");
+  if (!isAdmin) hiddenMenuItems.add("permissions");
+  if (isShow) hiddenMenuItems.add("system");
+  if (isLocked) hiddenMenuItems.add("lock-screen");
 
   const requestEnterShow = () => {
     if (!alignmentConfirmed) {
@@ -334,7 +353,7 @@ export const TopBar = ({
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <SystemStatusPopover />
-            {systemStatus.kind === "projectMismatch" ? (
+            {systemStatus.kind === "projectMismatch" && can("build.plc") ? (
               <button
                 type="button"
                 aria-label="下载当前工程到主控"
@@ -371,13 +390,12 @@ export const TopBar = ({
         onVersionHistory={handleProjectManage}
         onImportExport={() => void handleImportExport()}
         onOperationLog={() => setOperationLogOpen(true)}
-        showPermissions={isAdmin}
         onPermissionsConfig={() => setPermissionsOpen(true)}
         onCollabManage={() => setCollabOpen(true)}
-        showSettings={!isShow}
         onSystemSettings={() => setSettingsOpen(true)}
-        showLockScreen={!isLocked}
         onLockScreen={lock}
+        onSwitchUser={openSwitchUser}
+        hiddenItems={hiddenMenuItems}
       />
       <ShowModeConfirmDialog
         open={confirmOpen}
@@ -388,6 +406,7 @@ export const TopBar = ({
       />
       <ProjectMismatchDialog
         open={shouldShowMismatchDialog}
+        canDownload={can("build.plc")}
         onCancel={markMismatchDialogConsumed}
         onCloseProject={() => void handleCloseProject()}
         onDownload={() => void handleDownloadPlcProject()}

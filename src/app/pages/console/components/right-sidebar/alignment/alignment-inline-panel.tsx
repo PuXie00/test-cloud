@@ -4,6 +4,7 @@ import { cn } from "@/app/components/ui/utils";
 import { PanelHeader } from "@/app/components/ics/panel-header";
 import { ALIGNMENT_BY_OBJECT, type AlignmentMethod } from "@/app/pages/console/components/right-sidebar/project-data";
 import { useConfigWizard } from "@/app/pages/console/hooks/use-config-wizard";
+import { usePermissions } from "@/app/auth/permissions";
 
 type AlignmentInlinePanelProps = {
   objectId: number;
@@ -18,6 +19,8 @@ const btnSecondary =
 
 export const AlignmentInlinePanel = ({ objectId, objectName, className }: AlignmentInlinePanelProps) => {
   const { alignedObjectIds, markAligned } = useConfigWizard();
+  // 标定运动范围要点动到极限并改行程，要「零点与标定」
+  const canCalibrate = usePermissions().can("build.calibrate");
   const initial = ALIGNMENT_BY_OBJECT[objectId];
   const isAligned = alignedObjectIds.has(objectId) || initial?.status === "aligned";
   const [method, setMethod] = useState<AlignmentMethod | null>(initial?.method ?? null);
@@ -68,7 +71,7 @@ export const AlignmentInlinePanel = ({ objectId, objectName, className }: Alignm
             <span className="font-medium">距离对齐</span>
             <span className="text-muted-foreground">输入模型与地面/参考物体的实测距离</span>
           </button>
-          <button
+          {canCalibrate && <button
             type="button"
             onClick={() => handlePick("calibrate")}
             className={cn(
@@ -80,7 +83,7 @@ export const AlignmentInlinePanel = ({ objectId, objectName, className }: Alignm
             <Move3d className="h-4 w-4 text-primary" aria-hidden />
             <span className="font-medium">标定运动范围</span>
             <span className="text-muted-foreground">通过点动到极限位置标定行程</span>
-          </button>
+          </button>}
         </div>
 
         <div className="flex items-center justify-end gap-2">

@@ -1,3 +1,4 @@
+import { usePermissions } from "@/app/auth/permissions";
 import { useEffect, useState } from "react";
 import {
   Clapperboard,
@@ -162,7 +163,9 @@ export const ViewportOverlay = () => {
   const engine = useViz3DContext();
   const { activeNav } = useConsoleNav();
   const preview = useSequencePreview();
-  const showToolMode = activeNav === "devices";
+  // 移动 / 旋转工具要「编辑工程配置」
+  const canEdit = usePermissions().can("build.edit");
+  const showToolMode = activeNav === "devices" && canEdit;
   const isControl = activeNav === "control";
   const isSequences = activeNav === "sequences";
   const [mode, setMode] = useState<ToolMode>(() => engine.getMode());

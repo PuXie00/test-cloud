@@ -1,4 +1,5 @@
 import { useMemo, useState, type Dispatch, type DragEvent, type SetStateAction } from "react";
+import { usePermissions } from "@/app/auth/permissions";
 import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 import { PanelHeader } from "@/app/components/ics/panel-header";
 import { cn } from "@/app/components/ui/utils";
@@ -78,6 +79,7 @@ const AuthoredPageSection = ({
   onRemove: (chapterId: string, index: number) => void;
 }) => {
   const [expanded, setExpanded] = useState(true);
+  const canEdit = usePermissions().can("program.edit");
 
   return (
     <div className="flex flex-col">
@@ -110,7 +112,7 @@ const AuthoredPageSection = ({
               safeGroup={item.runOptions?.safeGroup === true}
               nearest={item.runOptions?.nearest === true}
               reverse={item.runOptions?.reverse === true}
-              draggable
+              draggable={canEdit}
               dropActive={dragOverIndex === index}
               striped={pageItemIndex % 2 !== 0}
               ariaSelected={meta?.refId === previewSequenceId}
@@ -129,7 +131,7 @@ const AuthoredPageSection = ({
               }}
               onPreviewHoldStart={meta ? () => onPreviewHoldStart(meta.refId) : undefined}
               onPreviewHoldEnd={onPreviewHoldEnd}
-              onRemove={() => onRemove(chapterId, index)}
+              onRemove={canEdit ? () => onRemove(chapterId, index) : undefined}
             />
           );
         })}
@@ -150,6 +152,8 @@ const AuthoredChapterSection = ({
 }: AuthoredChapterSectionProps) => {
   const [expanded, setExpanded] = useState(true);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  // 没有「节目编排」只能浏览、预览：不接收拖入，不显示移除
+  const canEdit = usePermissions().can("program.edit");
   const items = chapter.children ?? [];
   const totalPages = programPageCount(items);
   const pages = Array.from({ length: totalPages }, (_, pageIndex) =>
@@ -157,12 +161,14 @@ const AuthoredChapterSection = ({
   );
 
   const acceptDrag = (event: DragEvent) => {
+    if (!canEdit) return false;
     if (!isLibraryDrag(event.dataTransfer) && !isProgramItemDrag(event.dataTransfer)) return false;
     event.preventDefault();
     return true;
   };
 
   const handleDropAt = (index: number) => (event: DragEvent) => {
+    if (!canEdit) return;
     event.preventDefault();
     event.stopPropagation();
     setDragOverIndex(null);
@@ -231,6 +237,7 @@ const AuthoredChapterSection = ({
             />
           ))}
 
+          {canEdit && (
           <div
             onDragOver={(event) => {
               if (acceptDrag(event)) setDragOverIndex(items.length);
@@ -248,6 +255,7 @@ const AuthoredChapterSection = ({
           >
             拖入动作序列（可重复）
           </div>
+          )}
         </div>
       )}
     </div>
@@ -269,6 +277,7 @@ export const AuthoringProgramPanel = ({ className }: AuthoringProgramPanelProps)
     useSequencePreview();
   const { currentProject } = useProject();
   const document = currentProject?.document;
+  const canEdit = usePermissions().can("program.edit");
 
   const itemMetaById = useMemo(() => {
     const map = new Map<string, ItemMeta>();
@@ -296,31 +305,33 @@ export const AuthoringProgramPanel = ({ className }: AuthoringProgramPanelProps)
       <PanelHeader
         title="节目管理"
         extra={
-          <button
-            type="button"
-            aria-label="新建章节"
-            onClick={handleChapterAdd}
-            className="inline-flex h-7 items-center gap-1 rounded-sm border border-border px-2 text-body-sm text-foreground hover:bg-accent"
-          >
-            <Plus className="h-3.5 w-3.5" aria-hidden />
-            章节
-          </button>
+          canEdit ? (
+            <button
+              type="button"
+              aria-label="新建章节"
+              onClick={handleChapterAdd}
+              className="inline-flex h-7 items-center gap-1 rounded-sm border border-border px-2 text-body-sm text-foreground hover:bg-accent"
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden />
+              章节
+            </button>
+          ) : undefined
         }
       />
       <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto p-2">
         {programs.length === 0 && (
           <div className="flex flex-col items-center gap-3 px-4 py-8 text-center">
             <p className="text-body-sm text-muted-foreground">
-              暂无节目。新建章节后，把动作序列库的动作序列拖入章节即可编排。
+              {canEdit ? "暂无节目。新建章节后，把动作序列库的动作序列拖入章节即可编排。" : "暂无节目。"}
             </p>
-            <button
+            {canEdit && <button
               type="button"
               onClick={handleChapterAdd}
               className="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-3 text-body-sm font-semibold text-primary-foreground hover:bg-primary/90"
             >
               <Plus className="h-4 w-4" aria-hidden />
               新建章节
-            </button>
+            </button>}
           </div>
         )}
 

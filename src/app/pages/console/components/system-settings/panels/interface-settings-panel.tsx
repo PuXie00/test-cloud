@@ -1,5 +1,3 @@
-import { useState } from "react";
-import { toast } from "sonner";
 import { Label } from "@/app/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/app/components/ui/radio-group";
 import {
@@ -9,37 +7,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/app/components/ui/select";
-import {
-  type DisplayLengthUnit,
-  parseDisplayLengthUnit,
-  readStoredDisplayLengthUnit,
-  writeStoredDisplayLengthUnit,
-} from "@/app/project/display-length-units";
 import { SettingsFieldRow } from "../settings-field-row";
 import { SettingsSection } from "../settings-section";
 
-const DISPLAY_UNIT_OPTIONS: { value: DisplayLengthUnit; label: string }[] = [
-  { value: "m", label: "米" },
-  { value: "cm", label: "厘米" },
-  { value: "mm", label: "毫米" },
-  { value: "in", label: "英寸" },
-];
-
+/** 本机界面设置；显示单位跟着用户走，在「用户」页 */
 export const InterfaceSettingsPanel = () => {
-  const [storedUnit, setStoredUnit] = useState<DisplayLengthUnit>(() =>
-    readStoredDisplayLengthUnit(),
-  );
-
-  const handleUnitChange = (next: DisplayLengthUnit) => {
-    const ok = writeStoredDisplayLengthUnit(next);
-    if (!ok) {
-      toast.error("显示单位保存失败");
-      return;
-    }
-    setStoredUnit(next);
-    toast.message("显示单位将在重启后生效");
-  };
-
   return (
     <div className="flex max-w-2xl flex-col gap-8">
       <SettingsSection title="界面设置">
@@ -65,26 +37,6 @@ export const InterfaceSettingsPanel = () => {
               <SelectItem value="light">浅色</SelectItem>
             </SelectContent>
           </Select>
-        </SettingsFieldRow>
-
-        <SettingsFieldRow label="显示单位">
-          <RadioGroup
-            value={storedUnit}
-            onValueChange={(v) => handleUnitChange(parseDisplayLengthUnit(v))}
-            className="flex flex-row gap-4"
-          >
-            {DISPLAY_UNIT_OPTIONS.map((item) => (
-              <div key={item.value} className="flex items-center gap-2">
-                <RadioGroupItem value={item.value} id={`unit-${item.value}`} />
-                <Label
-                  htmlFor={`unit-${item.value}`}
-                  className="cursor-pointer text-body-md normal-case tracking-normal text-muted-foreground peer-data-[state=checked]:text-foreground"
-                >
-                  {item.label}
-                </Label>
-              </div>
-            ))}
-          </RadioGroup>
         </SettingsFieldRow>
 
         <SettingsFieldRow label="时间格式">

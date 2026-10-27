@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { cn } from "@/app/components/ui/utils";
 import { TabBar } from "@/app/components/ics/tab-bar";
+import { usePermissions } from "@/app/auth/permissions";
 import { useConsoleMode } from "../../hooks/use-console-mode";
 import {
   useControlLayout,
@@ -23,6 +24,9 @@ type RightTabPanelProps = { className?: string };
 export const RightTabPanel = ({ className }: RightTabPanelProps) => {
   const { mode } = useConsoleMode();
   const { activeRightTab, setActiveRightTab } = useControlLayout();
+  // 手动控制：有手动运动、设备状态、耦合其中之一才显示
+  const { canAny } = usePermissions();
+  const canManual = canAny("control.manual", "control.device", "control.couple");
 
   const tabs = useMemo(() => {
     const rehearsal: { id: ControlRightTabId; label: string }[] = [
@@ -31,14 +35,14 @@ export const RightTabPanel = ({ className }: RightTabPanelProps) => {
       { id: "log", label: TAB_LABEL.log },
       { id: "detail", label: TAB_LABEL.detail },
     ];
-    if (mode === "show") {
+    if (mode === "show" || !canManual) {
       return rehearsal.filter((tab) => tab.id !== "manual");
     }
     return rehearsal;
-  }, [mode]);
+  }, [mode, canManual]);
 
   const safeActive: ControlRightTabId =
-    mode === "show" && activeRightTab === "manual" ? "log" : activeRightTab;
+    activeRightTab === "manual" && (mode === "show" || !canManual) ? "log" : activeRightTab;
 
   return (
     <aside className={cn("flex shrink-0 flex-col overflow-hidden rounded-lg bg-card", className)}>

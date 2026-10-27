@@ -1,3 +1,4 @@
+import { usePermissions } from "@/app/auth/permissions";
 import { useEffect, useState } from "react";
 import type { DisplayOperation, OperationField } from "@shared/config";
 import {
@@ -531,6 +532,8 @@ const DynamicOpSlot = (props: DynamicOpButtonProps) =>
 /** 调试控制条：挂在调试 tab 底部 */
 export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
   const display = useSessionDisplayLengthUnit();
+  // 设原点、设定位移改的是电机的位置基准，要「零点与标定」
+  const canCalibrate = usePermissions().can("build.calibrate");
   const speedUnit = debugSpeedDisplayUnit(display);
   const accelUnit = debugAccelDisplayUnit(display);
   const positionUnit = debugPositionDisplayUnit(display);
@@ -777,6 +780,7 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
   };
 
   const handleSetOrigin = async () => {
+    if (!canCalibrate) return;
     if (setPositionTargetIds.length === 0) return;
     const ok = await window.toolAPI.confirm({
       title: "位置归零",
@@ -792,6 +796,7 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
   };
 
   const handleSetPositionExecute = async () => {
+    if (!canCalibrate) return;
     if (setPositionTargetIds.length === 0) return;
     const displayVal = parseFloat(setPositionValue);
     if (!Number.isFinite(displayVal)) {
@@ -973,14 +978,16 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
           停止
         </button>
 
-        <button
-          type="button"
-          disabled={setPositionDisabled}
-          onClick={() => void handleSetOrigin()}
-          className={barBtnClass}
-        >
-          设原点
-        </button>
+        {canCalibrate && (
+          <button
+            type="button"
+            disabled={setPositionDisabled}
+            onClick={() => void handleSetOrigin()}
+            className={barBtnClass}
+          >
+            设原点
+          </button>
+        )}
 
         <JogButton
           ariaLabel={limitRange ? "限位点动正向" : "点动正向"}
@@ -1176,6 +1183,7 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
             </Checkbox>
             <div className="mx-1 hidden h-6 w-px bg-border/60 sm:block" aria-hidden />
 
+            {canCalibrate && (
             <Popover
               modal={false}
               open={setPositionOpen}
@@ -1260,6 +1268,7 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
                 </div>
               </PopoverContent>
             </Popover>
+            )}
 
             <button
               type="button"

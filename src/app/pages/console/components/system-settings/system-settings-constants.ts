@@ -1,17 +1,20 @@
 import type { LucideIcon } from "lucide-react";
-import { Bell, Gamepad2, Globe, Info, Palette } from "lucide-react";
+import { Bell, Gamepad2, Globe, Info, Palette, UserRound } from "lucide-react";
+import type { PermissionId } from "@shared/auth/permissions";
 import { DEFAULT_LICENSE_META } from "@/app/license/license-constants";
 import type { SettingsNavId, SettingsNavItem } from "./system-settings-types";
 
-export const SETTINGS_NAV_ITEMS: (SettingsNavItem & { icon: LucideIcon })[] = [
-  { id: "interface", label: "界面设置", icon: Palette },
-  { id: "calibration", label: "控台校准", icon: Gamepad2 },
-  { id: "network", label: "网络配置", icon: Globe },
-  { id: "notifications", label: "通知与声音", icon: Bell },
+/** 「用户」「关于软件」人人可见；其余是本机设置，要「系统设置」权限 */
+export const SETTINGS_NAV_ITEMS: (SettingsNavItem & { icon: LucideIcon; permission?: PermissionId })[] = [
+  { id: "user", label: "用户", icon: UserRound },
+  { id: "interface", label: "界面设置", icon: Palette, permission: "system.settings" },
+  { id: "calibration", label: "控台校准", icon: Gamepad2, permission: "system.settings" },
+  { id: "network", label: "网络配置", icon: Globe, permission: "system.settings" },
+  { id: "notifications", label: "通知与声音", icon: Bell, permission: "system.settings" },
   { id: "about", label: "关于软件", icon: Info },
 ];
 
-export const DEFAULT_SETTINGS_NAV: SettingsNavId = "calibration";
+export const DEFAULT_SETTINGS_NAV: SettingsNavId = "user";
 
 export const LICENSE_DISPLAY = {
   ...DEFAULT_LICENSE_META,

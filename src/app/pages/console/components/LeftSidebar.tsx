@@ -1,14 +1,23 @@
 import { Cpu, List, SlidersHorizontal, User } from "lucide-react";
+import { useMemo } from "react";
+import type { PermissionId } from "@shared/auth/permissions";
 import { useAuth } from "@/app/auth/use-auth";
+import { usePermissions } from "@/app/auth/permissions";
 import { NavRail } from "@/app/components/ics/nav-rail";
 import { cn } from "@/app/components/ui/utils";
 
 export type LeftNavId = "control" | "devices" | "sequences";
 
-const NAV_ITEMS = [
-  { id: "control" as const, icon: SlidersHorizontal, label: "控制" },
-  { id: "devices" as const, icon: Cpu, label: "搭建" },
-  { id: "sequences" as const, icon: List, label: "动作" },
+/** 「控制」人人可进；搭建、动作要「进入」权限 */
+const NAV_ITEMS: {
+  id: LeftNavId;
+  icon: typeof SlidersHorizontal;
+  label: string;
+  permission?: PermissionId;
+}[] = [
+  { id: "control", icon: SlidersHorizontal, label: "控制" },
+  { id: "devices", icon: Cpu, label: "搭建", permission: "build.view" },
+  { id: "sequences", icon: List, label: "动作", permission: "action.view" },
 ];
 
 type LeftSidebarProps = {
@@ -19,12 +28,17 @@ type LeftSidebarProps = {
 
 export const LeftSidebar = ({ active, onChange, className }: LeftSidebarProps) => {
   const { user } = useAuth();
+  const { can } = usePermissions();
   const displayName = user?.displayName ?? "未登录";
+  const items = useMemo(
+    () => NAV_ITEMS.filter((item) => !item.permission || can(item.permission)),
+    [can],
+  );
 
   return (
     <aside className={cn("flex shrink-0", className)}>
       <NavRail
-        items={NAV_ITEMS}
+        items={items}
         active={active}
         onChange={onChange}
         className="h-full"

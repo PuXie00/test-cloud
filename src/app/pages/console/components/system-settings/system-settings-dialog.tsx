@@ -1,6 +1,7 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { usePermissions } from "@/app/auth/permissions";
 import {
   Dialog,
   DialogDescription,
@@ -15,6 +16,7 @@ import { CalibrationPanel } from "./panels/calibration-panel";
 import { InterfaceSettingsPanel } from "./panels/interface-settings-panel";
 import { NetworkSettingsPanel } from "./panels/network-settings-panel";
 import { NotificationsPanel } from "./panels/notifications-panel";
+import { UserPanel } from "./panels/user-panel";
 import { SettingsNavItem } from "./settings-nav-item";
 import {
   DEFAULT_SETTINGS_NAV,
@@ -28,8 +30,10 @@ export type SystemSettingsDialogProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-const renderPanel = (navId: SettingsNavId) => {
+const renderPanel = (navId: SettingsNavId, close: () => void) => {
   switch (navId) {
+    case "user":
+      return <UserPanel onRequestClose={close} />;
     case "interface":
       return <InterfaceSettingsPanel />;
     case "calibration":
@@ -44,7 +48,13 @@ const renderPanel = (navId: SettingsNavId) => {
 };
 
 export const SystemSettingsDialog = ({ open, onOpenChange }: SystemSettingsDialogProps) => {
+  const { can } = usePermissions();
   const [activeNav, setActiveNav] = useState<SettingsNavId>(DEFAULT_SETTINGS_NAV);
+  const navItems = useMemo(
+    () => SETTINGS_NAV_ITEMS.filter((item) => !item.permission || can(item.permission)),
+    [can],
+  );
+  const visibleNav = navItems.some((item) => item.id === activeNav) ? activeNav : DEFAULT_SETTINGS_NAV;
 
   useEffect(() => {
     if (open) setActiveNav(DEFAULT_SETTINGS_NAV);
@@ -87,19 +97,19 @@ export const SystemSettingsDialog = ({ open, onOpenChange }: SystemSettingsDialo
 
           <div className="flex min-h-0 flex-1">
             <nav className="flex w-[200px] shrink-0 flex-col gap-1 bg-background p-2" aria-label="设置分类">
-              {SETTINGS_NAV_ITEMS.map((item) => (
+              {navItems.map((item) => (
                 <SettingsNavItem
                   key={item.id}
                   label={item.label}
                   icon={item.icon}
-                  active={activeNav === item.id}
+                  active={visibleNav === item.id}
                   onClick={() => setActiveNav(item.id)}
                 />
               ))}
             </nav>
 
             <ScrollArea className="min-h-0 bg-card flex-1">
-              <div className="p-6">{renderPanel(activeNav)}</div>
+              <div className="p-6">{renderPanel(visibleNav, () => onOpenChange(false))}</div>
             </ScrollArea>
           </div>
         </DialogPrimitive.Content>

@@ -1,3 +1,4 @@
+import { usePermissions } from "@/app/auth/permissions";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { Plus, Search, Trash2 } from "lucide-react";
@@ -27,6 +28,8 @@ export const RulesList = () => {
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
+  // 规则是安全联锁：没有「编辑安全规则」只能浏览
+  const canEdit = usePermissions().can("build.rules");
 
   const filtered = useMemo(() => {
     return rules.filter((r) => {
@@ -48,10 +51,12 @@ export const RulesList = () => {
           extra={(
             <div className="flex items-center gap-2">
               <span className="text-body-sm text-muted-foreground">{rules.length} 条</span>
-              <button type="button" className={btnCreate} onClick={() => setCreateOpen(true)}>
-                <Plus className="h-3.5 w-3.5" aria-hidden />
-                新建规则
-              </button>
+              {canEdit && (
+                <button type="button" className={btnCreate} onClick={() => setCreateOpen(true)}>
+                  <Plus className="h-3.5 w-3.5" aria-hidden />
+                  新建规则
+                </button>
+              )}
             </div>
           )}
         />
@@ -82,7 +87,7 @@ export const RulesList = () => {
               {f.label}
             </button>
           ))}
-          {hasSelection && (
+          {hasSelection && canEdit && (
             <div className="ml-auto flex items-center gap-1.5">
               <span className="text-body-sm text-muted-foreground">已选 {selectedIds.size}</span>
               <button
@@ -128,14 +133,17 @@ export const RulesList = () => {
               onToggleSelect={() => toggleSelect(rule.id)}
               onSetEnabled={(enabled) => setEnabled(rule.id, enabled)}
               onEdit={() => navigate(`/console/rule/${rule.id}`)}
+              readOnly={!canEdit}
             />
           ))
         ) : (
           <li className="px-3 py-6 text-center text-body-sm text-muted-foreground">
             没有匹配的规则。
-            <button type="button" className="ml-1 text-primary hover:underline" onClick={() => setCreateOpen(true)}>
-              新建一条
-            </button>
+            {canEdit && (
+              <button type="button" className="ml-1 text-primary hover:underline" onClick={() => setCreateOpen(true)}>
+                新建一条
+              </button>
+            )}
           </li>
         )}
       </ul>

@@ -1,3 +1,4 @@
+import { usePermissions } from "@/app/auth/permissions";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { MousePointerClick } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
@@ -101,6 +102,8 @@ const SequenceEditor = () => {
     sequenceIssues,
   } = useActionBuilder();
   const { multiSelectedIds, select, toggleMulti, replaceSelection } = useSelection();
+  // 没有「编辑动作序列」：时间轴只读，能播放、跳转、看曲线，不能拖、删、加标记、粘贴
+  const canEdit = usePermissions().can("action.edit");
 
   // 左侧物体列表的点选与监控网格一致：单击选中、Ctrl/⌘ 切换、Shift 连选；经共享选中同步到 3D
   const handleObjectClick = (
@@ -203,6 +206,7 @@ const SequenceEditor = () => {
         return;
       }
       if (shortcut === "paste") {
+        if (!canEdit) return;
         event.preventDefault();
         handleBlockPaste();
         return;
@@ -231,6 +235,7 @@ const SequenceEditor = () => {
         handleSnapToggle();
         return;
       }
+      if (!canEdit) return;
       if (plain && !event.shiftKey && (event.key.toLowerCase() === "m" || event.code === "KeyM")) {
         event.preventDefault();
         addMarkerAtPlayhead();
@@ -256,6 +261,7 @@ const SequenceEditor = () => {
     window.addEventListener("keydown", onWindowKeyDown);
     return () => window.removeEventListener("keydown", onWindowKeyDown);
   }, [
+    canEdit,
     canPlay,
     handleBlockCopy,
     handleBlockDelete,
@@ -281,7 +287,7 @@ const SequenceEditor = () => {
     )
     .map((block) => block.id);
   const presetActions: ContextMenuAction[] =
-    selectedPresetIds.length > 0
+    canEdit && selectedPresetIds.length > 0
       ? [
           {
             label:
@@ -310,6 +316,7 @@ const SequenceEditor = () => {
       className="flex min-h-0 min-w-0 flex-1 flex-col outline-none"
     >
       <TimelineToolbar
+        readOnly={!canEdit}
         trajectoryMode={sequence.trajectoryMode}
         onTrajectoryModeChange={handleTrajectoryModeChange}
         loop={sequence.loop === true}
@@ -326,8 +333,8 @@ const SequenceEditor = () => {
         onPlayToggle={handlePlayToggle}
         onSave={handleSave}
         canSave={sequence !== null && draftSequenceIds.has(sequence.id)}
-        onUndo={handleUndoEdit}
-        onRedo={handleRedoEdit}
+        onUndo={canEdit ? handleUndoEdit : undefined}
+        onRedo={canEdit ? handleRedoEdit : undefined}
         canUndo={canUndoEdit}
         canRedo={canRedoEdit}
         onDelete={() => setDeleteOpen(true)}
@@ -341,7 +348,7 @@ const SequenceEditor = () => {
         snapEnabled={snapEnabled}
         onSnapToggle={handleSnapToggle}
         markers={markers}
-        onAddMarker={addMarkerAtPlayhead}
+        onAddMarker={canEdit ? addMarkerAtPlayhead : undefined}
         onJumpToMarker={jumpToMarker}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
@@ -362,7 +369,7 @@ const SequenceEditor = () => {
         copyLabel="复制动作块"
         pasteLabel="粘贴到播放头"
         canCopy={selectedBlockIds.length > 0}
-        canPaste={canPasteBlock}
+        canPaste={canEdit && canPasteBlock}
         onCopy={handleBlockCopy}
         onPaste={handleBlockPaste}
         onContextMenu={handleTimelineContextMenu}
@@ -379,11 +386,11 @@ const SequenceEditor = () => {
             timelinePxPerSecond={timelinePxPerSecond}
             onSelectionChange={handleSelectionChange}
             onCursorChange={handleCursorChange}
-            onPoseMove={handleMoveTimelineBlock}
-            onPresetMove={handleMoveTimelineBlock}
-            onBlocksShift={handleShiftTimelineBlocks}
-            onBlocksShiftEnd={handleShiftTimelineBlocksEnd}
-            onDynamicPresetResize={handleResizeDynamicPreset}
+            onPoseMove={canEdit ? handleMoveTimelineBlock : ignoreEdit}
+            onPresetMove={canEdit ? handleMoveTimelineBlock : ignoreEdit}
+            onBlocksShift={canEdit ? handleShiftTimelineBlocks : undefined}
+            onBlocksShiftEnd={canEdit ? handleShiftTimelineBlocksEnd : undefined}
+            onDynamicPresetResize={canEdit ? handleResizeDynamicPreset : ignoreEdit}
             onTimelinePxPerSecondChange={handleTimelinePxPerSecondChange}
             invalidTargets={invalidTargets}
             selectedObjectIds={multiSelectedIds}
@@ -391,20 +398,23 @@ const SequenceEditor = () => {
             snapEnabled={snapEnabled}
             fitRequestId={fitRequestId}
             revealCursorRequestId={revealCursorRequestId}
-            onMarkersShift={handleShiftMarkers}
-            onMarkersShiftEnd={handleShiftMarkersEnd}
-            onMarkerRename={(marker) => setRenamingMarkerId(marker.id)}
+            onMarkersShift={canEdit ? handleShiftMarkers : undefined}
+            onMarkersShiftEnd={canEdit ? handleShiftMarkersEnd : undefined}
+            onMarkerRename={canEdit ? (marker) => setRenamingMarkerId(marker.id) : undefined}
             viewMode={viewMode}
             curveAxis={shownCurveAxis}
             curveGraph={curveGraph}
-            onPoseAxisDrag={handleDragPoseAxis}
-            onPoseAxisDragEnd={handleDragPoseAxisEnd}
+            onPoseAxisDrag={canEdit ? handleDragPoseAxis : undefined}
+            onPoseAxisDragEnd={canEdit ? handleDragPoseAxisEnd : undefined}
           />
         </div>
       </ClipboardContextMenu>
     </div>
   );
 };
+
+/** 只读时间轴：拖动不改序列（块位置来自序列，保持不动） */
+const ignoreEdit = () => {};
 
 /**
  * 编辑坞：随动作序列库选中项变形 — 动作 → 时间轴。

@@ -1,5 +1,7 @@
 import { Pencil, X } from "lucide-react";
 import { PanelHeader } from "@/app/components/ics/panel-header";
+import { ReadOnlyScope } from "@/app/components/ics/read-only-scope";
+import { usePermissions } from "@/app/auth/permissions";
 import { formatMotorDisplayName } from "@/app/pages/console/hooks/motor-mid";
 import { formatPlcDisplayName } from "@/app/pages/console/hooks/plc-display-name";
 import { useProjectStore } from "@/app/pages/console/hooks/use-project-store";
@@ -117,20 +119,23 @@ const MotorEditor = ({ id }: { id: number }) => <MotorForm motorId={id} />;
 
 const PropertyContent = () => {
   const { treeFocus, multiSelectedIds, multiSelectedMotorIds } = useSelection();
+  // 没有「编辑工程配置」时属性只读；主控表单自己分范围（连接状态、PLC 复位不算编辑）
+  const readOnly = !usePermissions().can("build.edit");
+  const scoped = (node: React.ReactNode) => <ReadOnlyScope readOnly={readOnly}>{node}</ReadOnlyScope>;
 
   if (multiSelectedMotorIds.length > 1) {
-    return <MultiMotorDriveParamsForm motorIds={multiSelectedMotorIds} />;
+    return scoped(<MultiMotorDriveParamsForm motorIds={multiSelectedMotorIds} />);
   }
   if (multiSelectedMotorIds.length === 1) {
-    return <MotorEditor id={multiSelectedMotorIds[0]!} />;
+    return scoped(<MotorEditor id={multiSelectedMotorIds[0]!} />);
   }
   if (treeFocus?.kind === "master") return <MasterEditor id={treeFocus.id} />;
-  if (treeFocus?.kind === "motor") return <MotorEditor id={treeFocus.id} />;
+  if (treeFocus?.kind === "motor") return scoped(<MotorEditor id={treeFocus.id} />);
   if (multiSelectedIds.length > 1) {
-    return <MultiSelectSummaryPanel objectIds={multiSelectedIds} />;
+    return scoped(<MultiSelectSummaryPanel objectIds={multiSelectedIds} />);
   }
   if (multiSelectedIds.length === 1) {
-    return <ControlledObjectEditor id={multiSelectedIds[0]!} />;
+    return scoped(<ControlledObjectEditor id={multiSelectedIds[0]!} />);
   }
 
   return (
@@ -168,6 +173,8 @@ export const PropertySection = ({ className }: PropertySectionProps) => {
     multiSelectedMotorIds,
   );
 
+  const readOnly = !usePermissions().can("build.edit");
+
   const handleClose = () => {
     setTreeFocus(null);
     clearSelection();
@@ -196,6 +203,11 @@ export const PropertySection = ({ className }: PropertySectionProps) => {
           ) : null
         }
       />
+      {readOnly && hasContent ? (
+        <p className="shrink-0 bg-muted/60 px-3 py-1.5 text-body-sm text-muted-foreground">
+          只读：没有「编辑工程配置」权限
+        </p>
+      ) : null}
       <div className="custom-scrollbar h-0 min-h-0 flex-1 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]">
         {editBoundary ? (
           <ProjectEditBoundary

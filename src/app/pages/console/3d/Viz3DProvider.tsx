@@ -12,7 +12,7 @@ export const Viz3DProvider = ({ children }: Viz3DProviderProps) => {
   const engine = useMemo(() => getViz3DEngine(), []);
   const sessionDisplayUnit = useSessionDisplayLengthUnit();
 
-  // Once per session: inject frozen display unit into engine/telemetry (no hot switch).
+  // 显示单位跟着登录用户走：切换用户 / 改偏好时更新引擎，标签随下一帧遥测刷新
   useEffect(() => {
     engine.setDisplayLengthUnit(sessionDisplayUnit);
   }, [engine, sessionDisplayUnit]);

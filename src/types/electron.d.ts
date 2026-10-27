@@ -40,6 +40,8 @@ export type { CppAckResult };
 import type { ConfigResult, DeviceConfigCatalog } from '../../shared/config'
 import type { KinematicsSolveResult } from '../../shared/kinematics/types'
 import type { AiRendererMessage, AiWriteRequest, AiWriteResult } from '../../shared/ai-bridge/types'
+import type { AuthAPI } from '../../electron/preload/auth-api'
+export type { AuthAPI }
 
 export type {
   CreateProjectParams,
@@ -236,6 +238,8 @@ declare global {
     toolAPI: ToolAPI
     /** 测试 / 纯浏览器环境下不存在 */
     aiBridgeApi?: AiBridgeAPI
+    /** 本机用户与权限；测试 / 纯浏览器环境下不存在 */
+    authAPI?: AuthAPI
     /** @deprecated 新域请用 xxxAPI；仅兼容尚未迁移的通道 */
     ipcRenderer: {
       on: (

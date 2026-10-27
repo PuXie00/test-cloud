@@ -10,6 +10,8 @@ type RuleRowProps = {
   onToggleSelect: () => void;
   onSetEnabled: (enabled: boolean) => void;
   onEdit: () => void;
+  /** 没有「编辑安全规则」：开关只读，不显示勾选、编辑和更多 */
+  readOnly?: boolean;
 };
 
 const formatLast = (iso: string | null) => {
@@ -21,7 +23,14 @@ const formatLast = (iso: string | null) => {
   }
 };
 
-export const RuleRow = ({ rule, selected, onToggleSelect, onSetEnabled, onEdit }: RuleRowProps) => (
+export const RuleRow = ({
+  rule,
+  selected,
+  onToggleSelect,
+  onSetEnabled,
+  onEdit,
+  readOnly = false,
+}: RuleRowProps) => (
   <li
     className={cn(
       "flex items-center gap-3 rounded-md bg-background px-3 py-2 transition-colors",
@@ -29,13 +38,15 @@ export const RuleRow = ({ rule, selected, onToggleSelect, onSetEnabled, onEdit }
       selected && "ring-1 ring-primary bg-primary/5"
     )}
   >
-    <input
-      type="checkbox"
-      checked={selected}
-      onChange={onToggleSelect}
-      aria-label={`选择规则 ${rule.name}`}
-      className="h-4 w-4 shrink-0 accent-primary [@media(pointer:coarse)]:h-5 [@media(pointer:coarse)]:w-5"
-    />
+    {!readOnly && (
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={onToggleSelect}
+        aria-label={`选择规则 ${rule.name}`}
+        className="h-4 w-4 shrink-0 accent-primary [@media(pointer:coarse)]:h-5 [@media(pointer:coarse)]:w-5"
+      />
+    )}
     <div className="min-w-0 flex-1">
       <p className="truncate text-body-md text-foreground">{rule.name}</p>
       <p className="font-mono text-mono-sm tabular-nums text-muted-foreground">
@@ -49,7 +60,9 @@ export const RuleRow = ({ rule, selected, onToggleSelect, onSetEnabled, onEdit }
         {rule.enabled ? "已启用" : "已禁用"}
       </StatusBadge>
     )}
-    <Switch checked={rule.enabled} onCheckedChange={onSetEnabled} aria-label="启用规则" />
+    <Switch checked={rule.enabled} onCheckedChange={onSetEnabled} disabled={readOnly} aria-label="启用规则" />
+    {!readOnly && (
+    <>
     <button
       type="button"
       onClick={onEdit}
@@ -65,5 +78,7 @@ export const RuleRow = ({ rule, selected, onToggleSelect, onSetEnabled, onEdit }
     >
       <MoreHorizontal className="h-3.5 w-3.5" aria-hidden />
     </button>
+    </>
+    )}
   </li>
 );

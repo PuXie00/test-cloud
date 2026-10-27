@@ -51,6 +51,15 @@ vi.mock("react-router", () => ({
   useNavigate: () => vi.fn(),
 }));
 
+vi.mock("@/app/pages/console/components/login-overlay/console-login-context", () => ({
+  useConsoleLogin: () => ({
+    switchUserOpen: false,
+    openSwitchUser: vi.fn(),
+    closeSwitchUser: vi.fn(),
+    logoutInPlace: vi.fn(),
+  }),
+}));
+
 vi.mock("@/app/auth/use-auth", () => ({
   useAuth: () => ({
     user: { role: "admin" },

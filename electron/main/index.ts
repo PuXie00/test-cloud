@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs'
-import { registerCppSocketHandlers, shutdownCppSocket } from './cSocket'
+import { getCsocketApiService, registerCppSocketHandlers, shutdownCppSocket } from './cSocket'
+import { registerAuthHandlers } from './auth'
 import { registerKinematicsHandlers, shutdownKinematics } from './kinematics'
 import { registerToolHandlers } from './tool'
 import { registerConfigHandlers } from './getConfig'
@@ -127,6 +128,12 @@ async function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // 当前登录用户写进发给 C++ 的报文（操作日志的操作人）
+  registerAuthHandlers({
+    onSessionChange: (session) => {
+      getCsocketApiService().configure({ user: session?.user.displayName })
+    },
+  })
   registerProjectHandlers()
   registerCppSocketHandlers()
   registerKinematicsHandlers()

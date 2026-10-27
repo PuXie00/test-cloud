@@ -32,15 +32,25 @@ export const CollapsePanel = ({
     onOpenChange={onOpenChange}
     className={cn("min-w-0 overflow-hidden rounded-md bg-muted", className)}
   >
-    <CollapsibleTrigger
-      className="group flex h-9 w-full items-center gap-2 px-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      aria-label={title}
-    >
-      <ChevronRight
-        className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90"
-        aria-hidden
-      />
-      <span className="truncate text-label-caps text-foreground">{title}</span>
+    {/* 不用原生 button：在只读范围（fieldset disabled）里也要能展开查看 */}
+    <CollapsibleTrigger asChild>
+      <div
+        role="button"
+        tabIndex={0}
+        className="group flex h-9 w-full cursor-pointer items-center gap-2 px-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label={title}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          event.currentTarget.click();
+        }}
+      >
+        <ChevronRight
+          className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90"
+          aria-hidden
+        />
+        <span className="truncate text-label-caps text-foreground">{title}</span>
+      </div>
     </CollapsibleTrigger>
     <CollapsibleContent className="min-w-0 overflow-hidden rounded-b-md bg-background p-3 data-[state=closed]:hidden">
       {children}

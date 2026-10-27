@@ -8,6 +8,7 @@ import {
   resolveSimulationSwitchState,
   shouldApplyMasterStatusSnapshot,
   SIMULATION_SWITCH_CONNECT_TITLE,
+  SIMULATION_SWITCH_PERMISSION_TITLE,
 } from "./plc-master-runtime";
 
 const item = (
@@ -143,5 +144,14 @@ describe("resolveSimulationSwitchState", () => {
     ).toBe(true);
     expect(resolveSimulationSwitchState([runtime({ plcId: 1 })], true).disabled).toBe(true);
     expect(resolveSimulationSwitchState([], false).disabled).toBe(true);
+  });
+});
+
+describe("resolveSimulationSwitchState 权限", () => {
+  it("没有「主控操作」时开关只读，照样显示是否在仿真", () => {
+    const on = [runtime({ plcId: 1, simulation: true }), runtime({ plcId: 2, simulation: true })];
+    const state = resolveSimulationSwitchState(on, false, false);
+    expect(state).toEqual({ checked: true, disabled: true, title: SIMULATION_SWITCH_PERMISSION_TITLE });
+    expect(resolveSimulationSwitchState(on, false, true).disabled).toBe(false);
   });
 });

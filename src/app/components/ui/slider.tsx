@@ -4,6 +4,7 @@ import * as React from "react";
 import * as SliderPrimitive from "@radix-ui/react-slider";
 
 import { cn } from "./utils";
+import { useReadOnlyScope } from "@/app/components/ics/read-only-scope";
 
 function Slider({
   className,
@@ -11,8 +12,11 @@ function Slider({
   value,
   min = 0,
   max = 100,
+  disabled,
   ...props
 }: React.ComponentProps<typeof SliderPrimitive.Root>) {
+  // 权限只读范围里禁用（Radix 滑块不受 fieldset disabled 影响）
+  const inReadOnlyScope = useReadOnlyScope();
   const _values = React.useMemo(
     () =>
       Array.isArray(value)
@@ -30,6 +34,7 @@ function Slider({
       value={value}
       min={min}
       max={max}
+      disabled={disabled || inReadOnlyScope}
       className={cn(
         "relative flex w-full touch-none items-center select-none data-[disabled]:opacity-50 data-[orientation=vertical]:h-full data-[orientation=vertical]:min-h-44 data-[orientation=vertical]:w-auto data-[orientation=vertical]:flex-col",
         className,

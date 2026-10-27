@@ -5,10 +5,11 @@ type ProjectDetailSidebarProps = {
   project: ProjectRecord | null;
   opening?: boolean;
   onOpen: () => void;
-  onSaveAs: () => void;
-  onExport: () => void;
-  onDelete: () => void;
-  onRestore: (entry: ProjectVersionEntry) => void;
+  /** 下面几项没有对应权限时不传，按钮不显示 */
+  onSaveAs?: () => void;
+  onExport?: () => void;
+  onDelete?: () => void;
+  onRestore?: (entry: ProjectVersionEntry) => void;
 };
 
 const ghostAction =
@@ -76,22 +77,28 @@ export const ProjectDetailSidebar = ({
           )}
           {opening ? "正在打开…" : "打开工程"}
         </button>
-        <button type="button" className={ghostAction} onClick={onSaveAs}>
-          <Copy className="h-4 w-4" aria-hidden />
-          另存为副本
-        </button>
-        <button type="button" className={ghostAction} onClick={onExport}>
-          <Download className="h-4 w-4" aria-hidden />
-          导出备份
-        </button>
-        <button
-          type="button"
-          className="flex h-10 w-full items-center justify-center gap-2 rounded-md border border-border bg-transparent text-body-sm text-destructive hover:bg-destructive/10"
-          onClick={onDelete}
-        >
-          <Trash2 className="h-4 w-4" aria-hidden />
-          删除工程
-        </button>
+        {onSaveAs ? (
+          <button type="button" className={ghostAction} onClick={onSaveAs}>
+            <Copy className="h-4 w-4" aria-hidden />
+            另存为副本
+          </button>
+        ) : null}
+        {onExport ? (
+          <button type="button" className={ghostAction} onClick={onExport}>
+            <Download className="h-4 w-4" aria-hidden />
+            导出备份
+          </button>
+        ) : null}
+        {onDelete ? (
+          <button
+            type="button"
+            className="flex h-10 w-full items-center justify-center gap-2 rounded-md border border-border bg-transparent text-body-sm text-destructive hover:bg-destructive/10"
+            onClick={onDelete}
+          >
+            <Trash2 className="h-4 w-4" aria-hidden />
+            删除工程
+          </button>
+        ) : null}
       </div>
 
       <div>
@@ -111,15 +118,17 @@ export const ProjectDetailSidebar = ({
                 <span>
                   {entry.version} · {entry.date}
                 </span>
-                <button
-                  type="button"
-                  className="text-primary hover:text-primary/80 disabled:opacity-40"
-                  disabled={!entry.historyId}
-                  onClick={() => onRestore(entry)}
-                  aria-label={`恢复 ${entry.version}`}
-                >
-                  恢复
-                </button>
+                {onRestore ? (
+                  <button
+                    type="button"
+                    className="text-primary hover:text-primary/80 disabled:opacity-40"
+                    disabled={!entry.historyId}
+                    onClick={() => onRestore(entry)}
+                    aria-label={`恢复 ${entry.version}`}
+                  >
+                    恢复
+                  </button>
+                ) : null}
               </li>
             ))}
           </ul>

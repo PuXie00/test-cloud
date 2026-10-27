@@ -4,6 +4,7 @@ import { sendEnableModel, sendHomeModel, sendResetModel } from "../../../hooks/m
 import { useSelection } from "../../../hooks/use-selection";
 import { useSequencePreview } from "../../../hooks/use-sequence-preview";
 import { useProject } from "@/app/project/use-project";
+import { usePermissions } from "@/app/auth/permissions";
 import { useControlledObjects } from "../../../hooks/use-controlled-objects";
 import { useCoupleFlow } from "../../../hooks/use-couple-flow";
 import { StatusControlBar } from "./status-control-bar";
@@ -53,6 +54,10 @@ export const ManualControlPanel = ({
   const { getById } = useControlledObjects();
   const { sequenceId: previewSequenceId } = useSequencePreview();
   const { currentProject } = useProject();
+  // 点动、维度控制 / GO 要「手动运动」；取当前写进位姿要「编辑动作序列」；状态条按钮各自判断
+  const { can } = usePermissions();
+  const canMove = can("control.manual");
+  const canWritePose = can("action.edit");
   // 预览中：手动操作不可用，头部提示
   const previewing = previewSequenceId !== null;
   const previewName = previewing
@@ -162,19 +167,25 @@ export const ManualControlPanel = ({
         onReset={handleReset}
         onHome={handleHome}
       />
-      <JogControl
-        objectIds={selectedIds}
-        dimensions={dimensions}
-        disabled={!availability.allowed("jog")}
-        settingsDisabled={!availability.allowed("jogSettings")}
-      />
-      <DimensionControl objectIds={selectedIds} disabled={!availability.allowed("dimension")} />
-      <QuickActions
-        canSave={canSave}
-        onSave={handleSaveCurrentPose}
-        label={saveLabel}
-        hint={saveBlockedReason}
-      />
+      {canMove && (
+        <>
+          <JogControl
+            objectIds={selectedIds}
+            dimensions={dimensions}
+            disabled={!availability.allowed("jog")}
+            settingsDisabled={!availability.allowed("jogSettings")}
+          />
+          <DimensionControl objectIds={selectedIds} disabled={!availability.allowed("dimension")} />
+        </>
+      )}
+      {canWritePose && (
+        <QuickActions
+          canSave={canSave}
+          onSave={handleSaveCurrentPose}
+          label={saveLabel}
+          hint={saveBlockedReason}
+        />
+      )}
       <AlertDialog open={couple.phase === "solving"}>
         <AlertDialogContent className="bg-card">
           <AlertDialogHeader>

@@ -18,11 +18,12 @@ import { compactSlotRunOptions } from "@/app/project/program-item-run-options";
 import { sequenceReadyFingerprint } from "./hooks/sequence-execution";
 import { ProgramProvider, useProgram } from "./hooks/use-program";
 import { useProject } from "@/app/project/use-project";
+import { usePermissions } from "@/app/auth/permissions";
 import { AiConsoleViewSync } from "@/app/ai-bridge/ai-console-view-sync";
 import { SelectionProvider } from "./hooks/selection-provider";
 import { AlignmentChecklistProvider } from "./components/drive-debug/alignment-checklist/alignment-checklist-provider";
 import { LeftSidebar, type LeftNavId } from "./components/LeftSidebar";
-import { RightSidebar, type RightPanelTab } from "./components/RightSidebar";
+import { RightSidebar, isRightPanelTabAllowed, type RightPanelTab } from "./components/RightSidebar";
 import { TopBar } from "./components/TopBar";
 import { Viz3DActionPreviewSync } from "./3d/Viz3DActionPreviewSync";
 import { Viz3DProvider } from "./3d/Viz3DProvider";
@@ -47,6 +48,8 @@ import { MonitorGrid } from "./components/monitor-grid/monitor-grid";
 import { RightTabPanel } from "./components/right-tab-panel/right-tab-panel";
 import { ConsoleFooter } from "./components/footer/console-footer";
 import { LockScreen } from "./components/lock-screen/lock-screen";
+import { ConsoleLoginProvider } from "./components/login-overlay/console-login-context";
+import { LoginOverlay } from "./components/login-overlay/login-overlay";
 import { ConfigWizardProvider } from "./hooks/use-config-wizard";
 import { ProjectStoreProvider } from "./hooks/use-project-store";
 import { PlcRuntimeProvider, usePlcRuntime } from "./hooks/plc-runtime-provider";
@@ -102,14 +105,17 @@ type DevicesRightPanelProps = {
  * context providers and handles the new-project auto-wizard trigger.
  */
 const DevicesRightPanel = ({ activeTab, onTabChange }: DevicesRightPanelProps) => {
+  const { can } = usePermissions();
+  const canEdit = can("build.edit");
   useEffect(() => {
     const isNew = sessionStorage.getItem(NEW_PROJECT_FLAG_KEY) === "1";
     if (isNew) {
       sessionStorage.removeItem(NEW_PROJECT_FLAG_KEY);
+      if (!canEdit) return;
       const timer = window.setTimeout(() => onTabChange("wizard"), 300);
       return () => window.clearTimeout(timer);
     }
-  }, [onTabChange]);
+  }, [canEdit, onTabChange]);
 
   return (
     <ConfigWizardProvider>
@@ -178,6 +184,7 @@ const ConsoleInner = () => {
   const { mode } = useConsoleMode();
   const { emergencyStopAll } = useExecCardActions();
   const { allStopAll } = usePlcRuntime();
+  const { can } = usePermissions();
   const [activeNav, setActiveNav] = useState<LeftNavId>("control");
   const [devicesRightTab, setDevicesRightTab] = useState<RightPanelTab>("structure");
 
@@ -186,6 +193,19 @@ const ConsoleInner = () => {
   useEffect(() => {
     if (isShow) setActiveNav("control");
   }, [isShow]);
+
+  // 换了用户（或退出）后，没有权限的页面回到「控制」；只切界面，不碰设备
+  const navAllowed =
+    activeNav === "control" ||
+    (activeNav === "devices" && can("build.view")) ||
+    (activeNav === "sequences" && can("action.view"));
+  const devicesTabAllowed = isRightPanelTabAllowed(devicesRightTab, can);
+  useEffect(() => {
+    if (!navAllowed) setActiveNav("control");
+  }, [navAllowed]);
+  useEffect(() => {
+    if (!devicesTabAllowed) setDevicesRightTab("structure");
+  }, [devicesTabAllowed]);
 
   const handleEmergencyStop = () => {
     emergencyStopAll();
@@ -227,6 +247,7 @@ const ConsoleInner = () => {
 
               <ConsoleFooter />
               <LockScreen />
+              <LoginOverlay />
               <Viz3DObjectSync />
               <Viz3DProjectModelsSync />
               <Viz3DMotorSelectionSync />
@@ -267,7 +288,9 @@ export const ConsolePage = () => (
                     <ActionBuilderProvider>
                       <AlignmentChecklistProvider>
                         <BuildDebugProvider>
-                          <ConsoleInner />
+                          <ConsoleLoginProvider>
+                            <ConsoleInner />
+                          </ConsoleLoginProvider>
                         </BuildDebugProvider>
                       </AlignmentChecklistProvider>
                     </ActionBuilderProvider>

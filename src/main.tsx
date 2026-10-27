@@ -10,14 +10,14 @@ import "./styles/index.css";
 // Electron 生产态用 loadFile(file://)，BrowserRouter 无法匹配路由；HashRouter 兼容开发与打包
 createRoot(document.getElementById("root")!).render(
   <HashRouter>
-    <DisplayLengthUnitProvider>
-      <LicenseProvider>
-        <AuthProvider>
+    <LicenseProvider>
+      <AuthProvider>
+        <DisplayLengthUnitProvider>
           <ProjectProvider>
             <App />
           </ProjectProvider>
-        </AuthProvider>
-      </LicenseProvider>
-    </DisplayLengthUnitProvider>
+        </DisplayLengthUnitProvider>
+      </AuthProvider>
+    </LicenseProvider>
   </HashRouter>
 );

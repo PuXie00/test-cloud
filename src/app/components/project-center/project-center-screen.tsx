@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
+import { usePermissions } from "@/app/auth/permissions";
 import { useProject } from "@/app/project/use-project";
 import type { ProjectVersionEntry } from "@/app/project/project-types";
 import { NewProjectDialog } from "./new-project-dialog";
@@ -41,6 +42,10 @@ export const ProjectCenterScreen = ({
     setSearchQuery,
   } = useProject();
 
+  // 浏览、打开人人可用；新建 / 导入 / 导出 / 另存为 / 恢复要「工程文件管理」，删除要「删除工程」
+  const { can } = usePermissions();
+  const canManageFiles = can("project.files");
+  const canDelete = can("project.delete");
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [saveAsOpen, setSaveAsOpen] = useState(false);
   const [opening, setOpening] = useState(false);
@@ -176,8 +181,8 @@ export const ProjectCenterScreen = ({
         showBack={showBack}
         backLabel={isOverlay ? "关闭" : "返回控制台"}
         onBack={handleBack}
-        onOpenFile={() => void handleImport()}
-        onNewProject={() => setNewDialogOpen(true)}
+        onOpenFile={canManageFiles ? () => void handleImport() : undefined}
+        onNewProject={canManageFiles ? () => setNewDialogOpen(true) : undefined}
       />
 
       {(loading || error) && (
@@ -190,7 +195,9 @@ export const ProjectCenterScreen = ({
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-hidden p-6">
           <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto">
             {!loading && filteredProjects.length === 0 ? (
-              <p className="text-body-sm text-muted-foreground">暂无工程，请新建或导入</p>
+              <p className="text-body-sm text-muted-foreground">
+                {canManageFiles ? "暂无工程，请新建或导入" : "暂无工程"}
+              </p>
             ) : (
               <ProjectCardGrid
                 projects={filteredProjects}
@@ -204,10 +211,10 @@ export const ProjectCenterScreen = ({
           project={selectedProject}
           opening={opening}
           onOpen={() => void handleOpenProject()}
-          onSaveAs={() => setSaveAsOpen(true)}
-          onExport={() => void handleExport()}
-          onDelete={() => void handleDelete()}
-          onRestore={(entry) => void handleRestore(entry)}
+          onSaveAs={canManageFiles ? () => setSaveAsOpen(true) : undefined}
+          onExport={canManageFiles ? () => void handleExport() : undefined}
+          onDelete={canDelete ? () => void handleDelete() : undefined}
+          onRestore={canManageFiles ? (entry) => void handleRestore(entry) : undefined}
         />
       </div>
 

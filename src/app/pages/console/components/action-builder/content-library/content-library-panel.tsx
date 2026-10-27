@@ -1,3 +1,4 @@
+import { usePermissions } from "@/app/auth/permissions";
 import {
   useMemo,
   useRef,
@@ -70,6 +71,10 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
   } = useActionBuilder();
   const { currentProject } = useProject();
   const document = currentProject?.document;
+  // 新建、改名、粘贴要「编辑动作序列」；拖进章节 / 推子、添加到章节要「节目编排」；浏览、复制、预览人人可用
+  const { can } = usePermissions();
+  const canEdit = can("action.edit");
+  const canProgram = can("program.edit");
 
   const [search, setSearch] = useState("");
   const [chapterMenuFor, setChapterMenuFor] = useState<number | null>(null);
@@ -97,6 +102,7 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
 
   const handleRowPointerDown = (entry: LibraryEntry) => (_event: PointerEvent) => {
     clearLongPress();
+    if (!canProgram) return;
     longPressRef.current = window.setTimeout(() => {
       longPressRef.current = null;
       setChapterMenuFor(entry.sequence.id);
@@ -191,8 +197,8 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
           data-sequence-id={id}
           aria-label={rowLabel}
           aria-pressed={selected}
-          draggable
-          onDragStart={handleRowDragStart(entry)}
+          draggable={canProgram}
+          onDragStart={canProgram ? handleRowDragStart(entry) : undefined}
           onPointerDown={handleRowPointerDown(entry)}
           onPointerUp={clearLongPress}
           onPointerLeave={clearLongPress}
@@ -215,16 +221,16 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-1.5">
               <p
-                title={selected ? "点击重命名" : undefined}
+                title={selected && canEdit ? "点击重命名" : undefined}
                 // 已选中的序列点名字重命名，不取消选中
                 onClick={(event) => {
-                  if (!selected || chapterMenuFor) return;
+                  if (!selected || chapterMenuFor || !canEdit) return;
                   event.stopPropagation();
                   setRenameSequenceId(id);
                 }}
                 className={cn(
                   "min-w-0 truncate text-body-sm",
-                  selected ? "cursor-text font-medium text-primary" : "text-foreground/90",
+                  selected ? cn("font-medium text-primary", canEdit && "cursor-text") : "text-foreground/90",
                 )}
               >
                 {entry.sequence.name}
@@ -254,14 +260,16 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
       <PanelHeader
         title="动作序列库"
         extra={
-          <button
-            type="button"
-            aria-label="新建动作序列"
-            onClick={() => handleCreateSequence(selectedObjectIds)}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
-          >
-            <Plus className="h-4 w-4" aria-hidden />
-          </button>
+          canEdit ? (
+            <button
+              type="button"
+              aria-label="新建动作序列"
+              onClick={() => handleCreateSequence(selectedObjectIds)}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <Plus className="h-4 w-4" aria-hidden />
+            </button>
+          ) : undefined
         }
       />
 
@@ -283,7 +291,7 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
         copyLabel={menuSequence ? `复制「${menuSequence.name}」` : "复制"}
         pasteLabel="粘贴为新序列"
         canCopy={menuSequence !== undefined}
-        canPaste={canPasteSequence}
+        canPaste={canEdit && canPasteSequence}
         onCopy={() => {
           if (menuSequence) handleSequenceCopy(menuSequence.id);
         }}
@@ -291,15 +299,19 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
         onContextMenu={handleListContextMenu}
         // 序列只走右键菜单；Ctrl+C / V 留给时间轴动作块
         showShortcuts={false}
-        actions={[
-          {
-            label: menuSequence ? `重命名「${menuSequence.name}」` : "重命名",
-            disabled: menuSequence === undefined,
-            onSelect: () => {
-              if (menuSequence) setRenameSequenceId(menuSequence.id);
-            },
-          },
-        ]}
+        actions={
+          canEdit
+            ? [
+                {
+                  label: menuSequence ? `重命名「${menuSequence.name}」` : "重命名",
+                  disabled: menuSequence === undefined,
+                  onSelect: () => {
+                    if (menuSequence) setRenameSequenceId(menuSequence.id);
+                  },
+                },
+              ]
+            : []
+        }
       >
         <div
           className="custom-scrollbar min-h-0 flex-1 overflow-y-auto py-1 outline-none"
@@ -309,7 +321,7 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
         >
           {entries.length === 0 ? (
             <p className="px-3 py-6 text-center text-body-sm text-muted-foreground">
-              {search ? "没有匹配的内容" : "暂无内容，选中物体后从右上角新建"}
+              {search ? "没有匹配的内容" : canEdit ? "暂无内容，选中物体后从右上角新建" : "暂无内容"}
             </p>
           ) : (
             entries.map(renderRow)

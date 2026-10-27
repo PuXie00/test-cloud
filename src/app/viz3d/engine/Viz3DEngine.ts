@@ -1006,7 +1006,7 @@ export class Viz3DEngine implements Disposable {
     this.telemetryController?.applyTelemetry(snapshots);
   }
 
-  /** Inject frozen session display unit for drive-unit speed labels (no React hooks here). */
+  /** Display unit of the logged-in user for drive-unit speed labels (no React hooks here). */
   setDisplayLengthUnit(unit: DisplayLengthUnit): void {
     this.displayLengthUnit = unit;
     this.telemetryController?.setDisplayLengthUnit(unit);

@@ -94,6 +94,8 @@ export type AiWriteErrorCode =
   | 'NO_PROJECT'
   /** 演出模式下界面也不能编辑动作序列 */
   | 'SHOW_MODE'
+  /** 当前登录用户没有「编辑动作序列」权限（或没人登录） */
+  | 'FORBIDDEN'
   /** 界面有进行中的编辑或正在恢复版本 */
   | 'BUSY'
   /** 结构与工程动作序列不一致 */

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { TestPermissionsProvider } from "@/app/auth/permissions";
 import { StatusControlBar } from "./status-control-bar";
 
 afterEach(() => cleanup());
@@ -38,5 +39,41 @@ describe("StatusControlBar 批量提示", () => {
     renderBar({ objectLabel: null, batchNames: [] });
     expect(screen.getByRole("heading", { name: "请先选择受控物体" })).not.toBeNull();
     expect(screen.queryByText(/批量操作中/)).toBeNull();
+  });
+});
+
+describe("StatusControlBar 按权限显示主操作", () => {
+  const renderWith = (permissions: Parameters<typeof TestPermissionsProvider>[0]["permissions"]) =>
+    render(
+      <TestPermissionsProvider permissions={permissions}>
+        <StatusControlBar
+          objectLabel="升降灯架-01"
+          objectSummary=""
+          status="就绪"
+          objectStatus="ready"
+          allowed={() => true}
+        />
+      </TestPermissionsProvider>,
+    );
+  const labels = () => screen.queryAllByRole("button").map((button) => button.textContent);
+
+  it("只有设备状态：使能、复位", () => {
+    renderWith(["control.device"]);
+    expect(labels()).toEqual(["使能", "复位"]);
+  });
+
+  it("只有手动运动：回原、走平", () => {
+    renderWith(["control.manual"]);
+    expect(labels()).toEqual(["回原", "走平"]);
+  });
+
+  it("只有耦合：耦合", () => {
+    renderWith(["control.couple"]);
+    expect(labels()).toEqual(["耦合"]);
+  });
+
+  it("都没有时主操作整块不显示", () => {
+    renderWith([]);
+    expect(screen.queryByText("主操作")).toBeNull();
   });
 });

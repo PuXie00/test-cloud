@@ -5,6 +5,7 @@ import { cn } from "@/app/components/ui/utils";
 import { useConsoleMode } from "../../../hooks/use-console-mode";
 import type { FaderSlotState, SlotRunOptions } from "../../../hooks/use-executor-slots";
 import { VerticalFader } from "./vertical-fader";
+import { usePermissions } from "@/app/auth/permissions";
 import { SPEED_CEILING_PERCENT, speedTopPercent } from "../../../hooks/speed-cap";
 import { ForcedTrajectoryBadge, isForcedTrajectory } from "../../forced-trajectory-badge";
 import { LoopBadge } from "../../loop-badge";
@@ -41,6 +42,10 @@ export const FaderSlot = ({
   onAssignFromDrag,
 }: FaderSlotProps) => {
   const { mode } = useConsoleMode();
+  // Ready / GO、推子、运行选项要「运行动作」（没有时只读显示状态）；拖入序列要「节目编排」
+  const { can } = usePermissions();
+  const canRun = can("control.run");
+  const canAssign = can("program.edit");
   const [marksOpen, setMarksOpen] = useState(false);
   const { nearest: nearestOn, reverse: reverseOn, safeGroup: safetyGroupOn } = slot.runOptions;
   const sequenceId = slot.sequence?.id;
@@ -48,10 +53,11 @@ export const FaderSlot = ({
   const isForced = isForcedTrajectory(slot.sequence?.trajectoryMode);
   const isRunning = slot.phase === "running";
   const isReady = slot.phase === "ready";
-  const canSetRunOptions = !isReady && !isRunning && !slot.isBusy;
+  const canSetRunOptions = canRun && !isReady && !isRunning && !slot.isBusy;
   const actionLabel = isReady || isRunning ? "GO" : "Ready";
   const isBlocked = isEmpty || Boolean(repairMessage) || slot.isBusy || isRunning;
   const isRehearsal = mode === "rehearsal";
+  const canDropSequence = isRehearsal && canAssign;
   const reasonId = `fader-slot-repair-${slot.index}`;
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -123,14 +129,14 @@ export const FaderSlot = ({
   };
 
   const handleDragOver = (event: React.DragEvent) => {
-    if (!isRehearsal) return;
+    if (!canDropSequence) return;
     if (!event.dataTransfer.types.includes("application/x-console-item")) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
   };
 
   const handleDrop = (event: React.DragEvent) => {
-    if (!isRehearsal) return;
+    if (!canDropSequence) return;
     const raw = event.dataTransfer.getData("application/x-console-item");
     if (!raw) return;
     try {
@@ -231,7 +237,7 @@ export const FaderSlot = ({
               >
                 {reverseOn ? "关闭反向" : "开启反向"}
               </button>
-              {isReady ? (
+              {isReady && canRun ? (
                 <button
                   type="button"
                   onClick={() => {
@@ -265,13 +271,13 @@ export const FaderSlot = ({
         <VerticalFader
           value={slot.faderValue}
           onChange={onFaderChange}
-          disabled={!isReady && !isRunning}
+          disabled={!canRun || (!isReady && !isRunning)}
           aria-label={`${slot.label} 速度`}
         />
         {isEmpty ? (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-muted-foreground/60">
             <Plus className="h-3.5 w-3.5" />
-            <span className="mt-0.5 text-body-sm">{isRehearsal ? "拖入序列" : "—"}</span>
+            <span className="mt-0.5 text-body-sm">{canDropSequence ? "拖入序列" : "—"}</span>
           </div>
         ) : (
           <span className="mt-1 text-center font-mono text-mono-sm tabular-nums text-foreground">
@@ -286,7 +292,7 @@ export const FaderSlot = ({
       </div>
       <button
         type="button"
-        disabled={isBlocked}
+        disabled={isBlocked || !canRun}
         aria-busy={slot.isBusy || undefined}
         aria-label={`${slot.label} ${actionLabel}`}
         aria-describedby={repairMessage ? reasonId : undefined}
