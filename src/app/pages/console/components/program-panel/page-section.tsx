@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { usePermissions } from "@/app/auth/permissions";
 import { getMotionItemRepairIssue } from "@/app/project/project-motion-readiness";
 import { useProject } from "@/app/project/use-project";
 import { useConsoleMode } from "../../hooks/use-console-mode";
@@ -42,6 +43,8 @@ export const PageSection = ({
   itemIndexOffset,
 }: PageSectionProps) => {
   const { mode } = useConsoleMode();
+  // 拖到推子槽 = 把序列放进章节，要「节目编排」
+  const canDrag = usePermissions().can("program.edit");
   const { currentProject } = useProject();
   const document = currentProject?.document;
   const [expanded, setExpanded] = useState(isCurrent);
@@ -81,7 +84,7 @@ export const PageSection = ({
                 isActive={item.sequence.id === activeSequenceId}
                 hasWarning={Boolean(issue)}
                 warningMessage={issue?.message}
-                draggable={mode === "rehearsal"}
+                draggable={mode === "rehearsal" && canDrag}
                 striped={idx % 2 !== 0}
                 onDragStart={onItemDragStart(chapterId, item, itemIndexOffset + idx)}
                 onClick={() => onClickItem?.(item)}

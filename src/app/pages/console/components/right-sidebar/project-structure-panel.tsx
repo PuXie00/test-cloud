@@ -1,3 +1,4 @@
+import { usePermissions } from "@/app/auth/permissions";
 import {
   DndContext,
   DragOverlay,
@@ -167,6 +168,8 @@ export const ProjectStructurePanel = () => {
     mountObjects,
   } = useProjectStore();
   const objectDeletion = useObjectDeletion();
+  // 没有「编辑工程配置」只能浏览：不显示增删、右键菜单，Delete 键和拖动挂载 / 绑定都不生效
+  const canEdit = usePermissions().can("build.edit");
   const { getPlcRuntime, scanAll } = usePlcRuntime();
   const {
     multiSelectedIds,
@@ -631,7 +634,7 @@ export const ProjectStructurePanel = () => {
 
   const getMotorRowProps = useCallback(
     (node: StructureTreeNode) => {
-      if (node.kind !== "motor") return undefined;
+      if (node.kind !== "motor" || !canEdit) return undefined;
       return {
         draggable: true,
         onDragStart: (event: DragEvent<HTMLDivElement>) => {
@@ -644,7 +647,7 @@ export const ProjectStructurePanel = () => {
         },
       };
     },
-    [multiSelectedMotorIds],
+    [canEdit, multiSelectedMotorIds],
   );
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
@@ -848,6 +851,7 @@ export const ProjectStructurePanel = () => {
 
   const renderStructureExtra = (node: StructureTreeNode) => {
     if (node.kind === "discovered-motor") {
+      if (!canEdit) return null;
       return (
         <button
           type="button"
@@ -888,7 +892,7 @@ export const ProjectStructurePanel = () => {
         </button>
       );
     }
-    if (node.kind !== "plc") return null;
+    if (node.kind !== "plc" || !canEdit) return null;
     return (
       <button
         type="button"
@@ -1122,12 +1126,12 @@ export const ProjectStructurePanel = () => {
                       orderedObjectIds,
                     )
                   }
-                  onDelete={handlePendingObjectDeleteKey}
+                  onDelete={canEdit ? handlePendingObjectDeleteKey : undefined}
                   renderLabel={(node) => (
                     <span className="min-w-0 truncate">{node.object.name}</span>
                   )}
                   renderIcon={() => <Box className="h-3.5 w-3.5" aria-hidden />}
-                  renderContextMenu={(node) => (
+                  renderContextMenu={canEdit ? (node) => (
                     <ContextMenuContent>
                       {node.object.parentId != null ? (
                         <ContextMenuItem onSelect={() => mountObjects([node.object.id], null)}>
@@ -1141,11 +1145,11 @@ export const ProjectStructurePanel = () => {
                         删除
                       </ContextMenuItem>
                     </ContextMenuContent>
-                  )}
+                  ) : undefined}
                   dndIdPrefix="pending-co"
                   dndContext="none"
-                  draggable
-                  droppable={showMountTree}
+                  draggable={canEdit}
+                  droppable={canEdit && showMountTree}
                   dropHighlight={dropHighlight}
                   aria-label={objectSectionAriaLabel}
                 />
@@ -1163,7 +1167,7 @@ export const ProjectStructurePanel = () => {
                 title="主控"
                 icon={Cpu}
                 extra={
-                  <div className="flex items-center gap-1">
+                  canEdit ? <div className="flex items-center gap-1">
                     <button
                       type="button"
                       aria-label="扫描添加主控"
@@ -1191,7 +1195,7 @@ export const ProjectStructurePanel = () => {
                     >
                       <Plus className="h-3.5 w-3.5" aria-hidden />
                     </button>
-                  </div>
+                  </div> : undefined
                 }
               />
               <TreeView
@@ -1203,15 +1207,15 @@ export const ProjectStructurePanel = () => {
                 selectedIds={selectedIds}
                 focusedId={focusedId}
                 onSelect={handleStructureSelect}
-                onDelete={handleStructureDeleteKey}
+                onDelete={canEdit ? handleStructureDeleteKey : undefined}
                 renderLabel={renderStructureLabel}
                 renderIcon={renderStructureIcon}
                 renderExtra={renderStructureExtra}
-                renderContextMenu={renderStructureContextMenu}
+                renderContextMenu={canEdit ? renderStructureContextMenu : undefined}
                 getRowProps={getMotorRowProps}
                 dndIdPrefix="plc-tree"
                 dndContext="none"
-                droppable={(node) => structureView === "all" && node.kind === "plc"}
+                droppable={(node) => canEdit && structureView === "all" && node.kind === "plc"}
                 dropHighlight={dropHighlight}
                 aria-label="主控结构"
               />

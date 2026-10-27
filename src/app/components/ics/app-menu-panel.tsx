@@ -5,7 +5,6 @@ import {
   FolderOpen,
   FolderX,
   Globe,
-  Lock,
   LockKeyhole,
   LogOut,
   Radio,
@@ -14,6 +13,8 @@ import {
   ScrollText,
   Settings,
   Undo2,
+  UserCog,
+  UserRound,
   Zap,
 } from "lucide-react";
 import type { ElementType } from "react";
@@ -54,7 +55,7 @@ const MENU_SECTIONS: MenuSection[] = [
       { id: "signals", label: "外部信号配置", icon: Radio, iconClassName: "text-info" },
       { id: "collab", label: "多机协作管理", icon: Globe, iconClassName: "text-primary" },
       { id: "rules", label: "规则编辑器", icon: Zap, iconClassName: "text-warning" },
-      { id: "permissions", label: "权限配置", icon: Lock, iconClassName: "text-warning" },
+      { id: "permissions", label: "用户与权限", icon: UserCog, iconClassName: "text-warning" },
     ],
   },
   {
@@ -66,6 +67,7 @@ const MENU_SECTIONS: MenuSection[] = [
   },
   {
     items: [
+      { id: "switch-user", label: "切换用户", icon: UserRound, iconClassName: "text-primary" },
       {
         id: "logout",
         label: "退出登录",
@@ -99,15 +101,13 @@ type AppMenuPanelProps = {
   onVersionHistory?: () => void;
   onImportExport?: () => void;
   onOperationLog?: () => void;
-  showPermissions?: boolean;
   onPermissionsConfig?: () => void;
   onCollabManage?: () => void;
-  /** 非演出模式时显示系统设置 */
-  showSettings?: boolean;
   onSystemSettings?: () => void;
-  /** 未锁屏时显示锁屏入口 */
-  showLockScreen?: boolean;
   onLockScreen?: () => void;
+  onSwitchUser?: () => void;
+  /** 不显示的菜单项（没有权限、演出模式、已锁屏等） */
+  hiddenItems?: ReadonlySet<string>;
 };
 
 export const AppMenuPanel = ({
@@ -131,15 +131,18 @@ export const AppMenuPanel = ({
   onVersionHistory,
   onImportExport,
   onOperationLog,
-  showPermissions = false,
   onPermissionsConfig,
   onCollabManage,
-  showSettings = true,
   onSystemSettings,
-  showLockScreen = true,
   onLockScreen,
+  onSwitchUser,
+  hiddenItems,
 }: AppMenuPanelProps) => {
   if (!open) return null;
+
+  const visibleSections = MENU_SECTIONS.map((section) =>
+    section.items.filter((item) => !hiddenItems?.has(item.id)),
+  ).filter((items) => items.length > 0);
 
   const resolveItem = (item: MenuItem): MenuItem => {
     if (item.id === "undo") {
@@ -218,6 +221,10 @@ export const AppMenuPanel = ({
         onLockScreen?.();
         onClose();
         return;
+      case "switch-user":
+        onClose();
+        onSwitchUser?.();
+        return;
       default:
         return;
     }
@@ -240,15 +247,11 @@ export const AppMenuPanel = ({
           <p className="truncate text-body-sm text-foreground">{projectName}</p>
         </div>
         <div className="custom-scrollbar flex-1 overflow-y-auto py-1">
-          {MENU_SECTIONS.map((section, sectionIndex) => (
-            <div key={sectionIndex}>
+          {visibleSections.map((items, sectionIndex) => (
+            <div key={items[0].id}>
               {sectionIndex > 0 && <div className="mx-3 my-1 border-t border-border" role="separator" />}
               <ul>
-                {section.items.map((item, itemIndex) => {
-                  if (item.id === "permissions" && !showPermissions) return null;
-                  if (item.id === "system" && !showSettings) return null;
-                  if (item.id === "lock-screen" && !showLockScreen) return null;
-
+                {items.map((item, itemIndex) => {
                   const resolved = resolveItem(item);
                   const Icon = resolved.icon;
                   const isEven = itemIndex % 2 === 0;

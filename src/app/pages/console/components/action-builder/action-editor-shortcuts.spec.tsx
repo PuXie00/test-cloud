@@ -13,6 +13,7 @@ import { useProject } from "@/app/project/use-project";
 import { ProgramProvider } from "@/app/pages/console/hooks/use-program";
 import { ProjectStoreProvider } from "@/app/pages/console/hooks/use-project-store";
 import { ConsoleNavProvider } from "@/app/pages/console/hooks/use-console-nav";
+import { ConsoleLoginProvider } from "@/app/pages/console/components/login-overlay/console-login-context";
 import type { LeftNavId } from "@/app/pages/console/components/LeftSidebar";
 import type { ActionBuilderContextValue } from "./action-builder-context-types";
 import { ActionBuilderProvider } from "./action-builder-context";
@@ -122,7 +123,9 @@ const renderConsole = () =>
         <ProgramProvider>
           <ActionBuilderProvider>
             <NavHost>
-              <TopBar onStop={vi.fn()} />
+              <ConsoleLoginProvider>
+                <TopBar onStop={vi.fn()} />
+              </ConsoleLoginProvider>
               <input aria-label="名字输入框" />
               <Probe />
             </NavHost>

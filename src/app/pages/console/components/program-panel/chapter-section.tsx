@@ -1,4 +1,5 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { usePermissions } from "@/app/auth/permissions";
 import { useState } from "react";
 import { cn } from "@/app/components/ui/utils";
 import { PROGRAM_SLOTS_PER_PAGE, type Chapter, type ChapterItem } from "./program-data";
@@ -39,6 +40,8 @@ export const ChapterSection = ({
   activeSequenceId,
 }: ChapterSectionProps) => {
   const [expanded, setExpanded] = useState(isCurrent);
+  // 加载章节会换掉推子上的序列，属于「运行动作」
+  const canLoad = usePermissions().can("control.run");
   const totalPages = programPageCount(chapter.items);
   const pages = Array.from({ length: totalPages }, (_, pageIndex) =>
     sliceProgramPage(chapter.items, pageIndex),
@@ -71,7 +74,7 @@ export const ChapterSection = ({
           <span className="shrink-0 rounded-sm bg-primary/20 px-1.5 py-0.5 text-label-caps text-primary">
             当前
           </span>
-        ) : (
+        ) : !canLoad ? null : (
           <button
             type="button"
             aria-label={`加载章节 ${chapter.name}`}

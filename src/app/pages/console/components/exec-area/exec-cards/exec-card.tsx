@@ -1,4 +1,5 @@
 import { MoreVertical, Play, SkipForward, Square, Minus, Plus, X, RotateCcw } from "lucide-react";
+import { usePermissions } from "@/app/auth/permissions";
 import { cn } from "@/app/components/ui/utils";
 import type { ExecCard, ExecCardSource } from "../../../hooks/use-exec-cards";
 import { canCloseExecCard, isExecCardInTransition } from "../../../hooks/exec-card-run-status";
@@ -61,6 +62,8 @@ export const ExecCardView = ({
   onSetSpeed,
   onClose,
 }: ExecCardProps) => {
+  // 停止人人可用；继续、重新、下一条、关闭、调速要「运行动作」（没有时速度只读显示）
+  const canRun = usePermissions().can("control.run");
   const isStopped = card.status === "stopped" || card.status === "paused";
   const isStopping = card.status === "stopping";
   // 动作真正停下来（PLC 不再上报）之后才能关闭
@@ -69,7 +72,7 @@ export const ExecCardView = ({
   const isCompleted = card.status === "completed";
   const isError = card.status === "error" || card.emergencyStopped;
   const skipDisabled = card.status !== "stopped" || !hasNextSequence || isError;
-  const speedDisabled = isError || isStopping || isExecCardInTransition(card);
+  const speedDisabled = !canRun || isError || isStopping || isExecCardInTransition(card);
   // 调速范围封顶，不超过系统上限
   const maxSpeed = speedTopPercent(card.maxSpeedPercent);
 
@@ -107,16 +110,18 @@ export const ExecCardView = ({
         >
           <MoreVertical className="h-3 w-3" />
         </button>
-        <button
-          type="button"
-          aria-label="关闭任务"
-          disabled={closeDisabled}
-          title={closeTitle}
-          onClick={onClose}
-          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
-        >
-          <X className="h-3 w-3" aria-hidden />
-        </button>
+        {canRun && (
+          <button
+            type="button"
+            aria-label="关闭任务"
+            disabled={closeDisabled}
+            title={closeTitle}
+            onClick={onClose}
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
+          >
+            <X className="h-3 w-3" aria-hidden />
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
@@ -168,7 +173,7 @@ export const ExecCardView = ({
 
       <div className="flex gap-1.5">
         {isError ? (
-          <button
+          canRun && <button
             type="button"
             disabled={closeDisabled}
             title={closeTitle}
@@ -181,7 +186,7 @@ export const ExecCardView = ({
             <X className="h-3.5 w-3.5" /> 确认清除
           </button>
         ) : isCompleted ? (
-          <button
+          canRun && <button
             type="button"
             disabled={closeDisabled}
             title={closeTitle}
@@ -192,17 +197,19 @@ export const ExecCardView = ({
           </button>
         ) : (
           <>
-            <button
-              type="button"
-              aria-label="重新"
-              disabled={!isStopped}
-              onClick={onRestart}
-              className={cn(actionBtnClass, "bg-muted/50 text-foreground hover:bg-muted disabled:opacity-40")}
-            >
-              <RotateCcw className="h-3.5 w-3.5" /> 重新
-            </button>
-            {isStopped ? (
+            {canRun && (
               <button
+                type="button"
+                aria-label="重新"
+                disabled={!isStopped}
+                onClick={onRestart}
+                className={cn(actionBtnClass, "bg-muted/50 text-foreground hover:bg-muted disabled:opacity-40")}
+              >
+                <RotateCcw className="h-3.5 w-3.5" /> 重新
+              </button>
+            )}
+            {isStopped ? (
+              canRun && <button
                 type="button"
                 onClick={onResume}
                 className={cn(actionBtnClass, "bg-primary text-primary-foreground hover:bg-primary/90")}
@@ -218,15 +225,17 @@ export const ExecCardView = ({
                 <Square className="h-3.5 w-3.5" /> {isStopping ? "停止中" : "停止"}
               </button>
             )}
-            <button
-              type="button"
-              aria-label="下一条"
-              disabled={skipDisabled}
-              onClick={onSkipNext}
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-muted/50 text-foreground hover:bg-muted disabled:opacity-40"
-            >
-              <SkipForward className="h-3.5 w-3.5" aria-hidden />
-            </button>
+            {canRun && (
+              <button
+                type="button"
+                aria-label="下一条"
+                disabled={skipDisabled}
+                onClick={onSkipNext}
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-muted/50 text-foreground hover:bg-muted disabled:opacity-40"
+              >
+                <SkipForward className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            )}
           </>
         )}
       </div>

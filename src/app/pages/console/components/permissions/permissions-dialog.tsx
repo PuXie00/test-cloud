@@ -1,9 +1,7 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 import { TabBar } from "@/app/components/ics/tab-bar";
-import { Button } from "@/app/components/ui/button";
 import {
   Dialog,
   DialogDescription,
@@ -13,38 +11,24 @@ import {
 } from "@/app/components/ui/dialog";
 import { cn } from "@/app/components/ui/utils";
 import { RoleConfigPanel } from "./panels/role-config-panel";
-import { SecurityPolicyPanel } from "./panels/security-policy-panel";
 import { UserManagementPanel } from "./panels/user-management-panel";
 import { DEFAULT_PERMISSIONS_TAB, PERMISSION_TABS } from "./permissions-constants";
 import type { PermissionsTabId } from "./permissions-types";
+import { useUserAdmin } from "./use-user-admin";
 
 export type PermissionsDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
 
-const renderPanel = (tabId: PermissionsTabId) => {
-  switch (tabId) {
-    case "users":
-      return <UserManagementPanel />;
-    case "roles":
-      return <RoleConfigPanel />;
-    case "security":
-      return <SecurityPolicyPanel />;
-  }
-};
-
+/** 用户与权限（只给管理员）：本机的用户和角色，改动立即保存 */
 export const PermissionsDialog = ({ open, onOpenChange }: PermissionsDialogProps) => {
   const [activeTab, setActiveTab] = useState<PermissionsTabId>(DEFAULT_PERMISSIONS_TAB);
+  const admin = useUserAdmin(open);
 
   useEffect(() => {
     if (open) setActiveTab(DEFAULT_PERMISSIONS_TAB);
   }, [open]);
-
-  const handleSave = () => {
-    toast.success("修改已保存（演示）");
-    onOpenChange(false);
-  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -62,9 +46,12 @@ export const PermissionsDialog = ({ open, onOpenChange }: PermissionsDialogProps
           aria-describedby={undefined}
         >
           <div className="flex h-12 shrink-0 items-center justify-between bg-muted px-4">
-            <DialogTitle className="text-heading-lg font-semibold text-foreground">
-              权限与用户管理
-            </DialogTitle>
+            <div className="flex min-w-0 items-center gap-4">
+              <DialogTitle className="text-heading-lg font-semibold text-foreground">用户与权限</DialogTitle>
+              <span className="truncate text-body-sm text-muted-foreground">
+                本机的用户和角色，不随工程走；修改立即保存
+              </span>
+            </div>
             <DialogPrimitive.Close
               className="shrink-0 rounded-sm text-muted-foreground transition-colors hover:text-foreground"
               aria-label="关闭"
@@ -73,19 +60,12 @@ export const PermissionsDialog = ({ open, onOpenChange }: PermissionsDialogProps
             </DialogPrimitive.Close>
           </div>
 
-          <DialogDescription className="sr-only">管理用户账号、角色权限与安全策略</DialogDescription>
+          <DialogDescription className="sr-only">管理本机用户账号和角色权限</DialogDescription>
 
           <TabBar tabs={PERMISSION_TABS} active={activeTab} onChange={setActiveTab} variant="underline" />
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{renderPanel(activeTab)}</div>
-
-          <div className="flex h-12 shrink-0 items-center flex-row-reverse bg-muted px-4">
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-              取消
-            </Button>
-            <Button type="button" onClick={handleSave}>
-              保存修改
-            </Button>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {activeTab === "users" ? <UserManagementPanel admin={admin} /> : <RoleConfigPanel admin={admin} />}
           </div>
         </DialogPrimitive.Content>
       </DialogPortal>

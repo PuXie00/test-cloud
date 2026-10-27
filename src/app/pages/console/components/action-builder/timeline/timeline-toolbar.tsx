@@ -41,6 +41,8 @@ import { formatTime } from "./timeline-data";
 import { formatProjectHistoryShortcutHint } from "@/app/project/project-history-shortcuts";
 
 type TimelineToolbarProps = {
+  /** 没有编辑权限：不显示删除、保存，开关只读 */
+  readOnly?: boolean;
   trajectoryMode?: TrajectoryMode;
   onTrajectoryModeChange?: (mode: TrajectoryMode) => void;
   loop?: boolean;
@@ -127,6 +129,7 @@ const keepMenuOpen = (event: Event) => event.preventDefault();
 export const TimelineToolbar = ({
   trajectoryMode,
   onTrajectoryModeChange,
+  readOnly = false,
   loop = false,
   canLoop = false,
   loopDisabledHint,
@@ -273,7 +276,7 @@ export const TimelineToolbar = ({
       </DropdownMenu>
     ) : null}
     
-    {onAddMarker ? (
+    {onAddMarker || onJumpToMarker ? (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button type="button" aria-label="标记" className={menuButtonClass}>
@@ -286,11 +289,15 @@ export const TimelineToolbar = ({
           align="start"
           className="max-h-72 min-w-[14rem] overflow-y-auto border-border bg-card text-foreground"
         >
-          <DropdownMenuItem onSelect={onAddMarker}>
-            添加标记
-            <DropdownMenuShortcut>M</DropdownMenuShortcut>
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
+          {onAddMarker ? (
+            <>
+              <DropdownMenuItem onSelect={onAddMarker}>
+                添加标记
+                <DropdownMenuShortcut>M</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          ) : null}
           {markers.length === 0 ? (
             <DropdownMenuItem disabled>还没有标记</DropdownMenuItem>
           ) : (
@@ -345,6 +352,7 @@ export const TimelineToolbar = ({
           <Switch
             aria-label="强制轨迹"
             checked={trajectoryMode}
+            disabled={readOnly}
             onCheckedChange={onTrajectoryModeChange}
           />
         </label>
@@ -364,7 +372,7 @@ export const TimelineToolbar = ({
             <Switch
               aria-label="循环"
               checked={loop && canLoop}
-              disabled={!canLoop}
+              disabled={!canLoop || readOnly}
               onCheckedChange={(checked) => {
                 if (!canLoop) return;
                 onLoopChange(checked);
@@ -376,17 +384,23 @@ export const TimelineToolbar = ({
     ) : null}
 
     <div className="ml-auto flex items-center gap-1">
-      <ToolbarIcon icon={Trash2} label="删除序列" onClick={onDelete} disabled={!canDelete} />
-      <button
-        type="button"
-        onClick={onSave}
-        disabled={!canSave}
-        title={canSave ? "保存到节目列表（不是保存工程）" : "没有未保存的修改"}
-        className="inline-flex h-7 items-center gap-1.5 rounded-sm px-2 text-body-sm text-foreground transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-40"
-      >
-        <Save className="h-3.5 w-3.5" aria-hidden />
-        保存
-      </button>
+      {readOnly ? (
+        <span className="px-2 text-body-sm text-muted-foreground">只读</span>
+      ) : (
+        <>
+          <ToolbarIcon icon={Trash2} label="删除序列" onClick={onDelete} disabled={!canDelete} />
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={!canSave}
+            title={canSave ? "保存到节目列表（不是保存工程）" : "没有未保存的修改"}
+            className="inline-flex h-7 items-center gap-1.5 rounded-sm px-2 text-body-sm text-foreground transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-40"
+          >
+            <Save className="h-3.5 w-3.5" aria-hidden />
+            保存
+          </button>
+        </>
+      )}
       {onSnapToggle ? (
         <ToolbarIcon
           icon={Magnet}

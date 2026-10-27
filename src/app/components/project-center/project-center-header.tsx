@@ -7,8 +7,9 @@ type ProjectCenterHeaderProps = {
   showBack?: boolean;
   backLabel?: string;
   onBack?: () => void;
-  onOpenFile: () => void;
-  onNewProject: () => void;
+  /** 没有「工程文件管理」时不传，按钮不显示 */
+  onOpenFile?: () => void;
+  onNewProject?: () => void;
 };
 
 export const ProjectCenterHeader = ({
@@ -46,22 +47,26 @@ export const ProjectCenterHeader = ({
     </div>
 
     <div className="flex shrink-0 items-center justify-end gap-3 justify-self-end">
-      <button
-        type="button"
-        onClick={onOpenFile}
-        className="inline-flex h-10 items-center gap-2 rounded-md border border-border px-4 text-body-sm text-foreground hover:bg-muted"
-      >
-        <FolderOpen className="h-4 w-4" aria-hidden />
-        导入工程
-      </button>
-      <button
-        type="button"
-        onClick={onNewProject}
-        className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-body-sm font-semibold text-primary-foreground hover:bg-primary/90"
-      >
-        <Plus className="h-4 w-4" aria-hidden />
-        新建工程
-      </button>
+      {onOpenFile ? (
+        <button
+          type="button"
+          onClick={onOpenFile}
+          className="inline-flex h-10 items-center gap-2 rounded-md border border-border px-4 text-body-sm text-foreground hover:bg-muted"
+        >
+          <FolderOpen className="h-4 w-4" aria-hidden />
+          导入工程
+        </button>
+      ) : null}
+      {onNewProject ? (
+        <button
+          type="button"
+          onClick={onNewProject}
+          className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-body-sm font-semibold text-primary-foreground hover:bg-primary/90"
+        >
+          <Plus className="h-4 w-4" aria-hidden />
+          新建工程
+        </button>
+      ) : null}
     </div>
   </header>
 );

@@ -1,6 +1,7 @@
 import {
   createContext,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -19,6 +20,7 @@ import {
   type ProjectConfigurationState,
   type ProjectHistoryState,
 } from "./project-configuration-history";
+import { AuthContext } from "@/app/auth/auth-provider";
 import { applyDocumentUpdate } from "./project-document-update";
 import type { ManualJogSettings, ProjectDocument } from "./project-document-types";
 import { normalizeManualJog } from "./manual-jog";
@@ -176,6 +178,10 @@ const resolveFolderName = (
 };
 
 export const ProjectProvider = ({ children }: { children: ReactNode }) => {
+  // 新建工程的作者 = 当前登录用户的显示名
+  const authorName = useContext(AuthContext)?.user?.displayName ?? "未登录";
+  const authorNameRef = useRef(authorName);
+  authorNameRef.current = authorName;
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [currentProject, setCurrentProject] = useState<ProjectRecord | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -377,7 +383,7 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       if (!trimmed) return null;
       const api = getProjectAPI();
       const summary = unwrapResult(
-        await api.create({ name: trimmed, author: "当前用户" }),
+        await api.create({ name: trimmed, author: authorNameRef.current }),
       );
       await refreshProjects();
       setSelectedProjectId(summary.id);

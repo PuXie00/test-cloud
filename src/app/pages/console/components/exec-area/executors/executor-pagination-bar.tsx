@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { GoToSequencesButton } from "../../program-panel/go-to-sequences-button";
 import { useProgram } from "../../../hooks/use-program";
+import { usePermissions } from "@/app/auth/permissions";
 
 export const ExecutorPaginationBar = () => {
   const {
@@ -15,13 +16,15 @@ export const ExecutorPaginationBar = () => {
   } = useProgram();
 
   const currentChapter = program.chapters.find((chapter) => chapter.id === currentChapterId);
+  // 翻页、换章节会换掉推子上的序列，属于「运行动作」；没有时只显示当前页和章节
+  const canRun = usePermissions().can("control.run");
 
   return (
     <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-muted/30 pr-2">
       <button
         type="button"
         aria-label="上一页"
-        disabled={isProgramEmpty || currentPageIndex === 0}
+        disabled={!canRun || isProgramEmpty || currentPageIndex === 0}
         onClick={prevPage}
         className="inline-flex h-7 w-7 items-center justify-center rounded-sm border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
       >
@@ -33,7 +36,7 @@ export const ExecutorPaginationBar = () => {
       <button
         type="button"
         aria-label="下一页"
-        disabled={isProgramEmpty || currentPageIndex >= totalPages - 1}
+        disabled={!canRun || isProgramEmpty || currentPageIndex >= totalPages - 1}
         onClick={nextPage}
         className="inline-flex h-7 w-7 items-center justify-center rounded-sm border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
       >
@@ -48,7 +51,8 @@ export const ExecutorPaginationBar = () => {
         <select
           value={currentChapterId}
           onChange={(event) => setCurrentChapter(event.target.value)}
-          className="ml-auto h-7 rounded-sm border border-border bg-input-background px-2 text-body-sm text-foreground"
+          disabled={!canRun}
+          className="ml-auto h-7 rounded-sm border border-border bg-input-background px-2 text-body-sm text-foreground disabled:opacity-60"
           aria-label="选择章节"
         >
           {program.chapters.map((chapter) => (

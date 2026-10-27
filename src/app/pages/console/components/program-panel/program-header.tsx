@@ -1,5 +1,6 @@
 import { Plus, Settings } from "lucide-react";
 import { useConsoleMode } from "../../hooks/use-console-mode";
+import { usePermissions } from "@/app/auth/permissions";
 
 type ProgramHeaderProps = {
   programName: string;
@@ -19,6 +20,7 @@ export const ProgramHeader = ({
   showChapterActions = true,
 }: ProgramHeaderProps) => {
   const { mode } = useConsoleMode();
+  const canEdit = usePermissions().can("program.edit");
   return (
     <div className="border-b border-border bg-muted/30">
       <div className="flex h-9 items-center gap-2 px-3">
@@ -32,7 +34,7 @@ export const ProgramHeader = ({
             待修复
           </span>
         ) : null}
-        {mode === "rehearsal" && showChapterActions && (
+        {mode === "rehearsal" && showChapterActions && canEdit && (
           <>
             <button
               type="button"

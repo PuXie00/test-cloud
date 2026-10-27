@@ -2,6 +2,7 @@ import { ArrowRight, Cpu } from "lucide-react";
 import { Button } from "@/app/components/ui/button";
 import { cn } from "@/app/components/ui/utils";
 import { useConsoleNav } from "../../hooks/use-console-nav";
+import { usePermissions } from "@/app/auth/permissions";
 
 type GoToDevicesButtonProps = {
   className?: string;
@@ -10,8 +11,12 @@ type GoToDevicesButtonProps = {
 
 export const GoToDevicesButton = ({ className, size = "md" }: GoToDevicesButtonProps) => {
   const { navigate } = useConsoleNav();
+  // 跳到配置向导，要「编辑工程配置」；没有就不显示
+  const allowed = usePermissions().can("build.edit");
 
   const handleClick = () => navigate("devices", { devicesTab: "wizard" });
+
+  if (!allowed) return null;
 
   return (
     <Button

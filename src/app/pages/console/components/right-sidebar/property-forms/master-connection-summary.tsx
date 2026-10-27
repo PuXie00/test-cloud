@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { usePermissions } from "@/app/auth/permissions";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { isCppAckFailed } from "@shared/csocket/ack";
@@ -57,6 +58,7 @@ export const MasterConnectionSummary = ({
   const { findPlc, getPlcMotors, plcs } = useProjectStore();
   const { getPlcRuntime, scanAll } = usePlcRuntime();
   const [scanning, setScanning] = useState(false);
+  const canResetPlc = usePermissions().can("build.plc");
   const plc = findPlc(plcId);
   const runtime = getPlcRuntime(plcId);
 
@@ -89,6 +91,7 @@ export const MasterConnectionSummary = ({
   };
 
   const handlePlcReset = () => {
+    if (!canResetPlc) return;
     // 后续接入 C++
     const send = window.csocketApi?.resetPlc;
     if (!send) return;
@@ -151,7 +154,7 @@ export const MasterConnectionSummary = ({
             重新扫描
           </button>
         ) : null}
-        {runtime.connection === "connected" ? (
+        {runtime.connection === "connected" && canResetPlc ? (
           <button
             type="button"
             onClick={handlePlcReset}

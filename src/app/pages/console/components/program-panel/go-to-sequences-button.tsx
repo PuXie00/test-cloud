@@ -2,6 +2,7 @@ import { ArrowRight, List } from "lucide-react";
 import { Button } from "@/app/components/ui/button";
 import { cn } from "@/app/components/ui/utils";
 import { useConsoleNav } from "../../hooks/use-console-nav";
+import { usePermissions } from "@/app/auth/permissions";
 
 type GoToSequencesButtonProps = {
   className?: string;
@@ -10,8 +11,12 @@ type GoToSequencesButtonProps = {
 
 export const GoToSequencesButton = ({ className, size = "md" }: GoToSequencesButtonProps) => {
   const { navigate } = useConsoleNav();
+  // 没有「进入动作页」不显示
+  const allowed = usePermissions().can("action.view");
 
   const handleClick = () => navigate("sequences");
+
+  if (!allowed) return null;
 
   return (
     <Button

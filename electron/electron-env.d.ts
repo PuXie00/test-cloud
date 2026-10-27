@@ -12,5 +12,7 @@ declare namespace NodeJS {
     YZ_CPP_RUNTIME_PATH?: string
     YZ_CPP_RUNTIME_EXE?: string
     YZ_AI_HTTP_PORT?: string
+    /** 本机用户数据文件，默认在用户数据目录的 users.json */
+    YZ_USERS_FILE?: string
   }
 }

@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 import { CollapsePanel } from "@/app/components/ics/collapse-panel";
+import { ReadOnlyScope } from "@/app/components/ics/read-only-scope";
+import { usePermissions } from "@/app/auth/permissions";
 import { Form } from "@/app/components/ui/forms";
 import { Input } from "@/app/components/ui/input";
 import { Select } from "@/app/components/ui/select";
@@ -19,6 +21,8 @@ type PlcFormValues = Pick<Plc, "ip" | "masterTypeId">;
 export const PlcForm = ({ plcId }: PlcFormProps) => {
   const { findPlc, updatePlc } = useProjectStore();
   const [reconciliationOpen, setReconciliationOpen] = useState(false);
+  // 没有「编辑工程配置」时配置和对账只读；连接状态、重新扫描照常（PLC 复位看「主控下载与复位」）
+  const readOnly = !usePermissions().can("build.edit");
   const plc = findPlc(plcId);
 
   const masterTypeOptions = useMemo(() => plcModelSelectOptions(), []);
@@ -41,6 +45,7 @@ export const PlcForm = ({ plcId }: PlcFormProps) => {
   return (
     <div className="min-w-0 space-y-2 p-3">
       <CollapsePanel title="主控配置">
+        <ReadOnlyScope readOnly={readOnly}>
         <Form
           key={plcId}
           layout="horizontal"
@@ -56,6 +61,7 @@ export const PlcForm = ({ plcId }: PlcFormProps) => {
             <Select options={masterTypeOptions} aria-label="主控型号" />
           </Form.Item>
         </Form>
+        </ReadOnlyScope>
       </CollapsePanel>
 
       <MasterConnectionSummary
@@ -63,11 +69,13 @@ export const PlcForm = ({ plcId }: PlcFormProps) => {
         onOpenReconciliation={() => setReconciliationOpen(true)}
       />
 
-      <MotorReconciliationPanel
-        key={reconciliationOpen ? `${plcId}-open` : `${plcId}-closed`}
-        plcId={plcId}
-        defaultOpen={reconciliationOpen}
-      />
+      <ReadOnlyScope readOnly={readOnly}>
+        <MotorReconciliationPanel
+          key={reconciliationOpen ? `${plcId}-open` : `${plcId}-closed`}
+          plcId={plcId}
+          defaultOpen={reconciliationOpen}
+        />
+      </ReadOnlyScope>
     </div>
   );
 };

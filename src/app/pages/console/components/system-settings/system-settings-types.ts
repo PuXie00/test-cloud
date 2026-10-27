@@ -1,4 +1,5 @@
 export type SettingsNavId =
+  | "user"
   | "interface"
   | "calibration"
   | "network"

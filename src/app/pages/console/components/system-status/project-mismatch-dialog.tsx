@@ -5,6 +5,8 @@ type ProjectMismatchDialogProps = {
   onCancel: () => void;
   onCloseProject: () => void;
   onDownload: () => void;
+  /** 没有「主控下载与复位」权限时不给下载 */
+  canDownload?: boolean;
 };
 
 export const ProjectMismatchDialog = ({
@@ -12,6 +14,7 @@ export const ProjectMismatchDialog = ({
   onCancel,
   onCloseProject,
   onDownload,
+  canDownload = true,
 }: ProjectMismatchDialogProps) => {
   if (!open) return null;
   return (
@@ -23,7 +26,9 @@ export const ProjectMismatchDialog = ({
       <div className="w-[420px] rounded-md border border-border bg-card p-5 shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
         <h2 className="text-heading-md font-semibold text-foreground">工程不匹配</h2>
         <p className="mt-2 text-body-sm text-muted-foreground">
-          主控的工程与当前工程不匹配，是否下载当前工程到主控？
+          {canDownload
+            ? "主控的工程与当前工程不匹配，是否下载当前工程到主控？"
+            : "主控的工程与当前工程不匹配。当前用户没有下载权限，请找有「主控下载与复位」权限的用户下载。"}
         </p>
         <div className="mt-5 flex justify-end gap-2">
           <button
@@ -41,13 +46,15 @@ export const ProjectMismatchDialog = ({
           >
             关闭工程
           </button>
-          <button
-            type="button"
-            onClick={onDownload}
-            className="h-10 rounded-sm bg-primary px-4 font-semibold text-primary-foreground hover:bg-primary/90"
-          >
-            下载
-          </button>
+          {canDownload ? (
+            <button
+              type="button"
+              onClick={onDownload}
+              className="h-10 rounded-sm bg-primary px-4 font-semibold text-primary-foreground hover:bg-primary/90"
+            >
+              下载
+            </button>
+          ) : null}
         </div>
       </div>
     </div>

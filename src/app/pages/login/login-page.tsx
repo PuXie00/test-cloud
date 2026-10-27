@@ -1,5 +1,6 @@
 import { ChevronDown, Hexagon } from "lucide-react";
 import { useState } from "react";
+import { useNavigate } from "react-router";
 import { SoftwareLicenseDialog } from "@/app/components/license";
 import { useLicense } from "@/app/license/use-license";
 import { LoginBackground } from "./login-background";
@@ -8,6 +9,7 @@ import { LoginLicenseFooter } from "./login-license-footer";
 
 export const LoginPage = () => {
   const { isActivated } = useLicense();
+  const navigate = useNavigate();
   const [licenseOpen, setLicenseOpen] = useState(false);
 
   const handleOpenActivate = () => {
@@ -50,7 +52,11 @@ export const LoginPage = () => {
           </div>
         </header>
         <div className="my-6 h-px bg-border" role="separator" />
-        <LoginForm disabled={!isActivated} />
+        <LoginForm
+          disabled={!isActivated}
+          disabledHint="请先完成软件授权激活后再登录"
+          onSuccess={() => navigate("/project-center", { replace: true })}
+        />
         <LoginLicenseFooter onActivate={handleOpenActivate} />
       </main>
       <p className="pointer-events-none fixed bottom-5 left-1/2 z-0 -translate-x-1/2 font-mono text-mono-sm uppercase tracking-widest text-muted-foreground">
