@@ -352,7 +352,7 @@ export class CsocketApiService {
     opts?: CsocketSendOpts,
   ): Promise<SendData> {
     const projectIdEnabled = opts?.projectId ?? true
-    const userEnabled = opts?.user ?? true
+    const userNameEnabled = opts?.userName ?? true
     const paramHeard =
       opts?.paramHeard && opts.paramHeard.length > 0 ? opts.paramHeard : undefined
     console.log('sendBuilt', id, JSON.stringify(params),)
@@ -364,7 +364,7 @@ export class CsocketApiService {
           params,
           ...(paramHeard ? { paramHeard } : {}),
           projectId: projectIdEnabled ? this.ctx.projectId : undefined,
-          user: userEnabled ? this.ctx.user : undefined,
+          userName: userNameEnabled ? this.ctx.userName : undefined,
         },
         opts,
       ).then((result) => {
@@ -1307,7 +1307,7 @@ export class CsocketApiService {
   logWrite(items: LogWriteParams[], opts?: CsocketSendOpts): Promise<SendData> {
     // return this.sendBuilt('Log|write', '', items, opts)
     const written = items
-      .map((item) => mockLogWrite(item, this.ctx.user).data?.[0])
+      .map((item) => mockLogWrite(item, this.ctx.userName).data?.[0])
       .filter((record): record is LogRecord => !!record)
     this.broadcast(CSOCKET_CHANNELS.logPush, { success: true, data: written })
     return Promise.resolve({ success: true, data: written })

@@ -33,12 +33,12 @@ describe("mergeRecentLogs", () => {
 });
 
 describe("mockLogWrite", () => {
-  it("returns the written record with the sender as operator", () => {
+  it("returns the written record with the sender's user name as operator", () => {
     const written = mockLogWrite(
-      { category: "optRet", level: "info", opGroup: "config", opType: "saveProject", message: "保存工程", result: 1 },
-      "管理员",
+      { category: "optRet", level: "info", opGroup: "config", opType: "saveProject", message: "保存工程", result: 0 },
+      "admin",
     ).data?.[0];
-    expect(written).toEqual(expect.objectContaining({ user: "管理员", opType: "saveProject", result: 1 }));
+    expect(written).toEqual(expect.objectContaining({ user: "admin", opType: "saveProject", result: 0 }));
   });
 });
 
@@ -47,17 +47,17 @@ const SCHEMA = `
 CREATE TABLE log (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   ts          INTEGER NOT NULL,
-  category    TEXT    NOT NULL CHECK (category IN ('optCall','optRet','alarm','system')),
+  category    TEXT    NOT NULL CHECK (category IN ('optCall','optRet','axisAlarm','system')),
   level       TEXT    NOT NULL CHECK (level IN ('debug','info','warning','error')),
   message     TEXT    NOT NULL,
   user_name   TEXT,
   op_group    TEXT    CHECK (op_group IN ('config','device')),
   op_type     TEXT,
   addr        TEXT,
-  result_ok   INTEGER CHECK (result_ok IN (0,1,2))
+  result_ok   INTEGER
 );
 CREATE INDEX idx_log_ts ON log(ts);
-CREATE TABLE snapshot_sample (
+CREATE TABLE axis_alarm_snapshot (
   ts          INTEGER NOT NULL,
   device_id   INTEGER NOT NULL,
   position    REAL,
@@ -83,15 +83,15 @@ type Row = [ts: number, category: string, level: string, message: string, user?:
 
 const ROWS: Row[] = [
   [500, "optCall", "info", "下发点动", "u1", "device", "0x0104", null],
-  [1_000, "optRet", "info", "点动", "u1", "device", "0x0104", 1],
-  [2_000, "optRet", "warning", "保存工程：磁盘已满", "u2", "config", null, 0],
-  [3_000, "optRet", "warning", "耦合", "u1", "device", "0x0102", 2],
-  [12_000, "optRet", "info", "启动", "u2", "device", "0x0103", 1],
+  [1_000, "optRet", "info", "点动", "u1", "device", "0x0104", 0],
+  [2_000, "optRet", "warning", "保存工程：磁盘已满", "u2", "config", null, 1],
+  [3_000, "optRet", "warning", "耦合", "u1", "device", "0x0102", 103],
+  [12_000, "optRet", "info", "启动", "u2", "device", "0x0103", 0],
   [15_000, "system", "info", "主控已连接"],
   [16_000, "system", "debug", "内部细节"],
   [18_000, "optCall", "info", "下发启动", "u2", "device", "0x0103", null],
-  [20_000, "alarm", "error", "电机过载"],
-  [40_000, "alarm", "error", "限位触发"],
+  [20_000, "axisAlarm", "error", "电机过载"],
+  [40_000, "axisAlarm", "error", "限位触发"],
 ];
 
 const openDb = (): SqlDatabase => {
@@ -104,7 +104,7 @@ const openDb = (): SqlDatabase => {
     insert.run(ts, category, level, message, user, group, group ? "jog" : null, addr, result);
   }
   const sample = db.prepare(
-    "INSERT INTO snapshot_sample (ts, device_id, position, speed, torque, temperature) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT INTO axis_alarm_snapshot (ts, device_id, position, speed, torque, temperature) VALUES (?, ?, ?, ?, ?, ?)",
   );
   for (let t = 9_000; t <= 26_000; t += 100) {
     sample.run(t, 3, t / 10, 5, 40, null);
@@ -144,13 +144,13 @@ describe.skipIf(!sqlite)("operation log db", () => {
       message: "保存工程：磁盘已满",
       user: "u2",
       opGroup: "config",
-      result: 0,
+      result: 1,
     });
     const alarm = rowToRecord({
-      id: 9, ts: 1, category: "alarm", level: "error", message: "x",
+      id: 9, ts: 1, category: "axisAlarm", level: "error", message: "x",
       user_name: null, op_group: null, result_ok: null,
     });
-    expect(alarm).toEqual({ id: "9", timestamp: 1, category: "alarm", level: "error", message: "x" });
+    expect(alarm).toEqual({ id: "9", timestamp: 1, category: "axisAlarm", level: "error", message: "x" });
   });
 
   it("scopes users to op returns only", () => {
@@ -166,7 +166,7 @@ describe.skipIf(!sqlite)("operation log db", () => {
 
   it("filters categories, log levels and an inclusive time range", () => {
     const db = openDb();
-    expect(messages(db, { categories: ["alarm"] })).toEqual(["电机过载", "限位触发"]);
+    expect(messages(db, { categories: ["axisAlarm"] })).toEqual(["电机过载", "限位触发"]);
     expect(messages(db, { categories: ["optCall" as never] })).toEqual([]);
     expect(messages(db, { categories: ["system"], logLevels: ["info", "warning", "error"] })).toEqual(["主控已连接"]);
     expect(messages(db, { startTime: 2_000, endTime: 12_000 })).toEqual(["保存工程：磁盘已满", "耦合", "启动"]);

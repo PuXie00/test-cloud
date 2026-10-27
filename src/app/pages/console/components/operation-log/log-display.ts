@@ -12,7 +12,7 @@ import {
 export const CATEGORY_LABEL: Record<LogCategory, string> = {
   optCall: "下发指令",
   optRet: "操作",
-  alarm: "报警",
+  axisAlarm: "报警",
   system: "系统",
 };
 
@@ -46,7 +46,7 @@ export const LEVEL_MARKER: Record<LogLevel, string> = {
   error: "bg-destructive",
 };
 
-export const isAlarm = (record: LogRecord): boolean => record.category === "alarm";
+export const isAlarm = (record: LogRecord): boolean => record.category === "axisAlarm";
 
 /** 徽标：文字按类别（操作 / 报警 / 系统），颜色按日志级别 */
 export const logBadge = (record: LogRecord): { label: string; className: string } => ({
@@ -54,16 +54,12 @@ export const logBadge = (record: LogRecord): { label: string; className: string 
   className: LEVEL_BADGE[record.level],
 });
 
-const RESULT_TEXT: Record<number, string> = {
-  [LOG_RESULT.failed]: "失败",
-  [LOG_RESULT.ok]: "成功",
-  [LOG_RESULT.timeout]: "超时",
-};
-
-/** 操作结果文字；非操作回码或没有结果返回 null */
+/** 操作结果文字：0 成功，103 超时，其它码都是失败；非操作回码或没有结果返回 null */
 export const resultText = (record: LogRecord): string | null => {
   if (record.category !== "optRet" || record.result == null) return null;
-  return RESULT_TEXT[record.result] ?? null;
+  if (record.result === LOG_RESULT.ok) return "成功";
+  if (record.result === LOG_RESULT.timeout) return "超时";
+  return "失败";
 };
 
 const pad2 = (value: number) => value.toString().padStart(2, "0");

@@ -16,7 +16,7 @@ const recordAt = (n: number): LogRecord => ({
   level: "info",
   message: `记录 ${n}`,
   opGroup: "device",
-  result: 1,
+  result: 0,
 });
 
 const logQuery = vi.fn(async ([params]: LogQueryParams[]) => {
