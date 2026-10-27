@@ -7,7 +7,7 @@ import { LogToolbar } from "./log-toolbar";
 
 /** 演出模式只看报警和警告 / 错误 */
 const isShowModeVisible = (entry: LogRecord) =>
-  entry.category === "alarm" || entry.level !== "info";
+  entry.category === "axisAlarm" || entry.level !== "info";
 
 export const LogTab = () => {
   const { logs, liveTail, setLiveTail } = useLogStream();

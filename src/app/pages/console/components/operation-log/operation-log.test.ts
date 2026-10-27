@@ -75,8 +75,8 @@ describe("filtersToQuery", () => {
       {
         ...DEFAULT_LOG_FILTERS,
         timePreset: "15m",
-        categories: ["alarm"],
-        user: "管理员",
+        categories: ["axisAlarm"],
+        user: "admin",
         logLevel: "error",
       },
       1_000_000,
@@ -84,8 +84,8 @@ describe("filtersToQuery", () => {
     expect(query).toMatchObject({
       startTime: 1_000_000 - 15 * 60_000,
       endTime: 1_000_000,
-      categories: ["alarm"],
-      users: ["管理员"],
+      categories: ["axisAlarm"],
+      users: ["admin"],
       logLevels: ["error"],
     });
     expect(query).not.toHaveProperty("opGroups");
@@ -94,19 +94,21 @@ describe("filtersToQuery", () => {
 });
 
 describe("op call results", () => {
-  it("shows success, failure and timeout", () => {
-    expect(resultText(record({ id: "ok", timestamp: 0, result: 1 }))).toBe("成功");
-    expect(resultText(record({ id: "fail", timestamp: 0, result: 0 }))).toBe("失败");
-    expect(resultText(record({ id: "late", timestamp: 0, result: 2 }))).toBe("超时");
+  it("reads 0 as success, 103 as timeout and any other code as failure", () => {
+    expect(resultText(record({ id: "ok", timestamp: 0, result: 0 }))).toBe("成功");
+    expect(resultText(record({ id: "late", timestamp: 0, result: 103 }))).toBe("超时");
+    for (const code of [1, 2, 5, 102, 104, -1]) {
+      expect(resultText(record({ id: `fail-${code}`, timestamp: 0, result: code }))).toBe("失败");
+    }
     expect(resultText(record({ id: "none", timestamp: 0 }))).toBeNull();
-    expect(resultText(record({ id: "sys", timestamp: 0, category: "system", result: 1 }))).toBeNull();
+    expect(resultText(record({ id: "sys", timestamp: 0, category: "system", result: 0 }))).toBeNull();
   });
 
   it("labels the badge by category only, whatever the group or level", () => {
     const labels = [
       record({ id: "c", timestamp: 0, opGroup: "config" }),
-      record({ id: "d", timestamp: 0, opGroup: "device", result: 0 }),
-      record({ id: "a", timestamp: 0, category: "alarm", level: "error" }),
+      record({ id: "d", timestamp: 0, opGroup: "device", result: 1 }),
+      record({ id: "a", timestamp: 0, category: "axisAlarm", level: "error" }),
       record({ id: "s", timestamp: 0, category: "system", level: "info" }),
       record({ id: "w", timestamp: 0, category: "system", level: "warning" }),
       record({ id: "e", timestamp: 0, category: "system", level: "error" }),
@@ -115,7 +117,7 @@ describe("op call results", () => {
   });
 
   it("colours the badge by log level only", () => {
-    const optRet = (level: LogRecord["level"]) => logBadge(record({ id: level, timestamp: 0, level, result: 0 }));
+    const optRet = (level: LogRecord["level"]) => logBadge(record({ id: level, timestamp: 0, level, result: 1 }));
     expect(optRet("info").className).toContain("text-muted-foreground");
     expect(optRet("warning").className).toContain("text-warning");
     expect(optRet("error").className).toContain("text-destructive");
@@ -127,11 +129,11 @@ describe("op call results", () => {
 
 describe("timeline markers", () => {
   it("colour by log level only, like the category badge", () => {
-    const failed = record({ id: "f", timestamp: 0, level: "info", result: 0 });
+    const failed = record({ id: "f", timestamp: 0, level: "info", result: 1 });
     expect(markerVisual(failed)).toContain("bg-muted-foreground");
     expect(markerVisual(failed)).not.toContain("bg-destructive");
     expect(markerVisual(record({ id: "w", timestamp: 0, level: "warning" }))).toContain("bg-warning");
-    expect(markerVisual(record({ id: "a", timestamp: 0, category: "alarm", level: "error" }))).toContain("bg-destructive");
+    expect(markerVisual(record({ id: "a", timestamp: 0, category: "axisAlarm", level: "error" }))).toContain("bg-destructive");
     expect(markerVisual(record({ id: "s", timestamp: 0, category: "system", level: "warning" }))).toContain("bg-warning");
   });
 });
@@ -142,7 +144,7 @@ describe("alarm review helpers", () => {
   });
 
   it("draws the motors with the lowest ids by default", () => {
-    const alarm = record({ id: "a", timestamp: 10_000, category: "alarm", level: "error" });
+    const alarm = record({ id: "a", timestamp: 10_000, category: "axisAlarm", level: "error" });
     const series = (deviceId: number) => ({ deviceId, points: [] });
     const review: LogAlarmReview = {
       alarm,

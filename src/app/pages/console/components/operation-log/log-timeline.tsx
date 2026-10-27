@@ -25,7 +25,7 @@ import {
 
 /** 快照不是独立记录：每条报警都有，画成报警前 10s ~ 后 5s 的色条 */
 type Lane = VisibleLogCategory | "snapshot";
-const LANES: Lane[] = ["optRet", "alarm", "snapshot", "system"];
+const LANES: Lane[] = ["optRet", "axisAlarm", "snapshot", "system"];
 const LANE_LABEL: Record<Lane, string> = { ...CATEGORY_LABEL, snapshot: "快照" };
 const ZOOM_STEP = 1.5;
 const WHEEL_ZOOM = 1.25;
@@ -37,7 +37,7 @@ const TICK_MIN_GAP_PX = 96;
 export const markerVisual = (record: LogRecord): string => {
   const color = LEVEL_MARKER[record.level];
   switch (record.category) {
-    case "alarm":
+    case "axisAlarm":
       return cn("h-2.5 w-2.5 rotate-45", color);
     case "system":
       return cn("h-3 w-[3px] rounded-[1px]", color);

@@ -5,14 +5,14 @@
 
 /**
  * 记录类别：optCall 前端下发的指令（只存库，不查不显示）/ optRet 操作回码（PLC 回码后写，界面上的「操作」）/
- * alarm 报警 / system 系统
+ * axisAlarm 轴报警 / system 系统
  */
-export type LogCategory = 'optCall' | 'optRet' | 'alarm' | 'system'
+export type LogCategory = 'optCall' | 'optRet' | 'axisAlarm' | 'system'
 
 /** 界面查询和显示的类别 */
 export type VisibleLogCategory = Exclude<LogCategory, 'optCall'>
 
-export const VISIBLE_LOG_CATEGORIES: VisibleLogCategory[] = ['optRet', 'alarm', 'system']
+export const VISIBLE_LOG_CATEGORIES: VisibleLogCategory[] = ['optRet', 'axisAlarm', 'system']
 
 /** 日志级别；debug 为用户无感的内部细节，默认隐藏 */
 export type LogLevel = 'debug' | 'info' | 'warning' | 'error'
@@ -20,10 +20,11 @@ export type LogLevel = 'debug' | 'info' | 'warning' | 'error'
 /** 操作分组：配置操作 / 设备操作 */
 export type LogOpGroup = 'config' | 'device'
 
-/** 操作结果：0 失败 1 成功 2 超时 */
-export type LogResult = 0 | 1 | 2
+/** 操作结果码：0 成功，103 超时，其它都是失败 */
+export type LogResult = number
 
-export const LOG_RESULT = { failed: 0, ok: 1, timeout: 2 } as const
+/** failed 是界面自己写失败时用的码；判断失败要看「不是 ok 也不是 timeout」 */
+export const LOG_RESULT = { ok: 0, failed: 1, timeout: 103 } as const
 
 export type LogTimeRange = { start: number; end: number }
 
@@ -40,7 +41,7 @@ export type LogRecord = {
   user?: string
   /** 操作分组（操作回码填） */
   opGroup?: LogOpGroup
-  /** 操作结果（操作回码填） */
+  /** 操作结果码（操作回码填）：0 成功，103 超时，其它失败 */
   result?: LogResult
 }
 
@@ -106,7 +107,7 @@ export type LogAlarmReview = {
   snapshot: LogSnapshotSeries[]
 }
 
-/** Log|write：界面侧事件（如保存工程）交给 C++ 写入；id、user 由 C++ 填 */
+/** Log|write：界面侧事件（如保存工程）交给 C++ 写入；id、user_name 由 C++ 填（取报文的 userName） */
 export type LogWriteParams = {
   category: 'optRet' | 'system'
   level: LogLevel

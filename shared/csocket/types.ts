@@ -21,7 +21,8 @@ export type CppEnvelope = {
   timestamp: number
   messageId: string
   projectId?: string
-  user?: string
+  /** 登录用户名（如 admin），不是显示名 */
+  userName?: string
   OptCmd: string
   addr: string
   params: unknown[]
@@ -39,7 +40,7 @@ export type CsocketSendOpts = {
   waitAck?: boolean
   timeoutMs?: number
   projectId?: boolean // 是否需要项目id
-  user?: boolean // 是否需要用户
+  userName?: boolean // 是否需要用户名
   paramHeard?: CsocketParamHeardItem[]
 }
 
@@ -66,7 +67,8 @@ export type CsocketParseErrorEvent = {
 
 export type CsocketConfigureContext = {
   projectId?: string
-  user?: string
+  /** 当前登录用户名（如 admin），写进每条报文的 userName */
+  userName?: string
 }
 
 export type BuildEnvelopeInput = Omit<

@@ -128,10 +128,10 @@ async function createWindow() {
 }
 
 app.whenReady().then(() => {
-  // 当前登录用户写进发给 C++ 的报文（操作日志的操作人）
+  // 当前登录用户名（不是显示名）写进发给 C++ 的报文的 userName（操作日志的操作人）
   registerAuthHandlers({
     onSessionChange: (session) => {
-      getCsocketApiService().configure({ user: session?.user.displayName })
+      getCsocketApiService().configure({ userName: session?.user.username })
     },
   })
   registerProjectHandlers()

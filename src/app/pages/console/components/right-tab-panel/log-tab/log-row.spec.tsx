@@ -9,7 +9,7 @@ afterEach(() => cleanup());
 describe("LogRow", () => {
   it("shows a failed or timed-out op call's message as is, without a result suffix", () => {
     const message = "指令[模型点动]执行失败：当前状态无法执行操作(0x0009):{设备:6~8,12}";
-    for (const result of [0, 2] as const) {
+    for (const result of [1, 103]) {
       const entry: LogRecord = {
         id: `r${result}`,
         timestamp: 0,

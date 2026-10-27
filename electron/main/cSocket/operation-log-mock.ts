@@ -7,13 +7,13 @@ import type { LogRecord, LogWriteParams } from '../../../shared/csocket/operatio
 
 let writeSeq = 0
 
-export const mockLogWrite = (params: LogWriteParams, user?: string): CppAckResult<LogRecord> => {
+export const mockLogWrite = (params: LogWriteParams, userName?: string): CppAckResult<LogRecord> => {
   const { timestamp, ...rest } = params
   const record: LogRecord = {
     id: `log-w-${(++writeSeq).toString().padStart(4, '0')}`,
     timestamp: timestamp ?? Date.now(),
     ...rest,
-    ...(user ? { user } : {}),
+    ...(userName ? { user: userName } : {}),
   }
   return { success: true, data: [record] }
 }

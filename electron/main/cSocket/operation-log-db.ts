@@ -1,5 +1,5 @@
 /**
- * 读当前工程的日志库（log.db，C++ 写入，表结构见 docs/cpp-operation-log-api.md）。只读，只用 SELECT。
+ * 读当前工程的日志库（logs.db，C++ 写入，表结构见 docs/cpp-operation-log-api.md）。只读，只用 SELECT。
  * 只依赖 prepare().all() / get()：Electron 里用 better-sqlite3，单测用 node:sqlite。
  */
 import {
@@ -156,7 +156,7 @@ export const reviewAlarm = (db: SqlDatabase, alarmId: string): LogAlarmReview | 
   const id = Number(alarmId)
   if (!Number.isSafeInteger(id)) return null
   const row = db
-    .prepare(`SELECT ${LOG_COLUMNS} FROM log WHERE id = ? AND category = 'alarm'`)
+    .prepare(`SELECT ${LOG_COLUMNS} FROM log WHERE id = ? AND category = 'axisAlarm'`)
     .get(id) as LogRow | undefined
   if (!row) return null
   const alarm = rowToRecord(row)
@@ -168,7 +168,7 @@ export const reviewAlarm = (db: SqlDatabase, alarmId: string): LogAlarmReview | 
   ).map(rowToRecord)
   const samples = db
     .prepare(
-      `SELECT ts, device_id, position, speed, torque, temperature FROM snapshot_sample
+      `SELECT ts, device_id, position, speed, torque, temperature FROM axis_alarm_snapshot
        WHERE ts BETWEEN ? AND ? ORDER BY device_id, ts`,
     )
     .all(start, end) as SampleRow[]
