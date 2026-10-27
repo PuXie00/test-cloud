@@ -1,7 +1,5 @@
 import { ChevronDown } from "lucide-react";
-import { useState } from "react";
 import { useNavigate } from "react-router";
-import { SoftwareLicenseDialog } from "@/app/components/license";
 import { LoginBackground } from "./login-background";
 import { LoginBrand } from "./login-brand";
 import { LoginForm } from "./login-form";
@@ -9,7 +7,6 @@ import { LoginLicenseFooter } from "./login-license-footer";
 
 export const LoginPage = () => {
   const navigate = useNavigate();
-  const [licenseOpen, setLicenseOpen] = useState(false);
 
   return (
     <div className="relative flex h-screen w-full items-center justify-center overflow-hidden bg-background text-foreground">
@@ -23,13 +20,6 @@ export const LoginPage = () => {
         <ChevronDown className="h-4 w-4" aria-hidden />
       </button>
 
-      <SoftwareLicenseDialog
-        open={licenseOpen}
-        onOpenChange={setLicenseOpen}
-        dismissible
-        defaultTab="info"
-      />
-
       <main className="login-card-glow relative z-10 w-full max-w-[560px] rounded-xl bg-card p-10">
         <LoginBrand />
         <div className="my-6 h-px bg-border" role="separator" />
@@ -37,7 +27,7 @@ export const LoginPage = () => {
         <LoginForm
           onSuccess={() => navigate("/project-center", { replace: true })}
         />
-        <LoginLicenseFooter onManage={() => setLicenseOpen(true)} />
+        <LoginLicenseFooter />
       </main>
       <p className="pointer-events-none fixed bottom-5 left-1/2 z-0 -translate-x-1/2 font-mono text-mono-sm uppercase tracking-widest text-muted-foreground">
         v3.0.1 Build 20260508

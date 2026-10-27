@@ -1,52 +1,9 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import type { LicenseAck, LicenseInfo, LicenseState, LicenseStatus } from "@shared/csocket/license";
+import { afterEach, describe, expect, it } from "vitest";
+import { fakeLicenseInfo, installFakeLicenseApi, uninstallFakeLicenseApi } from "./install-fake-license-api";
 import { LicenseGate } from "./license-gate";
 import { LicenseProvider } from "./license-provider";
-
-const info = (status: LicenseStatus, extra: Partial<LicenseInfo> = {}): LicenseInfo => ({
-  status,
-  statusCode: { inactive: 0, needVerify: 1, expired: 2, valid: 3, unknown: 9 }[status],
-  activatedAt: "",
-  expireAt: "",
-  graceUntil: "",
-  message: "",
-  ...extra,
-});
-
-type Reply = { status?: LicenseStatus; info?: Partial<LicenseInfo>; success?: boolean; message?: string; error?: string };
-
-/** 假的 window.csocketApi 授权指令：每次调用按给定的回复改状态（规则和主进程一致：正常就放行） */
-const installFakeLicenseApi = (
-  initial: Partial<LicenseState>,
-  replies: Partial<Record<"check" | "activate" | "verify", Reply[]>>,
-) => {
-  let state: LicenseState = { passed: false, skipped: false, devSkipAllowed: false, info: null, ...initial };
-  const answer = (kind: "check" | "activate" | "verify") => async (): Promise<LicenseAck> => {
-    const reply = replies[kind]?.shift();
-    if (!reply) throw new Error(`no reply for ${kind}`);
-    if (reply.error) return { success: false, code: "ACK_TIMEOUT", message: reply.error, data: [state] };
-    if (reply.status) {
-      state = { ...state, info: info(reply.status, reply.info) };
-      if (reply.status === "valid") state = { ...state, passed: true };
-    }
-    return { success: reply.success ?? true, code: 100, message: reply.message ?? "", data: [state] };
-  };
-  const api = {
-    getLicenseSnapshot: vi.fn(async (): Promise<LicenseAck> => ({ success: true, data: [state] })),
-    authLocalStatus: vi.fn(answer("check")),
-    authActivate: vi.fn(answer("activate")),
-    authVerify: vi.fn(answer("verify")),
-    authSkip: vi.fn(async (): Promise<LicenseAck> => {
-      state = { ...state, passed: true, skipped: true };
-      return { success: true, message: "", data: [state] };
-    }),
-    onLicense: vi.fn(() => () => undefined),
-  };
-  window.csocketApi = api as unknown as Window["csocketApi"];
-  return api;
-};
 
 const renderGate = () =>
   render(
@@ -59,7 +16,7 @@ const renderGate = () =>
 
 afterEach(() => {
   cleanup();
-  delete (window as { csocketApi?: unknown }).csocketApi;
+  uninstallFakeLicenseApi();
 });
 
 describe("LicenseGate", () => {
@@ -69,7 +26,7 @@ describe("LicenseGate", () => {
   });
 
   it("本次运行已放行（渲染进程刷新）不再查", async () => {
-    const api = installFakeLicenseApi({ passed: true, info: info("valid") }, {});
+    const api = installFakeLicenseApi({ passed: true, info: fakeLicenseInfo("valid") }, {});
     renderGate();
     expect(await screen.findByText("登录页")).toBeTruthy();
     expect(api.authLocalStatus).not.toHaveBeenCalled();

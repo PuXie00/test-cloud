@@ -1,4 +1,7 @@
 import type { ReactNode } from "react";
+import { ShieldCheck } from "lucide-react";
+import { LicenseManageButton } from "@/app/components/license";
+import { buttonVariants } from "@/app/components/ui/button";
 import { licenseDate, licenseStatusLabel } from "@/app/license/license-labels";
 import { useLicense } from "@/app/license/use-license";
 import { SOFTWARE_INFO } from "../system-settings-constants";
@@ -50,6 +53,13 @@ export const AboutPanel = () => {
             <InfoRow label="激活时间" value={<MonoValue value={info?.activatedAt} />} />
             <InfoRow label="到期日期" value={<MonoValue value={info?.expireAt} />} />
             <InfoRow label="离线可用至" value={<MonoValue value={info?.graceUntil} />} />
+          </div>
+          {/* 和登录页的「授权管理」是同一个对话框 */}
+          <div className="mt-4 flex justify-end">
+            <LicenseManageButton className={buttonVariants({ variant: "ghost", size: "sm" })}>
+              <ShieldCheck className="h-4 w-4" aria-hidden />
+              授权管理
+            </LicenseManageButton>
           </div>
         </div>
       </SettingsSection>
