@@ -1,5 +1,6 @@
 import { Activity, Loader2, X } from "lucide-react";
 import { useState } from "react";
+import { usePermissions } from "@/app/auth/permissions";
 import { Popover, PopoverContent, PopoverTrigger } from "@/app/components/ui/popover";
 import { Switch } from "@/app/components/ui/switch";
 import { cn } from "@/app/components/ui/utils";
@@ -47,7 +48,9 @@ export const SystemStatusPopover = () => {
   const [open, setOpen] = useState(false);
   const { plcs } = useProjectStore();
   const { runtimes, systemStatus, setSimulationAll, simulationSwitchPending } = usePlcRuntime();
-  const switchState = resolveSimulationSwitchState(runtimes, simulationSwitchPending);
+  // 仿真开关属于「主控操作」：关掉仿真后 GO、点动会驱动真实设备
+  const canOperateMaster = usePermissions().can("build.plc");
+  const switchState = resolveSimulationSwitchState(runtimes, simulationSwitchPending, canOperateMaster);
 
   const runtimeById = new Map(runtimes.map((item) => [item.plcId, item]));
 

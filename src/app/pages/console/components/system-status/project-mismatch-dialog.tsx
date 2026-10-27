@@ -5,7 +5,7 @@ type ProjectMismatchDialogProps = {
   onCancel: () => void;
   onCloseProject: () => void;
   onDownload: () => void;
-  /** 没有「主控下载与复位」权限时不给下载 */
+  /** 没有「主控操作」权限时不给下载 */
   canDownload?: boolean;
 };
 
@@ -28,7 +28,7 @@ export const ProjectMismatchDialog = ({
         <p className="mt-2 text-body-sm text-muted-foreground">
           {canDownload
             ? "主控的工程与当前工程不匹配，是否下载当前工程到主控？"
-            : "主控的工程与当前工程不匹配。当前用户没有下载权限，请找有「主控下载与复位」权限的用户下载。"}
+            : "主控的工程与当前工程不匹配。当前用户没有下载权限，请找有「主控操作」权限的用户下载。"}
         </p>
         <div className="mt-5 flex justify-end gap-2">
           <button

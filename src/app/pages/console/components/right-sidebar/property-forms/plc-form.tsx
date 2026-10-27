@@ -21,7 +21,7 @@ type PlcFormValues = Pick<Plc, "ip" | "masterTypeId">;
 export const PlcForm = ({ plcId }: PlcFormProps) => {
   const { findPlc, updatePlc } = useProjectStore();
   const [reconciliationOpen, setReconciliationOpen] = useState(false);
-  // 没有「编辑工程配置」时配置和对账只读；连接状态、重新扫描照常（PLC 复位看「主控下载与复位」）
+  // 没有「编辑工程配置」时配置和对账只读；连接状态、重新扫描照常（PLC 复位看「主控操作」）
   const readOnly = !usePermissions().can("build.edit");
   const plc = findPlc(plcId);
 

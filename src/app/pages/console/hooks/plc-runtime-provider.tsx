@@ -1,3 +1,4 @@
+import { usePermissions } from "@/app/auth/permissions";
 import {
   createContext,
   useCallback,
@@ -55,6 +56,10 @@ export const PlcRuntimeProvider = ({ children }: { children: ReactNode }) => {
   const { plcs } = useProjectStore();
   const plcsRef = useRef(plcs);
   plcsRef.current = plcs;
+  // 切换仿真要「主控操作」：界面已只读，这里再拦一次
+  const canOperateMaster = usePermissions().can("build.plc");
+  const canOperateMasterRef = useRef(canOperateMaster);
+  canOperateMasterRef.current = canOperateMaster;
   const [scannedMasters, setScannedMasters] = useState<ScannedMaster[]>([]);
   const [masterById, setMasterById] = useState<Map<number, PlcMasterStatus>>(
     () => new Map(),
@@ -166,7 +171,7 @@ export const PlcRuntimeProvider = ({ children }: { children: ReactNode }) => {
 
   const setSimulationAll = useCallback(async (enabled: boolean) => {
     const send = window.csocketApi?.simulationSwitchPlc;
-    if (!send) return;
+    if (!send || !canOperateMasterRef.current) return;
     if (plcs.length === 0) return;
     setSimulationSwitchPending(true);
     try {

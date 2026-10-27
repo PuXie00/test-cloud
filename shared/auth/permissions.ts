@@ -130,8 +130,8 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
       },
       {
         id: 'build.plc',
-        label: '主控下载与复位',
-        description: '下载工程到主控、PLC 复位',
+        label: '主控操作',
+        description: '下载工程到主控、PLC 复位、仿真开关',
       },
     ],
   },
