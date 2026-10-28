@@ -327,14 +327,14 @@ export const ExecCardsProvider = ({
       !card.emergencyStopped &&
       (card.status === "paused" || isExecCardAtRest(card))
     ) {
-      void stopSequence(
-        {
-          actionId: card.sequenceHandle.actionId,
-          trajectoryMode: card.trajectoryMode === true,
-          deviceId: card.sequenceHandle.deviceId ?? [],
-        },
-        getSequenceTransport(),
-      ).catch(() => undefined);
+      // void stopSequence(
+      //   {
+      //     actionId: card.sequenceHandle.actionId,
+      //     trajectoryMode: card.trajectoryMode === true,
+      //     deviceId: card.sequenceHandle.deviceId ?? [],
+      //   },
+      //   getSequenceTransport(),
+      // ).catch(() => undefined);
     }
     setCards((current) => current.filter((entry) => entry.id !== id));
   }, []);

@@ -307,17 +307,17 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     setSlotBusy(slot.index, true);
     void (async () => {
       try {
-        if (card.sequenceHandle) {
-          const released = await releaseSequence({
-            actionId: card.sequenceHandle.actionId,
-            trajectoryMode: card.trajectoryMode === true,
-            deviceId: card.sequenceHandle.deviceId ?? [],
-          });
-          if (!released.ok) {
-            reportSequenceResult(released);
-            return;
-          }
-        }
+        // if (card.sequenceHandle) {
+        //   const released = await releaseSequence({
+        //     actionId: card.sequenceHandle.actionId,
+        //     trajectoryMode: card.trajectoryMode === true,
+        //     deviceId: card.sequenceHandle.deviceId ?? [],
+        //   });
+        //   if (!released.ok) {
+        //     reportSequenceResult(released);
+        //     return;
+        //   }
+        // }
         const readied = await readySlot(slot.index, sequenceId, startPlan, {
           safeGroup: slot.runOptions.safeGroup ? 1 : 0,
           runDirection: !reverse,
