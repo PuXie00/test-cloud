@@ -15,11 +15,16 @@ import { hasUncoupledSequenceMember, sequenceObjectIds } from "@/app/project/act
 import { resolveMotionLaunchBlock } from "@/app/project/project-motion-readiness";
 import { useProject } from "@/app/project/use-project";
 import { sequenceTotalMs } from "../../hooks/action-card-seed";
+import { canRerunExecCard, isExecCardAtRest } from "../../hooks/exec-card-run-status";
 import { useControlledObjects } from "../../hooks/use-controlled-objects";
 import { useExecutorSlots, type FaderSlotState } from "../../hooks/use-executor-slots";
 import { useExecCards } from "../../hooks/use-exec-cards";
 import { useProgram } from "../../hooks/use-program";
-import { nextChapterSequence, nextSequenceSlot } from "../../hooks/sequence-run-status";
+import {
+  execCardSlot,
+  nextChapterSequence,
+  nextSequenceSlot,
+} from "../../hooks/sequence-run-status";
 import {
   goSequence,
   readySequence,
@@ -37,12 +42,16 @@ import { PreparedPoseDialog } from "./prepared-pose-dialog";
 type ExecAreaProps = { className?: string };
 
 type PoseDialogState = StartGateOptions & {
-  intent: "fader" | "next";
+  /** fader：推子槽 Ready；next：任务卡下一条；rerun：任务卡继续 / 反向回 */
+  intent: "fader" | "next" | "rerun";
   slotIndex: number;
   cardId: string | null;
   sequenceId: number;
   telemetryByObjectId: Map<number, HpyPose>;
 };
+
+/** 继续沿卡片原来的方向，反向回方向反过来 */
+type RerunIntent = "continue" | "reverse-back";
 
 const slotReadyOptions = (slot: FaderSlotState) => ({
   safeGroup: slot.runOptions.safeGroup ? 1 : 0,
@@ -106,7 +115,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
         (card.status === "running" ||
           card.status === "paused" ||
           card.status === "stopping" ||
-          card.status === "stopped") &&
+          isExecCardAtRest(card)) &&
         !card.emergencyStopped
           ? [card.source.slotIndex]
           : [],
@@ -134,6 +143,9 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       telemetryByObjectId: poseDialog.telemetryByObjectId,
       nearest: poseDialog.nearest,
       reverse: poseDialog.reverse,
+      ...(poseDialog.specifiedTimeMs !== undefined
+        ? { specifiedTimeMs: poseDialog.specifiedTimeMs }
+        : {}),
     });
   }, [poseDialog, currentProject, faderSlots]);
 
@@ -175,27 +187,32 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     return { maxSpeedPercent: speedCap.maxPercent };
   };
 
-  /** GO 一个推子槽；成功后槽显示“启动”，并出一张来源为该槽的任务卡。 */
+  /**
+   * GO 一个推子槽；成功后槽显示“启动”，并出一张来源为该槽的任务卡（同一动作已有卡片时沿用那张）。
+   * run 给任务卡的继续 / 反向回用：速度沿用卡上的，方向按按钮定；缺省按推子和槽的反向开关。
+   */
   const goSlot = async (
     slot: FaderSlotState,
     sequenceId: number,
     startPlan: NearestStartPlan | null,
     maxSpeedPercent: number | null,
-  ): Promise<void> => {
+    run?: { speedPercent: number; reverse: boolean },
+  ): Promise<boolean> => {
     const document = currentProject?.document;
-    if (!document) return;
+    if (!document) return false;
+    const reverse = run?.reverse ?? slot.runOptions.reverse;
     const started = await goSequence({
       document,
       sequenceId,
       // 用本次准备的调速上限换算：下一条连做时 slot 还是准备前的快照
-      faderPercent: faderToSpeedPercent(slot.faderValue, maxSpeedPercent),
-      reverse: slot.runOptions.reverse,
+      faderPercent: run?.speedPercent ?? faderToSpeedPercent(slot.faderValue, maxSpeedPercent),
+      reverse,
       startPlan,
       maxSpeedPercent,
     });
     if (!started.ok) {
       reportSequenceResult(started);
-      return;
+      return false;
     }
     const authored = document.motion.actionSequences.find((entry) => entry.id === sequenceId);
     clearSlotReady(slot.index);
@@ -211,9 +228,10 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       sequenceHandle: started.sequenceHandle,
       trajectoryMode: slot.sequence?.trajectoryMode,
       totalMs: sequenceTotalMs(authored),
-      reverse: slot.runOptions.reverse,
+      reverse,
     });
     stopPreview();
+    return true;
   };
 
   const beginReady = (
@@ -271,12 +289,57 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     })();
   };
 
+  /**
+   * 任务卡的继续 / 反向回：同一个动作在它的推子槽上先释放、再按就近计划准备、再 GO，
+   * 速度沿用卡上的，GO 后沿用原来那张卡。准备是按这次的方向和接入帧算的，GO 没成功就撤掉准备，
+   * 免得推子槽之后按槽自己的开关直接 GO。
+   */
+  const rerunOnSlot = (
+    cardId: string,
+    slot: FaderSlotState,
+    sequenceId: number,
+    startPlan: NearestStartPlan | null,
+    reverse: boolean,
+  ) => {
+    if (!currentProject?.document) return;
+    const card = cards.find((entry) => entry.id === cardId);
+    if (!card || !canRerunExecCard(card)) return;
+    setSlotBusy(slot.index, true);
+    void (async () => {
+      try {
+        if (card.sequenceHandle) {
+          const released = await releaseSequence({
+            actionId: card.sequenceHandle.actionId,
+            trajectoryMode: card.trajectoryMode === true,
+            deviceId: card.sequenceHandle.deviceId ?? [],
+          });
+          if (!released.ok) {
+            reportSequenceResult(released);
+            return;
+          }
+        }
+        const readied = await readySlot(slot.index, sequenceId, startPlan, {
+          safeGroup: slot.runOptions.safeGroup ? 1 : 0,
+          runDirection: !reverse,
+        });
+        if (!readied) return;
+        const started = await goSlot(slot, sequenceId, startPlan, readied.maxSpeedPercent, {
+          speedPercent: card.speedPercent,
+          reverse,
+        });
+        if (!started) clearSlotReady(slot.index);
+      } finally {
+        setSlotBusy(slot.index, false);
+      }
+    })();
+  };
+
   const handleConfirmPose = () => {
     if (!poseDialog || dialogGate?.status !== "transition") return;
     if (poseConfirmLockRef.current) return;
     const slot = faderSlots[poseDialog.slotIndex];
     if (!slot || slot.isBusy) return;
-    if (poseDialog.intent === "next" && !poseDialog.cardId) return;
+    if (poseDialog.intent !== "fader" && !poseDialog.cardId) return;
     poseConfirmLockRef.current = true;
     const { slotIndex, sequenceId, cardId } = poseDialog;
     const plan = dialogGate.plan;
@@ -285,12 +348,73 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       readyThenGoNext(cardId, slot, sequenceId, plan);
       return;
     }
+    if (poseDialog.intent === "rerun" && cardId) {
+      rerunOnSlot(cardId, slot, sequenceId, plan, poseDialog.reverse);
+      return;
+    }
     beginReady(slotIndex, sequenceId, plan, slotReadyOptions(slot));
+  };
+
+  /**
+   * 继续 / 反向回：开启就近、从卡上显示的运行时间（PLC 上报的 runTime）接入，准备后直接 GO。
+   * 只是这一次按就近和该方向走，槽上保存的就近 / 反向开关不变。PLC 没上报过时没有当前帧，按就近自己找。
+   */
+  const handleRerun = (cardId: string, intent: RerunIntent) => {
+    const card = cards.find((entry) => entry.id === cardId);
+    if (!card || !canRerunExecCard(card) || card.sequenceId === undefined || poseDialog) return;
+    const sequenceId = card.sequenceId;
+    const slot = execCardSlot(card, faderSlots);
+    if (!slot) {
+      toast.warning("该动作不在当前页的推子槽中，翻到它所在的页再操作");
+      return;
+    }
+    if (slot.isBusy) return;
+    const document = currentProject?.document;
+    const issue = resolveMotionLaunchBlock(document, "sequence", sequenceId);
+    if (issue) {
+      toast.warning(issue.message);
+      return;
+    }
+    if (!document) return;
+    const authored = document.motion.actionSequences.find((entry) => entry.id === sequenceId);
+    if (authored && hasUncoupledSequenceMember(authored, coupledObjectIds)) {
+      toast.warning("未耦合");
+      return;
+    }
+    const reverse = intent === "continue" ? card.reverse === true : card.reverse !== true;
+    const options: StartGateOptions = {
+      nearest: true,
+      reverse,
+      ...(card.run ? { specifiedTimeMs: card.run.runTimeMs } : {}),
+    };
+    let startPlan: NearestStartPlan | null = null;
+    if (authored) {
+      const gate = evaluateStartGate({
+        sequence: authored,
+        objects: document.setup.controlledObjects,
+        motors: document.setup.motors,
+        telemetryByObjectId,
+        ...options,
+      });
+      if (needsPoseDialog(gate)) {
+        setPoseDialog({
+          intent: "rerun",
+          slotIndex: slot.index,
+          cardId,
+          sequenceId,
+          ...options,
+          telemetryByObjectId: new Map(telemetryByObjectId),
+        });
+        return;
+      }
+      if (gate.status === "at-start") startPlan = gate.plan;
+    }
+    rerunOnSlot(cardId, slot, sequenceId, startPlan, reverse);
   };
 
   const handleNextSequence = (cardId: string) => {
     const card = cards.find((entry) => entry.id === cardId);
-    if (!card || card.status !== "stopped" || card.sequenceId === undefined || poseDialog) return;
+    if (!card || !isExecCardAtRest(card) || card.sequenceId === undefined || poseDialog) return;
     const chapterItems =
       program.chapters.find((chapter) => chapter.id === currentChapterId)?.items ??
       program.chapters[0]?.items ??
@@ -420,7 +544,11 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
   return (
     <section className={cn("flex min-h-0 overflow-hidden rounded-lg bg-card", className)}>
       <div className="flex h-full w-[330px] shrink-0 flex-col">
-        <ExecCards onNextSequence={handleNextSequence} />
+        <ExecCards
+          onNextSequence={handleNextSequence}
+          onContinue={(cardId) => handleRerun(cardId, "continue")}
+          onReverseBack={(cardId) => handleRerun(cardId, "reverse-back")}
+        />
       </div>
       <div className="min-w-0 flex-1">
         <Executors onTriggerSequence={handleStableTriggerSequence} />

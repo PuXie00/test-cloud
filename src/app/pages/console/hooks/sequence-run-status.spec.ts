@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChapterItem } from "../components/program-panel/program-data";
 import {
+  execCardSlot,
   formatExecTime,
   hasNextChapterSequence,
   nextChapterSequence,
@@ -62,5 +63,27 @@ describe("nextSequenceSlot", () => {
     expect(nextSequenceSlot(items, 2, slots)).toBeNull();
     expect(nextSequenceSlot(items, 3, slots)).toBeNull();
     expect(nextSequenceSlot(items, undefined, slots)).toBeNull();
+  });
+});
+
+describe("execCardSlot", () => {
+  const slots = [
+    { index: 0, sequence: { id: 7 } },
+    { index: 1, sequence: { id: 4 } },
+    { index: 2, sequence: null },
+  ];
+
+  it("uses the card's own fader slot while it still holds the sequence", () => {
+    expect(execCardSlot({ source: { kind: "fader", slotIndex: 1 }, sequenceId: 4 }, slots)).toBe(slots[1]);
+  });
+
+  it("finds the sequence on the current page after the source slot changed", () => {
+    expect(execCardSlot({ source: { kind: "fader", slotIndex: 2 }, sequenceId: 7 }, slots)).toBe(slots[0]);
+    expect(execCardSlot({ source: { kind: "external" }, sequenceId: 4 }, slots)).toBe(slots[1]);
+  });
+
+  it("is null when the sequence is not on the current page or the card has none", () => {
+    expect(execCardSlot({ source: { kind: "fader", slotIndex: 0 }, sequenceId: 9 }, slots)).toBeNull();
+    expect(execCardSlot({ source: { kind: "fader", slotIndex: 0 } }, slots)).toBeNull();
   });
 });

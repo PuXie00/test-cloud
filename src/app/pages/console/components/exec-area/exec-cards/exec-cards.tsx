@@ -1,16 +1,25 @@
 import { useExecCards } from "../../../hooks/use-exec-cards";
 import { useProgram } from "../../../hooks/use-program";
 import { useExecutorSlots } from "../../../hooks/use-executor-slots";
-import { nextSequenceIsFree, nextSequenceSlot } from "../../../hooks/sequence-run-status";
+import { isExecCardAtRest } from "../../../hooks/exec-card-run-status";
+import {
+  execCardSlot,
+  nextSequenceIsFree,
+  nextSequenceSlot,
+} from "../../../hooks/sequence-run-status";
 import { ExecCardView } from "./exec-card";
 import { ExecEmptyState } from "./exec-empty-state";
 
 type ExecCardsProps = {
   onNextSequence?: (cardId: string) => void;
+  /** 继续：从停下的帧就近准备并 GO，方向不变 */
+  onContinue: (cardId: string) => void;
+  /** 反向回：从停下的帧就近准备并 GO，方向反过来 */
+  onReverseBack: (cardId: string) => void;
 };
 
-export const ExecCards = ({ onNextSequence }: ExecCardsProps) => {
-  const { cards, resume, stop, skipNext, setSpeed, close, restart } = useExecCards();
+export const ExecCards = ({ onNextSequence, onContinue, onReverseBack }: ExecCardsProps) => {
+  const { cards, stop, skipNext, setSpeed, close } = useExecCards();
   const { program, currentChapterId } = useProgram();
   const { faderSlots } = useExecutorSlots();
   const chapterItems =
@@ -35,7 +44,7 @@ export const ExecCards = ({ onNextSequence }: ExecCardsProps) => {
           key={card.id}
           card={card}
           hasNextSequence={
-            card.status === "stopped" &&
+            isExecCardAtRest(card) &&
             nextSlotIsFree(card.sequenceId) &&
             nextSequenceIsFree(
               chapterItems,
@@ -43,9 +52,10 @@ export const ExecCards = ({ onNextSequence }: ExecCardsProps) => {
               cards.flatMap((entry) => (entry.sequenceId === undefined ? [] : [entry.sequenceId])),
             )
           }
+          busy={execCardSlot(card, faderSlots)?.isBusy === true}
           onStop={() => stop(card.id)}
-          onResume={() => resume(card.id)}
-          onRestart={() => restart(card.id)}
+          onContinue={() => onContinue(card.id)}
+          onReverseBack={() => onReverseBack(card.id)}
           onSkipNext={() => (onNextSequence ? onNextSequence(card.id) : skipNext(card.id))}
           onSetSpeed={(percent) => setSpeed(card.id, percent)}
           onClose={() => close(card.id)}

@@ -29,6 +29,11 @@ export type NearestStartInput = {
   reverse: boolean;
   /** PLC 循环配置：0 一直循环，1 播一次 */
   loopCount: number;
+  /**
+   * 指定接入帧（ms），只在开启就近时生效：强制轨迹直接从这一帧接入，非强制从这一帧起沿方向取关键帧。
+   * 任务卡的继续 / 反向回传入停下时的 runTime。
+   */
+  specifiedTimeMs?: number;
 };
 
 export type NearestStartAxisMove = AxisVad & {
@@ -138,12 +143,22 @@ export const planNearestStart = (input: NearestStartInput): NearestStartPlan => 
     const [h, p, y] = model.default_velocity_HPY;
     return { ...model, max_velocity_HPY: [h, p, y] satisfies Hpy };
   });
+  const specified = input.specifiedTimeMs;
   const result = calculateNearestEntry({
     command: {
       trajectory_run: input.forced,
       reverse: input.reverse,
       nearest_start: input.nearest,
-      use_specified_time: false,
+      use_specified_time: specified !== undefined,
+      // 算法只收曲线范围内的整数毫秒；模型曲线都延到序列总时长
+      ...(specified !== undefined
+        ? {
+            specified_time_ms: Math.min(
+              Math.max(0, Math.round(specified)),
+              Math.max(0, Math.ceil(input.resolved.totalMs)),
+            ),
+          }
+        : {}),
       loop_count: input.loopCount,
     },
     settings: ALGORITHM_SETTINGS,

@@ -78,7 +78,12 @@ export const planIsAtStart = (plan: NearestStartPlan): boolean =>
     ),
   );
 
-export type StartGateOptions = { nearest: boolean; reverse: boolean };
+export type StartGateOptions = {
+  nearest: boolean;
+  reverse: boolean;
+  /** 开启就近时从这一帧接入（任务卡继续 / 反向回传入停下时的 runTime） */
+  specifiedTimeMs?: number;
+};
 
 export type StartGateInput = StartGateOptions & {
   sequence: ActionSequenceConfig;
@@ -114,6 +119,7 @@ export const sequenceLoopCount = (sequence: ActionSequenceConfig): 0 | 1 =>
  * 不论在不在起点都跑就近算法：它给出接入帧、准备 V/A 与共同准备时间。
  * 先按回起点算，所有准备 Move 都在容差内就是已在起点（非强制就近即使停在起点也会跳到下一关键帧，
  * 所以不能先就近）；不在起点且开了就近，再按就近算。在容差内的计划标为 at-start，仍保留算法的 V/A 供下发。
+ * 指定了接入帧时直接按该帧就近：曲线中途回到起点位姿时，先按回起点算会被当成从头开始。
  */
 export const planStartTransition = (input: {
   resolved: ResolvedActionSequence;
@@ -123,6 +129,7 @@ export const planStartTransition = (input: {
   telemetryByObjectId: ReadonlyMap<number, HpyPose>;
   nearest: boolean;
   reverse: boolean;
+  specifiedTimeMs?: number;
 }): NearestStartPlan => {
   const planWith = (nearest: boolean) =>
     planNearestStart({
@@ -134,12 +141,20 @@ export const planStartTransition = (input: {
       nearest,
       reverse: input.reverse,
       loopCount: sequenceLoopCount(input.sequence),
+      ...(nearest && input.specifiedTimeMs !== undefined
+        ? { specifiedTimeMs: input.specifiedTimeMs }
+        : {}),
     });
   const atStart = (plan: NearestStartPlan): NearestStartPlan => ({
     ...plan,
     nearest: input.nearest,
     startMode: "at-start",
   });
+
+  if (input.nearest && input.specifiedTimeMs !== undefined) {
+    const specified = planWith(true);
+    return planIsAtStart(specified) ? atStart(specified) : specified;
+  }
 
   let boundary: NearestStartPlan;
   try {

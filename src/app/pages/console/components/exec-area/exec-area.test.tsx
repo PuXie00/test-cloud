@@ -265,10 +265,24 @@ vi.mock("../../hooks/use-selection", () => ({
 }));
 
 vi.mock("./exec-cards/exec-cards", () => ({
-  ExecCards: ({ onNextSequence }: { onNextSequence?: (cardId: string) => void }) => (
+  ExecCards: ({
+    onNextSequence,
+    onContinue,
+    onReverseBack,
+  }: {
+    onNextSequence?: (cardId: string) => void;
+    onContinue?: (cardId: string) => void;
+    onReverseBack?: (cardId: string) => void;
+  }) => (
     <div data-testid="exec-cards">
       <button type="button" onClick={() => onNextSequence?.("card-stopped")}>
         下一条
+      </button>
+      <button type="button" onClick={() => onContinue?.("card-stopped")}>
+        继续
+      </button>
+      <button type="button" onClick={() => onReverseBack?.("card-stopped")}>
+        反向回
       </button>
     </div>
   ),
@@ -1408,7 +1422,7 @@ describe("ExecArea launch guard", () => {
     expect(readySequenceMock).not.toHaveBeenCalled();
   });
 
-  const armStoppedChapter = (status: "stopped" | "paused" = "stopped") => {
+  const armStoppedChapter = (status: "stopped" | "paused" | "completed" = "stopped") => {
     execCardsRef.current = [
       {
         id: "card-stopped",
@@ -1673,6 +1687,18 @@ describe("ExecArea launch guard", () => {
     expect(toastError).toHaveBeenCalledWith("动作序列启动失败");
   });
 
+  it("runs the next sequence from a card that ended normally", async () => {
+    armStoppedChapter("completed");
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "下一条" }));
+    await waitFor(() => {
+      expect(goSequenceMock).toHaveBeenCalledTimes(1);
+    });
+    expect(releaseSequenceMock).toHaveBeenCalledTimes(1);
+    expect(closeMock).toHaveBeenCalledWith("card-stopped", { release: false });
+    expect(launchMock).toHaveBeenCalledWith(expect.objectContaining({ sequenceId: 15 }));
+  });
+
   it("does not prepare the next sequence while the card is paused", () => {
     armStoppedChapter("paused");
     render(withMode(<ExecArea />));
@@ -1701,6 +1727,230 @@ describe("ExecArea launch guard", () => {
     render(withMode(<ExecArea />));
     fireEvent.click(screen.getByRole("button", { name: "下一条" }));
     expect(readySequenceMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("ExecArea continue / reverse back", () => {
+  beforeEach(() => {
+    documentRef.current = makeDocument();
+    faderSlotsRef.current = [
+      makeFaderSlot({ index: 0, sequence: { id: 14, name: "空序列", durationMs: 0 } }),
+      makeFaderSlot({
+        index: 1,
+        sequence: { id: 15, name: "正常序列", durationMs: 2000 },
+        faderValue: 150,
+        runOptions: { nearest: false, reverse: false, safeGroup: true },
+      }),
+      ...Array.from({ length: 10 }, (_, idx) => makeFaderSlot({ index: idx + 2 })),
+    ];
+  });
+
+  const forced = () => {
+    documentRef.current!.motion.actionSequences[1]!.trajectoryMode = true;
+  };
+
+  const armCard = (overrides: Partial<ExecCard> = {}) => {
+    execCardsRef.current = [
+      {
+        id: "card-stopped",
+        kind: "sequence",
+        name: "正常序列",
+        source: { kind: "fader", slotIndex: 1 },
+        durationMs: null,
+        elapsedMs: 0,
+        speedPercent: 80,
+        status: "stopped",
+        startedAt: 0,
+        emergencyStopped: false,
+        sequenceId: 15,
+        sequenceHandle: { actionId: 15, deviceId: [1] },
+        trajectoryMode: documentRef.current!.motion.actionSequences[1]!.trajectoryMode,
+        totalMs: 2000,
+        run: { state: 3, loopCount: 1, loopCountSet: 1, runTimeMs: 1500, reportedAt: 0 },
+        ...overrides,
+      },
+    ];
+  };
+
+  const readyArgs = () =>
+    readySequenceMock.mock.calls[0]?.[0] as unknown as {
+      sequenceId: number;
+      safeGroup: number;
+      runDirection: boolean;
+      startPlan: Record<string, unknown>;
+    };
+
+  it("继续 joins at the card's runTime with nearest on and runs on in the same direction", async () => {
+    forced();
+    armCard();
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    await waitFor(() => {
+      expect(goSequenceMock).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    // 同一个动作先释放再准备
+    expect(releaseSequenceMock).toHaveBeenCalledWith({ actionId: 15, trajectoryMode: true, deviceId: [1] });
+    expect(releaseSequenceMock.mock.invocationCallOrder[0]).toBeLessThan(
+      readySequenceMock.mock.invocationCallOrder[0]!,
+    );
+    expect(readyArgs()).toMatchObject({
+      sequenceId: 15,
+      safeGroup: 1,
+      runDirection: true,
+      startPlan: { nearest: true, direction: 1, targetFrameMs: 1500, startMode: "at-start" },
+    });
+    // 速度沿用卡上的，不是推子
+    expect(goSequenceMock.mock.calls[0]?.[0]).toMatchObject({
+      sequenceId: 15,
+      faderPercent: 80,
+      reverse: false,
+      startPlan: readyArgs().startPlan,
+    });
+    expect(launchMock).toHaveBeenCalledWith(
+      expect.objectContaining({ source: { kind: "fader", slotIndex: 1 }, sequenceId: 15, reverse: false }),
+    );
+    // 沿用原来的卡片，槽上保存的就近 / 反向不动
+    expect(closeMock).not.toHaveBeenCalled();
+    expect(setSlotRunOptionsMock).not.toHaveBeenCalled();
+    expect(setSlotBusyMock).toHaveBeenCalledWith(1, true);
+    expect(setSlotBusyMock).toHaveBeenLastCalledWith(1, false);
+  });
+
+  it("反向回 joins at the card's runTime and runs back in reverse", async () => {
+    forced();
+    armCard();
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "反向回" }));
+    await waitFor(() => {
+      expect(goSequenceMock).toHaveBeenCalledTimes(1);
+    });
+    expect(readyArgs()).toMatchObject({
+      runDirection: false,
+      startPlan: { nearest: true, direction: -1, targetFrameMs: 1500 },
+    });
+    expect(goSequenceMock.mock.calls[0]?.[0]).toMatchObject({ reverse: true, faderPercent: 80 });
+    expect(launchMock).toHaveBeenCalledWith(expect.objectContaining({ reverse: true }));
+    expect(setSlotRunOptionsMock).not.toHaveBeenCalled();
+  });
+
+  it("reverses relative to the card: 反向回 on a reverse run goes forward, 继续 keeps reverse", async () => {
+    forced();
+    armCard({ reverse: true });
+    const { unmount } = render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "反向回" }));
+    await waitFor(() => {
+      expect(goSequenceMock).toHaveBeenCalledTimes(1);
+    });
+    expect(goSequenceMock.mock.calls[0]?.[0]).toMatchObject({ reverse: false });
+    unmount();
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    await waitFor(() => {
+      expect(goSequenceMock).toHaveBeenCalledTimes(2);
+    });
+    expect(goSequenceMock.mock.calls[1]?.[0]).toMatchObject({ reverse: true });
+  });
+
+  it("continues a non-forced action from the next keyframe after the runTime", async () => {
+    armCard();
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    await waitFor(() => {
+      expect(goSequenceMock).toHaveBeenCalledTimes(1);
+    });
+    expect(readyArgs().startPlan).toMatchObject({ nearest: true, direction: 1, targetFrameMs: 2000 });
+  });
+
+  it("reverse-backs a card that ended normally", async () => {
+    forced();
+    armCard({ status: "completed", run: { state: 3, loopCount: 1, loopCountSet: 1, runTimeMs: 2000, reportedAt: 0 } });
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "反向回" }));
+    await waitFor(() => {
+      expect(goSequenceMock).toHaveBeenCalledTimes(1);
+    });
+    expect(readyArgs().startPlan).toMatchObject({ direction: -1, targetFrameMs: 2000 });
+    expect(goSequenceMock.mock.calls[0]?.[0]).toMatchObject({ reverse: true });
+  });
+
+  it("asks before moving members that left the trajectory, then prepares from the runTime", async () => {
+    forced();
+    armCard();
+    snapshotsRef.current = [{ descriptor: { id: 1 }, positions: { h: 0, p: 0, y: 0 } }];
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    expect(await screen.findByRole("alertdialog")).toBeTruthy();
+    expect(screen.getByText("就近接入 · 正向")).toBeTruthy();
+    expect(screen.getByTestId("pose-target-frame").textContent).toBe("编程 1.5 秒");
+    expect(releaseSequenceMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "确认" }));
+    await waitFor(() => {
+      expect(goSequenceMock).toHaveBeenCalledTimes(1);
+    });
+    expect(readyArgs().startPlan).toMatchObject({ nearest: true, targetFrameMs: 1500, startMode: "nearest" });
+    expect(goSequenceMock.mock.calls[0]?.[0]).toMatchObject({ reverse: false, faderPercent: 80 });
+  });
+
+  it("warns when the action has no fader slot on the current page", () => {
+    armCard();
+    faderSlotsRef.current = faderSlotsRef.current.map((slot) =>
+      slot.index === 1 ? { ...slot, sequence: null } : slot,
+    );
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    expect(toastWarning).toHaveBeenCalledWith("该动作不在当前页的推子槽中，翻到它所在的页再操作");
+    expect(releaseSequenceMock).not.toHaveBeenCalled();
+    expect(readySequenceMock).not.toHaveBeenCalled();
+  });
+
+  it("does nothing while the slot is busy or the PLC still reports the action", () => {
+    armCard({ plcActive: true });
+    const { unmount } = render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    unmount();
+    armCard();
+    faderSlotsRef.current = faderSlotsRef.current.map((slot) =>
+      slot.index === 1 ? { ...slot, isBusy: true } : slot,
+    );
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "反向回" }));
+    expect(releaseSequenceMock).not.toHaveBeenCalled();
+    expect(readySequenceMock).not.toHaveBeenCalled();
+  });
+
+  it("drops the prepared plan when GO fails, so the slot cannot GO it later", async () => {
+    forced();
+    armCard();
+    goSequenceMock.mockResolvedValueOnce({ ok: false, toast: "error", message: "动作启动失败：PLC 拒绝" } as never);
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "反向回" }));
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalledWith("动作启动失败：PLC 拒绝");
+    });
+    expect(markSlotReadyMock).toHaveBeenCalledTimes(1);
+    expect(clearSlotReadyMock).toHaveBeenCalledWith(1);
+    expect(launchMock).not.toHaveBeenCalled();
+    expect(closeMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the stopped card and prepares nothing when the release fails", async () => {
+    armCard();
+    releaseSequenceMock.mockResolvedValueOnce({ ok: false, toast: "error", message: "上一条动作释放失败：动作不存在" });
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalledWith("上一条动作释放失败：动作不存在");
+    });
+    expect(readySequenceMock).not.toHaveBeenCalled();
+    expect(goSequenceMock).not.toHaveBeenCalled();
+    expect(setSlotBusyMock).toHaveBeenLastCalledWith(1, false);
+  });
+
+  it("keeps the fader slot running while its card has ended", () => {
+    armCard({ status: "completed" });
+    render(withMode(<ExecArea />));
+    expect(setSlotRunningMock).toHaveBeenCalledWith(1, true);
   });
 });
 
@@ -1857,7 +2107,7 @@ describe("execution cards", () => {
     >("../../hooks/use-exec-cards");
 
     const Probe = () => {
-      const { launch, stop, skipNext, restart, cards } = useRealExecCards();
+      const { launch, stop, skipNext, close, cards } = useRealExecCards();
       return (
         <div>
           <button
@@ -1885,8 +2135,8 @@ describe("execution cards", () => {
               <button type="button" onClick={() => skipNext(card.id)}>
                 skip
               </button>
-              <button type="button" onClick={() => restart(card.id)}>
-                restart
+              <button type="button" onClick={() => close(card.id)}>
+                close
               </button>
             </div>
           ))}
@@ -1909,12 +2159,12 @@ describe("execution cards", () => {
       { actionId: 9, trajectoryMode: true, deviceId: [] },
       localSequenceTransport,
     );
-    // 停止后先是停止中，PLC 不再上报才算真正停下来；之前不能重新
+    // 停止后先是停止中，PLC 不再上报才算真正停下来；之前不能关闭
     expect(screen.getByText("stopping")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "restart" }));
+    fireEvent.click(screen.getByRole("button", { name: "close" }));
     expect(screen.getByText("stopping")).toBeTruthy();
     await waitFor(() => expect(screen.getByText("stopped")).toBeTruthy(), { timeout: 2000 });
-    fireEvent.click(screen.getByRole("button", { name: "restart" }));
-    expect(screen.getByText("running")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "close" }));
+    expect(screen.queryByText("stopped")).toBeNull();
   });
 });

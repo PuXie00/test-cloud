@@ -1,8 +1,13 @@
-import { MoreVertical, Play, SkipForward, Square, Minus, Plus, X, RotateCcw } from "lucide-react";
+import { Loader2, MoreVertical, Play, SkipForward, Square, Minus, Plus, X, Undo2 } from "lucide-react";
 import { usePermissions } from "@/app/auth/permissions";
 import { cn } from "@/app/components/ui/utils";
 import type { ExecCard, ExecCardSource } from "../../../hooks/use-exec-cards";
-import { canCloseExecCard, isExecCardInTransition } from "../../../hooks/exec-card-run-status";
+import {
+  canCloseExecCard,
+  canRerunExecCard,
+  isExecCardAtRest,
+  isExecCardInTransition,
+} from "../../../hooks/exec-card-run-status";
 import { formatExecTime } from "../../../hooks/sequence-run-status";
 import { ForcedTrajectoryBadge, isForcedTrajectory } from "../../forced-trajectory-badge";
 import { speedTopPercent } from "../../../hooks/speed-cap";
@@ -10,9 +15,11 @@ import { speedTopPercent } from "../../../hooks/speed-cap";
 type ExecCardProps = {
   card: ExecCard;
   hasNextSequence: boolean;
+  /** 继续 / 反向回正在准备（所在推子槽忙） */
+  busy?: boolean;
   onStop: () => void;
-  onResume: () => void;
-  onRestart: () => void;
+  onContinue: () => void;
+  onReverseBack: () => void;
   onSkipNext: () => void;
   onSetSpeed: (percent: number) => void;
   onClose: () => void;
@@ -55,23 +62,25 @@ const actionBtnClass =
 export const ExecCardView = ({
   card,
   hasNextSequence,
+  busy = false,
   onStop,
-  onResume,
-  onRestart,
+  onContinue,
+  onReverseBack,
   onSkipNext,
   onSetSpeed,
   onClose,
 }: ExecCardProps) => {
-  // 停止人人可用；继续、重新、下一条、关闭、调速要「运行动作」（没有时速度只读显示）
+  // 停止人人可用；继续、反向回、下一条、关闭、调速要「运行动作」（没有时速度只读显示）
   const canRun = usePermissions().can("control.run");
   const isStopped = card.status === "stopped" || card.status === "paused";
   const isStopping = card.status === "stopping";
-  // 动作真正停下来（PLC 不再上报）之后才能关闭
-  const closeDisabled = !canCloseExecCard(card);
-  const closeTitle = closeDisabled ? "动作停下来后才能关闭" : undefined;
-  const isCompleted = card.status === "completed";
+  const isEnded = card.status === "completed";
+  // 动作真正停下来（PLC 不再上报）之后才能关闭；继续 / 反向回准备中也不能关
+  const closeDisabled = busy || !canCloseExecCard(card);
+  const closeTitle = closeDisabled && !busy ? "动作停下来后才能关闭" : undefined;
   const isError = card.status === "error" || card.emergencyStopped;
-  const skipDisabled = card.status !== "stopped" || !hasNextSequence || isError;
+  const rerunDisabled = busy || !canRerunExecCard(card);
+  const skipDisabled = busy || !isExecCardAtRest(card) || !hasNextSequence || isError;
   const speedDisabled = !canRun || isError || isStopping || isExecCardInTransition(card);
   // 调速范围封顶，不超过系统上限
   const maxSpeed = speedTopPercent(card.maxSpeedPercent);
@@ -79,10 +88,10 @@ export const ExecCardView = ({
   return (
     <div
       className={cn(
-        "flex h-[152px] w-full shrink-0 flex-col gap-1.5 rounded-md bg-background p-2.5",
+        "flex h-[156px] w-full shrink-0 flex-col gap-1.5 rounded-md bg-background p-2.5",
         isError
           ? "ring-1 ring-destructive/60 animate-pulse"
-          : isCompleted
+          : isEnded
             ? ""
             : "ring-1 ring-show/40",
       )}
@@ -98,6 +107,11 @@ export const ExecCardView = ({
         {card.reverse ? (
           <span className="shrink-0 rounded-sm bg-muted/50 px-1.5 text-label-caps text-muted-foreground">
             反向
+          </span>
+        ) : null}
+        {isEnded ? (
+          <span className="shrink-0 rounded-sm bg-muted px-1.5 text-label-caps text-foreground">
+            已结束
           </span>
         ) : null}
         <span className="shrink-0 font-mono text-mono-sm tabular-nums text-muted-foreground">
@@ -117,9 +131,9 @@ export const ExecCardView = ({
             disabled={closeDisabled}
             title={closeTitle}
             onClick={onClose}
-            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-muted text-foreground hover:bg-accent disabled:bg-transparent disabled:text-muted-foreground disabled:opacity-40"
           >
-            <X className="h-3 w-3" aria-hidden />
+            <X className="h-4 w-4" aria-hidden />
           </button>
         )}
       </div>
@@ -185,36 +199,45 @@ export const ExecCardView = ({
           >
             <X className="h-3.5 w-3.5" /> 确认清除
           </button>
-        ) : isCompleted ? (
-          canRun && <button
-            type="button"
-            disabled={closeDisabled}
-            title={closeTitle}
-            onClick={onClose}
-            className={cn(actionBtnClass, "bg-muted/50 text-foreground hover:bg-muted disabled:opacity-40")}
-          >
-            <X className="h-3.5 w-3.5" /> 关闭
-          </button>
         ) : (
           <>
             {canRun && (
               <button
                 type="button"
-                aria-label="重新"
-                disabled={!isStopped}
-                onClick={onRestart}
+                aria-label="反向回"
+                disabled={rerunDisabled}
+                onClick={onReverseBack}
                 className={cn(actionBtnClass, "bg-muted/50 text-foreground hover:bg-muted disabled:opacity-40")}
               >
-                <RotateCcw className="h-3.5 w-3.5" /> 重新
+                <Undo2 className="h-3.5 w-3.5" aria-hidden /> 反向回
               </button>
             )}
-            {isStopped ? (
+            {busy && (isStopped || isEnded) ? (
               canRun && <button
                 type="button"
-                onClick={onResume}
-                className={cn(actionBtnClass, "bg-primary text-primary-foreground hover:bg-primary/90")}
+                disabled
+                className={cn(actionBtnClass, "bg-muted/50 text-foreground disabled:opacity-70")}
               >
-                <Play className="h-3.5 w-3.5 fill-current" /> 继续
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> 准备中
+              </button>
+            ) : isEnded ? (
+              canRun && <button
+                type="button"
+                disabled={closeDisabled}
+                title={closeTitle}
+                onClick={onClose}
+                className={cn(actionBtnClass, "bg-muted text-foreground hover:bg-accent disabled:opacity-40")}
+              >
+                <X className="h-3.5 w-3.5" aria-hidden /> 关闭
+              </button>
+            ) : isStopped ? (
+              canRun && <button
+                type="button"
+                disabled={rerunDisabled}
+                onClick={onContinue}
+                className={cn(actionBtnClass, "bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40")}
+              >
+                <Play className="h-3.5 w-3.5 fill-current" aria-hidden /> 继续
               </button>
             ) : (
               <button

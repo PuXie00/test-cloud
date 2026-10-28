@@ -69,7 +69,12 @@ const instructionSequence = (): ActionSequenceConfig => ({
 const gate = (
   sequence: ActionSequenceConfig,
   currentH: number,
-  options: { nearest?: boolean; reverse?: boolean; object?: ControlledObjectConfig } = {},
+  options: {
+    nearest?: boolean;
+    reverse?: boolean;
+    object?: ControlledObjectConfig;
+    specifiedTimeMs?: number;
+  } = {},
 ) =>
   evaluateStartGate({
     sequence,
@@ -78,7 +83,21 @@ const gate = (
     telemetryByObjectId: new Map([[1, { h: currentH, p: 40, y: 50 }]]),
     nearest: options.nearest ?? false,
     reverse: options.reverse ?? false,
+    ...(options.specifiedTimeMs !== undefined ? { specifiedTimeMs: options.specifiedTimeMs } : {}),
   });
+
+/** 上去再回到起点位姿：4000ms 的位姿和 0ms 一样 */
+const roundTripSequence = (trajectoryMode: boolean): ActionSequenceConfig => ({
+  id: 1,
+  name: "s",
+  trajectoryMode,
+  blocks: [
+    { id: "a", kind: "pose", objectId: 1, atMs: 0, pose: { v1: 10, v2: 0, v3: 0 } },
+    { id: "b", kind: "pose", objectId: 1, atMs: 2000, pose: { v1: 210, v2: 0, v3: 0 } },
+    { id: "c", kind: "pose", objectId: 1, atMs: 4000, pose: { v1: 10, v2: 0, v3: 0 } },
+  ],
+  segments: [],
+});
 
 describe("enabledAxesMatchStart", () => {
   it("accepts 1 mm and 0.1 degree and rejects the next step", () => {
@@ -201,6 +220,67 @@ describe("evaluateStartGate", () => {
     if (result.status === "transition") {
       expect(result.plan.members.map((member) => member.objectId)).toEqual([1, 2, 3, 4]);
     }
+  });
+});
+
+describe("evaluateStartGate with a specified entry frame (任务卡继续 / 反向回)", () => {
+  it("joins a forced trajectory exactly at the given frame, even where it passes the start pose again", () => {
+    const sequence = roundTripSequence(true);
+    // 不指定时停在起点位姿就是从头开始
+    expect(gate(sequence, 10, { nearest: true })).toMatchObject({
+      status: "at-start",
+      plan: { targetFrameMs: 0 },
+    });
+    expect(gate(sequence, 10, { nearest: true, specifiedTimeMs: 4000 })).toMatchObject({
+      status: "at-start",
+      plan: { startMode: "at-start", nearest: true, direction: 1, targetFrameMs: 4000, transitionSec: 0 },
+    });
+    expect(gate(sequence, 10, { nearest: true, reverse: true, specifiedTimeMs: 4000 })).toMatchObject({
+      status: "at-start",
+      plan: { direction: -1, targetFrameMs: 4000 },
+    });
+  });
+
+  it("moves members back onto the forced curve at the given frame when they left it", () => {
+    const result = gate(roundTripSequence(true), 10, { nearest: true, specifiedTimeMs: 1000 });
+    expect(result.status).toBe("transition");
+    if (result.status !== "transition") return;
+    expect(result.plan).toMatchObject({ startMode: "nearest", nearest: true, targetFrameMs: 1000 });
+    const [move] = result.plan.members[0]!.axes;
+    expect(move).toMatchObject({ axis: "v1", from: 10 });
+    expect(move!.to).toBeGreaterThan(10);
+    expect(move!.to).toBeLessThan(210);
+  });
+
+  it("takes the next keyframe from the given frame along the direction for a non-forced sequence", () => {
+    const sequence = roundTripSequence(false);
+    expect(gate(sequence, 210, { nearest: true, specifiedTimeMs: 1500 })).toMatchObject({
+      status: "at-start",
+      plan: { targetFrameMs: 2000, direction: 1 },
+    });
+    expect(gate(sequence, 10, { nearest: true, reverse: true, specifiedTimeMs: 1500 })).toMatchObject({
+      status: "at-start",
+      plan: { targetFrameMs: 0, direction: -1 },
+    });
+  });
+
+  it("rounds and clamps the frame into the sequence", () => {
+    const sequence = roundTripSequence(true);
+    expect(gate(sequence, 10, { nearest: true, specifiedTimeMs: 99999 })).toMatchObject({
+      plan: { targetFrameMs: 4000 },
+    });
+    expect(gate(sequence, 10, { nearest: true, specifiedTimeMs: -5 })).toMatchObject({
+      plan: { targetFrameMs: 0 },
+    });
+    const rounded = gate(sequence, 10, { nearest: true, specifiedTimeMs: 1000.4 });
+    expect(rounded.status !== "error" && rounded.plan.targetFrameMs).toBe(1000);
+  });
+
+  it("ignores the frame without nearest", () => {
+    expect(gate(roundTripSequence(true), 10, { specifiedTimeMs: 4000 })).toMatchObject({
+      status: "at-start",
+      plan: { targetFrameMs: 0, nearest: false },
+    });
   });
 });
 
