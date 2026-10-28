@@ -121,14 +121,29 @@ describe("ExecCardsProvider PLC action run status", () => {
     expect(rows()).toEqual(["开幕|running|3|300"]);
   });
 
-  it("stops the card once the PLC no longer reports it, and leaves closing to the user", () => {
+  it("ends the card once the PLC no longer reports it, and leaves closing to the user", () => {
     report([running()]);
     act(() => vi.advanceTimersByTime(ACTION_RUN_STALE_MS + 200));
-    expect(rows()).toEqual(["序列4|stopped|3|1000"]);
+    expect(rows()).toEqual(["序列4|completed|3|1000"]);
     act(() => vi.advanceTimersByTime(60_000));
-    expect(rows()).toEqual(["序列4|stopped|3|1000"]);
+    expect(rows()).toEqual(["序列4|completed|3|1000"]);
     act(() => api.close(api.cards[0]!.id));
+    expect(stopSequenceMock).toHaveBeenCalledTimes(1);
     expect(rows()).toEqual([]);
+  });
+
+  it("counts an endless loop that goes silent as stopped, since it never ends by itself", () => {
+    report([running({ loopCountSet: 0 })]);
+    act(() => vi.advanceTimersByTime(ACTION_RUN_STALE_MS + 200));
+    expect(rows()).toEqual(["序列4|stopped|3|1000"]);
+  });
+
+  it("revives an ended card when the PLC reports the action again", () => {
+    report([running()]);
+    act(() => vi.advanceTimersByTime(ACTION_RUN_STALE_MS + 200));
+    expect(rows()).toEqual(["序列4|completed|3|1000"]);
+    report([running({ state: 1, runTime: 900 })]);
+    expect(rows()).toEqual(["序列4|running|1|900"]);
   });
 
   it("keeps the card running while reports keep arriving", () => {
@@ -153,23 +168,15 @@ describe("ExecCardsProvider PLC action run status", () => {
     expect(rows()).toEqual(["序列4|stopped|3|1199"]);
   });
 
-  it("refuses close, resume and restart until the action has really stopped", () => {
+  it("refuses close until the action has really stopped", () => {
     report([running()]);
     const id = api.cards[0]!.id;
-    act(() => {
-      api.close(id);
-      api.resume(id);
-      api.restart(id);
-    });
+    act(() => api.close(id));
     expect(rows()).toEqual(["序列4|running|3|1000"]);
 
     act(() => api.stop(id));
     report([running()]);
-    act(() => {
-      api.close(id);
-      api.resume(id);
-      api.restart(id);
-    });
+    act(() => api.close(id));
     expect(rows()).toEqual(["序列4|stopping|3|1000"]);
 
     act(() => vi.advanceTimersByTime(ACTION_RUN_STALE_MS + 200));

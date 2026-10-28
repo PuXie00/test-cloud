@@ -5,7 +5,9 @@ import {
   addLaunchedCard,
   applyActionRunReports,
   canCloseExecCard,
+  canRerunExecCard,
   fallbackActionCardSeed,
+  isExecCardAtRest,
   isExecCardInTransition,
   parseActionRunReports,
   settleSilentCards,
@@ -73,6 +75,11 @@ describe("applyActionRunReports", () => {
 
   it("puts a stopped card back to running when the PLC reports it again", () => {
     const next = applyActionRunReports([card({ status: "stopped" })], [report()], 1000, seed);
+    expect(next?.[0]?.status).toBe("running");
+  });
+
+  it("puts an ended card back to running when the PLC reports it again", () => {
+    const next = applyActionRunReports([card({ status: "completed" })], [report()], 1000, seed);
     expect(next?.[0]?.status).toBe("running");
   });
 
@@ -174,10 +181,19 @@ describe("settleSilentCards", () => {
   const run = { state: 3, loopCount: 1, loopCountSet: 1, runTimeMs: 0, reportedAt };
   const silentAt = reportedAt + ACTION_RUN_STALE_MS + 1;
 
-  it("stops a running card the PLC no longer reports, and keeps it in the list", () => {
+  it("ends a running card the PLC no longer reports, and keeps it in the list", () => {
     const next = settleSilentCards([card({ run, plcActive: true })], silentAt);
     expect(next).toHaveLength(1);
-    expect(next?.[0]).toMatchObject({ status: "stopped", plcActive: false, run });
+    expect(next?.[0]).toMatchObject({ status: "completed", plcActive: false, run });
+  });
+
+  it("counts an endless loop or a transition that goes silent as stopped, not ended", () => {
+    const endless = card({ run: { ...run, loopCountSet: 0 }, plcActive: true });
+    const transition = card({ run: { ...run, state: ACTION_RUN_STATE.transition }, plcActive: true });
+    expect(settleSilentCards([endless, transition], silentAt)?.map((entry) => entry.status)).toEqual([
+      "stopped",
+      "stopped",
+    ]);
   });
 
   it("leaves a card alone while the PLC keeps reporting it", () => {
@@ -220,6 +236,24 @@ describe("canCloseExecCard", () => {
     expect(canCloseExecCard(card({ status: "stopped" }))).toBe(true);
     expect(canCloseExecCard(card({ status: "error", emergencyStopped: true, plcActive: false }))).toBe(true);
     expect(canCloseExecCard(card({ status: "completed" }))).toBe(true);
+  });
+});
+
+describe("isExecCardAtRest / canRerunExecCard", () => {
+  it("treats stopped and ended cards as at rest", () => {
+    expect(isExecCardAtRest(card({ status: "stopped" }))).toBe(true);
+    expect(isExecCardAtRest(card({ status: "completed" }))).toBe(true);
+    expect(isExecCardAtRest(card({ status: "paused" }))).toBe(false);
+    expect(isExecCardAtRest(card({ status: "stopping" }))).toBe(false);
+  });
+
+  it("allows continue / reverse-back only once the PLC is silent and nothing was emergency-stopped", () => {
+    expect(canRerunExecCard(card({ status: "stopped" }))).toBe(true);
+    expect(canRerunExecCard(card({ status: "completed" }))).toBe(true);
+    expect(canRerunExecCard(card({ status: "stopped", plcActive: true }))).toBe(false);
+    expect(canRerunExecCard(card({ status: "running" }))).toBe(false);
+    expect(canRerunExecCard(card({ status: "stopping" }))).toBe(false);
+    expect(canRerunExecCard(card({ status: "error", emergencyStopped: true }))).toBe(false);
   });
 });
 

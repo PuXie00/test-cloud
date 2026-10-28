@@ -8,8 +8,8 @@ afterEach(() => cleanup());
 
 const handlers = {
   onStop: vi.fn(),
-  onResume: vi.fn(),
-  onRestart: vi.fn(),
+  onContinue: vi.fn(),
+  onReverseBack: vi.fn(),
   onSkipNext: vi.fn(),
   onSetSpeed: vi.fn(),
   onClose: vi.fn(),
@@ -92,15 +92,16 @@ describe("ExecCardView PLC run data", () => {
   });
 });
 
+const closeButton = () => screen.getByRole("button", { name: "关闭任务" }) as HTMLButtonElement;
+
 describe("ExecCardView stop and close gating", () => {
-  const closeButton = () => screen.getByRole("button", { name: "关闭任务" }) as HTMLButtonElement;
 
   it("cannot be closed while running", () => {
     render(<ExecCardView card={card({ run: run(), plcActive: true })} hasNextSequence {...handlers} />);
     expect(closeButton().disabled).toBe(true);
   });
 
-  it("shows 停止中 and keeps close, restart, next and speed locked until it really stops", () => {
+  it("shows 停止中 and keeps close, reverse-back, next and speed locked until it really stops", () => {
     handlers.onStop.mockClear();
     render(
       <ExecCardView
@@ -110,7 +111,7 @@ describe("ExecCardView stop and close gating", () => {
       />,
     );
     expect(closeButton().disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "重新" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "反向回" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "下一条" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByRole("button", { name: "继续" })).toBeNull();
     expect(speedControls().every((control) => control.disabled)).toBe(true);
@@ -134,7 +135,7 @@ describe("ExecCardView stop and close gating", () => {
 
 describe("ExecCardView run status", () => {
   it("shows elapsed/total and loop, not remaining or C++ copy", () => {
-    render(<ExecCardView card={card({ totalMs: 60000, run: run() })} hasNextSequence onStop={handlers.onStop} onResume={handlers.onResume} onRestart={handlers.onRestart} onSkipNext={handlers.onSkipNext} onSetSpeed={handlers.onSetSpeed} onClose={handlers.onClose} />);
+    render(<ExecCardView card={card({ totalMs: 60000, run: run() })} hasNextSequence onStop={handlers.onStop} onContinue={handlers.onContinue} onReverseBack={handlers.onReverseBack} onSkipNext={handlers.onSkipNext} onSetSpeed={handlers.onSetSpeed} onClose={handlers.onClose} />);
     expect(screen.getByText("运行时间")).toBeTruthy();
     expect(screen.getByText("00:12.3 / 01:00.0")).toBeTruthy();
     expect(screen.getByText("循环次数")).toBeTruthy();
@@ -166,21 +167,64 @@ describe("ExecCardView run status", () => {
     expect(handlers.onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("disables restart and skip while running; stop is enabled", () => {
+  it("disables reverse-back and skip while running; stop is enabled", () => {
     render(<ExecCardView card={card()} hasNextSequence {...handlers} />);
-    expect((screen.getByRole("button", { name: "重新" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "反向回" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "下一条" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByRole("button", { name: "下一条" }).textContent?.trim() ?? "").toMatch(/^\s*$/);
     expect((screen.getByRole("button", { name: "停止" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("shows restart, continue, and skip when stopped with a next sequence", () => {
+  it("shows reverse-back, continue, and skip when stopped with a next sequence", () => {
+    handlers.onContinue.mockClear();
+    handlers.onReverseBack.mockClear();
     render(<ExecCardView card={card({ status: "stopped" })} hasNextSequence {...handlers} />);
-    expect((screen.getByRole("button", { name: "重新" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByRole("button", { name: "重新" })).toBeNull();
+    expect((screen.getByRole("button", { name: "反向回" }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole("button", { name: "继续" }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole("button", { name: "下一条" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByText("已结束")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
-    expect(handlers.onResume).toHaveBeenCalledTimes(1);
+    expect(handlers.onContinue).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "反向回" }));
+    expect(handlers.onReverseBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows 已结束 with close instead of continue once the action ended", () => {
+    handlers.onClose.mockClear();
+    handlers.onReverseBack.mockClear();
+    render(
+      <ExecCardView
+        card={card({ status: "completed", totalMs: 60000, run: run({ runTimeMs: 60000 }) })}
+        hasNextSequence
+        {...handlers}
+      />,
+    );
+    expect(screen.getByText("已结束")).toBeTruthy();
+    expect(screen.getByText("01:00.0 / 01:00.0")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "继续" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^停止/ })).toBeNull();
+    expect((screen.getByRole("button", { name: "下一条" }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    expect(handlers.onClose).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "反向回" }));
+    expect(handlers.onReverseBack).toHaveBeenCalledTimes(1);
+    expect(closeButton().disabled).toBe(false);
+  });
+
+  it("locks every action and shows 准备中 while continue / reverse-back is preparing", () => {
+    render(<ExecCardView card={card({ status: "stopped" })} hasNextSequence busy {...handlers} />);
+    expect((screen.getByRole("button", { name: "准备中" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "继续" })).toBeNull();
+    expect((screen.getByRole("button", { name: "反向回" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "下一条" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(closeButton().disabled).toBe(true);
+  });
+
+  it("does not continue or reverse back an action the PLC still reports", () => {
+    render(<ExecCardView card={card({ status: "paused", plcActive: true })} hasNextSequence {...handlers} />);
+    expect((screen.getByRole("button", { name: "继续" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "反向回" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("keeps next disabled while paused", () => {

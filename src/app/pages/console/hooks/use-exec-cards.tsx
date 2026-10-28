@@ -17,6 +17,7 @@ import {
   canCloseExecCard,
   execCardActionId,
   fallbackActionCardSeed,
+  isExecCardAtRest,
   isExecCardInTransition,
   parseActionRunReports,
   settleSilentCards,
@@ -37,7 +38,10 @@ export type ExecCardSource =
   | { kind: "manual" };
 
 export type ExecCardKind = "sequence";
-/** stopping：已下发停止，PLC 还在上报（减速中）；stopped：PLC 不再上报，真正停下来了 */
+/**
+ * stopping：已下发停止，PLC 还在上报（减速中）；stopped：PLC 不再上报，停在半路；
+ * completed：运行中 PLC 不再上报，按正常结束算（见 settleSilentCards）。停下和结束都留给用户关闭。
+ */
 export type ExecCardStatus = "running" | "paused" | "stopping" | "stopped" | "completed" | "error";
 
 /** PLC 最近一次上报的运行数据 */
@@ -96,9 +100,7 @@ type ExecCardsContextValue = {
     reverse?: boolean;
   }) => string;
   pause: (id: string) => void;
-  resume: (id: string) => void;
   stop: (id: string) => void;
-  restart: (id: string) => void;
   skipNext: (id: string) => void;
   setSpeed: (id: string, percent: number) => void;
   emergencyStopAll: () => void;
@@ -121,9 +123,6 @@ const RUN_SETTLE_CHECK_MS = 100;
 
 const isStoppable = (card: ExecCard) =>
   card.status === "running" || card.status === "stopping" || card.status === "paused";
-
-const isTrulyStopped = (card: ExecCard) =>
-  (card.status === "stopped" || card.status === "paused") && !card.plcActive;
 
 const hasActiveRunningCard = (cards: ExecCard[]) =>
   cards.some((card) => card.status === "running" && !card.emergencyStopped);
@@ -188,16 +187,10 @@ export const ExecCardsProvider = ({
       const delta = lastTickRef.current ? now - lastTickRef.current : 0;
       lastTickRef.current = now;
 
-      const next = advanceRunningCards(cardsRef.current, delta);
-      if (next) {
-        setCards(next);
-      }
-
-      if (hasActiveRunningCard(next ?? cardsRef.current)) {
-        rafRef.current = requestAnimationFrame(tick);
-      } else {
-        stopLoop();
-      }
+      // 函数式更新：PLC 上报、静默结算（正常结束 / 已停止）可能已排在这一帧前面，不能拿渲染时的快照盖掉
+      setCards((current) => advanceRunningCards(current, delta) ?? current);
+      // 下一帧开头按最新的 cards 判断是否还要继续
+      rafRef.current = requestAnimationFrame(tick);
     };
 
     rafRef.current = requestAnimationFrame(tick);
@@ -212,18 +205,6 @@ export const ExecCardsProvider = ({
   }, [cards, ensureLoop, stopLoop]);
 
   useEffect(() => () => stopLoop(), [stopLoop]);
-
-  // auto-remove completed cards after 3s
-  useEffect(() => {
-    const timers = cards
-      .filter((card) => card.status === "completed")
-      .map((card) =>
-        setTimeout(() => {
-          setCards((current) => current.filter((entry) => entry.id !== card.id));
-        }, 3000),
-      );
-    return () => timers.forEach(clearTimeout);
-  }, [cards]);
 
   const launch = useCallback<ExecCardsContextValue["launch"]>(
     ({
@@ -274,19 +255,6 @@ export const ExecCardsProvider = ({
     );
   }, []);
 
-  /** 继续 / 重新：动作真正停下来之后才能操作。目前只改本地状态，清掉上一轮的上报，等 PLC 重新上报 */
-  const resumeLocally = useCallback((id: string) => {
-    setCards((current) =>
-      current.map((card) => {
-        if (card.id !== id || !isTrulyStopped(card)) return card;
-        const { run: _staleRun, stopRequestedAt: _stopRequestedAt, ...rest } = card;
-        return { ...rest, status: "running" as const };
-      }),
-    );
-  }, []);
-
-  const resume = resumeLocally;
-
   /** 下发停止后进入停止中；PLC 不再上报才算真正停下来（见 settleSilentCards） */
   const stop = useCallback((id: string) => {
     const card = cardsRef.current.find((entry) => entry.id === id);
@@ -310,8 +278,6 @@ export const ExecCardsProvider = ({
       ),
     );
   }, []);
-
-  const restart = resumeLocally;
 
   const skipNext = useCallback(() => {}, []);
 
@@ -359,7 +325,7 @@ export const ExecCardsProvider = ({
       options?.release !== false &&
       card.sequenceHandle &&
       !card.emergencyStopped &&
-      (card.status === "paused" || card.status === "stopped")
+      (card.status === "paused" || isExecCardAtRest(card))
     ) {
       void stopSequence(
         {
@@ -374,8 +340,8 @@ export const ExecCardsProvider = ({
   }, []);
 
   const actions = useMemo<ExecCardActions>(
-    () => ({ launch, pause, resume, stop, restart, skipNext, setSpeed, emergencyStopAll, close }),
-    [launch, pause, resume, stop, restart, skipNext, setSpeed, emergencyStopAll, close],
+    () => ({ launch, pause, stop, skipNext, setSpeed, emergencyStopAll, close }),
+    [launch, pause, stop, skipNext, setSpeed, emergencyStopAll, close],
   );
   const value = useMemo(() => ({ cards, ...actions }), [cards, actions]);
 

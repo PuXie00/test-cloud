@@ -78,6 +78,16 @@ export const isExecCardInTransition = (card: ExecCard): boolean =>
 export const canCloseExecCard = (card: ExecCard): boolean =>
   !card.plcActive && card.status !== "running" && card.status !== "stopping";
 
+/** 停在半路（stopped）或正常结束（completed）：动作还占着，可以继续、反向回、下一条或关闭 */
+export const isExecCardAtRest = (card: ExecCard): boolean =>
+  card.status === "stopped" || card.status === "completed";
+
+/** 继续 / 反向回：停稳、PLC 不再上报之后才能重新准备 */
+export const canRerunExecCard = (card: ExecCard): boolean =>
+  !card.plcActive &&
+  !card.emergencyStopped &&
+  (isExecCardAtRest(card) || card.status === "paused");
+
 const cardFromSeed = (actionId: number, seed: ActionCardSeed, run: ExecCardRun): ExecCard => ({
   id: `card-action-${actionId}-${run.reportedAt.toString(36)}`,
   kind: "sequence",
@@ -100,7 +110,7 @@ const cardFromSeed = (actionId: number, seed: ActionCardSeed, run: ExecCardRun):
 });
 
 /**
- * 把 PLC 上报写进任务卡。已停止的任务卡又被上报时恢复为运行中；停止中的保持停止中（还在减速）。
+ * 把 PLC 上报写进任务卡。已停止 / 已结束的任务卡又被上报时恢复为运行中；停止中的保持停止中（还在减速）。
  * 没有任务卡的执行中动作补建一张，保证执行中的动作一定在任务卡里。
  */
 export const applyActionRunReports = (
@@ -124,7 +134,7 @@ export const applyActionRunReports = (
       continue;
     }
     const card = next[index]!;
-    const revive = card.status === "stopped" || card.status === "paused";
+    const revive = isExecCardAtRest(card) || card.status === "paused";
     const updated: ExecCard = {
       ...card,
       run,
@@ -160,8 +170,15 @@ const isReported = (card: ExecCard, now: number): boolean =>
   card.run !== undefined && now - card.run.reportedAt <= ACTION_RUN_STALE_MS;
 
 /**
- * PLC 不再上报的任务卡转为已停止，留给用户自己关闭：
- * 运行中的视为自然结束；停止中的视为已真正停下（从未上报过的，按停止请求后的静默时间算）。
+ * 运行中的动作不再上报：最后一次上报已在轨迹上、且不是无限循环，视为正常结束；
+ * 回迹中、无限循环不会自己结束，是在别处被停下的。
+ */
+const silentRunStatus = (card: ExecCard): "completed" | "stopped" =>
+  card.run?.state === ACTION_RUN_STATE.running && card.run.loopCountSet !== 0 ? "completed" : "stopped";
+
+/**
+ * PLC 不再上报的任务卡停下来，留给用户自己关闭：
+ * 运行中的按 silentRunStatus 分正常结束 / 已停止；停止中的视为已真正停下（从未上报过的，按停止请求后的静默时间算）。
  */
 export const settleSilentCards = (cards: ExecCard[], now: number): ExecCard[] | null => {
   let changed = false;
@@ -170,13 +187,14 @@ export const settleSilentCards = (cards: ExecCard[], now: number): ExecCard[] | 
     const wasActive = card.plcActive === true;
     const stopSettled =
       card.status === "stopping" && now - (card.stopRequestedAt ?? 0) > ACTION_RUN_STALE_MS;
-    const stopped = stopSettled || (wasActive && card.status === "running");
-    if (!wasActive && !stopped) return card;
+    const runSettled = wasActive && card.status === "running";
+    if (!wasActive && !stopSettled) return card;
     changed = true;
     return {
       ...card,
       plcActive: false,
-      ...(stopped ? { status: "stopped" as const } : {}),
+      ...(stopSettled ? { status: "stopped" as const } : {}),
+      ...(runSettled ? { status: silentRunStatus(card) } : {}),
     };
   });
   return changed ? next : null;

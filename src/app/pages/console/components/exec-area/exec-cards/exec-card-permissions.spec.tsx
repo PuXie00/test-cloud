@@ -9,8 +9,8 @@ afterEach(() => cleanup());
 
 const handlers = {
   onStop: vi.fn(),
-  onResume: vi.fn(),
-  onRestart: vi.fn(),
+  onContinue: vi.fn(),
+  onReverseBack: vi.fn(),
   onSkipNext: vi.fn(),
   onSetSpeed: vi.fn(),
   onClose: vi.fn(),
@@ -43,24 +43,35 @@ describe("任务卡按权限显示", () => {
     expect((screen.getByRole("slider", { name: "速度倍率" }) as HTMLInputElement).disabled).toBe(true);
   });
 
-  it("没有「运行动作」时停下的任务没有继续 / 重新", () => {
+  it("没有「运行动作」时停下的任务没有继续 / 反向回", () => {
     render(
       <TestPermissionsProvider permissions={[]}>
         <ExecCardView card={card({ status: "stopped" })} hasNextSequence {...handlers} />
       </TestPermissionsProvider>,
     );
     expect(screen.queryByRole("button", { name: /继续/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: "重新" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "反向回" })).toBeNull();
   });
 
-  it("有「运行动作」时继续、重新、下一条都在", () => {
+  it("没有「运行动作」时结束的任务也没有关闭 / 反向回", () => {
+    render(
+      <TestPermissionsProvider permissions={[]}>
+        <ExecCardView card={card({ status: "completed" })} hasNextSequence {...handlers} />
+      </TestPermissionsProvider>,
+    );
+    expect(screen.getByText("已结束")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /关闭/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "反向回" })).toBeNull();
+  });
+
+  it("有「运行动作」时继续、反向回、下一条都在", () => {
     render(
       <TestPermissionsProvider permissions={["control.run"]}>
         <ExecCardView card={card({ status: "stopped" })} hasNextSequence {...handlers} />
       </TestPermissionsProvider>,
     );
     expect(screen.getByRole("button", { name: /继续/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "重新" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "反向回" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "下一条" })).toBeTruthy();
     expect((screen.getByRole("slider", { name: "速度倍率" }) as HTMLInputElement).disabled).toBe(false);
   });

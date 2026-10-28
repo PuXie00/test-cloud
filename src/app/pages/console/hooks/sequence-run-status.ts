@@ -33,6 +33,24 @@ export const nextSequenceSlot = <Slot extends { sequence: { id: number } | null 
   return slots.find((slot) => slot.sequence?.id === next.sequence.id) ?? null;
 };
 
+/**
+ * 任务卡继续 / 反向回所用的推子槽：优先卡片来源的槽；翻页后来源槽换了序列，就在当前页按序列找。
+ * 序列不在当前页的推子槽里时为 null。
+ */
+export const execCardSlot = <Slot extends { index: number; sequence: { id: number } | null }>(
+  card: { source: { kind: string; slotIndex?: number }; sequenceId?: number },
+  slots: readonly Slot[],
+): Slot | null => {
+  const sequenceId = card.sequenceId;
+  if (sequenceId === undefined) return null;
+  const own =
+    card.source.kind === "fader"
+      ? slots.find((slot) => slot.index === card.source.slotIndex)
+      : undefined;
+  if (own?.sequence?.id === sequenceId) return own;
+  return slots.find((slot) => slot.sequence?.id === sequenceId) ?? null;
+};
+
 /** 下一条存在，且任务列表里还没有这条序列。 */
 export const nextSequenceIsFree = (
   items: readonly ChapterItem[],
