@@ -73,7 +73,7 @@ const gate = (
     nearest?: boolean;
     reverse?: boolean;
     object?: ControlledObjectConfig;
-    specifiedTimeMs?: number;
+    referenceFrameMs?: number;
   } = {},
 ) =>
   evaluateStartGate({
@@ -83,7 +83,7 @@ const gate = (
     telemetryByObjectId: new Map([[1, { h: currentH, p: 40, y: 50 }]]),
     nearest: options.nearest ?? false,
     reverse: options.reverse ?? false,
-    ...(options.specifiedTimeMs !== undefined ? { specifiedTimeMs: options.specifiedTimeMs } : {}),
+    ...(options.referenceFrameMs !== undefined ? { referenceFrameMs: options.referenceFrameMs } : {}),
   });
 
 /** 上去再回到起点位姿：4000ms 的位姿和 0ms 一样 */
@@ -223,61 +223,80 @@ describe("evaluateStartGate", () => {
   });
 });
 
-describe("evaluateStartGate with a specified entry frame (任务卡继续 / 反向回)", () => {
-  it("joins a forced trajectory exactly at the given frame, even where it passes the start pose again", () => {
+describe("evaluateStartGate from a reference frame (任务卡继续 / 反向回)", () => {
+  /** 单调上升：0ms 在 10，4000ms 到 410 */
+  const rising = (trajectoryMode: boolean) =>
+    twoPoseSequence({ v1: 10, v2: 0, v3: 0 }, { v1: 410, v2: 0, v3: 0 }, trajectoryMode);
+
+  it("does not restart from 0 where the curve passes the start pose again", () => {
     const sequence = roundTripSequence(true);
-    // 不指定时停在起点位姿就是从头开始
+    // 不给参考帧时停在起点位姿就是从头开始
     expect(gate(sequence, 10, { nearest: true })).toMatchObject({
       status: "at-start",
       plan: { targetFrameMs: 0 },
     });
-    expect(gate(sequence, 10, { nearest: true, specifiedTimeMs: 4000 })).toMatchObject({
+    expect(gate(sequence, 10, { nearest: true, referenceFrameMs: 4000 })).toMatchObject({
       status: "at-start",
       plan: { startMode: "at-start", nearest: true, direction: 1, targetFrameMs: 4000, transitionSec: 0 },
     });
-    expect(gate(sequence, 10, { nearest: true, reverse: true, specifiedTimeMs: 4000 })).toMatchObject({
+    expect(gate(sequence, 10, { nearest: true, reverse: true, referenceFrameMs: 4000 })).toMatchObject({
       status: "at-start",
       plan: { direction: -1, targetFrameMs: 4000 },
     });
   });
 
-  it("moves members back onto the forced curve at the given frame when they left it", () => {
-    const result = gate(roundTripSequence(true), 10, { nearest: true, specifiedTimeMs: 1000 });
-    expect(result.status).toBe("transition");
-    if (result.status !== "transition") return;
-    expect(result.plan).toMatchObject({ startMode: "nearest", nearest: true, targetFrameMs: 1000 });
-    const [move] = result.plan.members[0]!.axes;
-    expect(move).toMatchObject({ axis: "v1", from: 10 });
-    expect(move!.to).toBeGreaterThan(10);
-    expect(move!.to).toBeLessThan(210);
+  it("only searches after the reference frame forward and before it in reverse", () => {
+    const sequence = rising(true);
+    // 当前位置在曲线中段：参考帧之后最近的是参考帧本身，要走回曲线上
+    const forward = gate(sequence, 210, { nearest: true, referenceFrameMs: 3000 });
+    expect(forward.status).toBe("transition");
+    if (forward.status !== "transition") return;
+    expect(forward.plan).toMatchObject({ startMode: "nearest", targetFrameMs: 3000, direction: 1 });
+    expect(forward.plan.members[0]!.axes[0]!.to).toBeGreaterThan(210);
+    const backward = gate(sequence, 210, { nearest: true, reverse: true, referenceFrameMs: 1000 });
+    expect(backward.status !== "error" && backward.plan.targetFrameMs).toBe(1000);
   });
 
-  it("takes the next keyframe from the given frame along the direction for a non-forced sequence", () => {
+  it("returns the nearest position in range, not the reference frame itself", () => {
+    // 往返曲线 4000ms 回到 10：从 1000 往后找，最近的是 4000
+    expect(gate(roundTripSequence(true), 10, { nearest: true, referenceFrameMs: 1000 })).toMatchObject({
+      status: "at-start",
+      plan: { targetFrameMs: 4000 },
+    });
+    // 往回找只看 [0, 3000]，最近的是 0
+    expect(
+      gate(roundTripSequence(true), 10, { nearest: true, reverse: true, referenceFrameMs: 3000 }),
+    ).toMatchObject({ status: "at-start", plan: { targetFrameMs: 0, direction: -1 } });
+  });
+
+  it("takes the next keyframe from the reference frame along the direction for a non-forced sequence", () => {
     const sequence = roundTripSequence(false);
-    expect(gate(sequence, 210, { nearest: true, specifiedTimeMs: 1500 })).toMatchObject({
+    expect(gate(sequence, 210, { nearest: true, referenceFrameMs: 1500 })).toMatchObject({
       status: "at-start",
       plan: { targetFrameMs: 2000, direction: 1 },
     });
-    expect(gate(sequence, 10, { nearest: true, reverse: true, specifiedTimeMs: 1500 })).toMatchObject({
+    expect(gate(sequence, 10, { nearest: true, reverse: true, referenceFrameMs: 1500 })).toMatchObject({
       status: "at-start",
       plan: { targetFrameMs: 0, direction: -1 },
     });
   });
 
-  it("rounds and clamps the frame into the sequence", () => {
-    const sequence = roundTripSequence(true);
-    expect(gate(sequence, 10, { nearest: true, specifiedTimeMs: 99999 })).toMatchObject({
+  it("rounds the frame and keeps it inside the action instead of failing", () => {
+    const sequence = rising(true);
+    const rounded = gate(sequence, 410, { nearest: true, reverse: true, referenceFrameMs: 1000.4 });
+    expect(rounded.status !== "error" && rounded.plan.targetFrameMs).toBe(1000);
+    expect(gate(sequence, 410, { nearest: true, reverse: true, referenceFrameMs: 99999 })).toMatchObject({
+      status: "at-start",
       plan: { targetFrameMs: 4000 },
     });
-    expect(gate(sequence, 10, { nearest: true, specifiedTimeMs: -5 })).toMatchObject({
+    expect(gate(sequence, 10, { nearest: true, referenceFrameMs: -5 })).toMatchObject({
+      status: "at-start",
       plan: { targetFrameMs: 0 },
     });
-    const rounded = gate(sequence, 10, { nearest: true, specifiedTimeMs: 1000.4 });
-    expect(rounded.status !== "error" && rounded.plan.targetFrameMs).toBe(1000);
   });
 
   it("ignores the frame without nearest", () => {
-    expect(gate(roundTripSequence(true), 10, { specifiedTimeMs: 4000 })).toMatchObject({
+    expect(gate(roundTripSequence(true), 10, { referenceFrameMs: 4000 })).toMatchObject({
       status: "at-start",
       plan: { targetFrameMs: 0, nearest: false },
     });

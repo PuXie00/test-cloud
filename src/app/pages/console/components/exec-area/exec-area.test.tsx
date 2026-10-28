@@ -1733,6 +1733,11 @@ describe("ExecArea launch guard", () => {
 describe("ExecArea continue / reverse back", () => {
   beforeEach(() => {
     documentRef.current = makeDocument();
+    // 0–2000ms 保持在 10：成员停在曲线上时，参考帧本身就是方向上最近的接入帧
+    documentRef.current.motion.actionSequences[1]!.blocks = [
+      { id: "hold-start", kind: "pose", objectId: FIXTURE_OBJECT_ID, atMs: 0, pose: { v1: 10, v2: 0, v3: 0 } },
+      { id: "ok-pose", kind: "pose", objectId: FIXTURE_OBJECT_ID, atMs: 2000, pose: { v1: 10, v2: 0, v3: 0 } },
+    ];
     faderSlotsRef.current = [
       makeFaderSlot({ index: 0, sequence: { id: 14, name: "空序列", durationMs: 0 } }),
       makeFaderSlot({
@@ -1789,11 +1794,8 @@ describe("ExecArea continue / reverse back", () => {
       expect(goSequenceMock).toHaveBeenCalledTimes(1);
     });
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    // 同一个动作先释放再准备
-    expect(releaseSequenceMock).toHaveBeenCalledWith({ actionId: 15, trajectoryMode: true, deviceId: [1] });
-    expect(releaseSequenceMock.mock.invocationCallOrder[0]).toBeLessThan(
-      readySequenceMock.mock.invocationCallOrder[0]!,
-    );
+    // 动作已经停下了，不再下发停止 / 释放
+    expect(releaseSequenceMock).not.toHaveBeenCalled();
     expect(readyArgs()).toMatchObject({
       sequenceId: 15,
       safeGroup: 1,
@@ -1850,6 +1852,21 @@ describe("ExecArea continue / reverse back", () => {
       expect(goSequenceMock).toHaveBeenCalledTimes(2);
     });
     expect(goSequenceMock.mock.calls[1]?.[0]).toMatchObject({ reverse: true });
+  });
+
+  it("pulls a runTime from before the first motion into the action instead of failing", async () => {
+    forced();
+    // 只有 2000ms 一个位姿：曲线从 2000ms 开始，runTime 1500 早于它
+    documentRef.current!.motion.actionSequences[1]!.blocks = [
+      { id: "ok-pose", kind: "pose", objectId: FIXTURE_OBJECT_ID, atMs: 2000, pose: { v1: 10, v2: 0, v3: 0 } },
+    ];
+    armCard();
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    await waitFor(() => {
+      expect(goSequenceMock).toHaveBeenCalledTimes(1);
+    });
+    expect(readyArgs().startPlan).toMatchObject({ nearest: true, direction: 1, targetFrameMs: 2000 });
   });
 
   it("continues a non-forced action from the next keyframe after the runTime", async () => {
@@ -1932,19 +1949,6 @@ describe("ExecArea continue / reverse back", () => {
     expect(clearSlotReadyMock).toHaveBeenCalledWith(1);
     expect(launchMock).not.toHaveBeenCalled();
     expect(closeMock).not.toHaveBeenCalled();
-  });
-
-  it("keeps the stopped card and prepares nothing when the release fails", async () => {
-    armCard();
-    releaseSequenceMock.mockResolvedValueOnce({ ok: false, toast: "error", message: "上一条动作释放失败：动作不存在" });
-    render(withMode(<ExecArea />));
-    fireEvent.click(screen.getByRole("button", { name: "继续" }));
-    await waitFor(() => {
-      expect(toastError).toHaveBeenCalledWith("上一条动作释放失败：动作不存在");
-    });
-    expect(readySequenceMock).not.toHaveBeenCalled();
-    expect(goSequenceMock).not.toHaveBeenCalled();
-    expect(setSlotBusyMock).toHaveBeenLastCalledWith(1, false);
   });
 
   it("keeps the fader slot running while its card has ended", () => {

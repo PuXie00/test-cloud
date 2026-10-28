@@ -26,13 +26,15 @@ import {
 } from "./nearest-start-motion";
 
 /**
- * 逐项移植 python/就近计算/就近接入计算.py 的停稳同步准备（_calculate_nearest_entry_v4）：
- * 强制按 PLC 规则粗细搜索就近帧，非强制沿运行方向取最近的原动作关键帧；
+ * 逐项移植 python/新就近算法/就近接入计算.py 的停稳同步准备（_calculate_nearest_entry_v4）：
+ * 指定帧（use_specified_time）强制直接接入；就近时以 stopped_time_ms 为方向边界，
+ * 强制按 PLC 规则粗细搜索位置最近的帧，非强制沿运行方向取最近的原动作关键帧；
  * 两种都按最大 V/A/D 规划零速起止 Move，所有模型同时到达，实轴超速时共同降速。
  * 非强制带速接入（v8）不移植：它的结果要 PLC 支持按时刻覆盖的轴队列才能执行。
  */
 
 export const NEAREST_ALGORITHM_VERSION = "v5_max_capability_common_prepare";
+export const FRAME_SELECTION_VERSION = "specified_or_directional_nearest_20261028";
 
 const UINT32_MAX = 4294967295;
 const MAX_PREPARE_TIME_MS = UINT32_MAX;
@@ -89,6 +91,9 @@ type EntryInputs = {
 
 export type NearestEntryStartMode = "action_boundary" | "nearest";
 
+/** specified_frame：固定接入指定帧；directional_nearest：从参考帧按方向找位置最近的帧；action_boundary：首末边界 */
+export type NearestEntryFrameSelectionMode = "specified_frame" | "directional_nearest" | "action_boundary";
+
 export type NearestEntryModelResult = Route & {
   current_HPY: Hpy;
   curve_target_HPY: Hpy;
@@ -127,8 +132,17 @@ export type NearestEntryResult = {
   effective_loop_once: boolean;
   effective_loop_count: number;
   loop_fallback: { plc_id: string; model_id: number; axis: AxisName; reason: string }[];
-  /** 选中的原曲线公共接入帧，ms */
+  /** 选中的原曲线公共接入帧，ms；搜索模式下可以不同于输入的停止帧 */
   selected_curve_time_ms: number;
+  frame_selection_mode: NearestEntryFrameSelectionMode;
+  frame_selection_version: string;
+  /** 指定模式为指定帧，搜索模式为输入停止帧（未给为 null）；不是最终接入帧 */
+  reference_frame_ms: number | null;
+  search_origin_frame_ms: number;
+  /** 实际允许的原曲线搜索区间 [最小帧, 最大帧] */
+  search_range_ms: [number, number];
+  selection_metric: "nearest_position";
+  position_metric: string;
   /** 所有模型共同准备耗时，ms */
   prepare_time_ms: number;
   /** 1006 prepareTimeMs：共同准备耗时向上取整 */
@@ -587,9 +601,26 @@ const nonForcedTargetAt = (model: EntryModel, globalFrame: number, inputs: Entry
 const axisCost = (delta: number, velocity: number): number =>
   delta <= 1e-12 ? 0 : velocity > 0 ? delta / velocity : Number.POSITIVE_INFINITY;
 
-type SelectedFrame = { frame: number; targets: Map<number, Hpy>; startMode: NearestEntryStartMode };
+/** 实际选帧方式与范围，说明输入帧没有被直接当成目标 */
+type FrameSelection = {
+  mode: NearestEntryFrameSelectionMode;
+  referenceFrameMs: number | null;
+  searchOriginMs: number;
+  searchRange: [number, number];
+};
 
-/** calculate_forced_nearest_position：非就近取动作边界；就近粗搜后细搜，按准备速度上限评分 */
+type SelectedFrame = {
+  frame: number;
+  targets: Map<number, Hpy>;
+  startMode: NearestEntryStartMode;
+  selection: FrameSelection;
+};
+
+/**
+ * calculate_forced_nearest_position：指定帧优先，直接在该帧接入；非就近取动作边界；
+ * 就近以停止帧为方向边界（正向 [停止帧, 末帧]，反向 [首帧, 停止帧]，不给停止帧时从方向边界搜全程），
+ * 粗搜后细搜，按归一化位置差评分，同分取运行方向上先遇到的帧，区间终点也参与比较。
+ */
 const selectForcedFrame = (inputs: EntryInputs): SelectedFrame => {
   const { models, direction } = inputs;
   const globalStart = Math.min(...models.map((model) => model.pieces[0]!.start_frame));
@@ -597,19 +628,41 @@ const selectForcedFrame = (inputs: EntryInputs): SelectedFrame => {
   const targetsAt = (frame: number) =>
     new Map(models.map((model) => [model.index, forcedTargetAt(model, frame, inputs)]));
 
-  if (!inputs.nearestStart) {
-    const frame = direction > 0 ? globalStart : globalEnd;
-    return { frame, targets: targetsAt(frame), startMode: "action_boundary" };
-  }
   if (inputs.useSpecifiedTime) {
     const specified = inputs.specifiedTimeMs;
-    if (!Number.isInteger(specified) || specified < 0 || specified > globalEnd) {
-      throw new Error(`specified_time_ms必须在0到${globalEnd}之间且为整数毫秒`);
+    if (!Number.isInteger(specified) || specified < globalStart || specified > globalEnd) {
+      throw new Error(`specified_time_ms必须在${globalStart}到${globalEnd}之间且为整数毫秒`);
     }
-    return { frame: specified, targets: targetsAt(specified), startMode: "nearest" };
+    return {
+      frame: specified,
+      targets: targetsAt(specified),
+      startMode: "nearest",
+      selection: {
+        mode: "specified_frame",
+        referenceFrameMs: specified,
+        searchOriginMs: specified,
+        searchRange: [specified, specified],
+      },
+    };
+  }
+  if (!inputs.nearestStart) {
+    const frame = direction > 0 ? globalStart : globalEnd;
+    return {
+      frame,
+      targets: targetsAt(frame),
+      startMode: "action_boundary",
+      selection: { mode: "action_boundary", referenceFrameMs: null, searchOriginMs: frame, searchRange: [frame, frame] },
+    };
   }
 
-  // 只求距离/准备速度上限代价；max 代价只会增大，已不可能更优就结束本候选
+  const stopped = inputs.stoppedTimeMs;
+  if (stopped !== null && (!Number.isInteger(stopped) || stopped < globalStart || stopped > globalEnd)) {
+    throw new Error("stopped_time_ms必须是动作首末范围内的整数毫秒");
+  }
+  const origin = stopped ?? (direction > 0 ? globalStart : globalEnd);
+  const [searchStart, searchEnd] = direction > 0 ? [origin, globalEnd] : [globalStart, origin];
+
+  // 位置差除以各轴最大速度统一 H/P/Y 量纲；同分还要算完剩余轴，不能把没算完的同分当成最近
   const scoreFrame = (frame: number, cutoff: number): number => {
     let score = 0;
     for (const model of models) {
@@ -621,39 +674,60 @@ const selectForcedFrame = (inputs: EntryInputs): SelectedFrame => {
           axisCost(Math.abs(target[axis] - model.current[axis]), model.max.velocity[axis]),
         );
       }
-      if (score >= cutoff) break;
+      if (score > cutoff) break;
     }
     return score;
   };
 
   type Best = { frame: number; score: number };
+  /** 先比代价；同分取运行方向上更早遇到的帧 */
+  const consider = (frame: number, best: Best | null): Best => {
+    const score = scoreFrame(frame, best === null ? Number.POSITIVE_INFINITY : best.score);
+    if (
+      best === null ||
+      score < best.score ||
+      (score === best.score && direction * frame < direction * best.frame)
+    ) {
+      return { frame, score };
+    }
+    return best;
+  };
+
   const scan = (start: number, end: number, step: number, best: Best | null): Best => {
     let current = best;
     const epsilon = Math.abs(step) * 1e-9;
     let frame = start;
     while ((step > 0 && frame <= end + epsilon) || (step < 0 && frame >= end - epsilon)) {
-      // 代价下界为 0；同分时保留运行方向上先扫描到的帧
-      if (current !== null && current.score === 0) break;
-      const score = scoreFrame(frame, current === null ? Number.POSITIVE_INFINITY : current.score);
-      // PLC 使用严格小于号
-      if (current === null || score < current.score) current = { frame, score };
+      // 已有 0 代价的帧，且按运行方向已扫到它之后，不可能更优
+      if (current !== null && current.score === 0 && direction * frame >= direction * current.frame) break;
+      current = consider(frame, current);
       frame += step;
     }
-    if (current === null) throw new Error("强制轨迹没有可评估的时间点");
-    return current;
+    // 停止帧可能不与步长对齐：区间终点也要参与比较
+    return consider(end, current);
   };
 
   const coarse = inputs.coarseStep;
   const fine = inputs.fineStep;
   let best =
     direction > 0
-      ? scan(globalStart, globalEnd, coarse, null)
-      : scan(globalEnd, globalStart, -coarse, null);
-  const fineStart = Math.max(globalStart, best.frame - coarse);
-  const fineEnd = Math.min(globalEnd, best.frame + coarse);
+      ? scan(searchStart, searchEnd, coarse, null)
+      : scan(searchEnd, searchStart, -coarse, null);
+  const fineStart = Math.max(searchStart, best.frame - coarse);
+  const fineEnd = Math.min(searchEnd, best.frame + coarse);
   best =
     direction > 0 ? scan(fineStart, fineEnd, fine, best) : scan(fineEnd, fineStart, -fine, best);
-  return { frame: best.frame, targets: targetsAt(best.frame), startMode: "nearest" };
+  return {
+    frame: best.frame,
+    targets: targetsAt(best.frame),
+    startMode: "nearest",
+    selection: {
+      mode: "directional_nearest",
+      referenceFrameMs: stopped,
+      searchOriginMs: origin,
+      searchRange: [searchStart, searchEnd],
+    },
+  };
 };
 
 type Candidate = { frame: number; positions: Map<number, Hpy> };
@@ -661,7 +735,13 @@ type Candidate = { frame: number; positions: Map<number, Hpy> };
 /** calculate_non_forced_candidate_positions：沿运行方向的原关键帧，按最近程度依次给出 */
 const nonForcedCandidates = (
   inputs: EntryInputs,
-): { startMode: NearestEntryStartMode; candidates: Iterable<Candidate> } => {
+): {
+  startMode: NearestEntryStartMode;
+  candidates: Iterable<Candidate>;
+  /** 实际搜索起点与沿方向允许的关键帧，只用于结果说明 */
+  origin: number;
+  allowed: number[];
+} => {
   const { models, direction } = inputs;
   const stopped = inputs.stoppedTimeMs;
   const boundarySet = new Set<number>();
@@ -677,7 +757,12 @@ const nonForcedCandidates = (
 
   if (!inputs.nearestStart) {
     const frame = direction > 0 ? globalStart : globalEnd;
-    return { startMode: "action_boundary", candidates: [{ frame, positions: positionsAt(frame) }] };
+    return {
+      startMode: "action_boundary",
+      candidates: [{ frame, positions: positionsAt(frame) }],
+      origin: frame,
+      allowed: [frame],
+    };
   }
 
   // 未传停止帧时，所有模型一起搜索同一个曲线时间；关键帧也加入，避免漏掉短段
@@ -775,7 +860,7 @@ const nonForcedCandidates = (
     }
   }
 
-  return { startMode: "nearest", candidates: nearestCandidates() };
+  return { startMode: "nearest", candidates: nearestCandidates(), origin, allowed: ordered };
 };
 
 /** _prepare_targets：非准备轴保持当前；可动固定轴不一致时要求显式加入准备 */
@@ -1100,9 +1185,11 @@ export const calculateNearestEntry = (parameters: NearestParameters): NearestEnt
 
   let motion: EntryMotion | null = null;
   let curveTargets = new Map<number, Hpy>();
+  let selection: FrameSelection | null = null;
   const skipped: NearestEntryResult["skipped_candidates"] = [];
   if (inputs.trajectoryRun) {
     const selected = selectForcedFrame(inputs);
+    selection = selected.selection;
     curveTargets = selected.targets;
     motion = synchronizedEntryMove(
       inputs,
@@ -1113,7 +1200,7 @@ export const calculateNearestEntry = (parameters: NearestParameters): NearestEnt
   } else {
     // 非强制指定帧只作搜索起点；仍沿方向接入原动作关键帧
     if (inputs.useSpecifiedTime) inputs.stoppedTimeMs = inputs.specifiedTimeMs;
-    const { startMode, candidates } = nonForcedCandidates(inputs);
+    const { startMode, candidates, origin, allowed } = nonForcedCandidates(inputs);
     for (const candidate of candidates) {
       try {
         curveTargets = new Map([...candidate.positions].map(([key, value]) => [key, [...value] as Hpy]));
@@ -1129,6 +1216,15 @@ export const calculateNearestEntry = (parameters: NearestParameters): NearestEnt
       }
     }
     if (!motion) throw new Error(`沿当前方向没有可执行的共同关键帧：${JSON.stringify(skipped)}`);
+    selection = {
+      mode: inputs.nearestStart ? "directional_nearest" : "action_boundary",
+      referenceFrameMs: inputs.stoppedTimeMs,
+      searchOriginMs: origin,
+      searchRange:
+        allowed.length > 0
+          ? [Math.min(...allowed), Math.max(...allowed)]
+          : [motion.frame, motion.frame],
+    };
   }
 
   // 1006 原帧须为整数，所有目标都按该整数帧求出
@@ -1197,6 +1293,13 @@ export const calculateNearestEntry = (parameters: NearestParameters): NearestEnt
     effective_loop_count: inputs.loopCount,
     loop_fallback: loopFallback,
     selected_curve_time_ms: frame,
+    frame_selection_mode: selection.mode,
+    frame_selection_version: FRAME_SELECTION_VERSION,
+    reference_frame_ms: selection.referenceFrameMs,
+    search_origin_frame_ms: selection.searchOriginMs,
+    search_range_ms: selection.searchRange,
+    selection_metric: "nearest_position",
+    position_metric: "max(abs(target-current)/max_velocity_HPY)",
     prepare_time_ms: durationMs,
     prepare_time_ms_ceil: prepareTimeMsCeil,
     start_mode: motion.startMode,

@@ -128,7 +128,8 @@ describe("ExecCardsProvider PLC action run status", () => {
     act(() => vi.advanceTimersByTime(60_000));
     expect(rows()).toEqual(["序列4|completed|3|1000"]);
     act(() => api.close(api.cards[0]!.id));
-    expect(stopSequenceMock).toHaveBeenCalledTimes(1);
+    // 已经停下了，关闭不再下发停止
+    expect(stopSequenceMock).not.toHaveBeenCalled();
     expect(rows()).toEqual([]);
   });
 
@@ -202,14 +203,13 @@ describe("ExecCardsProvider PLC action run status", () => {
     expect(rows()).toEqual(["开幕|stopped|-|-"]);
   });
 
-  it("sends the release on close unless the action was already released", () => {
+  it("closes cards that already came to rest without stopping them again", () => {
     report([running(), running({ actionId: 5 })]);
     act(() => vi.advanceTimersByTime(ACTION_RUN_STALE_MS + 200));
     const [first, second] = api.cards;
     act(() => api.close(first!.id));
-    expect(stopSequenceMock).toHaveBeenCalledTimes(1);
     act(() => api.close(second!.id, { release: false }));
-    expect(stopSequenceMock).toHaveBeenCalledTimes(1);
+    expect(stopSequenceMock).not.toHaveBeenCalled();
     expect(rows()).toEqual([]);
   });
 

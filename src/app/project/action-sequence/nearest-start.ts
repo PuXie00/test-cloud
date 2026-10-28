@@ -5,7 +5,7 @@ import type {
   VirtualAxisId,
 } from "../project-document-types";
 import { ALGORITHM_SETTINGS, buildAlgorithmModels } from "./algorithm-models";
-import type { Hpy } from "./algorithm-params";
+import type { AlgorithmModel, Hpy } from "./algorithm-params";
 import { calculateNearestEntry, type NearestEntryResult } from "./nearest-entry";
 import { pointToPointPositionAt, type AxisVad, type HpyPose } from "./nearest-start-motion";
 import type { ResolvedActionSequence } from "./resolve-sequence";
@@ -30,10 +30,11 @@ export type NearestStartInput = {
   /** PLC 循环配置：0 一直循环，1 播一次 */
   loopCount: number;
   /**
-   * 指定接入帧（ms），只在开启就近时生效：强制轨迹直接从这一帧接入，非强制从这一帧起沿方向取关键帧。
+   * 参考帧（ms，算法的 stopped_time_ms），只在开启就近时生效：正向只在 [参考帧, 末帧]、
+   * 反向只在 [首帧, 参考帧] 里找位置最近的接入帧，结果不一定是参考帧本身。
    * 任务卡的继续 / 反向回传入停下时的 runTime。
    */
-  specifiedTimeMs?: number;
+  referenceFrameMs?: number;
 };
 
 export type NearestStartAxisMove = AxisVad & {
@@ -122,6 +123,16 @@ export const toNearestStartPlan = (
   };
 };
 
+/**
+ * 算法只收动作首末帧范围内的整数毫秒，超出就拒绝。PLC 上报的 runTime 可能早于第一段运动
+ * （还没动就停了）或因取整略超末帧，取整后收进范围：早于首帧就从首帧起找，超出末帧按末帧。
+ */
+const referenceFrameIn = (models: readonly AlgorithmModel[], frameMs: number): number => {
+  const first = Math.min(...models.map((model) => model.segments[0]!.start_frame));
+  const last = Math.max(...models.map((model) => model.segments[model.segments.length - 1]!.end_frame));
+  return Math.min(Math.max(first, Math.round(frameMs)), last);
+};
+
 export const planNearestStart = (input: NearestStartInput): NearestStartPlan => {
   const { models, runtime } = buildAlgorithmModels(input);
   if (models.length === 0) {
@@ -143,22 +154,14 @@ export const planNearestStart = (input: NearestStartInput): NearestStartPlan => 
     const [h, p, y] = model.default_velocity_HPY;
     return { ...model, max_velocity_HPY: [h, p, y] satisfies Hpy };
   });
-  const specified = input.specifiedTimeMs;
   const result = calculateNearestEntry({
     command: {
       trajectory_run: input.forced,
       reverse: input.reverse,
       nearest_start: input.nearest,
-      use_specified_time: specified !== undefined,
-      // 算法只收曲线范围内的整数毫秒；模型曲线都延到序列总时长
-      ...(specified !== undefined
-        ? {
-            specified_time_ms: Math.min(
-              Math.max(0, Math.round(specified)),
-              Math.max(0, Math.ceil(input.resolved.totalMs)),
-            ),
-          }
-        : {}),
+      use_specified_time: false,
+      stopped_time_ms:
+        input.referenceFrameMs === undefined ? null : referenceFrameIn(models, input.referenceFrameMs),
       loop_count: input.loopCount,
     },
     settings: ALGORITHM_SETTINGS,
