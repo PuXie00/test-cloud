@@ -170,7 +170,8 @@
   }
 
   .viz3d-drive-unit-label {
-    background-color: var(--muted);
+    background-color:  rgb(from var(--muted) r g b / 50%);
+    /* background-opacity: 0.5; */
     color: var(--foreground);
     font-family: "JetBrains Mono", monospace;
     font-size: 11px;
@@ -186,7 +187,7 @@
 
   /* 标签背景随物体状态变化：运行绿色、报警红色，其余状态保持默认 */
   .viz3d-drive-unit-label[data-status="running"] {
-    background-color: var(--show);
+    background-color: rgb(from var(--show) r g b / 80%);
     color: var(--background);
   }
   .viz3d-drive-unit-label[data-status="alarm"] {

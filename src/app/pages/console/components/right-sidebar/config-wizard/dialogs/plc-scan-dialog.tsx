@@ -82,14 +82,14 @@ export const PlcScanDialog = ({ open, onOpenChange, results }: PlcScanDialogProp
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogPortal>
         <DialogOverlay className="bg-background/80 backdrop-blur-sm" />
-        <DialogPrimitive.Content className="fixed top-[50%] left-[50%] z-50 w-full max-w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-card shadow-[0_4px_24px_rgba(0,0,0,0.4)] outline-none">
-          <div className="flex h-12 items-center justify-between bg-muted px-4">
+        <DialogPrimitive.Content className="fixed top-[50%] left-[50%] z-50 flex max-h-[min(640px,calc(100vh-2rem))] w-full max-w-[520px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg bg-card shadow-[0_4px_24px_rgba(0,0,0,0.4)] outline-none">
+          <div className="flex h-12 shrink-0 items-center justify-between bg-muted px-4">
             <DialogTitle className="text-heading-md font-semibold">扫描结果</DialogTitle>
             <button type="button" onClick={() => onOpenChange(false)} aria-label="关闭">
               <X className="h-4 w-4" />
             </button>
           </div>
-          <div className="space-y-3 bg-background p-4">
+          <div className="min-h-0 max-h-[min(536px,calc(100vh-8.5rem))] flex-auto space-y-3 overflow-y-auto bg-background p-4">
             {results.length === 0 ? (
               <p className="py-8 text-center text-body-sm text-muted-foreground">未发现新主控</p>
             ) : (
@@ -123,7 +123,7 @@ export const PlcScanDialog = ({ open, onOpenChange, results }: PlcScanDialogProp
               ))
             )}
           </div>
-          <div className="flex justify-end gap-2 bg-muted px-4 py-3">
+          <div className="flex shrink-0 justify-end gap-2 bg-muted px-4 py-3">
             <button
               type="button"
               onClick={() => onOpenChange(false)}
