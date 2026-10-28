@@ -143,8 +143,8 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       telemetryByObjectId: poseDialog.telemetryByObjectId,
       nearest: poseDialog.nearest,
       reverse: poseDialog.reverse,
-      ...(poseDialog.specifiedTimeMs !== undefined
-        ? { specifiedTimeMs: poseDialog.specifiedTimeMs }
+      ...(poseDialog.referenceFrameMs !== undefined
+        ? { referenceFrameMs: poseDialog.referenceFrameMs }
         : {}),
     });
   }, [poseDialog, currentProject, faderSlots]);
@@ -356,8 +356,8 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
   };
 
   /**
-   * 继续 / 反向回：开启就近、从卡上显示的运行时间（PLC 上报的 runTime）接入，准备后直接 GO。
-   * 只是这一次按就近和该方向走，槽上保存的就近 / 反向开关不变。PLC 没上报过时没有当前帧，按就近自己找。
+   * 继续 / 反向回：开启就近，以卡上显示的运行时间（PLC 上报的 runTime）为参考帧，沿运行方向找位置最近的接入帧，
+   * 准备后直接 GO。只是这一次按就近和该方向走，槽上保存的就近 / 反向开关不变。PLC 没上报过时没有参考帧，从方向起点找。
    */
   const handleRerun = (cardId: string, intent: RerunIntent) => {
     const card = cards.find((entry) => entry.id === cardId);
@@ -385,7 +385,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     const options: StartGateOptions = {
       nearest: true,
       reverse,
-      ...(card.run ? { specifiedTimeMs: card.run.runTimeMs } : {}),
+      ...(card.run ? { referenceFrameMs: card.run.runTimeMs } : {}),
     };
     let startPlan: NearestStartPlan | null = null;
     if (authored) {

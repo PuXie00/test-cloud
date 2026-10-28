@@ -147,3 +147,79 @@ describe("calculateNearestEntry", () => {
     expect(JSON.stringify(parameters)).toBe(snapshot);
   });
 });
+
+/**
+ * 两种选帧（python/新就近算法，2026-10-28）：期望值由该目录的就近接入计算.py 的 _calculate_nearest_entry_v4
+ * 对同一份 算法参数.json 计算得到。示例当前位置在原曲线 5000ms 处，已停稳。
+ */
+describe("calculateNearestEntry frame selection (指定帧 / 从参考帧按方向就近)", () => {
+  const current = JSON.parse(
+    readFileSync(path.resolve(__dirname, "../../../../python/新就近算法/算法参数.json"), "utf-8").replace(
+      /^\uFEFF/,
+      "",
+    ),
+  ) as NearestParameters;
+  const runCurrent = (command: Partial<NearestParameters["command"]>) => {
+    const parameters = structuredClone(current);
+    Object.assign(parameters.command, command);
+    return calculateNearestEntry(parameters);
+  };
+
+  it("searches forward from the reference frame and joins at the nearest position, not at the reference", () => {
+    const result = runCurrent({ trajectory_run: true, nearest_start: true, use_specified_time: false, stopped_time_ms: 3500 });
+    expect(result.selected_curve_time_ms).toBe(5000);
+    expect(result.prepare_time_ms).toBe(0);
+    expect(result).toMatchObject({
+      frame_selection_mode: "directional_nearest",
+      reference_frame_ms: 3500,
+      search_origin_frame_ms: 3500,
+      search_range_ms: [3500, 8000],
+    });
+    expect(deviceOf(result, 400).execute_HPY).toEqual([false, false, false]);
+  });
+
+  it("searches backward only up to the reference frame in reverse", () => {
+    const back = runCurrent({ trajectory_run: true, nearest_start: true, reverse: true, stopped_time_ms: 6500 });
+    expect(back.selected_curve_time_ms).toBe(5000);
+    expect(back.search_range_ms).toEqual([0, 6500]);
+    // [0, 3550] 里离 5000ms 处最近的是区间端点 3550
+    const bounded = runCurrent({ trajectory_run: true, nearest_start: true, reverse: true, stopped_time_ms: 3550 });
+    expect(bounded.selected_curve_time_ms).toBe(3550);
+    expect(bounded.prepare_time_ms).toBeCloseTo(1041.6666666666667, 9);
+    expect(bounded.prepare_time_ms_ceil).toBe(1042);
+  });
+
+  it("searches the whole action from the direction boundary without a reference frame", () => {
+    const result = runCurrent({ trajectory_run: true, nearest_start: true, stopped_time_ms: null });
+    expect(result.selected_curve_time_ms).toBe(5000);
+    expect(result).toMatchObject({ reference_frame_ms: null, search_origin_frame_ms: 0, search_range_ms: [0, 8000] });
+  });
+
+  it("joins exactly at a specified frame, even without nearest", () => {
+    for (const nearest of [true, false]) {
+      const result = runCurrent({
+        trajectory_run: true,
+        nearest_start: nearest,
+        use_specified_time: true,
+        specified_time_ms: 3500,
+      });
+      expect(result.selected_curve_time_ms).toBe(3500);
+      expect(result.prepare_time_ms).toBe(1075);
+      expect(result.frame_selection_mode).toBe("specified_frame");
+      expect(result.search_range_ms).toEqual([3500, 3500]);
+    }
+  });
+
+  it("rejects a reference frame outside the action instead of running from an end", () => {
+    expect(() => runCurrent({ trajectory_run: true, nearest_start: true, stopped_time_ms: 8001 })).toThrow(
+      "stopped_time_ms必须是动作首末范围内的整数毫秒",
+    );
+  });
+
+  it("takes the next keyframe after the reference frame when not forced", () => {
+    const result = runCurrent({ trajectory_run: false, nearest_start: true, stopped_time_ms: 3500 });
+    expect(result.selected_curve_time_ms).toBe(6000);
+    expect(result.prepare_time_ms).toBeCloseTo(741.6666666666666, 9);
+    expect(result).toMatchObject({ frame_selection_mode: "directional_nearest", search_range_ms: [6000, 8000] });
+  });
+});
