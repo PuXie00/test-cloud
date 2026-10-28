@@ -8,7 +8,12 @@ import {
   type SqlDatabase,
 } from "../electron/main/cSocket/operation-log-db";
 import { mockLogWrite } from "../electron/main/cSocket/operation-log-mock";
-import { mergeRecentLogs, type LogQueryParams, type LogRecord } from "../shared/csocket/operation-log";
+import {
+  mergeRecentLogs,
+  normalizeLogPush,
+  type LogQueryParams,
+  type LogRecord,
+} from "../shared/csocket/operation-log";
 
 const record = (overrides: Partial<LogRecord> & { id: string; timestamp: number }): LogRecord => ({
   category: "optRet",
@@ -29,6 +34,46 @@ describe("mergeRecentLogs", () => {
     const merged = mergeRecentLogs(current, incoming, 2);
     expect(merged.map((r) => r.id)).toEqual(["c", "b"]);
     expect(merged[1].message).toBe("b2");
+  });
+});
+
+describe("normalizeLogPush", () => {
+  it("maps C++ Info|log column names so the live clock is a real time", () => {
+    const records = normalizeLogPush([
+      {
+        addr: "0x0000",
+        category: "optRet",
+        level: "info",
+        message: "CONFIG|Pro|open成功",
+        op_group: "CONFIG",
+        op_type: "Pro|open",
+        result_ok: 0,
+        ts: 1793159844739,
+        user_name: "admin",
+      },
+    ]);
+    expect(records).toEqual([
+      {
+        id: "1793159844739|optRet|Pro|open|0x0000|0|CONFIG|Pro|open成功",
+        timestamp: 1793159844739,
+        category: "optRet",
+        level: "info",
+        message: "CONFIG|Pro|open成功",
+        user: "admin",
+        opGroup: "config",
+        result: 0,
+      },
+    ]);
+    expect(Number.isNaN(new Date(records[0].timestamp).getHours())).toBe(false);
+  });
+
+  it("keeps an already mapped LogRecord", () => {
+    const records = normalizeLogPush([
+      record({ id: "9", timestamp: 1_000, user: "admin", opGroup: "device", result: 103 }),
+    ]);
+    expect(records).toEqual([
+      record({ id: "9", timestamp: 1_000, user: "admin", opGroup: "device", result: 103 }),
+    ]);
   });
 });
 

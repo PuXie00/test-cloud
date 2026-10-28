@@ -34,11 +34,12 @@ import {
 import type { CppSocketClient } from './client'
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { CSOCKET_CHANNELS } from '../../../shared/csocket/channels'
-import type {
-  LogAlarmReviewParams,
-  LogQueryParams,
-  LogRecord,
-  LogWriteParams,
+import {
+  normalizeLogPush,
+  type LogAlarmReviewParams,
+  type LogQueryParams,
+  type LogRecord,
+  type LogWriteParams,
 } from '../../../shared/csocket/operation-log'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
@@ -298,23 +299,17 @@ export class CsocketApiService {
         }>)
         this.statusSink?.actions(msg)
       }
-      // C++ 新写入的日志（操作 / 报警 / 系统）
-      if (optCmd === 'Info|log') {
-        this.broadcast(CSOCKET_CHANNELS.logPush, msg as CppAckResult<LogRecord>)
+      // C++ 新写入的日志（操作 / 报警 / 系统）。推送是表列名，先转成 LogRecord
+      if (optCmd === 'Info|log' && msg) {
+        const records = normalizeLogPush(msg.data)
+        if (records.length > 0) {
+          this.broadcast(CSOCKET_CHANNELS.logPush, { ...msg, data: records })
+        }
       }
       // 授权回复超时后才到（不再配对），补进状态（比如激活其实成功了）
       if (optCmd.startsWith('Auth|')) {
         this.ingestLicense(msg)
       }
-      // if (optCmd === 'Info|actionRun') {
-      //   this.broadcast(CSOCKET_CHANNELS.readActionRun, msg as CppAckResult<{
-      //     actionId: number, // 动作ID
-      //     state: number, // 动作状态 1:过渡状态，正在走到轨迹上 3： 运行中 
-      //     loopCount: number, // 当前第几次循环
-      //     loopCountSet: number, // 设定循环次数
-      //     runTime: number, // 轨迹运行的当前帧
-      //   }>)
-      // }
     })
 
     this.client.onStatus((status) => {

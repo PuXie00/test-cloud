@@ -140,6 +140,94 @@ export const deviceKey = (series: Pick<LogSnapshotSeries, 'deviceId'>): string =
 /** 快照里只有电机 id */
 export const motorLabel = (deviceId: number): string => `电机 ${deviceId}`
 
+const LOG_CATEGORIES = new Set<LogCategory>(['optCall', 'optRet', 'axisAlarm', 'system'])
+const LOG_LEVELS = new Set<LogLevel>(['debug', 'info', 'warning', 'error'])
+const LOG_OP_GROUPS = new Set<LogOpGroup>(['config', 'device'])
+
+const finiteNumber = (value: unknown): number | undefined => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return undefined
+}
+
+const text = (value: unknown): string | undefined =>
+  typeof value === 'string' && value !== '' ? value : undefined
+
+const isLogCategory = (value: unknown): value is LogCategory =>
+  typeof value === 'string' && LOG_CATEGORIES.has(value as LogCategory)
+
+const isLogLevel = (value: unknown): value is LogLevel =>
+  typeof value === 'string' && LOG_LEVELS.has(value as LogLevel)
+
+const opGroupOf = (value: unknown): LogOpGroup | undefined => {
+  if (typeof value !== 'string') return undefined
+  const group = value.toLowerCase()
+  return LOG_OP_GROUPS.has(group as LogOpGroup) ? (group as LogOpGroup) : undefined
+}
+
+type RawLogPush = {
+  id?: unknown
+  timestamp?: unknown
+  ts?: unknown
+  category?: unknown
+  level?: unknown
+  message?: unknown
+  user?: unknown
+  user_name?: unknown
+  opGroup?: unknown
+  op_group?: unknown
+  opType?: unknown
+  op_type?: unknown
+  addr?: unknown
+  result?: unknown
+  result_ok?: unknown
+}
+
+/** 没有库 id 时用内容拼一个稳定键，同一条重复推送不会叠成多条 */
+const pushId = (row: RawLogPush, timestamp: number, category: string, message: string): string => {
+  if (typeof row.id === 'number' && Number.isFinite(row.id)) return String(row.id)
+  if (typeof row.id === 'string' && row.id !== '') return row.id
+  const opType = text(row.opType) ?? text(row.op_type) ?? ''
+  const addr = text(row.addr) ?? ''
+  const result = finiteNumber(row.result) ?? finiteNumber(row.result_ok) ?? ''
+  return `${timestamp}|${category}|${opType}|${addr}|${result}|${message}`
+}
+
+/**
+ * Info|log 实际推的是表列名（ts / user_name / op_group / result_ok），
+ * 界面按 LogRecord（timestamp / user / opGroup / result）显示。
+ * 已经是 LogRecord 的原样通过。
+ */
+export const normalizeLogPush = (data: unknown): LogRecord[] => {
+  if (!Array.isArray(data)) return []
+  const records: LogRecord[] = []
+  for (const item of data) {
+    if (!item || typeof item !== 'object') continue
+    const row = item as RawLogPush
+    if (!isLogCategory(row.category) || !isLogLevel(row.level) || typeof row.message !== 'string') continue
+    if (row.category === 'optCall') continue
+    const timestamp = finiteNumber(row.ts)
+    if (timestamp == null) continue
+    const user = text(row.user_name)
+    const opGroup =  opGroupOf(row.op_group)
+    const result = finiteNumber(row.result_ok)
+    records.push({
+      id: pushId(row, timestamp, row.category, row.message),
+      timestamp,
+      category: row.category,
+      level: row.level,
+      message: row.message,
+      ...(user ? { user } : {}),
+      ...(opGroup ? { opGroup } : {}),
+      ...(result != null ? { result } : {}),
+    })
+  }
+  return records
+}
+
 /** 合并推送的记录：去重、去 debug 和 optCall、按时间升序、只保留最新 limit 条 */
 export const mergeRecentLogs = (
   current: readonly LogRecord[],
