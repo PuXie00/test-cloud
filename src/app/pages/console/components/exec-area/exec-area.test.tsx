@@ -1869,7 +1869,7 @@ describe("ExecArea continue / reverse back", () => {
     expect(readyArgs().startPlan).toMatchObject({ nearest: true, direction: 1, targetFrameMs: 2000 });
   });
 
-  it("turns the runTime of a reverse run into the curve frame (total − runTime) before searching", async () => {
+  it("passes a reverse run's runTime through as the original curve frame", async () => {
     forced();
     armCard({ reverse: true });
     const { unmount } = render(withMode(<ExecArea />));
@@ -1877,10 +1877,10 @@ describe("ExecArea continue / reverse back", () => {
     await waitFor(() => {
       expect(goSequenceMock).toHaveBeenCalledTimes(1);
     });
-    // 编程 2000ms，反向走了 1500ms：停在原曲线 500ms
+    // runTime 就是原曲线帧，反向继续也传 1500
     expect(readyArgs()).toMatchObject({
       runDirection: false,
-      startPlan: { nearest: true, direction: -1, targetFrameMs: 500 },
+      startPlan: { nearest: true, direction: -1, targetFrameMs: 1500 },
     });
     unmount();
     readySequenceMock.mockClear();
@@ -1891,7 +1891,7 @@ describe("ExecArea continue / reverse back", () => {
     });
     expect(readyArgs()).toMatchObject({
       runDirection: true,
-      startPlan: { nearest: true, direction: 1, targetFrameMs: 500 },
+      startPlan: { nearest: true, direction: 1, targetFrameMs: 1500 },
     });
   });
 
