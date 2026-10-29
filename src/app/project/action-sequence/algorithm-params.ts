@@ -172,6 +172,17 @@ export const evaluatePiece = (
 };
 
 /** bisect_right：第一个大于 value 的下标 */
+export const bisectLeft = (sorted: readonly number[], value: number): number => {
+  let low = 0;
+  let high = sorted.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (sorted[middle]! < value) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+};
+
 export const bisectRight = (sorted: readonly number[], value: number): number => {
   let low = 0;
   let high = sorted.length;

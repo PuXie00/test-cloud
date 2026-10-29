@@ -3,6 +3,7 @@ import {
   AXIS_NAMES,
   axesOf,
   axisIndex,
+  bisectLeft,
   bisectRight,
   COEFFICIENT_NAMES,
   CURVE_TICK_FRAME,
@@ -38,7 +39,7 @@ import {
  */
 
 export const NEAREST_ALGORITHM_VERSION = "v5_max_capability_common_prepare";
-export const FRAME_SELECTION_VERSION = "directional_nearest_return_branch_fix_20261028_r2";
+export const FRAME_SELECTION_VERSION = "current_original_segment_first_20261029";
 
 const UINT32_MAX = 4294967295;
 const MAX_PREPARE_TIME_MS = UINT32_MAX;
@@ -77,6 +78,9 @@ type EntryModel = {
   follow: AxisName[];
   defaults: VadHpy;
   max: VadHpy;
+  /** 虚轴行程；没给时不限 */
+  minPosition: Hpy;
+  maxPosition: Hpy;
 };
 
 type EntryInputs = {
@@ -95,8 +99,15 @@ type EntryInputs = {
 
 export type NearestEntryStartMode = "action_boundary" | "nearest";
 
-/** specified_frame：固定接入指定帧；directional_nearest：从参考帧按方向找位置最近的帧；action_boundary：首末边界 */
-export type NearestEntryFrameSelectionMode = "specified_frame" | "directional_nearest" | "action_boundary";
+/**
+ * specified_frame：固定接入指定帧；current_segment_first：先在停止参考所在原段找，找不到再沿方向逐段找；
+ * directional_nearest：没有参考帧时按方向搜全程（非强制关键帧也用它）；action_boundary：首末边界
+ */
+export type NearestEntryFrameSelectionMode =
+  | "specified_frame"
+  | "current_segment_first"
+  | "directional_nearest"
+  | "action_boundary";
 
 /** evaluated_frames 是实际评分次数；full_fine_grid_covered 表示细网格都比较过或被安全排除 */
 export type NearestSearchStatistics = {
@@ -107,6 +118,20 @@ export type NearestSearchStatistics = {
   full_fine_grid_covered: true;
   fine_grid_frames: number;
   normalized_position_tolerance: number;
+  /** 校验不可执行而被排除的候选帧数 */
+  infeasible_frames: number;
+};
+
+export type NearestSegmentSearchPhase = "current_segment" | "directional_fallback";
+
+/** 当前段优先时实际尝试过的原段窗口 */
+export type NearestSegmentSearchAttempt = {
+  range_ms: [number, number];
+  phase: NearestSegmentSearchPhase;
+  index: number;
+  reference_frame_ms: number | null;
+  status: "planned" | "infeasible";
+  reason?: string;
 };
 
 export type NearestEntryModelResult = Route & {
@@ -160,6 +185,11 @@ export type NearestEntryResult = {
   position_metric: string;
   /** 强制方向搜索的区间包络统计；其它方式为空对象 */
   search_statistics: NearestSearchStatistics | Record<string, never>;
+  /** 当前段优先：先查的原段、最终选中的原段、选中时所处阶段和逐段尝试记录；其它方式为 null / 空 */
+  reference_segment_range_ms: [number, number] | null;
+  selected_segment_range_ms: [number, number] | null;
+  segment_search_phase: NearestSegmentSearchPhase | null;
+  segment_search_attempts: NearestSegmentSearchAttempt[];
   /** 所有模型共同准备耗时，ms */
   prepare_time_ms: number;
   /** 1006 prepareTimeMs：共同准备耗时向上取整 */
@@ -539,6 +569,14 @@ const normalizeInputs = (parameters: NearestParameters): EntryInputs => {
       follow,
       defaults,
       max,
+      minPosition:
+        original.min_position_HPY === undefined
+          ? [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY]
+          : hpyOf(original.min_position_HPY, "min_position_HPY"),
+      maxPosition:
+        original.max_position_HPY === undefined
+          ? [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY]
+          : hpyOf(original.max_position_HPY, "max_position_HPY"),
     });
   });
 
@@ -746,6 +784,10 @@ type FrameSelection = {
   searchOriginMs: number;
   searchRange: [number, number];
   statistics?: NearestSearchStatistics;
+  referenceSegmentRange?: [number, number];
+  selectedSegmentRange?: [number, number];
+  segmentSearchPhase?: NearestSegmentSearchPhase;
+  segmentSearchAttempts?: NearestSegmentSearchAttempt[];
 };
 
 type SelectedFrame = {
@@ -753,20 +795,194 @@ type SelectedFrame = {
   targets: Map<number, Hpy>;
   startMode: NearestEntryStartMode;
   selection: FrameSelection;
+  /** 有候选校验时，最终帧的准备 Move 已经算好 */
+  validatedMotion?: EntryMotion;
+};
+
+/** 候选帧校验：行程与同步准备都能算出来才算可执行，不可执行时抛错 */
+type FrameValidator = (frame: number, targets: Map<number, Hpy>) => EntryMotion;
+
+/** _EntryWindowInfeasible：窗口里的已覆盖候选都没有可执行的准备方案，可以按方向继续下一原段 */
+class EntryWindowInfeasibleError extends Error {}
+
+type EntryWindow = {
+  range_ms: [number, number];
+  phase: NearestSegmentSearchPhase;
+  index: number;
+  reference_frame_ms: number | null;
+};
+
+/** 只认可严格证明整条恒定的模型：准备轴上任何非零系数、端点不一致都不算 */
+const strictlyStationary = (model: EntryModel): boolean => {
+  const axes = model.prepare.map(axisIndex);
+  let constants: number[] | null = null;
+  for (const piece of model.pieces) {
+    constants ??= axes.map((axis) => piece.a[axis]!);
+    for (const [offset, axis] of axes.entries()) {
+      const constant = constants[offset]!;
+      if (piece.a[axis] !== constant) return false;
+      if (COEFFICIENT_NAMES.slice(1).some((name) => piece[name][axis] !== 0)) return false;
+      if (piece.start_HPY[axis] !== constant || piece.target_HPY[axis] !== constant) return false;
+    }
+  }
+  return constants !== null;
 };
 
 /**
- * calculate_forced_nearest_position：指定帧优先，直接在该帧接入；非就近取动作边界；
- * 就近以停止帧为方向边界（正向 [停止帧, 末帧]，反向 [首帧, 停止帧]，不给停止帧时从方向边界搜全程），
- * 按归一化位置差评分：粗搜给出上界，再用位置包络分支定界覆盖整个方向细网格；
- * 数值等价的同位置取运行方向上先遇到的帧（往返曲线不会跳到回程），区间终点也参与比较。
+ * _entry_prioritized_windows：先给停止参考所在的公共原动作段（不是系数阶段），再沿运行方向逐段给出。
+ * 有运动的模型的原段边界合成公共窗口，严格恒定的模型不切窗；强制循环按各模型周期推边界，不展开循环次数。
+ * 参考恰好在边界上时正向归右段、反向归左段，首末钳到可用段。
  */
-const selectForcedFrame = (inputs: EntryInputs): SelectedFrame => {
+function* entryPrioritizedWindows(inputs: EntryInputs): Generator<EntryWindow> {
+  const { models, direction } = inputs;
+  if (models.length === 0) throw new Error("当前段优先搜索需要非空模型列表");
+  type Descriptor = { anchor: number; end: number; period: number; offsets: number[] };
+  const descriptors: Descriptor[] = [];
+  let globalStart = Number.POSITIVE_INFINITY;
+  let globalEnd = Number.NEGATIVE_INFINITY;
+  for (const model of models) {
+    const first = Math.trunc(model.pieces[0]!.start_frame);
+    const last = Math.trunc(lastOf(model.pieces).end_frame);
+    if (last <= first) throw new Error("模型原动作时间范围无效");
+    globalStart = Math.min(globalStart, first);
+    globalEnd = Math.max(globalEnd, last);
+    // 恒定模型只影响全动作范围，不用它的无运动关键帧切碎其他模型的当前段
+    if (strictlyStationary(model)) continue;
+    const boundaries = [...new Set([first, last, ...model.boundaries.map(Math.trunc)])].sort((a, b) => a - b);
+    if (boundaries[0]! < first || lastOf(boundaries) > last) throw new Error("原动作段边界超出模型首末范围");
+    const period = last - first;
+    const count = inputs.trajectoryRun ? (inputs.loopCount === 0 ? 10000000 : inputs.loopCount) : 1;
+    const anchor = inputs.trajectoryRun && direction < 0 ? last - period * count : first;
+    descriptors.push({ anchor, end: anchor + period * count, period, offsets: boundaries.map((value) => value - first) });
+  }
+
+  const reference = inputs.stoppedTimeMs;
+  if (reference === null) {
+    yield { range_ms: [globalStart, globalEnd], phase: "directional_fallback", index: 0, reference_frame_ms: null };
+    return;
+  }
+  if (!Number.isInteger(reference) || reference < globalStart || reference > globalEnd) {
+    throw new Error("停止参考帧必须是动作首末范围内的整数毫秒");
+  }
+  if (descriptors.length === 0) {
+    yield { range_ms: [globalStart, globalEnd], phase: "current_segment", index: 0, reference_frame_ms: reference };
+    return;
+  }
+
+  /** 帧落在第几个周期、周期内偏移多少；整数运算，不用浮点除法取整 */
+  const cycleOf = (descriptor: Descriptor, frame: number) => {
+    const local = pythonMod(frame - descriptor.anchor, descriptor.period);
+    return { base: frame - local, local };
+  };
+  const floorInModel = (descriptor: Descriptor, frame: number): number | null => {
+    if (frame < descriptor.anchor) return null;
+    if (frame >= descriptor.end) return descriptor.end;
+    const { base, local } = cycleOf(descriptor, frame);
+    return base + descriptor.offsets[bisectRight(descriptor.offsets, local) - 1]!;
+  };
+  const ceilInModel = (descriptor: Descriptor, frame: number): number | null => {
+    if (frame <= descriptor.anchor) return descriptor.anchor;
+    if (frame > descriptor.end) return null;
+    if (frame === descriptor.end) return descriptor.end;
+    const { base, local } = cycleOf(descriptor, frame);
+    return base + descriptor.offsets[bisectLeft(descriptor.offsets, local)]!;
+  };
+  // 原段边界都是整毫秒：±1 得到严格前驱 / 后继，不引入浮点容差
+  const previousBoundary = (frame: number, inclusive = false): number | null => {
+    const query = inclusive ? frame : frame - 1;
+    if (query < globalStart) return null;
+    let result = globalStart;
+    for (const descriptor of descriptors) {
+      const boundary = floorInModel(descriptor, query);
+      if (boundary !== null && globalStart <= boundary && boundary <= globalEnd) result = Math.max(result, boundary);
+    }
+    return result;
+  };
+  const nextBoundary = (frame: number, inclusive = false): number | null => {
+    const query = inclusive ? frame : frame + 1;
+    if (query > globalEnd) return null;
+    let result = globalEnd;
+    for (const descriptor of descriptors) {
+      const boundary = ceilInModel(descriptor, query);
+      if (boundary !== null && globalStart <= boundary && boundary <= globalEnd) result = Math.min(result, boundary);
+    }
+    return result;
+  };
+
+  let left: number | null;
+  let right: number | null;
+  if (direction > 0) {
+    left = previousBoundary(reference, true);
+    right = nextBoundary(reference);
+    if (right === null) {
+      // 全动作末端没有右段，用最后一个公共段
+      right = globalEnd;
+      left = previousBoundary(reference);
+    }
+  } else {
+    left = previousBoundary(reference);
+    right = nextBoundary(reference, true);
+    if (left === null) {
+      left = globalStart;
+      right = nextBoundary(reference);
+    }
+  }
+  let index = 0;
+  while (left !== null && right !== null && left < right) {
+    yield {
+      range_ms: [left, right],
+      phase: index === 0 ? "current_segment" : "directional_fallback",
+      index,
+      reference_frame_ms: reference,
+    };
+    index += 1;
+    if (direction > 0) [left, right] = [right, nextBoundary(right)];
+    else [left, right] = [previousBoundary(left), left];
+  }
+}
+
+/**
+ * calculate_forced_nearest_position：指定帧优先，直接在该帧接入；非就近取动作边界。
+ * 就近且有停止参考帧时，参考帧只用来定位原动作段：先在整段（参考帧两侧都行）找可执行的最近帧，
+ * 整段都不可执行才沿运行方向逐段往后找；没有参考帧时按方向搜全程。
+ * 段内按归一化位置差评分：粗搜给出上界，再用位置包络分支定界覆盖细网格；
+ * 数值等价的同位置取运行方向上先遇到的帧，区间终点也参与比较。只有可执行的候选才收紧上界。
+ */
+const selectForcedFrame = (inputs: EntryInputs, validator: FrameValidator | null): SelectedFrame => {
   const { models, direction } = inputs;
   const globalStart = Math.min(...models.map((model) => model.pieces[0]!.start_frame));
   const globalEnd = Math.max(...models.map((model) => lastOf(model.pieces).end_frame));
   const targetsAt = (frame: number) =>
     new Map(models.map((model) => [model.index, forcedTargetAt(model, frame, inputs)]));
+
+  if (inputs.nearestStart && !inputs.useSpecifiedTime && inputs.stoppedTimeMs !== null) {
+    const attempts: NearestSegmentSearchAttempt[] = [];
+    let referenceWindow: [number, number] | null = null;
+    for (const window of entryPrioritizedWindows(inputs)) {
+      referenceWindow ??= [...window.range_ms];
+      let result: SelectedFrame;
+      try {
+        result = directionalSearch(inputs, window.range_ms, validator);
+      } catch (error) {
+        if (!(error instanceof EntryWindowInfeasibleError)) throw error;
+        attempts.push({ ...window, status: "infeasible", reason: error.message });
+        continue;
+      }
+      attempts.push({ ...window, status: "planned" });
+      return {
+        ...result,
+        selection: {
+          ...result.selection,
+          mode: "current_segment_first",
+          referenceSegmentRange: referenceWindow,
+          selectedSegmentRange: [...window.range_ms],
+          segmentSearchPhase: window.phase,
+          segmentSearchAttempts: attempts,
+        },
+      };
+    }
+    throw new EntryWindowInfeasibleError("当前原段及运行方向后续原段均无可执行接入方案");
+  }
 
   if (inputs.useSpecifiedTime) {
     const specified = inputs.specifiedTimeMs;
@@ -794,14 +1010,30 @@ const selectForcedFrame = (inputs: EntryInputs): SelectedFrame => {
       selection: { mode: "action_boundary", referenceFrameMs: null, searchOriginMs: frame, searchRange: [frame, frame] },
     };
   }
+  return directionalSearch(inputs, null, validator);
+};
+
+/**
+ * 就近的方向搜索：window 给定时只在这个公共原段里找（两侧都行），否则正向 [停止帧, 末帧]、反向 [首帧, 停止帧]。
+ * 有 validator 时，不可执行的候选不参与比较；窗口内没有可执行候选时抛 EntryWindowInfeasibleError。
+ */
+const directionalSearch = (
+  inputs: EntryInputs,
+  window: [number, number] | null,
+  validator: FrameValidator | null,
+): SelectedFrame => {
+  const { models, direction } = inputs;
+  const globalStart = Math.min(...models.map((model) => model.pieces[0]!.start_frame));
+  const globalEnd = Math.max(...models.map((model) => lastOf(model.pieces).end_frame));
+  const targetsAt = (frame: number) =>
+    new Map(models.map((model) => [model.index, forcedTargetAt(model, frame, inputs)]));
 
   const stopped = inputs.stoppedTimeMs;
   if (stopped !== null && (!Number.isInteger(stopped) || stopped < globalStart || stopped > globalEnd)) {
     throw new Error("stopped_time_ms必须是动作首末范围内的整数毫秒");
   }
   const origin = stopped ?? (direction > 0 ? globalStart : globalEnd);
-  const [searchStart, searchEnd] = direction > 0 ? [origin, globalEnd] : [globalStart, origin];
-
+  const [searchStart, searchEnd] = window ?? (direction > 0 ? [origin, globalEnd] : [globalStart, origin]);
   const statistics: NearestSearchStatistics = {
     method: "position_envelope_branch_and_bound",
     evaluated_frames: 0,
@@ -810,6 +1042,7 @@ const selectForcedFrame = (inputs: EntryInputs): SelectedFrame => {
     full_fine_grid_covered: true,
     fine_grid_frames: 0,
     normalized_position_tolerance: 0,
+    infeasible_frames: 0,
   };
   const axesByModel = new Map(models.map((model) => [model.index, model.prepare.map(axisIndex)]));
   const wholeModelBounds = new Map<number, Map<number, [number, number]>>();
@@ -909,8 +1142,22 @@ const selectForcedFrame = (inputs: EntryInputs): SelectedFrame => {
   // 数值等价窗口固定围绕真正的最小代价，不逐次放宽；窗口内取运行方向上先遇到的帧
   let minimumScore = Number.POSITIVE_INFINITY;
   const equivalent = tupleHeap<[number, number, number]>();
-  const consider = (frame: number): Best => {
+  const validatedFrames = new Set<number>();
+  const rejectedFrames = new Map<number, string>();
+  const consider = (frame: number, best: Best | null): Best | null => {
+    if (rejectedFrames.has(frame)) return best;
     const score = scoreFrame(frame, minimumScore + scoreTolerance);
+    if (score > minimumScore + scoreTolerance) return best;
+    if (validator && !validatedFrames.has(frame)) {
+      try {
+        validator(frame, targetsAt(frame));
+        validatedFrames.add(frame);
+      } catch (error) {
+        rejectedFrames.set(frame, errorMessage(error));
+        return best;
+      }
+    }
+    // 只有可执行的候选才能收紧上界：不可执行的零误差点不能排除本段其他点
     minimumScore = Math.min(minimumScore, score);
     if (score <= minimumScore + scoreTolerance) equivalent.push([direction * frame, frame, score]);
     while (equivalent.size > 0 && equivalent.peek()![2] > minimumScore + scoreTolerance) equivalent.pop();
@@ -918,17 +1165,17 @@ const selectForcedFrame = (inputs: EntryInputs): SelectedFrame => {
     return { frame: selectedFrame, score: selectedScore };
   };
 
-  const scan = (start: number, end: number, step: number): Best => {
+  const scan = (start: number, end: number, step: number): Best | null => {
     let current: Best | null = null;
     const epsilon = Math.abs(step) * 1e-9;
     let frame = start;
     while ((step > 0 && frame <= end + epsilon) || (step < 0 && frame >= end - epsilon)) {
       if (current !== null && minimumScore === 0 && direction * frame >= direction * current.frame) break;
-      current = consider(frame);
+      current = consider(frame, current);
       frame += step;
     }
     // 参考帧可能不与步长对齐：区间终点也要参与比较
-    return consider(end);
+    return consider(end, current);
   };
 
   const coarse = inputs.coarseStep;
@@ -961,6 +1208,7 @@ const selectForcedFrame = (inputs: EntryInputs): SelectedFrame => {
   /** 下界已超出等价窗口，或在当前最优之后且不可能改善真正最小代价的区间不用再看 */
   const competitive = (lower: number, firstIndex: number): boolean => {
     if (lower > minimumScore + scoreTolerance) return false;
+    if (best === null) return true;
     return !(
       direction * gridFrame(firstIndex) >= direction * best.frame &&
       (minimumScore === 0 || lower >= best.score)
@@ -976,11 +1224,11 @@ const selectForcedFrame = (inputs: EntryInputs): SelectedFrame => {
       continue;
     }
     if (lastIndex - firstIndex <= 7) {
-      for (let index = firstIndex; index <= lastIndex; index += 1) best = consider(gridFrame(index));
+      for (let index = firstIndex; index <= lastIndex; index += 1) best = consider(gridFrame(index), best);
       continue;
     }
     const middle = Math.floor((firstIndex + lastIndex) / 2);
-    best = consider(gridFrame(middle));
+    best = consider(gridFrame(middle), best);
     for (const [firstChild, lastChild] of [
       [firstIndex, middle - 1],
       [middle + 1, lastIndex],
@@ -991,9 +1239,12 @@ const selectForcedFrame = (inputs: EntryInputs): SelectedFrame => {
       else statistics.pruned_grid_frames += lastChild - firstChild + 1;
     }
   }
+  if (best === null) throw new EntryWindowInfeasibleError("本原段窗口内没有可执行的准备接入点");
+  const targets = targetsAt(best.frame);
+  statistics.infeasible_frames = rejectedFrames.size;
   return {
     frame: best.frame,
-    targets: targetsAt(best.frame),
+    targets,
     startMode: "nearest",
     selection: {
       mode: "directional_nearest",
@@ -1002,6 +1253,8 @@ const selectForcedFrame = (inputs: EntryInputs): SelectedFrame => {
       searchRange: [searchStart, searchEnd],
       statistics,
     },
+    // 不缓存每个候选的整份 Move，只在最终帧重算一次
+    ...(validator ? { validatedMotion: validator(best.frame, targets) } : {}),
   };
 };
 
@@ -1463,15 +1716,40 @@ export const calculateNearestEntry = (parameters: NearestParameters): NearestEnt
   let selection: FrameSelection | null = null;
   const skipped: NearestEntryResult["skipped_candidates"] = [];
   if (inputs.trajectoryRun) {
-    const selected = selectForcedFrame(inputs);
+    // 零速起止准备沿每个虚轴单调移动：当前点和目标点都在行程内才可执行
+    for (const model of inputs.models) {
+      if (model.minPosition.some((lower, axis) => lower > model.maxPosition[axis]!)) {
+        throw new Error("虚轴行程下限不能大于上限");
+      }
+      for (const name of model.supported) {
+        const axis = axisIndex(name);
+        const current = model.current[axis]!;
+        if (current < model.minPosition[axis]! - 1e-9 || current > model.maxPosition[axis]! + 1e-9) {
+          throw new Error(`模型${model.index}当前位置已超出${name}行程`);
+        }
+      }
+    }
+    const validateFrame = (
+      frame: number,
+      targets: Map<number, Hpy>,
+      startMode: NearestEntryStartMode = "nearest",
+    ): EntryMotion => {
+      const prepared = prepareTargets(inputs, targets);
+      for (const model of inputs.models) {
+        const target = prepared.get(model.index)!;
+        const outOfStroke = model.supported.some((name) => {
+          const axis = axisIndex(name);
+          return target[axis]! < model.minPosition[axis]! - 1e-9 || target[axis]! > model.maxPosition[axis]! + 1e-9;
+        });
+        if (outOfStroke) throw new Error(`模型${model.index}的候选准备目标超出虚轴行程`);
+      }
+      return synchronizedEntryMove(inputs, frame, startMode, prepared);
+    };
+    const segmentFirst = inputs.nearestStart && !inputs.useSpecifiedTime && inputs.stoppedTimeMs !== null;
+    const selected = selectForcedFrame(inputs, segmentFirst ? validateFrame : null);
     selection = selected.selection;
     curveTargets = selected.targets;
-    motion = synchronizedEntryMove(
-      inputs,
-      selected.frame,
-      selected.startMode,
-      prepareTargets(inputs, selected.targets),
-    );
+    motion = selected.validatedMotion ?? validateFrame(selected.frame, selected.targets, selected.startMode);
   } else {
     // 非强制指定帧只作搜索起点；仍沿方向接入原动作关键帧
     if (inputs.useSpecifiedTime) inputs.stoppedTimeMs = inputs.specifiedTimeMs;
@@ -1576,6 +1854,10 @@ export const calculateNearestEntry = (parameters: NearestParameters): NearestEnt
     selection_metric: "nearest_position",
     position_metric: "max(abs(target-current)/max_velocity_HPY)",
     search_statistics: selection.statistics ?? {},
+    reference_segment_range_ms: selection.referenceSegmentRange ?? null,
+    selected_segment_range_ms: selection.selectedSegmentRange ?? null,
+    segment_search_phase: selection.segmentSearchPhase ?? null,
+    segment_search_attempts: selection.segmentSearchAttempts ?? [],
     prepare_time_ms: durationMs,
     prepare_time_ms_ceil: prepareTimeMsCeil,
     start_mode: motion.startMode,

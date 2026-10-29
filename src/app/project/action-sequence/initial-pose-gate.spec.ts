@@ -245,28 +245,28 @@ describe("evaluateStartGate from a reference frame (任务卡继续 / 反向回)
     });
   });
 
-  it("only searches after the reference frame forward and before it in reverse", () => {
+  it("searches both sides of the reference inside its original segment", () => {
+    // 只有一段：当前位置 210 在 2000ms 处，正向参考 3000 也接到 2000，反向参考 1000 也接到 2000
     const sequence = rising(true);
-    // 当前位置在曲线中段：参考帧之后最近的是参考帧本身，要走回曲线上
-    const forward = gate(sequence, 210, { nearest: true, referenceFrameMs: 3000 });
-    expect(forward.status).toBe("transition");
-    if (forward.status !== "transition") return;
-    expect(forward.plan).toMatchObject({ startMode: "nearest", targetFrameMs: 3000, direction: 1 });
-    expect(forward.plan.members[0]!.axes[0]!.to).toBeGreaterThan(210);
-    const backward = gate(sequence, 210, { nearest: true, reverse: true, referenceFrameMs: 1000 });
-    expect(backward.status !== "error" && backward.plan.targetFrameMs).toBe(1000);
+    expect(gate(sequence, 210, { nearest: true, referenceFrameMs: 3000 })).toMatchObject({
+      status: "at-start",
+      plan: { targetFrameMs: 2000, direction: 1 },
+    });
+    expect(gate(sequence, 210, { nearest: true, reverse: true, referenceFrameMs: 1000 })).toMatchObject({
+      status: "at-start",
+      plan: { targetFrameMs: 2000, direction: -1 },
+    });
   });
 
-  it("returns the nearest position in range, not the reference frame itself", () => {
-    // 往返曲线 4000ms 回到 10：从 1000 往后找，最近的是 4000
+  it("stays in the reference frame's segment instead of the nearest position elsewhere", () => {
+    // 往返曲线 0ms、4000ms 都在 10：参考 1000 在 [0, 2000]，接到 0；参考 3000 在 [2000, 4000]，接到 4000
     expect(gate(roundTripSequence(true), 10, { nearest: true, referenceFrameMs: 1000 })).toMatchObject({
       status: "at-start",
-      plan: { targetFrameMs: 4000 },
+      plan: { targetFrameMs: 0 },
     });
-    // 往回找只看 [0, 3000]，最近的是 0
     expect(
       gate(roundTripSequence(true), 10, { nearest: true, reverse: true, referenceFrameMs: 3000 }),
-    ).toMatchObject({ status: "at-start", plan: { targetFrameMs: 0, direction: -1 } });
+    ).toMatchObject({ status: "at-start", plan: { targetFrameMs: 4000, direction: -1 } });
   });
 
   it("joins the outbound branch of an unequal round trip, not the coarse-grid return", () => {
@@ -306,14 +306,15 @@ describe("evaluateStartGate from a reference frame (任务卡继续 / 反向回)
   });
 
   it("rounds the frame and keeps it inside the action instead of failing", () => {
-    const sequence = rising(true);
-    const rounded = gate(sequence, 410, { nearest: true, reverse: true, referenceFrameMs: 1000.4 });
-    expect(rounded.status !== "error" && rounded.plan.targetFrameMs).toBe(1000);
-    expect(gate(sequence, 410, { nearest: true, reverse: true, referenceFrameMs: 99999 })).toMatchObject({
+    const sequence = roundTripSequence(true);
+    // 1999.6 取整到 2000，正向归右段 [2000, 4000]；1999.4 取整到 1999，还在 [0, 2000]
+    expect(gate(sequence, 10, { nearest: true, referenceFrameMs: 1999.6 })).toMatchObject({ plan: { targetFrameMs: 4000 } });
+    expect(gate(sequence, 10, { nearest: true, referenceFrameMs: 1999.4 })).toMatchObject({ plan: { targetFrameMs: 0 } });
+    expect(gate(sequence, 10, { nearest: true, referenceFrameMs: 99999 })).toMatchObject({
       status: "at-start",
       plan: { targetFrameMs: 4000 },
     });
-    expect(gate(sequence, 10, { nearest: true, referenceFrameMs: -5 })).toMatchObject({
+    expect(gate(sequence, 10, { nearest: true, reverse: true, referenceFrameMs: -5 })).toMatchObject({
       status: "at-start",
       plan: { targetFrameMs: 0 },
     });

@@ -1733,9 +1733,10 @@ describe("ExecArea launch guard", () => {
 describe("ExecArea continue / reverse back", () => {
   beforeEach(() => {
     documentRef.current = makeDocument();
-    // 0–2000ms 保持在 10：成员停在曲线上时，参考帧本身就是方向上最近的接入帧
+    // 两段原动作：10 → 50（0–1000ms）→ 10（1000–2000ms）。成员停在 10，就近只在 runTime 所在的原段里找
     documentRef.current.motion.actionSequences[1]!.blocks = [
-      { id: "hold-start", kind: "pose", objectId: FIXTURE_OBJECT_ID, atMs: 0, pose: { v1: 10, v2: 0, v3: 0 } },
+      { id: "start", kind: "pose", objectId: FIXTURE_OBJECT_ID, atMs: 0, pose: { v1: 10, v2: 0, v3: 0 } },
+      { id: "peak", kind: "pose", objectId: FIXTURE_OBJECT_ID, atMs: 1000, pose: { v1: 50, v2: 0, v3: 0 } },
       { id: "ok-pose", kind: "pose", objectId: FIXTURE_OBJECT_ID, atMs: 2000, pose: { v1: 10, v2: 0, v3: 0 } },
     ];
     faderSlotsRef.current = [
@@ -1785,7 +1786,7 @@ describe("ExecArea continue / reverse back", () => {
       startPlan: Record<string, unknown>;
     };
 
-  it("继续 joins at the card's runTime with nearest on and runs on in the same direction", async () => {
+  it("继续 searches the segment of the card's runTime with nearest on and runs on in the same direction", async () => {
     forced();
     armCard();
     render(withMode(<ExecArea />));
@@ -1800,7 +1801,7 @@ describe("ExecArea continue / reverse back", () => {
       sequenceId: 15,
       safeGroup: 1,
       runDirection: true,
-      startPlan: { nearest: true, direction: 1, targetFrameMs: 1500, startMode: "at-start" },
+      startPlan: { nearest: true, direction: 1, targetFrameMs: 2000, startMode: "at-start" },
     });
     // 速度沿用卡上的，不是推子
     expect(goSequenceMock.mock.calls[0]?.[0]).toMatchObject({
@@ -1819,7 +1820,7 @@ describe("ExecArea continue / reverse back", () => {
     expect(setSlotBusyMock).toHaveBeenLastCalledWith(1, false);
   });
 
-  it("反向回 joins at the card's runTime and runs back in reverse", async () => {
+  it("反向回 searches the segment of the card's runTime and runs back in reverse", async () => {
     forced();
     armCard();
     render(withMode(<ExecArea />));
@@ -1829,7 +1830,7 @@ describe("ExecArea continue / reverse back", () => {
     });
     expect(readyArgs()).toMatchObject({
       runDirection: false,
-      startPlan: { nearest: true, direction: -1, targetFrameMs: 1500 },
+      startPlan: { nearest: true, direction: -1, targetFrameMs: 2000 },
     });
     expect(goSequenceMock.mock.calls[0]?.[0]).toMatchObject({ reverse: true, faderPercent: 80 });
     expect(launchMock).toHaveBeenCalledWith(expect.objectContaining({ reverse: true }));
@@ -1877,10 +1878,10 @@ describe("ExecArea continue / reverse back", () => {
     await waitFor(() => {
       expect(goSequenceMock).toHaveBeenCalledTimes(1);
     });
-    // runTime 就是原曲线帧，反向继续也传 1500
+    // runTime 就是原曲线帧：1500 在 [1000, 2000]，换算成 500 就会落到 [0, 1000]
     expect(readyArgs()).toMatchObject({
       runDirection: false,
-      startPlan: { nearest: true, direction: -1, targetFrameMs: 1500 },
+      startPlan: { nearest: true, direction: -1, targetFrameMs: 2000 },
     });
     unmount();
     readySequenceMock.mockClear();
@@ -1891,8 +1892,19 @@ describe("ExecArea continue / reverse back", () => {
     });
     expect(readyArgs()).toMatchObject({
       runDirection: true,
-      startPlan: { nearest: true, direction: 1, targetFrameMs: 1500 },
+      startPlan: { nearest: true, direction: 1, targetFrameMs: 2000 },
     });
+  });
+
+  it("picks the original segment from the runTime: a stop in the first segment joins there", async () => {
+    forced();
+    armCard({ run: { state: 3, loopCount: 1, loopCountSet: 1, runTimeMs: 500, reportedAt: 0 } });
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    await waitFor(() => {
+      expect(goSequenceMock).toHaveBeenCalledTimes(1);
+    });
+    expect(readyArgs().startPlan).toMatchObject({ nearest: true, direction: 1, targetFrameMs: 0 });
   });
 
   it("continues a non-forced action from the next keyframe after the runTime", async () => {
@@ -1925,13 +1937,13 @@ describe("ExecArea continue / reverse back", () => {
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
     expect(await screen.findByRole("alertdialog")).toBeTruthy();
     expect(screen.getByText("就近接入 · 正向")).toBeTruthy();
-    expect(screen.getByTestId("pose-target-frame").textContent).toBe("编程 1.5 秒");
+    expect(screen.getByTestId("pose-target-frame").textContent).toBe("编程 2.0 秒");
     expect(releaseSequenceMock).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "确认" }));
     await waitFor(() => {
       expect(goSequenceMock).toHaveBeenCalledTimes(1);
     });
-    expect(readyArgs().startPlan).toMatchObject({ nearest: true, targetFrameMs: 1500, startMode: "nearest" });
+    expect(readyArgs().startPlan).toMatchObject({ nearest: true, targetFrameMs: 2000, startMode: "nearest" });
     expect(goSequenceMock.mock.calls[0]?.[0]).toMatchObject({ reverse: false, faderPercent: 80 });
   });
 
