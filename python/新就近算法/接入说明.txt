@@ -1,99 +1,78 @@
-就近/同步准备：指定帧与方向搜索两种方式，2026-10-28
+就近接入：当前原动作段优先版，2026-10-29
 
-1. 上位机只需要本包四个文件
-就近接入计算.py、算法参数.json、接入说明.txt、本次接口测试报告.txt。
-与另两个算法分别解压；三算法的models/settings结构及本例静态数据保持一致。
+1. 本版规则与调用参数
+没有增加上位机必传参数，models/settings及原曲线结构保持不变。
+nearest_start=true、use_specified_time=false且提供stopped_time_ms时：
+先在停止参考帧所属的整个原动作段中，按当前位置找可执行的最近接入帧。
+当前段内允许查参考帧两侧。当前段有方案即使用，即使其他段更近/更快也不比较。
+当前段最接近的一个点不可执行时继续查本段，不直接跳段；整窗全不可执行才按方向继续。
+正向依次后续原段，反向依次前序原段，不跨全动作首末循环回另一端。
+‘找不到’指整段无满足行程、限速及准备运动约束的可执行点，不是要求位置误差为0。
 
-2. 两种方式用哪个标志
-复用已有command.use_specified_time，不新增重复标志。
+stopped_time_ms记录点击停止时的原曲线帧；runtime.models传停稳后的真实位置与速度。
+因减速和惯性，实际位置可能对应本段参考帧另一侧，不能把参考帧继续用作硬搜索边界。
+反向只决定接入后的曲线运行方向、同代价顺序及失败后查前序段，不代表当前段只能查小于参考的帧。
 
-方式一：固定接入传入帧
-    nearest_start=true
-    use_specified_time=true
-    specified_time_ms=3500
-    stopped_time_ms=null
-最终selected_curve_time_ms必须等于3500。reverse决定之后的运行方向，不改变固定目标。
-即使nearest_start=false，显式use_specified_time=true也以指定帧为准。
+2. 上位机现有三个字段的对应关系
+nearest=true -> command.nearest_start=true、command.use_specified_time=false。
+reverse=true -> command.reverse=true（低层direction=-1，不是2）。
+referenceFrameMs -> command.stopped_time_ms。
+当前位置 -> runtime.models[].position_HPY；模型通过model_id/设备路由关联。
+同一次传整个动作参与的全部模型，不按PLC分别求公共时间。
 
-方式二：从参考帧按方向寻找位置最接近的接入点
-    nearest_start=true
-    use_specified_time=false
-    specified_time_ms=0
-    stopped_time_ms=3500
-    reverse=false
-    selection_metric="nearest_position"
-当前位置放runtime.models[].position_HPY，必须传整个动作的全部模型。
-正向只搜索[3500,动作末帧]；reverse=true时只搜索[动作首帧,3500]。
-3500只是搜索边界，最终输出可以是5000等其他帧，不是收到3500就直接跑3500。
-不跨下一循环；停止帧超出当前动作首末范围则拒绝，不悄悄改跑起终点。
-stopped_time_ms=null时，从方向起点搜索整个动作；0是有效帧，不能当成未提供。
+3. 什么是一段
+顶层models[].segments中的原动作段，不是coefficient_segments的加速/匀速/减速小阶段。
+归一化内部保留_entry_boundaries_ms，移植时也必须保留原段边界，不能只复制flatten后的系数。
+多模型分段不一致时，将有运动模型的原段边界合成公共时间单元，所有模型共选一个帧。
+整条曲线严格恒定的模型不切碎运动模型窗口，但仍参加准备计算和共同等待。
+模型首末保持、空档保持纳入窗口；强制不同模型周期按现有循环映射懒计算，不全展开循环数。
+参考恰好落在边界时：正向归右段、反向归左段；首末钳位到可用段。
+这是按本次请求方向的明确默认归属，不推断停止之前的历史方向。
 
-保留原有普通启动：use_specified_time=false、nearest_start=false时，正向首帧、反向末帧。
-这两种接入方式与普通启动规则同时适用于强制和非强制；准备运动仍沿用各自原计算。
+4. 本次问题的示例
+示意曲线100@0ms -> 1000@10000ms -> 0@20000ms，两段线性。
+停止参考12500ms，停稳位置534.98，当前原段为[10000,20000]。
+reverse=true也先查整段，选14650ms附近的535位置，不再跳回前半段4850ms附近。
+接回14650ms后才按反向向较小原曲线帧运行。
+实际帧以原abcdef系数计算，不把示意14650硬编码。
 
-3. “位置最接近”的比较方法
-对所有模型的活动轴计算abs(目标位置-实际位置)/本轴最大速度，再取最大值。
-这是沿用原算法的归一化位置代价，避免直接将高度mm与角度degree相加。
-本版默认nearest_position。非强制相同位置代价时，再比较可执行准备时间和方向先后。
-minimum_prepare_time仍可显式选择非强制旧时间优先方式；它可能选更远但准备更快的帧。
-强制以粗搜建立初始上界，再覆盖整个方向细网格；同位置数值等价时按运行方向选先遇到的帧。
-强制通过保守位置包络排除不能改善的区间，覆盖配置细网格及粗搜种子，不宣称任意连续时间的全局最近点。
-非强制在nonforced_frame_step_ms配置网格及原段边界中搜索，整段q/v核对不变。
+5. 其他模式保持
+use_specified_time=true：固定接入specified_time_ms，指定帧优先，不做段优先搜索。
+use_specified_time=false且nearest_start=false：正向动作首帧、反向末帧。
+就近但stopped_time_ms=null：保留没有历史参考的全动作就近规则；0仍是有效参考帧。
+nearest_start并不替代use_specified_time；你们自定义nearest=false若表示‘指定帧’，要映射到指定标志。
 
-4. 输入及调用
-command：两种方式、trajectory_run、reverse、speed_factor及循环配置。
-models：原动作全部模型的几何、能力、行程与原始曲线；当前位置不写进models。
-settings：单位、协议精度、搜索步长等原设置，本例与另两个算法的静态设置相同。
-runtime.models：通过model_id关联的实际位置、速度和停稳反馈；就近输入必须已停稳。
-plc_id为非空字符串路由标识；device_id是组报文用的设备编号。
-
-API：
+6. 调用和结果
     from 就近接入计算 import calculate_nearest_entry
     result = calculate_nearest_entry(parameters)
-API不修改输入字典。
-F5/命令行：python 就近接入计算.py
+直接传字典即可，不要求使用JSON文件；API不修改输入。
+F5/CLI：python 就近接入计算.py
 显式文件：python 就近接入计算.py 算法参数.json
-新公共文件CLI只更新nearest_result；旧就近接入参数.json仍另存独立结果文件。
+新公共文件只更新nearest_result；旧就近接入参数.json保留独立结果文件兼容。
 
-5. 上位机使用哪个结果
-检查status=planned后，使用selected_curve_time_ms作为最终公共接入帧。
-不要把输入stopped_time_ms直接下发为目标帧。
-frame_selection_mode说明实际模式；reference_frame_ms说明输入参考；search_range_ms说明搜索范围。
-prepare_time_ms是从共同释放T0起的准备耗时，与原曲线帧不是同一个时间。
+只有status=planned才能使用本次结果，infeasible或异常不能沿用上次结果。
+selected_curve_time_ms是最后选中帧；prepare_time_ms是共同准备耗时，二者不同。
+reference_segment_range_ms说明先查哪段；selected_segment_range_ms/search_range_ms说明最终哪段。
+segment_search_phase为current_segment或directional_fallback，segment_search_attempts列实际尝试过程。
+不要用targetFrameMs与referenceFrameMs大小关系判断是否nearest；新规则反向也可以target>reference。
 
-强制：使用1006_payloads内的selectedCurveTimeMs、prepareTimeMs和各设备V/A。
-按当前PLC实际描述文件编码1006；1007仍以共同T0释放准备，所有PLC使用同一公共帧和准备时间。
-本次未修改PLC协议字段宽度或运动保护逻辑。
-非强制：完整执行axis_plans.move_steps及continuation_axis_moves，仍使用可编码V/A/D。
-准备下发时刻=T0+start_offset_ms；接续时刻=T0+prepare_time_ms+start_offset_after_join_ms。
-join_position_HPY/join_velocity_HPY是接入状态，move_target是实际Move停车目标，二者可以不同。
-不能只取第一条Move，也不能等准备Move Done才按旧时间表接续。
-can_dispatch=false保留原含义：旧1006/1007不能直接表达非强制带速轴队列，不能硬套。
+强制：使用1006_payloads的公共帧、共同准备时长、设备V/A，按现场PLC描述文件编码。
+1007仍使用共同T0释放准备，各PLC等待共同截止及本机准备完成。
+非强制：完整执行axis_plans.move_steps和continuation_axis_moves，不能只取第一条Move。
+准备下发时刻=T0+start_offset_ms；接续=T0+prepare_time_ms+start_offset_after_join_ms。
+带速交接move_target可不同于join_position，不能等旧Move Done才覆盖。
+can_dispatch=false仍表示旧1006/1007无法直接表达非强制带速轴队列，不能硬套。
 
-6. 本次变化范围
-补齐强制搜索的停止帧边界，统一指定帧优先级；默认非强制改位置优先。
-新增选帧模式/参考帧/实际范围说明，便于确认输入帧没有被直接当作目标。
-四模型正解、同步准备V/A/D求解、非强制Move及后续覆盖数学均未修改。
-本次验收为离线选帧和Move数学回放，没有发送PLC报文，不代表硬件时序验收。
+7. 移植必须同步的流程
+保留新增_entry_prioritized_windows；有停止参考时先取当前原段窗，成功才返回。
+强制选择器的search_window_ms/frame_validator是内部参数；只让实际可执行候选收紧搜索上界。
+非强制对每原段窗口调用原_nf_search_intervals；只有整窗best=None才进下一窗。
+不要继续执行旧的‘正向[ref,end]、反向[first,ref]’硬边界分支覆盖当前段窗口。
+位置求值仍用原系数和原曲线帧，不做第二次总时长-frame镜像。
+数学包络、方向同分和原Move求解保持；强制准备增加显式当前/目标虚轴行程检查。
 
+8. 测试范围
+包内报告只对应本版源码。离线包含当前段优先、惯性位移、整窗可行性及fallback、正反向、多模型。
+本次未连接PLC、未发送报文；移植后的实现仍需用同样入参比对最终原曲线帧和准备参数。
 
-7. 上位机移植版：往返位置重复时怎样选
-验收例：位置0@0ms→1000@2000ms→0@4000ms，两段按线性插值。
-stopped_time_ms=800，当前位置H=500，正向搜索应返回1000ms，不是3000ms。
-800只是方向搜索边界；相同H500有两个时间解，应保留先遇到的1000ms。
-反向参考3200ms、当前位置500时，先遇到的解为3000ms。
-曲线若非线性，500的具体对应时刻由实际系数求得，不能只看关键帧作线性假设。
-
-移植必须同步本版完整强制搜索函数和新增的多项式区间外包工具：
-- 粗搜命中后一个零代价点，不代表前面的时间区间已被检查；不能立即确定后一个就是最近。
-- 不能只细搜全局粗搜最优的一个局部区间；所有仍可能更近或同位置更早的细网格区间都要检查。
-- 同位置代价只差浮点尾差时，按运行方向先后决定；不能用“<=最优代价”直接让后帧覆盖前帧。
-- 保留真正最小代价，数值等价窗口固定围绕它；不要滚动放宽epsilon导致结果逐次漂移。
-- 正向同位置选较小且>=停止参考的帧；反向同位置选较大且<=停止参考的帧。
-- 不按某一个模型的折返点切断整个动作，其他模型可能有不同折返点。
-- 区间下界来自完整位置包络，不能只拿区间两端采样的最小误差当下界。
-
-本版原始Python、JSON入口和直接字典API使用同一计算逻辑，是否用JSON不会改变选帧。
-完全线性的上述用户例，上一版原始Python也返回1000ms；移植版返回3000ms还需检查系数求值、
-时间单位、参考帧使用及同分覆盖。不能把所有移植差异都直接归因于原Python粗搜缺陷。
-本版另已复现并修复：不等时长往返的粗搜漏前支、同位置浮点尾差跳回程两类原Python问题。
+搜索预算说明：settings.nonforced_max_search_frames按每个原段窗口检查，不是整次fallback链的合计预算。

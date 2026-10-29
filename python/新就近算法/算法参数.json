@@ -1,15 +1,15 @@
 {
-  "_使用说明": ["三算法仍共用同一静态models/settings结构；本次只更新就近选帧，不修改原曲线或几何。", "本算法支持指定帧接入、从参考帧按方向就近搜索两种方式，复用use_specified_time标志。", "指定模式读取specified_time_ms；搜索模式读取stopped_time_ms和runtime.models中的实际位置。", "就近默认位置优先，位置代价采用max(abs(目标位置-当前位置)/各轴最大速度)统一H/P/Y量纲。", "本例参考帧3500ms，当前位置采用原曲线5000ms处的位置并已停稳；最终接入帧由算法重新选择。", "_两种模式示例仅为command字段覆盖示例；实际计算始终使用下方command、models、settings和runtime。", "只有status=planned才能使用本次结果；最终帧读取selected_curve_time_ms，不要直接使用输入停止帧。", "本版补齐往返同位置多解：整个允许方向细网格均覆盖或安全剪枝，不只细化粗搜最优附近；数值等价时选方向上先遇到的帧。"],
+  "_使用说明": ["本版就近先在停止指令参考帧所在的整段原动作中找可执行最近点，允许选到参考帧另一侧。", "当前原段有可执行候选就优先使用；整段确实无可执行候选时，才按正向后续段、反向前序段逐窗继续。", "stopped_time_ms记录点击停止时的原曲线帧；当前位置必须取停稳后的实际反馈，两者可以因制动位移不一致。", "原动作段指顶层models[].segments；coefficient_segments的加速/匀速/减速阶段不拆成多个优先段。", "指定帧、普通首末边界启动、没有停止参考帧时的原有搜索规则不变。", "三算法静态models/settings仍保持相同结构及本例逐值/数值类型一致；本次不修改原曲线。", "本例四模型0..8000ms，参考3500ms，实际位置采用原曲线5000ms处且已停稳；当前公共原段为[2000,6000]。", "_两种模式示例仅为command字段覆盖示例；真正输入仍是command、settings、models、runtime。"],
   "_字段说明": {
     "command.operation": "本文件用途：range=调速范围，nearest=准备/就近接入，adjust=在线调速。分别运行对应Python文件。",
     "command.trajectory_run": "true=强制轨迹，false=非强制Move；改变后必须重新计算范围。在线Move算法处理false。",
-    "command.reverse": "false=正向，true=反向；准备选择与在线调速分别使用本文件command。",
+    "command.reverse": "false正向、true反向，内部direction为+1/-1；决定接入后的运行方向及当前段失败后的换段顺序。当前段内可选参考帧两侧，不因reverse=true禁止目标帧大于参考帧。",
     "command.loop_once": "就近准备后是否只执行本轮；按原就近算法解释动作边界。",
-    "command.nearest_start": "true开启就近搜索；false保留普通边界启动（正向首帧、反向末帧）。use_specified_time=true时指定帧优先。",
-    "command.use_specified_time": "两种方式的标志：true严格接入specified_time_ms；false且nearest_start=true时，从stopped_time_ms按方向搜索，不把停止帧直接当作目标。",
+    "command.nearest_start": "true开启就近；有停止参考时当前原段优先，无参考时保留原全动作搜索。false保留普通首/末帧启动；use_specified_time=true仍优先指定帧。",
+    "command.use_specified_time": "true严格接入specified_time_ms，不进入当前段优先；false且nearest_start=true时执行就近搜索。",
     "command.specified_time_ms": "指定模式的目标原曲线帧，uint32整数ms；use_specified_time=false时本字段不作为目标或搜索边界。不是现实启动时间戳。",
-    "command.stopped_time_ms": "搜索模式的参考/停止帧，uint32整数ms：正向只搜索[该帧,动作末帧]，反向只搜索[动作首帧,该帧]，不跨下一循环；null从运行方向的动作边界开始搜索。指定模式不使用此字段决定目标。",
-    "command.selection_metric": "默认nearest_position：非强制按归一化位置差优先，再比较准备耗时和方向帧顺序；minimum_prepare_time保留非强制旧时间优先选项。强制沿用归一化位置差评分。",
+    "command.stopped_time_ms": "点击停止瞬间记录的原曲线参考帧，uint32整数ms；用于定位当前原动作段，不再作为段内方向硬边界。先查整段，整段不可执行才按方向换段。null保留旧全域就近；0是有效帧。",
+    "command.selection_metric": "在当前优先原段中比较候选，默认nearest_position归一化位置差优先；非强制minimum_prepare_time保留段内时间优先选项。其他原段更近/更快也不越过当前段优先级。",
     "command.speed_factor": "准备完成后接回原曲线所用的运行倍率；1=原曲线100%，与准备能力上限分开。",
     "command.loop_count": "准备之后的动作循环配置，沿用PLC和既有就近算法约定。",
     "settings.nonforced_profile_mode": "非强制分支：continuous为连续恒A曲线，stopped为完整零速梯形，auto自动识别。",
@@ -23,10 +23,10 @@
     "settings.feedback_velocity_resolution_HPY": "PLC速度反馈量化步长，算法以半步区间核对；示例0表示理想输入。",
     "settings.feedback_motion_cycle_ms": "允许计入反馈时差的扫描周期参数，示例0；不是计算耗时。",
     "settings.model_type_scheme": "business表示本文件采用业务编号2/6/7/8。",
-    "settings.coarse_step_ms": "强制搜索的粗搜步长，仅用来建立初始代价上界；不能只细化一个粗搜最优点附近。",
-    "settings.fine_step_ms": "强制搜索细网格步长，整个方向允许范围均纳入比较或由保守位置包络剪枝；两端也纳入比较。",
+    "settings.coarse_step_ms": "强制每个原段窗口内的粗搜种子步长；仅可执行候选用于收紧位置上界。",
+    "settings.fine_step_ms": "强制每个原段窗口的细网格步长；全窗比较或由保守位置外包安全排除，并包含窗两端。",
     "settings.nonforced_frame_step_ms": "非强制就近候选帧步长，单位ms，示例1。",
-    "settings.nonforced_max_search_frames": "非强制候选帧搜索数量上限，防止意外超长搜索。",
+    "settings.nonforced_max_search_frames": "每个非强制原段窗口允许的候选帧数量上限，不是当前段和全部方向fallback窗口的合计上限。",
     "settings.join_position_tolerance_HPY": "准备接回曲线时的数学位置核对容差，HPY顺序。",
     "settings.join_velocity_tolerance_HPY": "准备接回曲线时的数学速度核对容差，HPY顺序。",
     "models[].plc_id": "上位机PLC路由标识，必须是非空字符串，示例为\"1\"；对应硬件PLC ID仍为1，组报文时由上位机映射。",
@@ -74,14 +74,16 @@
     "runtime.models[].model_id": "全动作唯一的正整数逻辑模型ID；三份models及runtime.models用同一ID关联。",
     "runtime.models[].plc_id": "上位机PLC路由标识，必须是非空字符串，示例为\"1\"；对应硬件PLC ID仍为1，组报文时由上位机映射。",
     "runtime.models[].device_id": "本模型在对应PLC上的设备ID，1006/0105组包使用，按实际工程替换。",
-    "runtime.models[].position_HPY": "当前模型实际虚轴位置，HPY顺序，单位mm、degree、degree；搜索必须结合这份位置，不能把停止帧上的理论位置当成实际位置。",
+    "runtime.models[].position_HPY": "当前已停稳的实际虚轴位置，HPY顺序；停止后的惯性位移反映在这里，不用停止参考帧的理论位置替代。",
     "runtime.models[].velocity_HPY": "segments内是旧完整梯形的原速度参数；runtime内是当前实际有符号反馈速度，HPY顺序。",
-    "runtime.models[].standstill": "真实停稳状态；就近准备当前按已停稳输入，不可把缺反馈当停稳。"
+    "runtime.models[].standstill": "真实停稳状态；就近准备当前按已停稳输入，不可把缺反馈当停稳。",
+    "models[].segments": "保存原动作的顶层动作段列表，相邻原关键帧构成一段；计算当前段窗口需要保留这些边界，不能仅保留flatten后的系数阶段。",
+    "models[].segments[].coefficient_segments": "同一原动作段内部的系数阶段；整段作为一个优先范围，不把加速、匀速、减速阶段分别当原段。"
   },
   "_输出字段说明": {
     "nearest_result": "本文件CLI仅更新此结果对象；API直接返回相同结果，不修改原参数。",
     "status": "planned表示生成了准备方案；否则不能启动或沿用旧结果。",
-    "selected_curve_time_ms": "最终选中的全动作公共接入帧。指定模式等于specified_time_ms；搜索模式重新计算，可能不同于stopped_time_ms。",
+    "selected_curve_time_ms": "最终原曲线接入帧，按结果下发；当前段优先允许reverse=true时大于停止参考帧，也允许正向时小于参考帧。",
     "prepare_time_ms": "所有参与模型共同准备耗时，ms；运动步骤时间原点为共同释放时刻T0。",
     "join_position_HPY": "共同接入时的原曲线位置，HPY顺序。",
     "join_velocity_HPY": "共同接入时要贴合的原曲线有符号速度，HPY顺序。",
@@ -94,13 +96,17 @@
     "start_offset_after_join_ms": "续跑下发时刻相对共同接入时刻；现实时刻=T0+prepare_time_ms+此值。",
     "can_dispatch/1006_payloads": "强制可按该标志使用现有1006/1007；非强制带速轴队列不可硬套旧1006/1007。",
     "effective_loop_count": "实际应使用的循环配置，按输出执行，不沿用已被回退的请求配置。",
-    "frame_selection_mode": "specified_frame=固定指定帧；directional_nearest=从参考帧按方向搜索；action_boundary=原有首末边界启动。",
+    "frame_selection_mode": "current_segment_first=当前原段优先；specified_frame=固定指定帧；directional_nearest=无停止参考的旧全域就近；action_boundary=普通首末边界启动。",
     "frame_selection_version": "本次双模式选帧版本标识，不表示已在PLC执行。",
-    "reference_frame_ms": "指定模式为输入目标帧；搜索模式为输入停止帧，未提供时为null；不是最终接入帧。",
-    "search_origin_frame_ms": "算法实际采用的搜索起点，未提供停止帧时为运行方向的动作边界。",
-    "search_range_ms": "实际允许的原曲线搜索区间[最小帧,最大帧]；指定模式两端都等于指定帧。",
+    "reference_frame_ms": "输入停止参考帧（或指定模式的目标帧）；不是最后选中的接入帧。",
+    "search_origin_frame_ms": "保留的参考帧说明字段；当前段优先时用于定位原段，不代表段内只能向它的一侧搜索。",
+    "search_range_ms": "本次选中方案实际搜索的公共原段窗口[首帧,末帧]，可能覆盖参考帧两侧。",
     "position_metric": "max(abs(target-current)/max_velocity_HPY)，对全部参与模型/活动轴取最大值，避免将mm和degree直接相加。",
-    "search_statistics": "强制方向搜索的区间包络统计：evaluated_frames为实际位置评分次数，full_fine_grid_covered表示细网格被比较或安全排除，不表示逐帧都重新计算。"
+    "search_statistics": "强制方向搜索的区间包络统计：evaluated_frames为实际位置评分次数，full_fine_grid_covered表示细网格被比较或安全排除，不表示逐帧都重新计算。",
+    "reference_segment_range_ms": "停止参考所属的第一个公共原段窗口；多模型按有运动模型原段边界组成公共窗口。",
+    "selected_segment_range_ms": "最终成功接入的公共原段窗口；当前段失败后可能是方向上的后续或前序窗口。",
+    "segment_search_phase": "current_segment表示本段找到；directional_fallback表示本段无可执行点后按方向换段找到。",
+    "segment_search_attempts": "按优先顺序记录尝试的原段窗口及planned/infeasible状态；首个planned即停止，不比较后续段。"
   },
   "command": {
     "operation": "nearest",
@@ -478,7 +484,7 @@
       "reverse": false,
       "selection_metric": "nearest_position"
     },
-    "从3500ms正向搜索位置最近帧": {
+    "参考3500ms先搜索当前整原段": {
       "nearest_start": true,
       "use_specified_time": false,
       "specified_time_ms": 0,
@@ -486,7 +492,7 @@
       "reverse": false,
       "selection_metric": "nearest_position"
     },
-    "从6500ms反向搜索位置最近帧": {
+    "参考6500ms当前整段优先然后反向前序": {
       "nearest_start": true,
       "use_specified_time": false,
       "specified_time_ms": 0,

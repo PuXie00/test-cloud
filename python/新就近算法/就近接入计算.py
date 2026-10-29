@@ -23,7 +23,7 @@ from pathlib import Path
 AXIS_NAMES = ("H", "P", "Y")
 CURVE_TICK_FRAME = 100.0
 ALGORITHM_VERSION = "v5_max_capability_common_prepare"
-FRAME_SELECTION_VERSION = "directional_nearest_return_branch_fix_20261028_r2"
+FRAME_SELECTION_VERSION = "current_original_segment_first_20261029"
 MAX_PREPARE_TIME_MS = 4294967295
 
 ###############################################################################
@@ -329,6 +329,169 @@ def _forced_polynomial_position_bounds(coefficients, u_start, u_end):
         return -math.inf, math.inf
 
 
+def _entry_prioritized_windows(inputs):
+    """先搜索停止参考所在的公共原动作段，再逐窗沿运行方向回退。
+
+    这里只划分时间窗，不求位置、速度或准备方案。coefficients阶段不是原动作段。
+    强制循环按模型周期懒计算边界；非强制保留首末帧保持语义。不展开循环次数。
+    """
+    from bisect import bisect_left, bisect_right
+
+    models = inputs["curve_action"]["models"]
+    if not models:
+        raise ValueError("当前段优先搜索需要非空模型列表")
+    direction = inputs["direction"]
+    if type(direction) is not int or direction not in (-1, 1):
+        raise ValueError("direction必须为1或-1")
+    loop_count = inputs.get("loop_count", 1)
+    if type(loop_count) is not int or not 0 <= loop_count <= 65535:
+        raise ValueError("loop_count必须为0到65535的整数")
+    forced = inputs.get("trajectory_run", False)
+    if type(forced) is not bool:
+        raise ValueError("trajectory_run必须为bool")
+
+    active_by_model = inputs.get("active_axes_by_model", {})
+
+    def strictly_stationary(model):
+        """只忽略参与轴上可严格证明整条恒定的模型，任何非零系数都保留。"""
+        names = active_by_model.get(model.get("index"), ("H", "P", "Y"))
+        axes = tuple(("H", "P", "Y").index(name) if isinstance(name, str) else int(name)
+                     for name in names)
+        constants = None
+        for original_segment in model["segments"]:
+            pieces = original_segment.get("coefficient_segments", [original_segment])
+            if not pieces:
+                return False
+            for piece in pieces:
+                if any(not isinstance(piece.get(name), (list, tuple)) or len(piece[name]) != 3
+                       for name in "abcdef"):
+                    return False
+                if constants is None:
+                    constants = tuple(piece["a"][axis] for axis in axes)
+                for i, axis in enumerate(axes):
+                    if piece["a"][axis] != constants[i] or any(piece[name][axis] != 0 for name in "bcdef"):
+                        return False
+                    for field in ("start_HPY", "target_HPY"):
+                        if field in piece and piece[field][axis] != constants[i]:
+                            return False
+            for i, axis in enumerate(axes):
+                for field in ("start_HPY", "target_HPY"):
+                    if field in original_segment and original_segment[field][axis] != constants[i]:
+                        return False
+        return constants is not None
+
+    descriptors = []
+    global_start, global_end = None, None
+    for model in models:
+        segments = model["segments"]
+        if not segments:
+            raise ValueError("模型原动作段不能为空")
+        first = int(segments[0]["start_frame"])
+        last = int(segments[-1]["end_frame"])
+        if last <= first:
+            raise ValueError("模型原动作时间范围无效")
+        global_start = first if global_start is None else min(global_start, first)
+        global_end = last if global_end is None else max(global_end, last)
+        # 恒定模型只影响全动作时间范围，不用其无运动关键帧切碎其他模型的当前段。
+        if strictly_stationary(model):
+            continue
+        raw = model.get("_entry_boundaries_ms")
+        if raw is None:
+            # 兼容未归一化且每个segments本身就是原动作段的低层调用。
+            raw = [segment[name] for segment in segments for name in ("start_frame", "end_frame")]
+        boundaries = sorted({first, last, *(int(value) for value in raw)})
+        if boundaries[0] < first or boundaries[-1] > last:
+            raise ValueError("原动作段边界超出模型首末范围")
+        offsets = tuple(value-first for value in boundaries)
+        period = last-first
+        count = (10000000 if loop_count == 0 else loop_count) if forced else 1
+        anchor = last-period*count if forced and direction < 0 else first
+        descriptors.append((anchor, anchor+period*count, period, offsets))
+
+    reference = inputs.get("stopped_time_ms")
+    if reference is None:
+        yield {"range_ms": [global_start, global_end], "phase": "directional_fallback",
+               "index": 0, "reference_frame_ms": None}
+        return
+    if type(reference) is not int or not global_start <= reference <= global_end:
+        raise ValueError("停止参考帧必须是动作首末范围内的整数毫秒")
+    if not descriptors:
+        yield {"range_ms": [global_start, global_end], "phase": "current_segment",
+               "index": 0, "reference_frame_ms": reference}
+        return
+
+    def floor_in_model(descriptor, frame):
+        anchor, end, period, offsets = descriptor
+        if frame < anchor:
+            return None
+        if frame >= end:
+            return end
+        cycle, local = divmod(frame-anchor, period)
+        return anchor+cycle*period+offsets[bisect_right(offsets, local)-1]
+
+    def ceil_in_model(descriptor, frame):
+        anchor, end, period, offsets = descriptor
+        if frame <= anchor:
+            return anchor
+        if frame > end:
+            return None
+        if frame == end:
+            return end
+        cycle, local = divmod(frame-anchor, period)
+        return anchor+cycle*period+offsets[bisect_left(offsets, local)]
+
+    def previous_boundary(frame, inclusive=False):
+        # 所有原始边界都是整数毫秒，因此用-1得到严格前驱，不引入浮点epsilon。
+        query = frame if inclusive else frame-1
+        if query < global_start:
+            return None
+        result = global_start
+        for descriptor in descriptors:
+            boundary = floor_in_model(descriptor, query)
+            if boundary is not None and global_start <= boundary <= global_end:
+                result = max(result, boundary)
+        return result
+
+    def next_boundary(frame, inclusive=False):
+        query = frame if inclusive else frame+1
+        if query > global_end:
+            return None
+        result = global_end
+        for descriptor in descriptors:
+            boundary = ceil_in_model(descriptor, query)
+            if boundary is not None and global_start <= boundary <= global_end:
+                result = min(result, boundary)
+        return result
+
+    if direction > 0:
+        left = previous_boundary(reference, inclusive=True)
+        right = next_boundary(reference)
+        if right is None:  # 全动作末端没有右段，使用最后一个有效公共段。
+            right = global_end
+            left = previous_boundary(reference)
+    else:
+        left = previous_boundary(reference)
+        right = next_boundary(reference, inclusive=True)
+        if left is None:  # 全动作首端没有左段，使用第一个有效公共段。
+            left = global_start
+            right = next_boundary(reference)
+
+    index = 0
+    while left is not None and right is not None and left < right:
+        yield {"range_ms": [left, right],
+               "phase": "current_segment" if index == 0 else "directional_fallback",
+               "index": index, "reference_frame_ms": reference}
+        index += 1
+        if direction > 0:
+            left, right = right, next_boundary(right)
+        else:
+            left, right = previous_boundary(left), left
+
+
+class _EntryWindowInfeasible(ValueError):
+    """窗口中的所有已覆盖候选均无可执行准备计划，允许按方向继续下一原段。"""
+
+
 def calculate_forced_nearest_position(
     current_positions,
     default_velocities,
@@ -344,14 +507,16 @@ def calculate_forced_nearest_position(
     fine_step=10,
     loop_count=None,
     stopped_time_ms=None,
+    search_window_ms=None,
+    frame_validator=None,
 ):
-    """指定帧直接求值；就近以停止帧为方向边界，按归一化位置差搜索公共帧。
+    """指定帧直接求值；有停止参考时先在当前原段找可执行最近点，再沿方向继续。
 
     所有时间输入/输出均使用毫秒；selected_time_100ms是PLC的_T值。
     active_axes_by_model必须提供各模型活动轴；loop_count为PLC真实循环配置。
     loop_count=None时保留旧loop_once选帧规则，canonical入口始终传有效循环数。
     default_velocities保留旧参数名；总入口传入各模型max_velocity_HPY。
-    stopped_time_ms只限定搜索范围，不是必须到达的目标帧；None从方向边界搜索。
+    stopped_time_ms定位点击停止时所在原段，不是段内搜索的硬边界；None保留全域搜索。
     """
     if direction not in (1, -1):
         raise ValueError("direction只能是1(正向)或-1(反向)")
@@ -546,6 +711,40 @@ def calculate_forced_nearest_position(
     global_start = min(float(model["segments"][0]["start_frame"]) for model in models)
     global_end = max(float(model["segments"][-1]["end_frame"]) for model in models)
 
+    # 停止指令帧只定位原动作段；惯性停下的位置可能对应本段另一侧的原曲线帧。
+    # 内部递归用search_window_ms限定一个公共原段窗口，避免再次进入分段分流。
+    if (nearest_start and not use_specified_time and stopped_time_ms is not None
+            and search_window_ms is None):
+        window_inputs = {"trajectory_run": True, "direction": direction,
+            "loop_count": loop_count if loop_count is not None else (1 if loop_once else 0),
+            "stopped_time_ms": stopped_time_ms, "curve_action": {"models": models},
+            "active_axes_by_model": {key: [AXIS_NAMES[a] for a in axes] for key, axes in model_axes.items()}}
+        attempts, reference_window = [], None
+        for window in _entry_prioritized_windows(window_inputs):
+            if reference_window is None:
+                reference_window = list(window["range_ms"])
+            try:
+                result = calculate_forced_nearest_position(
+                    current_positions, default_velocities, curve_action, max_accelerations,
+                    direction=direction, loop_once=loop_once, nearest_start=nearest_start,
+                    use_specified_time=False, specified_time_ms=specified_time_ms,
+                    active_axes_by_model=active_axes_by_model, coarse_step=coarse_step,
+                    fine_step=fine_step, loop_count=loop_count, stopped_time_ms=stopped_time_ms,
+                    search_window_ms=window["range_ms"], frame_validator=frame_validator)
+            except _EntryWindowInfeasible as error:
+                attempts.append({**window, "status": "infeasible", "reason": str(error)})
+                continue
+            attempts.append({**window, "status": "planned"})
+            result.update(frame_selection_mode="current_segment_first",
+                reference_segment_range_ms=reference_window,
+                selected_segment_range_ms=list(window["range_ms"]),
+                segment_search_phase=window["phase"], segment_search_attempts=attempts)
+            return result
+        error = _EntryWindowInfeasible("当前原段及运行方向后续原段均无可执行接入方案")
+        error.segment_search_attempts = attempts
+        error.reference_segment_range_ms = reference_window
+        raise error
+
     # 汇总所有模型在指定时间的位置，并计算该时间点是否适合接入。
     def evaluate_frame(global_frame):
         max_move_time = 0.0
@@ -648,6 +847,13 @@ def calculate_forced_nearest_position(
             search_origin = float(stopped_time_ms)
         search_start, search_end = ((search_origin, global_end) if direction > 0
                                     else (global_start, search_origin))
+        if search_window_ms is not None:
+            if (not isinstance(search_window_ms, (list, tuple)) or len(search_window_ms) != 2
+                    or any(type(v) not in (int, float) or not math.isfinite(v)
+                           or v != int(v) for v in search_window_ms)
+                    or not global_start <= search_window_ms[0] <= search_window_ms[1] <= global_end):
+                raise ValueError("内部搜索窗口必须是动作范围内的升序整数毫秒区间")
+            search_start, search_end = map(float, search_window_ms)
         reference_frame = stopped_time_ms
         frame_mode = "directional_nearest"
 
@@ -737,11 +943,24 @@ def calculate_forced_nearest_position(
 
         minimum_score = math.inf
         equivalent_candidates = []
+        validated_frames, rejected_frames = set(), {}
 
         def consider_frame(frame, best):
             nonlocal minimum_score
+            if frame in rejected_frames:
+                return best
             # 固定数值容差窗口围绕真正最小值，不用逐次epsilon比较累积放宽。
             score = score_frame(frame, minimum_score+score_tolerance)
+            if score > minimum_score+score_tolerance:
+                return best
+            if frame_validator is not None and frame not in validated_frames:
+                try:
+                    frame_validator(evaluate_frame(frame))
+                    validated_frames.add(frame)
+                except (ValueError, ArithmeticError) as error:
+                    rejected_frames[frame] = str(error)
+                    return best
+            # 只有可执行候选才能收紧上界；不能让不可执行的零误差排除本段其他点。
             minimum_score = min(minimum_score, score)
             if score <= minimum_score+score_tolerance:
                 heapq.heappush(equivalent_candidates, (direction*frame, frame, score))
@@ -795,6 +1014,8 @@ def calculate_forced_nearest_position(
         def competitive(lower, first_index):
             if lower > minimum_score+score_tolerance:
                 return False
+            if best is None:
+                return True
             # 后面的区间只有能改善真正最小代价时才需要继续看。
             if (direction*grid_frame(first_index) >= direction*best["global_frame"]
                     and (minimum_score == 0.0 or lower >= best["estimated_move_time"])):
@@ -823,7 +1044,16 @@ def calculate_forced_nearest_position(
                     heapq.heappush(pending, (child_lower, first_child, last_child))
                 else:
                     search_statistics["pruned_grid_frames"] += last_child-first_child+1
-        best = evaluate_frame(best["global_frame"])
+        if best is None:
+            error = _EntryWindowInfeasible("本原段窗口内没有可执行的准备接入点")
+            error.rejected_frames = rejected_frames
+            raise error
+        best_frame = best["global_frame"]
+        best = evaluate_frame(best_frame)
+        search_statistics["infeasible_frames"] = len(rejected_frames)
+        if frame_validator is not None:
+            # 不缓存所有候选的整份Move表，只在最终帧重新生成一次，避免多模型内存膨胀。
+            best["_entry_validated_motion"] = frame_validator(best)
         start_mode = "nearest"
 
     best.update({
@@ -1815,17 +2045,47 @@ def calculate_nearest_entry(parameters):
             inputs["loop_count"] = 1
     selection_summary = {}
     if inputs["trajectory_run"]:
+        # 零速起止准备沿每个虚轴单调移动；当前点和目标点都在行程内才可执行。
+        position_limits = {}
+        for model in inputs["curve_action"]["models"]:
+            key = model["index"]
+            lower = (_hpy(model["min_position_HPY"], "min_position_HPY")
+                     if "min_position_HPY" in model else [-math.inf]*3)
+            upper = (_hpy(model["max_position_HPY"], "max_position_HPY")
+                     if "max_position_HPY" in model else [math.inf]*3)
+            if any(a > b for a, b in zip(lower, upper)):
+                raise ValueError("虚轴行程下限不能大于上限")
+            axes = [AXIS_NAMES.index(name) for name in model["_supported_axes"]]
+            for axis in axes:
+                current = inputs["current_positions"][key][axis]
+                if current < lower[axis]-1e-9 or current > upper[axis]+1e-9:
+                    raise ValueError(f"模型{key}当前位置已超出{AXIS_NAMES[axis]}行程")
+            position_limits[key] = lower, upper, axes
+
+        def validate_selected_frame(candidate):
+            prepared = _prepare_targets(candidate, inputs)
+            for key, target in prepared["PosSet"].items():
+                lower, upper, axes = position_limits[key]
+                if any(target[axis] < lower[axis]-1e-9 or target[axis] > upper[axis]+1e-9
+                       for axis in axes):
+                    raise ValueError(f"模型{key}的候选准备目标超出虚轴行程")
+            return calculate_synchronized_entry_move(prepared, inputs)
+
+        segment_first = (inputs["nearest_start"] and not inputs["use_specified_time"]
+                         and inputs["stopped_time_ms"] is not None)
         selected = calculate_forced_nearest_position(
             inputs["current_positions"], inputs["max_velocities"], inputs["curve_action"],
             inputs["max_accelerations"], direction=inputs["direction"], loop_once=inputs["loop_once"],
             nearest_start=inputs["nearest_start"], use_specified_time=inputs["use_specified_time"],
             specified_time_ms=inputs["specified_time_ms"], active_axes_by_model=inputs["active_axes_by_model"],
             coarse_step=inputs["coarse_step"], fine_step=inputs["fine_step"], loop_count=inputs["loop_count"],
-            stopped_time_ms=inputs["stopped_time_ms"])
+            stopped_time_ms=inputs["stopped_time_ms"],
+            frame_validator=validate_selected_frame if segment_first else None)
         selection_summary = selected
         curve_targets = {m["model_id"]: m["target_HPY"] for m in selected["models"]}
+        validated_motion = selected.pop("_entry_validated_motion", None)
         selected = _prepare_targets(selected, inputs)
-        motion = calculate_synchronized_entry_move(selected, inputs)
+        motion = validated_motion if validated_motion is not None else validate_selected_frame(selected)
         skipped = []
     else:
         # 非强制指定帧只作搜索起点；仍沿方向接入原动作关键帧，不新增中间Move目标。
@@ -1900,6 +2160,10 @@ def calculate_nearest_entry(parameters):
         "selection_metric": "nearest_position",
         "position_metric": "max(abs(target-current)/max_velocity_HPY)",
         "search_statistics": selection_summary.get("search_statistics", {}),
+        "reference_segment_range_ms": selection_summary.get("reference_segment_range_ms"),
+        "selected_segment_range_ms": selection_summary.get("selected_segment_range_ms"),
+        "segment_search_phase": selection_summary.get("segment_search_phase"),
+        "segment_search_attempts": selection_summary.get("segment_search_attempts", []),
         "prepare_time_ms_ceil": prepare_time_ms_ceil,
         "start_mode": motion["StartMode"], "motor_limit_scale": motion["MotorLimitScale"],
         "stationary_plc_ids": stationary_plcs, "all_stationary": duration_ms == 0,
@@ -3355,8 +3619,10 @@ def _calculate_nonforced_continuous_entry(parameters):
     last=max(m['segments'][-1]['end_frame'] for m in models)
     boundary_frames={int(p[n]) for m in models for p in m['segments'] for n in ('start_frame','end_frame')}
     direction,factor=inputs['direction'],inputs['nf_factor']
+    segment_first=(inputs['nearest_start'] and not inputs['use_specified_time']
+                   and inputs['stopped_time_ms'] is not None)
     origin=command.get('specified_time_ms') if command.get('use_specified_time') else command.get('stopped_time_ms')
-    origin_basis='provided_original_progress'
+    origin_basis='stop_request_reference_segment' if segment_first else 'provided_original_progress'
     if inputs['use_specified_time']:
         # 指定帧是硬约束；真实历史进度应使用stopped_time_ms。
         origin=command['specified_time_ms']
@@ -3372,17 +3638,43 @@ def _calculate_nonforced_continuous_entry(parameters):
             origin_basis='action_boundary_without_original_progress'
         if type(origin)is not int or not 0<=origin<=4294967295:raise ValueError('原动作进度须为uint32毫秒')
         if not first<=origin<=last:raise ValueError('停止进度超出当前动作首末范围')
-        lo,hi=(origin,int(last)) if direction>0 else (int(first),origin)
-        candidates=sorted(set(range(lo,hi+1,step))|{lo,hi}|{f for f in boundary_frames if lo<=f<=hi})
-    frame_mode=('specified_frame' if inputs['use_specified_time'] else
+        if segment_first:
+            candidates=None  # 当前原段窗口在下方逐个生成，不先限制为参考帧的一侧。
+        else:
+            lo,hi=(origin,int(last)) if direction>0 else (int(first),origin)
+            candidates=sorted(set(range(lo,hi+1,step))|{lo,hi}|{f for f in boundary_frames if lo<=f<=hi})
+    frame_mode=('current_segment_first' if segment_first else
+                'specified_frame' if inputs['use_specified_time'] else
                 'directional_nearest' if inputs['nearest_start'] else 'action_boundary')
     reference_frame=(inputs['specified_time_ms'] if inputs['use_specified_time'] else
                      inputs['stopped_time_ms'] if inputs['nearest_start'] else None)
-    search_range=[int(candidates[0]),int(candidates[-1])]
-    if len(candidates)>budget:raise ValueError('非强制候选帧数超过预算')
-    # 所有1ms候选仍保留。按整段q/v包络的合法下界排除不可能改善的区间，
-    # 不先给每个毫秒都重做位置、速度和真实Move计算。
-    best,skipped,evaluated,search_stats,lower=_nf_search_intervals(inputs,candidates,metric)
+    reference_segment, selected_segment, selected_phase = None, None, None
+    segment_attempts=[]
+    if segment_first:
+        windows=_entry_prioritized_windows(inputs)
+    else:
+        windows=({'range_ms':[int(candidates[0]),int(candidates[-1])],
+                  'phase':frame_mode,'index':0,'reference_frame_ms':reference_frame},)
+    best,skipped,evaluated,search_stats,lower=None,[],0,{},0.0
+    for window in windows:
+        if segment_first:
+            if reference_segment is None:
+                reference_segment=list(window['range_ms'])
+            lo,hi=window['range_ms']
+            candidates=sorted(set(range(lo,hi+1,step))|{lo,hi}
+                              |{f for f in boundary_frames if lo<=f<=hi})
+        search_range=[int(candidates[0]),int(candidates[-1])]
+        if len(candidates)>budget:raise ValueError('非强制原段窗口候选帧数超过预算')
+        # 先检查完整当前原段；只有该窗所有可执行候选都失败才进入下一窗。
+        best,local_skipped,count,search_stats,lower=_nf_search_intervals(inputs,candidates,metric)
+        evaluated+=count
+        skipped.extend(local_skipped[:max(0,40-len(skipped))])
+        if segment_first:
+            segment_attempts.append({**window,'status':'planned' if best is not None else 'infeasible'})
+        if best is not None:
+            selected_segment=list(window['range_ms']) if segment_first else None
+            selected_phase=window['phase'] if segment_first else None
+            break
     if best is None:
         return {'status':'infeasible','plan_valid':False,'can_dispatch':False,'message':'方向允许的候选帧没有可编码的真实Move接入计划',
             'trajectory_run':False,'reverse':direction<0,'selected_curve_time_ms':None,'prepare_time_ms':None,'prepare_time_ms_ceil':None,
@@ -3390,6 +3682,8 @@ def _calculate_nonforced_continuous_entry(parameters):
             'frame_selection_mode':frame_mode,'reference_frame_ms':reference_frame,
             'frame_selection_version':FRAME_SELECTION_VERSION,
             'search_origin_frame_ms':origin,'search_range_ms':search_range,'selection_metric':metric,
+            'reference_segment_range_ms':reference_segment,'selected_segment_range_ms':None,
+            'segment_search_phase':None,'segment_search_attempts':segment_attempts,
             'algorithm_version':'v8_decimal_interval_nonforced_velocity_join'}
     common,_,frame,score,grouped,scalar_optimal,stationary=best
     if common*1000>4294967295:raise ValueError('准备时长超出uint32毫秒')
@@ -3408,6 +3702,8 @@ def _calculate_nonforced_continuous_entry(parameters):
         'selection_metric':metric,'search_origin_frame_ms':origin,'search_origin_basis':origin_basis,
         'frame_selection_mode':frame_mode,'reference_frame_ms':reference_frame,'search_range_ms':search_range,
         'frame_selection_version':FRAME_SELECTION_VERSION,
+        'reference_segment_range_ms':reference_segment,'selected_segment_range_ms':selected_segment,
+        'segment_search_phase':selected_phase,'segment_search_attempts':segment_attempts,
         'position_metric':'max(abs(target-current)/max_velocity_HPY)',
         'effective_loop_count':loops,'effective_loop_once':loops==1,'loop_fallback':fallback,
         'stationary_plc_ids':stationary,'requires_group_wait':common>0,
@@ -3442,7 +3738,18 @@ def calculate_nearest_entry(parameters):
     """公共静态models＋runtime入口；强制/非强制求解数学保持v8 Decimal。"""
     source=_adapt_shared_nearest_parameters(parameters)
     if source.get('command',{}).get('trajectory_run') is True:
-        return _calculate_nearest_entry_v4(source)
+        try:
+            return _calculate_nearest_entry_v4(source)
+        except _EntryWindowInfeasible as error:
+            return {'status':'infeasible','plan_valid':False,'can_dispatch':False,
+                'trajectory_run':True,'reverse':source['command'].get('reverse',False),
+                'message':str(error),'selected_curve_time_ms':None,'prepare_time_ms':None,
+                'prepare_time_ms_ceil':None,'devices':[],'1006_payloads':[],
+                'stationary_plc_ids':[],'frame_selection_mode':'current_segment_first',
+                'frame_selection_version':FRAME_SELECTION_VERSION,
+                'reference_frame_ms':source['command'].get('stopped_time_ms'),
+                'reference_segment_range_ms':getattr(error,'reference_segment_range_ms',None),
+                'segment_search_attempts':getattr(error,'segment_search_attempts',[])}
     return _calculate_nonforced_continuous_entry(source)
 
 
