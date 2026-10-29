@@ -74,6 +74,7 @@ const gate = (
     reverse?: boolean;
     object?: ControlledObjectConfig;
     referenceFrameMs?: number;
+    specifiedFrameMs?: number;
   } = {},
 ) =>
   evaluateStartGate({
@@ -84,6 +85,7 @@ const gate = (
     nearest: options.nearest ?? false,
     reverse: options.reverse ?? false,
     ...(options.referenceFrameMs !== undefined ? { referenceFrameMs: options.referenceFrameMs } : {}),
+    ...(options.specifiedFrameMs !== undefined ? { specifiedFrameMs: options.specifiedFrameMs } : {}),
   });
 
 /** 上去再回到起点位姿：4000ms 的位姿和 0ms 一样 */
@@ -325,6 +327,70 @@ describe("evaluateStartGate from a reference frame (任务卡继续 / 反向回)
       status: "at-start",
       plan: { targetFrameMs: 0, nearest: false },
     });
+  });
+});
+
+describe("evaluateStartGate mid-curve starts", () => {
+  it("flags an at-start plan that does not begin at the run direction's start", () => {
+    const sequence = twoPoseSequence({ v1: 10, v2: 0, v3: 0 }, { v1: 410, v2: 0, v3: 0 }, true);
+    expect(gate(sequence, 10, { nearest: true })).toMatchObject({ status: "at-start", midCurve: false });
+    expect(gate(sequence, 410, { reverse: true })).toMatchObject({ status: "at-start", midCurve: false });
+    // 停在曲线中间：就近接在 2000ms，不用过渡但跳过前半段
+    expect(gate(sequence, 210, { nearest: true })).toMatchObject({
+      status: "at-start",
+      midCurve: true,
+      programSeconds: 4,
+      plan: { targetFrameMs: 2000 },
+    });
+  });
+});
+
+describe("evaluateStartGate from a specified frame", () => {
+  const rising = (trajectoryMode: boolean) =>
+    twoPoseSequence({ v1: 10, v2: 0, v3: 0 }, { v1: 410, v2: 0, v3: 0 }, trajectoryMode);
+
+  it("starts a forced trajectory exactly at the frame, also when the members sit at the start", () => {
+    const result = gate(rising(true), 10, { specifiedFrameMs: 1500 });
+    expect(result).toMatchObject({
+      status: "transition",
+      plan: { targetFrameMs: 1500, nearest: true, startMode: "nearest" },
+    });
+    if (result.status !== "transition") return;
+    // 梯形速度曲线：1500ms 在前半程，位置在起点和中点（2000ms 的 210）之间
+    const [move] = result.plan.members[0]!.axes;
+    expect(move).toMatchObject({ axis: "v1", from: 10 });
+    expect(move!.to).toBeGreaterThan(10);
+    expect(move!.to).toBeLessThan(210);
+  });
+
+  it("wins over nearest and the reference frame", () => {
+    expect(
+      gate(rising(true), 210, { nearest: true, referenceFrameMs: 3000, specifiedFrameMs: 500 }),
+    ).toMatchObject({ status: "transition", plan: { targetFrameMs: 500 } });
+  });
+
+  it("is at-start mid-curve when the members already sit on the frame", () => {
+    expect(gate(rising(true), 210, { specifiedFrameMs: 2000 })).toMatchObject({
+      status: "at-start",
+      midCurve: true,
+      plan: { targetFrameMs: 2000, startMode: "at-start", nearest: true },
+    });
+  });
+
+  it("joins a non-forced action at the nearest keyframe from the frame along the direction", () => {
+    const sequence = roundTripSequence(false);
+    expect(gate(sequence, 210, { specifiedFrameMs: 500 })).toMatchObject({ plan: { targetFrameMs: 2000 } });
+    expect(gate(sequence, 210, { specifiedFrameMs: 2000 })).toMatchObject({
+      status: "at-start",
+      plan: { targetFrameMs: 2000 },
+    });
+    expect(gate(sequence, 10, { reverse: true, specifiedFrameMs: 3000 })).toMatchObject({
+      plan: { targetFrameMs: 0, direction: -1 },
+    });
+  });
+
+  it("keeps an out-of-range frame inside the action", () => {
+    expect(gate(rising(true), 10, { specifiedFrameMs: 99999 })).toMatchObject({ plan: { targetFrameMs: 4000 } });
   });
 });
 

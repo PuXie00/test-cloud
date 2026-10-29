@@ -5,7 +5,7 @@ import type {
 } from "@/app/project/project-document-types";
 import type { ActionSequenceConfig, ModelPose } from "./types";
 import { isSequenceLooping } from "./sequence-loop";
-import { planNearestStart, type NearestStartPlan } from "./nearest-start";
+import { entryFramesOf, planNearestStart, type NearestStartPlan } from "./nearest-start";
 import type { HpyPose } from "./nearest-start-motion";
 import { resolveActionSequence, type ResolvedActionSequence } from "./resolve-sequence";
 
@@ -70,19 +70,21 @@ export const enabledAxesMatchStart = (
   );
 };
 
+/** 位移超过 1mm / 0.1° 的准备 Move 才算真的要动 */
+export const isSignificantMove = (move: { axis: VirtualAxisId; from: number; to: number }): boolean =>
+  Math.abs(move.to - move.from) > AXIS_EPSILON[move.axis] + CLOSED_POSE_SLACK;
+
 /** 就近算法算出的每个准备 Move 都在 1mm / 0.1° 以内：已在接入点，不用确认过渡 */
 export const planIsAtStart = (plan: NearestStartPlan): boolean =>
-  plan.members.every((member) =>
-    member.axes.every(
-      (move) => Math.abs(move.to - move.from) <= AXIS_EPSILON[move.axis] + CLOSED_POSE_SLACK,
-    ),
-  );
+  plan.members.every((member) => !member.axes.some(isSignificantMove));
 
 export type StartGateOptions = {
   nearest: boolean;
   reverse: boolean;
   /** 开启就近时从这一帧起按方向找位置最近的接入帧（任务卡继续 / 反向回传入停下时的 runTime） */
   referenceFrameMs?: number;
+  /** 操作者指定的接入帧，优先于就近和参考帧；非强制会落到沿方向最近的原关键帧 */
+  specifiedFrameMs?: number;
 };
 
 export type StartGateInput = StartGateOptions & {
@@ -100,7 +102,8 @@ export type StartGateTiming = {
 };
 
 export type StartGateResult =
-  | { status: "at-start"; plan: NearestStartPlan }
+  /** midCurve：不用过渡，但不是从运行方向的起点开始（就近、参考帧或指定帧落在曲线中间） */
+  | { status: "at-start"; plan: NearestStartPlan; midCurve: boolean; programSeconds: number }
   | ({ status: "transition" } & StartGateTiming)
   | { status: "error"; message: string };
 
@@ -130,8 +133,9 @@ export const planStartTransition = (input: {
   nearest: boolean;
   reverse: boolean;
   referenceFrameMs?: number;
+  specifiedFrameMs?: number;
 }): NearestStartPlan => {
-  const planWith = (nearest: boolean) =>
+  const planWith = (nearest: boolean, specifiedFrameMs?: number) =>
     planNearestStart({
       resolved: input.resolved,
       objects: input.objects,
@@ -144,12 +148,19 @@ export const planStartTransition = (input: {
       ...(nearest && input.referenceFrameMs !== undefined
         ? { referenceFrameMs: input.referenceFrameMs }
         : {}),
+      ...(specifiedFrameMs !== undefined ? { specifiedFrameMs } : {}),
     });
   const atStart = (plan: NearestStartPlan): NearestStartPlan => ({
     ...plan,
     nearest: input.nearest,
     startMode: "at-start",
   });
+
+  // 指定帧不经过回起点判断：接在哪一帧由操作者定，不在起点也不改从头开始
+  if (input.specifiedFrameMs !== undefined) {
+    const specified = { ...planWith(true, input.specifiedFrameMs), nearest: true };
+    return planIsAtStart(specified) ? { ...specified, startMode: "at-start" } : specified;
+  }
 
   if (input.nearest && input.referenceFrameMs !== undefined) {
     const fromReference = planWith(true);
@@ -171,6 +182,22 @@ export const planStartTransition = (input: {
   return planIsAtStart(nearest) ? atStart(nearest) : nearest;
 };
 
+/** 接入帧不是运行方向的起点（正向首帧、反向末帧）；算不出起点帧时按序列的 0 / 总时长比 */
+const startsMidCurve = (
+  input: StartGateInput,
+  resolved: ResolvedActionSequence,
+  plan: NearestStartPlan,
+): boolean => {
+  let startFrameMs = plan.direction > 0 ? 0 : resolved.totalMs;
+  try {
+    const frames = entryFramesOf({ ...input, resolved });
+    startFrameMs = plan.direction > 0 ? frames.firstMs : frames.lastMs;
+  } catch {
+    // 模型建不起来时 plan 也算不出来，这里只是兜底
+  }
+  return Math.abs(plan.targetFrameMs - startFrameMs) > 0.5;
+};
+
 export const evaluateStartGate = (input: StartGateInput): StartGateResult => {
   let resolved: ResolvedActionSequence;
   try {
@@ -185,7 +212,14 @@ export const evaluateStartGate = (input: StartGateInput): StartGateResult => {
   } catch (error) {
     return { status: "error", message: errorMessage(error, "起始位姿过渡计算失败") };
   }
-  if (plan.startMode === "at-start") return { status: "at-start", plan };
+  if (plan.startMode === "at-start") {
+    return {
+      status: "at-start",
+      plan,
+      midCurve: startsMidCurve(input, resolved, plan),
+      programSeconds: resolved.totalMs / 1000,
+    };
+  }
 
   return {
     status: "transition",
