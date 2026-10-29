@@ -356,7 +356,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
   };
 
   /**
-   * 继续 / 反向回：开启就近，以卡上显示的运行时间（PLC 上报的 runTime）为参考帧，沿运行方向找位置最近的接入帧，
+   * 继续 / 反向回：开启就近，以卡上显示的运行时间（PLC 上报的 runTime）换成原曲线帧作参考帧，沿运行方向找位置最近的接入帧，
    * 准备后直接 GO。只是这一次按就近和该方向走，槽上保存的就近 / 反向开关不变。PLC 没上报过时没有参考帧，从方向起点找。
    */
   const handleRerun = (cardId: string, intent: RerunIntent) => {
@@ -382,10 +382,17 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       return;
     }
     const reverse = intent === "continue" ? card.reverse === true : card.reverse !== true;
+    // 反向运行时 PLC 报的 runTime 是倒着走过的时长：原曲线帧 = 编程总时长 − runTime
+    const totalMs = sequenceTotalMs(authored) ?? card.totalMs;
+    const referenceFrameMs = !card.run
+      ? undefined
+      : card.reverse === true && totalMs !== undefined
+        ? totalMs - card.run.runTimeMs
+        : card.run.runTimeMs;
     const options: StartGateOptions = {
       nearest: true,
       reverse,
-      ...(card.run ? { referenceFrameMs: card.run.runTimeMs } : {}),
+      ...(referenceFrameMs !== undefined ? { referenceFrameMs } : {}),
     };
     let startPlan: NearestStartPlan | null = null;
     if (authored) {
