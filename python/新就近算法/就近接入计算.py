@@ -23,7 +23,7 @@ from pathlib import Path
 AXIS_NAMES = ("H", "P", "Y")
 CURVE_TICK_FRAME = 100.0
 ALGORITHM_VERSION = "v5_max_capability_common_prepare"
-FRAME_SELECTION_VERSION = "specified_or_directional_nearest_20261028"
+FRAME_SELECTION_VERSION = "directional_nearest_return_branch_fix_20261028_r2"
 MAX_PREPARE_TIME_MS = 4294967295
 
 ###############################################################################
@@ -283,6 +283,50 @@ def _map_prepare_frame(global_frame, first, last, direction, loop_count):
             return float(first)
     # PLC getPosAllLoop先移除完整周期，再在当前周期求值；整周期点回到首帧。
     return float(first)+(frame-float(first)) % period
+
+
+def _forced_polynomial_position_bounds(coefficients, u_start, u_end):
+    """求0~5次位置多项式的保守区间，不用两端采样冒充整段范围。"""
+    coefficients = list(coefficients)
+    while len(coefficients) > 1 and coefficients[-1] == 0.0:
+        coefficients.pop()
+    degree = len(coefficients)-1
+    left, right = min(u_start, u_end), max(u_start, u_end)
+    try:
+        def value(u):
+            result = 0.0
+            for coefficient in reversed(coefficients):
+                result = result*u+coefficient
+            return result
+
+        if degree <= 2:
+            values = [value(left), value(right)]
+            if degree == 2 and coefficients[2] != 0.0:
+                vertex = -coefficients[1]/(2.0*coefficients[2])
+                if left < vertex < right:
+                    values.append(value(vertex))
+            scale = max(1.0, *(abs(v) for v in values))
+        else:
+            # 将u=left+(right-left)*x转换到x∈[0,1]，再转为Bernstein控制值。
+            width = right-left
+            power = [math.fsum(coefficients[j]*math.comb(j, k)*left**(j-k)*width**k
+                               for j in range(k, degree+1)) for k in range(degree+1)]
+            values = [math.fsum(power[k]*math.comb(i, k)/math.comb(degree, k)
+                                for k in range(i+1)) for i in range(degree+1)]
+            scale = max(1.0, math.fsum(abs(v) for v in power), *(abs(v) for v in values))
+        # 平移前的巨大项也可能相消；外包必须覆盖原求值过程的舍入误差。
+        radius = max(abs(left), abs(right))
+        absolute_terms = math.fsum(abs(coefficient)*radius**i
+                                   for i, coefficient in enumerate(coefficients))
+        scale = max(scale, absolute_terms)
+        if not math.isfinite(scale) or not all(math.isfinite(v) for v in values):
+            return -math.inf, math.inf
+        pad = max(1e-12, 128.0*math.ulp(scale))
+        return (math.nextafter(min(values)-pad, -math.inf),
+                math.nextafter(max(values)+pad, math.inf))
+    except (OverflowError, ValueError):
+        # 包络溢出时只放弃该次剪枝，不能误排除可能更近的曲线区间。
+        return -math.inf, math.inf
 
 
 def calculate_forced_nearest_position(
@@ -607,9 +651,76 @@ def calculate_forced_nearest_position(
         reference_frame = stopped_time_ms
         frame_mode = "directional_nearest"
 
+        import heapq
+
+        search_statistics = {"method": "position_envelope_branch_and_bound",
+                             "evaluated_frames": 0, "bound_intervals": 0,
+                             "pruned_grid_frames": 0, "full_fine_grid_covered": True}
+        coefficients = {
+            int(model["index"]): [
+                {axis: tuple(float(segment[name][axis]) for name in "abcdef")
+                 for axis in model_axes[int(model["index"])]}
+                for segment in model["segments"]]
+            for model in models}
+        whole_model_bounds = {}
+        polynomial_bounds_cache = {}
+
+        def model_position_bounds(model, left, right):
+            """分段、空档保持及端点都纳入外包；循环跨界时保守使用整个模型范围。"""
+            key = int(model["index"])
+            segments = model["segments"]
+            first, last = float(segments[0]["start_frame"]), float(segments[-1]["end_frame"])
+            if not loop_once and (left < first or right > last):
+                return whole_model_bounds[key]
+            left = max(first, min(last, left))
+            right = max(first, min(last, right))
+            _, _, qa, _ = evaluate_model(model, left)
+            _, _, qb, _ = evaluate_model(model, right)
+            result = {axis: [min(qa[axis], qb[axis]), max(qa[axis], qb[axis])]
+                      for axis in model_axes[key]}
+            begin = max(0, bisect_right(model_start_frames[key], left)-1)
+            for index in range(begin, len(segments)):
+                segment = segments[index]
+                start, end = float(segment["start_frame"]), float(segment["end_frame"])
+                if start > right:
+                    break
+                lo, hi = max(left, start), min(right, end)
+                for axis in model_axes[key]:
+                    if lo <= hi:
+                        bound_key = (coefficients[key][index][axis],
+                                     (lo-start)/CURVE_TICK_FRAME, (hi-start)/CURVE_TICK_FRAME)
+                        if bound_key not in polynomial_bounds_cache:
+                            polynomial_bounds_cache[bound_key] = _forced_polynomial_position_bounds(*bound_key)
+                        lower, upper = polynomial_bounds_cache[bound_key]
+                        result[axis][0] = min(result[axis][0], lower)
+                        result[axis][1] = max(result[axis][1], upper)
+                    # PLC在首末帧/空档使用明确端点值，不能只包围系数值。
+                    for frame, field in ((start, "start_HPY"), (end, "target_HPY")):
+                        if left <= frame <= right:
+                            value = float(segment[field][axis])
+                            result[axis][0] = min(result[axis][0], value)
+                            result[axis][1] = max(result[axis][1], value)
+            return result
+
+        # 仅用于消除多项式求值的数值尾差，不扩大现场位置/速度的执行容差。
+        score_tolerance = 0.0
+        for model in models:
+            key = int(model["index"])
+            bounds = model_position_bounds(model, float(model["segments"][0]["start_frame"]),
+                                            float(model["segments"][-1]["end_frame"]))
+            whole_model_bounds[key] = bounds
+            for axis, (lower, upper) in bounds.items():
+                current = float(current_positions[key][axis])
+                velocity = float(default_velocities[key][axis])
+                finite_scale = [1.0, abs(current), *(abs(v) for v in (lower, upper) if math.isfinite(v))]
+                position_epsilon = max(1e-12, 32.0*math.ulp(max(finite_scale)))
+                if velocity > 0.0:
+                    score_tolerance = max(score_tolerance, position_epsilon/velocity)
+
         # 位置差除以各轴最大速度，统一H/P/Y量纲；准备参数仍在选帧后计算。
         def score_frame(global_frame, cutoff):
             """只计算归一化位置差；同分时再按运行方向选更早遇到的帧。"""
+            search_statistics["evaluated_frames"] += 1
             score = 0.0
             for model in models:
                 model_id = int(model["index"])
@@ -624,19 +735,26 @@ def calculate_forced_nearest_position(
                     break
             return score
 
+        minimum_score = math.inf
+        equivalent_candidates = []
+
         def consider_frame(frame, best):
-            cutoff = math.inf if best is None else best["estimated_move_time"]
-            score = score_frame(frame, cutoff)
-            order = (score, direction*frame)
-            if best is None or order < (best["estimated_move_time"], direction*best["global_frame"]):
-                return {"global_frame": frame, "estimated_move_time": score}
-            return best
+            nonlocal minimum_score
+            # 固定数值容差窗口围绕真正最小值，不用逐次epsilon比较累积放宽。
+            score = score_frame(frame, minimum_score+score_tolerance)
+            minimum_score = min(minimum_score, score)
+            if score <= minimum_score+score_tolerance:
+                heapq.heappush(equivalent_candidates, (direction*frame, frame, score))
+            while equivalent_candidates and equivalent_candidates[0][2] > minimum_score+score_tolerance:
+                heapq.heappop(equivalent_candidates)
+            _, selected_frame, selected_score = equivalent_candidates[0]
+            return {"global_frame": selected_frame, "estimated_move_time": selected_score}
 
         def scan(start, end, step, best):
             frame = float(start)
             epsilon = abs(float(step))*1.0e-9
             while (step > 0 and frame <= end+epsilon) or (step < 0 and frame >= end-epsilon):
-                if (best is not None and best["estimated_move_time"] == 0.0
+                if (best is not None and minimum_score == 0.0
                         and direction*frame >= direction*best["global_frame"]):
                     break
                 best = consider_frame(frame, best)
@@ -649,12 +767,62 @@ def calculate_forced_nearest_position(
             best = scan(search_start, search_end, float(coarse_step), None)
         else:
             best = scan(search_end, search_start, -float(coarse_step), None)
-        fine_start = max(search_start, best["global_frame"]-float(coarse_step))
-        fine_end = min(search_end, best["global_frame"]+float(coarse_step))
-        if direction > 0:
-            best = scan(fine_start, fine_end, float(fine_step), best)
-        else:
-            best = scan(fine_end, fine_start, -float(fine_step), best)
+
+        # 粗搜只提供上界。整个允许方向内的细网格都要覆盖，不能只细搜一个盆地。
+        grid_origin = search_start if direction > 0 else search_end
+        grid_count = int(math.floor((search_end-search_start)/float(fine_step)+1e-10))+1
+        search_statistics["fine_grid_frames"] = grid_count
+        search_statistics["normalized_position_tolerance"] = score_tolerance
+
+        def grid_frame(index):
+            return grid_origin+direction*index*float(fine_step)
+
+        def interval_bound(first_index, last_index):
+            search_statistics["bound_intervals"] += 1
+            a, b = grid_frame(first_index), grid_frame(last_index)
+            left, right = min(a, b), max(a, b)
+            lower_score = 0.0
+            for model in models:
+                key = int(model["index"])
+                for axis, (lower, upper) in model_position_bounds(model, left, right).items():
+                    current = float(current_positions[key][axis])
+                    delta = max(0.0, lower-current, current-upper)
+                    velocity = float(default_velocities[key][axis])
+                    cost = 0.0 if delta <= 1e-12 else delta/velocity if velocity > 0.0 else math.inf
+                    lower_score = max(lower_score, cost)
+            return lower_score
+
+        def competitive(lower, first_index):
+            if lower > minimum_score+score_tolerance:
+                return False
+            # 后面的区间只有能改善真正最小代价时才需要继续看。
+            if (direction*grid_frame(first_index) >= direction*best["global_frame"]
+                    and (minimum_score == 0.0 or lower >= best["estimated_move_time"])):
+                return False
+            return True
+
+        pending = []
+        initial_lower = interval_bound(0, grid_count-1)
+        heapq.heappush(pending, (initial_lower, 0, grid_count-1))
+        while pending:
+            lower, first_index, last_index = heapq.heappop(pending)
+            if not competitive(lower, first_index):
+                search_statistics["pruned_grid_frames"] += last_index-first_index+1
+                continue
+            if last_index-first_index <= 7:
+                for index in range(first_index, last_index+1):
+                    best = consider_frame(grid_frame(index), best)
+                continue
+            middle = (first_index+last_index)//2
+            best = consider_frame(grid_frame(middle), best)
+            for first_child, last_child in ((first_index, middle-1), (middle+1, last_index)):
+                if first_child > last_child:
+                    continue
+                child_lower = interval_bound(first_child, last_child)
+                if competitive(child_lower, first_child):
+                    heapq.heappush(pending, (child_lower, first_child, last_child))
+                else:
+                    search_statistics["pruned_grid_frames"] += last_child-first_child+1
         best = evaluate_frame(best["global_frame"])
         start_mode = "nearest"
 
@@ -673,6 +841,8 @@ def calculate_forced_nearest_position(
         "fine_step_ms": float(fine_step),
         "metric": "max(abs(target-current)/prepare_velocity_limit)",
     })
+    if frame_mode == "directional_nearest":
+        best["search_statistics"] = search_statistics
     return best
 
 def calculate_non_forced_candidate_positions(inputs):
@@ -1729,6 +1899,7 @@ def calculate_nearest_entry(parameters):
         "search_range_ms": selection_summary.get("search_range_ms", [frame, frame]),
         "selection_metric": "nearest_position",
         "position_metric": "max(abs(target-current)/max_velocity_HPY)",
+        "search_statistics": selection_summary.get("search_statistics", {}),
         "prepare_time_ms_ceil": prepare_time_ms_ceil,
         "start_mode": motion["StartMode"], "motor_limit_scale": motion["MotorLimitScale"],
         "stationary_plc_ids": stationary_plcs, "all_stationary": duration_ms == 0,

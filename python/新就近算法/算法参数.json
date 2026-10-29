@@ -1,5 +1,5 @@
 {
-  "_使用说明": ["三算法仍共用同一静态models/settings结构；本次只更新就近选帧，不修改原曲线或几何。", "本算法支持指定帧接入、从参考帧按方向就近搜索两种方式，复用use_specified_time标志。", "指定模式读取specified_time_ms；搜索模式读取stopped_time_ms和runtime.models中的实际位置。", "就近默认位置优先，位置代价采用max(abs(目标位置-当前位置)/各轴最大速度)统一H/P/Y量纲。", "本例参考帧3500ms，当前位置采用原曲线5000ms处的位置并已停稳；最终接入帧由算法重新选择。", "_两种模式示例仅为command字段覆盖示例；实际计算始终使用下方command、models、settings和runtime。", "只有status=planned才能使用本次结果；最终帧读取selected_curve_time_ms，不要直接使用输入停止帧。"],
+  "_使用说明": ["三算法仍共用同一静态models/settings结构；本次只更新就近选帧，不修改原曲线或几何。", "本算法支持指定帧接入、从参考帧按方向就近搜索两种方式，复用use_specified_time标志。", "指定模式读取specified_time_ms；搜索模式读取stopped_time_ms和runtime.models中的实际位置。", "就近默认位置优先，位置代价采用max(abs(目标位置-当前位置)/各轴最大速度)统一H/P/Y量纲。", "本例参考帧3500ms，当前位置采用原曲线5000ms处的位置并已停稳；最终接入帧由算法重新选择。", "_两种模式示例仅为command字段覆盖示例；实际计算始终使用下方command、models、settings和runtime。", "只有status=planned才能使用本次结果；最终帧读取selected_curve_time_ms，不要直接使用输入停止帧。", "本版补齐往返同位置多解：整个允许方向细网格均覆盖或安全剪枝，不只细化粗搜最优附近；数值等价时选方向上先遇到的帧。"],
   "_字段说明": {
     "command.operation": "本文件用途：range=调速范围，nearest=准备/就近接入，adjust=在线调速。分别运行对应Python文件。",
     "command.trajectory_run": "true=强制轨迹，false=非强制Move；改变后必须重新计算范围。在线Move算法处理false。",
@@ -23,8 +23,8 @@
     "settings.feedback_velocity_resolution_HPY": "PLC速度反馈量化步长，算法以半步区间核对；示例0表示理想输入。",
     "settings.feedback_motion_cycle_ms": "允许计入反馈时差的扫描周期参数，示例0；不是计算耗时。",
     "settings.model_type_scheme": "business表示本文件采用业务编号2/6/7/8。",
-    "settings.coarse_step_ms": "强制就近搜索粗步长，单位ms。",
-    "settings.fine_step_ms": "强制就近搜索细步长，单位ms。",
+    "settings.coarse_step_ms": "强制搜索的粗搜步长，仅用来建立初始代价上界；不能只细化一个粗搜最优点附近。",
+    "settings.fine_step_ms": "强制搜索细网格步长，整个方向允许范围均纳入比较或由保守位置包络剪枝；两端也纳入比较。",
     "settings.nonforced_frame_step_ms": "非强制就近候选帧步长，单位ms，示例1。",
     "settings.nonforced_max_search_frames": "非强制候选帧搜索数量上限，防止意外超长搜索。",
     "settings.join_position_tolerance_HPY": "准备接回曲线时的数学位置核对容差，HPY顺序。",
@@ -99,7 +99,8 @@
     "reference_frame_ms": "指定模式为输入目标帧；搜索模式为输入停止帧，未提供时为null；不是最终接入帧。",
     "search_origin_frame_ms": "算法实际采用的搜索起点，未提供停止帧时为运行方向的动作边界。",
     "search_range_ms": "实际允许的原曲线搜索区间[最小帧,最大帧]；指定模式两端都等于指定帧。",
-    "position_metric": "max(abs(target-current)/max_velocity_HPY)，对全部参与模型/活动轴取最大值，避免将mm和degree直接相加。"
+    "position_metric": "max(abs(target-current)/max_velocity_HPY)，对全部参与模型/活动轴取最大值，避免将mm和degree直接相加。",
+    "search_statistics": "强制方向搜索的区间包络统计：evaluated_frames为实际位置评分次数，full_fine_grid_covered表示细网格被比较或安全排除，不表示逐帧都重新计算。"
   },
   "command": {
     "operation": "nearest",
