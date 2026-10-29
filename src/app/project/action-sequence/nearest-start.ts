@@ -35,6 +35,11 @@ export type NearestStartInput = {
    * 任务卡的继续 / 反向回传入停下时的 runTime。
    */
   referenceFrameMs?: number;
+  /**
+   * 指定接入帧（ms，算法的 use_specified_time），优先于就近和参考帧：强制正好从这一帧接入；
+   * 非强制只把它当搜索起点，沿运行方向取位置最近的原关键帧，实际接入帧看结果的 targetFrameMs。
+   */
+  specifiedFrameMs?: number;
 };
 
 export type NearestStartAxisMove = AxisVad & {
@@ -123,14 +128,47 @@ export const toNearestStartPlan = (
   };
 };
 
+const firstFrameOf = (models: readonly AlgorithmModel[]): number =>
+  Math.min(...models.map((model) => model.segments[0]!.start_frame));
+
+const lastFrameOf = (models: readonly AlgorithmModel[]): number =>
+  Math.max(...models.map((model) => model.segments[model.segments.length - 1]!.end_frame));
+
 /**
  * 算法只收动作首末帧范围内的整数毫秒，超出就拒绝。PLC 上报的 runTime 可能早于第一段运动
  * （还没动就停了）或因取整略超末帧，取整后收进范围：早于首帧就从首帧起找，超出末帧按末帧。
  */
-const referenceFrameIn = (models: readonly AlgorithmModel[], frameMs: number): number => {
-  const first = Math.min(...models.map((model) => model.segments[0]!.start_frame));
-  const last = Math.max(...models.map((model) => model.segments[model.segments.length - 1]!.end_frame));
-  return Math.min(Math.max(first, Math.round(frameMs)), last);
+const referenceFrameIn = (models: readonly AlgorithmModel[], frameMs: number): number =>
+  Math.min(Math.max(firstFrameOf(models), Math.round(frameMs)), lastFrameOf(models));
+
+export type EntryFrames = {
+  /** 正向的起点帧（算法的首帧） */
+  firstMs: number;
+  /** 反向的起点帧（算法的末帧，不超过序列总时长） */
+  lastMs: number;
+  /** 原动作段边界（各成员关键帧的并集），升序；非强制只能在这些帧接入 */
+  keyframesMs: number[];
+};
+
+/** 算法看到的接入帧范围与原关键帧，和 planNearestStart 用同一套模型 */
+export const entryFramesOf = (
+  input: Pick<NearestStartInput, "resolved" | "objects" | "motors" | "telemetryByObjectId">,
+): EntryFrames => {
+  const totalMs = Math.max(0, input.resolved.totalMs);
+  const { models } = buildAlgorithmModels(input);
+  if (models.length === 0) return { firstMs: 0, lastMs: totalMs, keyframesMs: [] };
+  const frames = new Set<number>();
+  for (const model of models) {
+    for (const segment of model.segments) {
+      frames.add(Math.min(segment.start_frame, totalMs));
+      frames.add(Math.min(segment.end_frame, totalMs));
+    }
+  }
+  return {
+    firstMs: Math.min(firstFrameOf(models), totalMs),
+    lastMs: Math.min(lastFrameOf(models), totalMs),
+    keyframesMs: [...frames].sort((left, right) => left - right),
+  };
 };
 
 export const planNearestStart = (input: NearestStartInput): NearestStartPlan => {
@@ -154,12 +192,15 @@ export const planNearestStart = (input: NearestStartInput): NearestStartPlan => 
     const [h, p, y] = model.default_velocity_HPY;
     return { ...model, max_velocity_HPY: [h, p, y] satisfies Hpy };
   });
+  const specified = input.specifiedFrameMs;
   const result = calculateNearestEntry({
     command: {
       trajectory_run: input.forced,
       reverse: input.reverse,
-      nearest_start: input.nearest,
-      use_specified_time: false,
+      // 非强制的指定帧走就近的关键帧搜索，关掉就近会退回动作边界
+      nearest_start: input.nearest || specified !== undefined,
+      use_specified_time: specified !== undefined,
+      ...(specified !== undefined ? { specified_time_ms: referenceFrameIn(models, specified) } : {}),
       stopped_time_ms:
         input.referenceFrameMs === undefined ? null : referenceFrameIn(models, input.referenceFrameMs),
       loop_count: input.loopCount,

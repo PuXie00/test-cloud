@@ -11,6 +11,7 @@ import {
   type StartGateResult,
 } from "@/app/project/action-sequence/initial-pose-gate";
 import type { NearestStartPlan } from "@/app/project/action-sequence/nearest-start";
+import { defaultStartEntry, type StartEntryChoice } from "@/app/project/action-sequence/start-entry";
 import { hasUncoupledSequenceMember, sequenceObjectIds } from "@/app/project/action-sequence/sequence-object-ids";
 import { resolveMotionLaunchBlock } from "@/app/project/project-motion-readiness";
 import { useProject } from "@/app/project/use-project";
@@ -36,19 +37,32 @@ import { faderToSpeedPercent, PROGRAMMED_SPEED_PERCENT } from "../../hooks/speed
 import { useBuildDebug } from "../build-debug/build-debug-context";
 import { ExecCards } from "./exec-cards/exec-cards";
 import { Executors } from "./executors/executors";
-import { InitialPoseDialog, type StartTransitionSummary } from "./initial-pose-dialog";
 import { PreparedPoseDialog } from "./prepared-pose-dialog";
+import {
+  StartEntryDialog,
+  type StartEntryIntent,
+  type StartEntryRequest,
+} from "./start-entry-dialog";
 
 type ExecAreaProps = { className?: string };
 
-type PoseDialogState = StartGateOptions & {
-  /** fader：推子槽 Ready；next：任务卡下一条；rerun：任务卡继续 / 反向回 */
-  intent: "fader" | "next" | "rerun";
+type EntryDialogState = {
+  intent: StartEntryIntent;
   slotIndex: number;
   cardId: string | null;
   sequenceId: number;
+  reverse: boolean;
+  /** 继续 / 反向回：停下时的 runTime */
+  referenceFrameMs?: number;
+  defaultChoice: StartEntryChoice;
+  /** 打开时冻结的设备位置，弹窗里的方案都按它算 */
   telemetryByObjectId: Map<number, HpyPose>;
+  notice: string | null;
 };
+
+type PreparedPoseAlert = { slotIndex: number; sequenceId: number };
+
+const POSITION_CHANGED_NOTICE = "设备位置在弹窗打开后变了，已按现在的位置重新计算，请再确认一次。";
 
 /** 继续沿卡片原来的方向，反向回方向反过来 */
 type RerunIntent = "continue" | "reverse-back";
@@ -58,23 +72,12 @@ const slotReadyOptions = (slot: FaderSlotState) => ({
   runDirection: !slot.runOptions.reverse,
 });
 
-const needsPoseDialog = (gate: StartGateResult): boolean => gate.status !== "at-start";
-
-const summaryOf = (
-  gate: StartGateResult | null,
-  options: StartGateOptions,
-): StartTransitionSummary | null => {
-  if (!gate || gate.status !== "transition") return null;
-  return {
-    forced: gate.plan.forced,
-    nearest: options.nearest,
-    reverse: options.reverse,
-    targetFrameMs: gate.plan.targetFrameMs,
-    transitionSeconds: gate.transitionSeconds,
-    programSeconds: gate.programSeconds,
-    totalSeconds: gate.totalSeconds,
-  };
-};
+/**
+ * 要先过渡、算不出方案时都弹；不用过渡但从曲线中间开始（就近落在中间）也弹，免得 GO 后跳着跑。
+ * 继续 / 反向回本来就是从停下处接着走，只有要先过渡时才弹。
+ */
+const needsEntryDialog = (gate: StartGateResult, intent: StartEntryIntent): boolean =>
+  gate.status !== "at-start" || (intent !== "rerun" && gate.midCurve);
 
 const reportSequenceResult = (result: { toast: "warning" | "error"; message: string }) => {
   if (result.toast === "warning") toast.warning(result.message);
@@ -90,8 +93,8 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
   const { coupledObjectIds } = useBuildDebug();
   const { snapshots } = useControlledObjects();
   const { stopPreview } = useSequencePreview();
-  const [poseDialog, setPoseDialog] = useState<PoseDialogState | null>(null);
-  const [preparedPoseAlert, setPreparedPoseAlert] = useState<number | null>(null);
+  const [poseDialog, setPoseDialog] = useState<EntryDialogState | null>(null);
+  const [preparedPoseAlert, setPreparedPoseAlert] = useState<PreparedPoseAlert | null>(null);
   const poseConfirmLockRef = useRef(false);
 
   const telemetryByObjectId = useMemo(() => {
@@ -128,26 +131,36 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     }
   }, [cards, faderSlots, setSlotRunning]);
 
-  const dialogGate = useMemo(() => {
+  // 只依赖槽上的序列 id：推子一动 faderSlots 就变，不能每次都重跑就近搜索
+  const dialogSlotSequenceId = poseDialog ? faderSlots[poseDialog.slotIndex]?.sequence?.id : undefined;
+  const entryRequest = useMemo((): StartEntryRequest | null => {
     if (!poseDialog) return null;
     const document = currentProject?.document;
     if (!document) return null;
-    const sequence = faderSlots[poseDialog.slotIndex]?.sequence;
-    if (!sequence || sequence.id !== poseDialog.sequenceId) return null;
+    if (dialogSlotSequenceId !== poseDialog.sequenceId) return null;
     const authored = document.motion.actionSequences.find((entry) => entry.id === poseDialog.sequenceId);
     if (!authored) return null;
-    return evaluateStartGate({
-      sequence: authored,
-      objects: document.setup.controlledObjects,
-      motors: document.setup.motors,
-      telemetryByObjectId: poseDialog.telemetryByObjectId,
-      nearest: poseDialog.nearest,
-      reverse: poseDialog.reverse,
-      ...(poseDialog.referenceFrameMs !== undefined
-        ? { referenceFrameMs: poseDialog.referenceFrameMs }
-        : {}),
-    });
-  }, [poseDialog, currentProject, faderSlots]);
+    return {
+      intent: poseDialog.intent,
+      defaultChoice: poseDialog.defaultChoice,
+      notice: poseDialog.notice,
+      input: {
+        sequence: authored,
+        objects: document.setup.controlledObjects,
+        motors: document.setup.motors,
+        telemetryByObjectId: poseDialog.telemetryByObjectId,
+        reverse: poseDialog.reverse,
+        ...(poseDialog.referenceFrameMs !== undefined
+          ? { referenceFrameMs: poseDialog.referenceFrameMs }
+          : {}),
+      },
+    };
+  }, [poseDialog, currentProject, dialogSlotSequenceId]);
+
+  // 槽换了序列或序列被删了：弹窗里的方案已经对不上，直接关掉
+  useEffect(() => {
+    if (poseDialog && !entryRequest) setPoseDialog(null);
+  }, [poseDialog, entryRequest]);
 
   /**
    * 准备一个推子槽；成功后槽显示“已准备”，推子按调速范围封顶。
@@ -334,15 +347,27 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     })();
   };
 
-  const handleConfirmPose = () => {
-    if (!poseDialog || dialogGate?.status !== "transition") return;
+  const handleConfirmEntry = (plan: NearestStartPlan) => {
+    if (!poseDialog || !entryRequest) return;
     if (poseConfirmLockRef.current) return;
     const slot = faderSlots[poseDialog.slotIndex];
     if (!slot || slot.isBusy) return;
     if (poseDialog.intent !== "fader" && !poseDialog.cardId) return;
+    // 弹窗开着时设备动过（别的动作、手动）：按现在的位置重算，让操作者再确认一次
+    const atOpen = capturePreparedPoses(
+      sequenceObjectIds(entryRequest.input.sequence),
+      poseDialog.telemetryByObjectId,
+    );
+    if (!preparedPosesMatchTelemetry(atOpen, entryRequest.input.objects, telemetryRef.current)) {
+      setPoseDialog({
+        ...poseDialog,
+        telemetryByObjectId: new Map(telemetryRef.current),
+        notice: POSITION_CHANGED_NOTICE,
+      });
+      return;
+    }
     poseConfirmLockRef.current = true;
     const { slotIndex, sequenceId, cardId } = poseDialog;
-    const plan = dialogGate.plan;
     setPoseDialog(null);
     if (poseDialog.intent === "next" && cardId) {
       readyThenGoNext(cardId, slot, sequenceId, plan);
@@ -354,6 +379,17 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     }
     beginReady(slotIndex, sequenceId, plan, slotReadyOptions(slot));
   };
+
+  const openEntryDialog = (
+    state: Omit<EntryDialogState, "defaultChoice" | "telemetryByObjectId" | "notice">,
+    options: StartGateOptions,
+  ) =>
+    setPoseDialog({
+      ...state,
+      defaultChoice: defaultStartEntry(options),
+      telemetryByObjectId: new Map(telemetryByObjectId),
+      notice: null,
+    });
 
   /**
    * 继续 / 反向回：开启就近。runTime 就是原曲线帧，正向和反向都把它作为 stopped_time_ms，
@@ -400,15 +436,18 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
         telemetryByObjectId,
         ...options,
       });
-      if (needsPoseDialog(gate)) {
-        setPoseDialog({
-          intent: "rerun",
-          slotIndex: slot.index,
-          cardId,
-          sequenceId,
-          ...options,
-          telemetryByObjectId: new Map(telemetryByObjectId),
-        });
+      if (needsEntryDialog(gate, "rerun")) {
+        openEntryDialog(
+          {
+            intent: "rerun",
+            slotIndex: slot.index,
+            cardId,
+            sequenceId,
+            reverse,
+            ...(referenceFrameMs !== undefined ? { referenceFrameMs } : {}),
+          },
+          options,
+        );
         return;
       }
       if (gate.status === "at-start") startPlan = gate.plan;
@@ -454,20 +493,43 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
         telemetryByObjectId,
         ...slot.runOptions,
       });
-      if (needsPoseDialog(gate)) {
-        setPoseDialog({
-          intent: "next",
-          slotIndex: slot.index,
-          cardId,
-          sequenceId,
-          ...slot.runOptions,
-          telemetryByObjectId: new Map(telemetryByObjectId),
-        });
+      if (needsEntryDialog(gate, "next")) {
+        openEntryDialog(
+          { intent: "next", slotIndex: slot.index, cardId, sequenceId, reverse: slot.runOptions.reverse },
+          slot.runOptions,
+        );
         return;
       }
       if (gate.status === "at-start") startPlan = gate.plan;
     }
     readyThenGoNext(cardId, slot, sequenceId, startPlan);
+  };
+
+  /** 推子槽 Ready：按槽的就近 / 反向开关判断，需要时先弹接入点选择 */
+  const readyFromSlot = (slot: FaderSlotState, sequenceId: number) => {
+    if (poseDialog) return;
+    const document = currentProject?.document;
+    if (!document) return;
+    const authored = document.motion.actionSequences.find((entry) => entry.id === sequenceId);
+    let startPlan: NearestStartPlan | null = null;
+    if (authored) {
+      const gate = evaluateStartGate({
+        sequence: authored,
+        objects: document.setup.controlledObjects,
+        motors: document.setup.motors,
+        telemetryByObjectId,
+        ...slot.runOptions,
+      });
+      if (needsEntryDialog(gate, "fader")) {
+        openEntryDialog(
+          { intent: "fader", slotIndex: slot.index, cardId: null, sequenceId, reverse: slot.runOptions.reverse },
+          slot.runOptions,
+        );
+        return;
+      }
+      if (gate.status === "at-start") startPlan = gate.plan;
+    }
+    beginReady(slot.index, sequenceId, startPlan, slotReadyOptions(slot));
   };
 
   const handleTriggerSequence = (slotIndex: number, sequenceId: number) => {
@@ -498,7 +560,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
           telemetryByObjectId,
         )
       ) {
-        setPreparedPoseAlert(slotIndex);
+        setPreparedPoseAlert({ slotIndex, sequenceId });
         return;
       }
       setSlotBusy(slotIndex, true);
@@ -512,30 +574,16 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       return;
     }
 
-    if (poseDialog) return;
-    let startPlan: NearestStartPlan | null = null;
-    if (authored) {
-      const gate = evaluateStartGate({
-        sequence: authored,
-        objects: document.setup.controlledObjects,
-        motors: document.setup.motors,
-        telemetryByObjectId,
-        ...slot.runOptions,
-      });
-      if (needsPoseDialog(gate)) {
-        setPoseDialog({
-          intent: "fader",
-          slotIndex,
-          cardId: null,
-          sequenceId,
-          ...slot.runOptions,
-          telemetryByObjectId: new Map(telemetryByObjectId),
-        });
-        return;
-      }
-      if (gate.status === "at-start") startPlan = gate.plan;
-    }
-    beginReady(slotIndex, sequenceId, startPlan, slotReadyOptions(slot));
+    readyFromSlot(slot, sequenceId);
+  };
+
+  /** 准备后设备被移动过：撤掉准备，按现在的位置重新走 Ready（需要时弹接入点选择） */
+  const handleReprepare = (alert: PreparedPoseAlert) => {
+    setPreparedPoseAlert(null);
+    clearSlotReady(alert.slotIndex);
+    const slot = faderSlots[alert.slotIndex];
+    if (!slot || slot.isBusy || slot.sequence?.id !== alert.sequenceId) return;
+    readyFromSlot(slot, alert.sequenceId);
   };
 
   const triggerSequenceRef = useRef(handleTriggerSequence);
@@ -557,20 +605,19 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       <div className="min-w-0 flex-1">
         <Executors onTriggerSequence={handleStableTriggerSequence} />
       </div>
-      <InitialPoseDialog
-        open={poseDialog !== null}
-        summary={poseDialog ? summaryOf(dialogGate, poseDialog) : null}
-        errorMessage={dialogGate?.status === "error" ? dialogGate.message : null}
+      <StartEntryDialog
+        request={entryRequest}
         onCancel={() => setPoseDialog(null)}
-        onConfirm={handleConfirmPose}
+        onConfirm={handleConfirmEntry}
       />
       {preparedPoseAlert !== null ? (
         <PreparedPoseDialog
           open
-          onConfirm={() => {
-            clearSlotReady(preparedPoseAlert);
+          onCancelReady={() => {
+            clearSlotReady(preparedPoseAlert.slotIndex);
             setPreparedPoseAlert(null);
           }}
+          onReprepare={() => handleReprepare(preparedPoseAlert)}
         />
       ) : null}
     </section>
