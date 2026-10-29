@@ -200,8 +200,8 @@ const StartEntryBody = ({
         : `确认后立即从 ${at}开始动作。`;
     }
     return moving
-      ? "确认后只把方案发给 PLC 准备，设备不会动；按 GO 时设备先移动到接入点，到位后一起开始动作。"
-      : `确认后只把方案发给 PLC 准备，设备不会动；按 GO 时从 ${at}开始动作。`;
+      ? "确认后准备，设备不会动；按 GO 时设备先移动到接入点，到位后一起开始动作。"
+      : `确认后准备，设备不会动；按 GO 时从 ${at}开始动作。`;
   })();
 
   const pickOnTimeline = (event: MouseEvent<HTMLButtonElement>) => {
