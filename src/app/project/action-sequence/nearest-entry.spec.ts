@@ -165,28 +165,69 @@ describe("calculateNearestEntry frame selection (指定帧 / 从参考帧按方�
     return calculateNearestEntry(parameters);
   };
 
-  it("searches forward from the reference frame and joins at the nearest position, not at the reference", () => {
+  it("searches the whole original segment of the reference frame and joins at the nearest position", () => {
     const result = runCurrent({ trajectory_run: true, nearest_start: true, use_specified_time: false, stopped_time_ms: 3500 });
     expect(result.selected_curve_time_ms).toBe(5000);
     expect(result.prepare_time_ms).toBe(0);
     expect(result).toMatchObject({
-      frame_selection_mode: "directional_nearest",
+      frame_selection_mode: "current_segment_first",
       reference_frame_ms: 3500,
       search_origin_frame_ms: 3500,
-      search_range_ms: [3500, 8000],
+      search_range_ms: [2000, 6000],
+      reference_segment_range_ms: [2000, 6000],
+      selected_segment_range_ms: [2000, 6000],
+      segment_search_phase: "current_segment",
     });
     expect(deviceOf(result, 400).execute_HPY).toEqual([false, false, false]);
   });
 
-  it("searches backward only up to the reference frame in reverse", () => {
-    const back = runCurrent({ trajectory_run: true, nearest_start: true, reverse: true, stopped_time_ms: 6500 });
-    expect(back.selected_curve_time_ms).toBe(5000);
-    expect(back.search_range_ms).toEqual([0, 6500]);
-    // [0, 3550] 里离 5000ms 处最近的是区间端点 3550
-    const bounded = runCurrent({ trajectory_run: true, nearest_start: true, reverse: true, stopped_time_ms: 3550 });
-    expect(bounded.selected_curve_time_ms).toBe(3550);
-    expect(bounded.prepare_time_ms).toBeCloseTo(1041.6666666666667, 9);
-    expect(bounded.prepare_time_ms_ceil).toBe(1042);
+  it("stays in the current segment even when another segment is nearer, and lets reverse join after the reference", () => {
+    // 当前位置在 5000ms 处；参考 6500 所在原段是 [6000, 8000]，只在这段里找
+    const current = runCurrent({ trajectory_run: true, nearest_start: true, reverse: true, stopped_time_ms: 6500 });
+    expect(current.selected_curve_time_ms).toBe(6000);
+    expect(current.prepare_time_ms).toBeCloseTo(741.6666666666666, 9);
+    expect(current.selected_segment_range_ms).toEqual([6000, 8000]);
+    // 反向也可以选在参考帧之后
+    expect(
+      runCurrent({ trajectory_run: true, nearest_start: true, reverse: true, stopped_time_ms: 3500 }).selected_curve_time_ms,
+    ).toBe(5000);
+  });
+
+  it("assigns a reference on a segment boundary to the right segment forward and the left one in reverse", () => {
+    const forward = runCurrent({ trajectory_run: true, nearest_start: true, stopped_time_ms: 2000 });
+    expect(forward).toMatchObject({ selected_curve_time_ms: 5000, selected_segment_range_ms: [2000, 6000] });
+    const reverse = runCurrent({ trajectory_run: true, nearest_start: true, reverse: true, stopped_time_ms: 2000 });
+    expect(reverse).toMatchObject({ selected_curve_time_ms: 2000, selected_segment_range_ms: [0, 2000] });
+    expect(reverse.prepare_time_ms).toBeCloseTo(2108.2526606410656, 9);
+  });
+
+  it("falls back to the next segment in the running direction only when the whole current one cannot be prepared", () => {
+    const parameters = structuredClone(current);
+    // 行程上限 2300：当前段 [6000, 8000] 的目标都超出行程
+    for (const model of parameters.models) model.max_position_HPY = [2300, 15, 15];
+    for (const state of parameters.runtime.models) state.position_HPY[0] = Math.min(state.position_HPY[0], 2300);
+    Object.assign(parameters.command, {
+      trajectory_run: true,
+      nearest_start: true,
+      use_specified_time: false,
+      reverse: true,
+      stopped_time_ms: 7000,
+      loop_count: 1,
+    });
+    const result = calculateNearestEntry(parameters);
+    expect(result.selected_curve_time_ms).toBe(3400);
+    expect(result.segment_search_phase).toBe("directional_fallback");
+    expect(result.segment_search_attempts).toEqual([
+      {
+        range_ms: [6000, 8000],
+        phase: "current_segment",
+        index: 0,
+        reference_frame_ms: 7000,
+        status: "infeasible",
+        reason: "本原段窗口内没有可执行的准备接入点",
+      },
+      { range_ms: [2000, 6000], phase: "directional_fallback", index: 1, reference_frame_ms: 7000, status: "planned" },
+    ]);
   });
 
   it("searches the whole action from the direction boundary without a reference frame", () => {
@@ -212,7 +253,7 @@ describe("calculateNearestEntry frame selection (指定帧 / 从参考帧按方�
 
   it("rejects a reference frame outside the action instead of running from an end", () => {
     expect(() => runCurrent({ trajectory_run: true, nearest_start: true, stopped_time_ms: 8001 })).toThrow(
-      "stopped_time_ms必须是动作首末范围内的整数毫秒",
+      "停止参考帧必须是动作首末范围内的整数毫秒",
     );
   });
 
@@ -254,7 +295,8 @@ describe("calculateNearestEntry on a round trip that repeats a position", () => 
         f: zero,
       };
     });
-    const model = { ...template, segments, follow_axes: ["H"], active_axes: ["H"], prepare_axes: ["H"] };
+    const { min_position_HPY: _min, max_position_HPY: _max, ...free } = template;
+    const model = { ...free, segments, follow_axes: ["H"], active_axes: ["H"], prepare_axes: ["H"] };
     return {
       command: {
         trajectory_run: true,
@@ -294,12 +336,13 @@ describe("calculateNearestEntry on a round trip that repeats a position", () => 
     expect(forward.selected_curve_time_ms).toBe(550);
     expect(forward.search_statistics).toEqual({
       method: "position_envelope_branch_and_bound",
-      evaluated_frames: 33,
-      bound_intervals: 11,
-      pruned_grid_frames: 259,
+      evaluated_frames: 14,
+      bound_intervals: 3,
+      pruned_grid_frames: 110,
       full_fine_grid_covered: true,
-      fine_grid_frames: 271,
+      fine_grid_frames: 111,
       normalized_position_tolerance: 2.4253192047278088e-14,
+      infeasible_frames: 0,
     });
     expect(calculateNearestEntry(roundTrip(unequal, 500, 2700, true)).selected_curve_time_ms).toBe(1900);
   });
@@ -315,6 +358,19 @@ describe("calculateNearestEntry on a round trip that repeats a position", () => 
       ).toBe(2500);
     },
   );
+
+  it("joins the current segment on the far side of a long round trip, in either direction", () => {
+    // 接入说明的例子：停止参考 12500 在 [10000, 20000]，惯性停在 534.98，不跳回前半段 4850 附近
+    const points: Array<[number, number]> = [[0, 100], [10000, 1000], [20000, 0]];
+    for (const reverse of [false, true]) {
+      const result = calculateNearestEntry(roundTrip(points, 534.98, 12500, reverse));
+      expect(result.selected_curve_time_ms).toBe(14650);
+      expect(result.prepare_time_ms).toBeCloseTo(6.324555320333882, 9);
+      expect(result.selected_segment_range_ms).toEqual([10000, 20000]);
+    }
+    // 参考恰在 10000 且反向：归左段 [0, 10000]
+    expect(calculateNearestEntry(roundTrip(points, 534.98, 10000, true)).selected_curve_time_ms).toBe(4830);
+  });
 
   it("reports no search statistics outside the directional search", () => {
     const parameters = roundTrip([[0, 0], [2000, 1000], [4000, 0]], 500, 800, false);
