@@ -269,6 +269,30 @@ describe("evaluateStartGate from a reference frame (任务卡继续 / 反向回)
     ).toMatchObject({ status: "at-start", plan: { targetFrameMs: 0, direction: -1 } });
   });
 
+  it("joins the outbound branch of an unequal round trip, not the coarse-grid return", () => {
+    // 0→1000 用 1100ms，回到 0 用 1600ms：500 出现在 550ms 和 1900ms
+    const unequal: ActionSequenceConfig = {
+      id: 1,
+      name: "s",
+      trajectoryMode: true,
+      blocks: [
+        { id: "a", kind: "pose", objectId: 1, atMs: 0, pose: { v1: 0, v2: 0, v3: 0 } },
+        { id: "b", kind: "pose", objectId: 1, atMs: 1100, pose: { v1: 1000, v2: 0, v3: 0 } },
+        { id: "c", kind: "pose", objectId: 1, atMs: 2700, pose: { v1: 0, v2: 0, v3: 0 } },
+      ],
+      segments: [],
+    };
+    const object = singlePointObject({ maxAxisVelocity: 3000 });
+    expect(gate(unequal, 500, { nearest: true, referenceFrameMs: 0, object })).toMatchObject({
+      status: "at-start",
+      plan: { targetFrameMs: 550, direction: 1 },
+    });
+    expect(gate(unequal, 500, { nearest: true, reverse: true, referenceFrameMs: 2700, object })).toMatchObject({
+      status: "at-start",
+      plan: { targetFrameMs: 1900, direction: -1 },
+    });
+  });
+
   it("takes the next keyframe from the reference frame along the direction for a non-forced sequence", () => {
     const sequence = roundTripSequence(false);
     expect(gate(sequence, 210, { nearest: true, referenceFrameMs: 1500 })).toMatchObject({

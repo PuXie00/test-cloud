@@ -183,6 +183,84 @@ export const bisectRight = (sorted: readonly number[], value: number): number =>
   return low;
 };
 
+const bitsView = new Float64Array(1);
+const bitsWord = new BigUint64Array(bitsView.buffer);
+
+/** math.nextafter：x 朝 toward 方向的相邻浮点数 */
+export const nextAfter = (x: number, toward: number): number => {
+  if (Number.isNaN(x) || Number.isNaN(toward)) return Number.NaN;
+  if (x === toward) return toward;
+  if (x === 0) return toward > 0 ? Number.MIN_VALUE : -Number.MIN_VALUE;
+  bitsView[0] = x;
+  // 正数往大、负数往小时绝对值变大，位模式加一
+  bitsWord[0] = toward > x === x > 0 ? bitsWord[0]! + 1n : bitsWord[0]! - 1n;
+  return bitsView[0]!;
+};
+
+/** math.ulp：|x| 到下一个更大浮点数的距离；最大有限数取向下的距离 */
+export const ulp = (x: number): number => {
+  if (Number.isNaN(x)) return x;
+  const magnitude = Math.abs(x);
+  if (magnitude === Number.POSITIVE_INFINITY) return magnitude;
+  const next = nextAfter(magnitude, Number.POSITIVE_INFINITY);
+  if (next === Number.POSITIVE_INFINITY) return magnitude - nextAfter(magnitude, Number.NEGATIVE_INFINITY);
+  return next - magnitude;
+};
+
+/**
+ * math.fsum：照 CPython 的 Shewchuk 部分和求正确舍入的和；
+ * 中间溢出、-inf 与 inf 相加时和 Python 一样抛错，NaN 原样返回。
+ */
+export const fsum = (values: Iterable<number>): number => {
+  const partials: number[] = [];
+  let specialSum = 0;
+  let infSum = 0;
+  for (const value of values) {
+    let x = value;
+    let count = 0;
+    for (let index = 0; index < partials.length; index += 1) {
+      let y = partials[index]!;
+      if (Math.abs(x) < Math.abs(y)) [x, y] = [y, x];
+      const hi = x + y;
+      const lo = y - (hi - x);
+      if (lo !== 0) partials[count++] = lo;
+      x = hi;
+    }
+    partials.length = count;
+    if (x === 0) continue;
+    if (!Number.isFinite(x)) {
+      if (Number.isFinite(value)) throw new RangeError("intermediate overflow in fsum");
+      if (value === Number.POSITIVE_INFINITY || value === Number.NEGATIVE_INFINITY) infSum += value;
+      specialSum += value;
+      partials.length = 0;
+    } else {
+      partials.push(x);
+    }
+  }
+  if (specialSum !== 0) {
+    if (Number.isNaN(infSum)) throw new RangeError("-inf + inf in fsum");
+    return specialSum;
+  }
+  let remaining = partials.length;
+  if (remaining === 0) return 0;
+  let hi = partials[--remaining]!;
+  let lo = 0;
+  while (remaining > 0) {
+    const x = hi;
+    const y = partials[--remaining]!;
+    hi = x + y;
+    lo = y - (hi - x);
+    if (lo !== 0) break;
+  }
+  // 跨多个部分和也按“四舍六入五成双”：sum([1e-16, 1, 1e16]) 要进到 …02
+  if (remaining > 0 && ((lo < 0 && partials[remaining - 1]! < 0) || (lo > 0 && partials[remaining - 1]! > 0))) {
+    const y = lo * 2;
+    const x = hi + y;
+    if (y === x - hi) hi = x;
+  }
+  return hi;
+};
+
 /** Python 浮点取模：结果与除数同号 */
 export const pythonMod = (value: number, divisor: number): number => {
   const remainder = value % divisor;

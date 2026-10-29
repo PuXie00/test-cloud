@@ -5,10 +5,14 @@ import {
   axisIndex,
   bisectRight,
   COEFFICIENT_NAMES,
+  CURVE_TICK_FRAME,
   evaluatePiece,
   finiteNumber,
+  fsum,
   hpyOf,
+  nextAfter,
   pythonMod,
+  ulp,
   type AlgorithmModel,
   type AlgorithmSettings,
   type AxisName,
@@ -34,7 +38,7 @@ import {
  */
 
 export const NEAREST_ALGORITHM_VERSION = "v5_max_capability_common_prepare";
-export const FRAME_SELECTION_VERSION = "specified_or_directional_nearest_20261028";
+export const FRAME_SELECTION_VERSION = "directional_nearest_return_branch_fix_20261028_r2";
 
 const UINT32_MAX = 4294967295;
 const MAX_PREPARE_TIME_MS = UINT32_MAX;
@@ -94,6 +98,17 @@ export type NearestEntryStartMode = "action_boundary" | "nearest";
 /** specified_frame：固定接入指定帧；directional_nearest：从参考帧按方向找位置最近的帧；action_boundary：首末边界 */
 export type NearestEntryFrameSelectionMode = "specified_frame" | "directional_nearest" | "action_boundary";
 
+/** evaluated_frames 是实际评分次数；full_fine_grid_covered 表示细网格都比较过或被安全排除 */
+export type NearestSearchStatistics = {
+  method: "position_envelope_branch_and_bound";
+  evaluated_frames: number;
+  bound_intervals: number;
+  pruned_grid_frames: number;
+  full_fine_grid_covered: true;
+  fine_grid_frames: number;
+  normalized_position_tolerance: number;
+};
+
 export type NearestEntryModelResult = Route & {
   current_HPY: Hpy;
   curve_target_HPY: Hpy;
@@ -143,6 +158,8 @@ export type NearestEntryResult = {
   search_range_ms: [number, number];
   selection_metric: "nearest_position";
   position_metric: string;
+  /** 强制方向搜索的区间包络统计；其它方式为空对象 */
+  search_statistics: NearestSearchStatistics | Record<string, never>;
   /** 所有模型共同准备耗时，ms */
   prepare_time_ms: number;
   /** 1006 prepareTimeMs：共同准备耗时向上取整 */
@@ -601,12 +618,134 @@ const nonForcedTargetAt = (model: EntryModel, globalFrame: number, inputs: Entry
 const axisCost = (delta: number, velocity: number): number =>
   delta <= 1e-12 ? 0 : velocity > 0 ? delta / velocity : Number.POSITIVE_INFINITY;
 
+const BINOMIAL: readonly (readonly number[])[] = [
+  [1],
+  [1, 1],
+  [1, 2, 1],
+  [1, 3, 3, 1],
+  [1, 4, 6, 4, 1],
+  [1, 5, 10, 10, 5, 1],
+];
+
+/**
+ * _forced_polynomial_position_bounds：0~5 次位置多项式在 u∈[uStart, uEnd] 上的保守外包，
+ * 不拿两端采样冒充整段范围；三次以上换成 Bernstein 控制值。外包放宽到覆盖求值舍入，溢出时不剪枝。
+ */
+const polynomialPositionBounds = (
+  coefficients: readonly number[],
+  uStart: number,
+  uEnd: number,
+): [number, number] => {
+  const terms = [...coefficients];
+  while (terms.length > 1 && terms[terms.length - 1] === 0) terms.pop();
+  const degree = terms.length - 1;
+  const left = Math.min(uStart, uEnd);
+  const right = Math.max(uStart, uEnd);
+  try {
+    const value = (u: number): number => {
+      let result = 0;
+      for (let index = terms.length - 1; index >= 0; index -= 1) result = result * u + terms[index]!;
+      return result;
+    };
+    let values: number[];
+    let scale: number;
+    if (degree <= 2) {
+      values = [value(left), value(right)];
+      if (degree === 2 && terms[2] !== 0) {
+        const vertex = -terms[1]! / (2 * terms[2]!);
+        if (left < vertex && vertex < right) values.push(value(vertex));
+      }
+      scale = Math.max(1, ...values.map(Math.abs));
+    } else {
+      // u = left + (right-left)·x 换到 x∈[0,1]，再转成 Bernstein 控制值
+      const width = right - left;
+      const power = Array.from({ length: degree + 1 }, (_, k) =>
+        fsum(
+          Array.from({ length: degree - k + 1 }, (__, offset) => {
+            const j = k + offset;
+            return terms[j]! * BINOMIAL[j]![k]! * left ** (j - k) * width ** k;
+          }),
+        ),
+      );
+      values = Array.from({ length: degree + 1 }, (_, i) =>
+        fsum(Array.from({ length: i + 1 }, (__, k) => (power[k]! * BINOMIAL[i]![k]!) / BINOMIAL[degree]![k]!)),
+      );
+      scale = Math.max(1, fsum(power.map(Math.abs)), ...values.map(Math.abs));
+    }
+    // 平移前的大项也可能相消：外包要覆盖原求值过程的舍入误差
+    const radius = Math.max(Math.abs(left), Math.abs(right));
+    scale = Math.max(scale, fsum(terms.map((coefficient, power) => Math.abs(coefficient) * radius ** power)));
+    if (!Number.isFinite(scale) || !values.every(Number.isFinite)) {
+      return [Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY];
+    }
+    const pad = Math.max(1e-12, 128 * ulp(scale));
+    return [
+      nextAfter(Math.min(...values) - pad, Number.NEGATIVE_INFINITY),
+      nextAfter(Math.max(...values) + pad, Number.POSITIVE_INFINITY),
+    ];
+  } catch {
+    // 外包溢出只放弃这次剪枝，不能误排除可能更近的区间
+    return [Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY];
+  }
+};
+
+/** heapq：按元组逐项比较的最小堆 */
+const tupleHeap = <T extends readonly number[]>() => {
+  const items: T[] = [];
+  const less = (left: T, right: T): boolean => {
+    for (let index = 0; index < left.length; index += 1) {
+      if (left[index]! < right[index]!) return true;
+      if (left[index]! > right[index]!) return false;
+    }
+    return false;
+  };
+  const swap = (left: number, right: number) => {
+    [items[left], items[right]] = [items[right]!, items[left]!];
+  };
+  return {
+    get size() {
+      return items.length;
+    },
+    peek: (): T | undefined => items[0],
+    push: (item: T) => {
+      items.push(item);
+      let index = items.length - 1;
+      while (index > 0) {
+        const parent = (index - 1) >> 1;
+        if (!less(items[index]!, items[parent]!)) break;
+        swap(index, parent);
+        index = parent;
+      }
+    },
+    pop: (): T | undefined => {
+      const top = items[0];
+      const last = items.pop();
+      if (items.length > 0 && last !== undefined) {
+        items[0] = last;
+        let index = 0;
+        for (;;) {
+          const left = index * 2 + 1;
+          const right = left + 1;
+          let smallest = index;
+          if (left < items.length && less(items[left]!, items[smallest]!)) smallest = left;
+          if (right < items.length && less(items[right]!, items[smallest]!)) smallest = right;
+          if (smallest === index) break;
+          swap(index, smallest);
+          index = smallest;
+        }
+      }
+      return top;
+    },
+  };
+};
+
 /** 实际选帧方式与范围，说明输入帧没有被直接当成目标 */
 type FrameSelection = {
   mode: NearestEntryFrameSelectionMode;
   referenceFrameMs: number | null;
   searchOriginMs: number;
   searchRange: [number, number];
+  statistics?: NearestSearchStatistics;
 };
 
 type SelectedFrame = {
@@ -619,7 +758,8 @@ type SelectedFrame = {
 /**
  * calculate_forced_nearest_position：指定帧优先，直接在该帧接入；非就近取动作边界；
  * 就近以停止帧为方向边界（正向 [停止帧, 末帧]，反向 [首帧, 停止帧]，不给停止帧时从方向边界搜全程），
- * 粗搜后细搜，按归一化位置差评分，同分取运行方向上先遇到的帧，区间终点也参与比较。
+ * 按归一化位置差评分：粗搜给出上界，再用位置包络分支定界覆盖整个方向细网格；
+ * 数值等价的同位置取运行方向上先遇到的帧（往返曲线不会跳到回程），区间终点也参与比较。
  */
 const selectForcedFrame = (inputs: EntryInputs): SelectedFrame => {
   const { models, direction } = inputs;
@@ -662,8 +802,94 @@ const selectForcedFrame = (inputs: EntryInputs): SelectedFrame => {
   const origin = stopped ?? (direction > 0 ? globalStart : globalEnd);
   const [searchStart, searchEnd] = direction > 0 ? [origin, globalEnd] : [globalStart, origin];
 
+  const statistics: NearestSearchStatistics = {
+    method: "position_envelope_branch_and_bound",
+    evaluated_frames: 0,
+    bound_intervals: 0,
+    pruned_grid_frames: 0,
+    full_fine_grid_covered: true,
+    fine_grid_frames: 0,
+    normalized_position_tolerance: 0,
+  };
+  const axesByModel = new Map(models.map((model) => [model.index, model.prepare.map(axisIndex)]));
+  const wholeModelBounds = new Map<number, Map<number, [number, number]>>();
+  const polynomialBoundsCache = new Map<string, [number, number]>();
+
+  /** 分段、空档保持和端点都纳入外包；循环跨出首末帧时保守地用整个模型的范围 */
+  const modelPositionBounds = (
+    model: EntryModel,
+    leftFrame: number,
+    rightFrame: number,
+  ): Map<number, [number, number]> => {
+    const pieces = model.pieces;
+    const first = pieces[0]!.start_frame;
+    const last = lastOf(pieces).end_frame;
+    if (!inputs.loopOnce && (leftFrame < first || rightFrame > last)) return wholeModelBounds.get(model.index)!;
+    const left = Math.max(first, Math.min(last, leftFrame));
+    const right = Math.max(first, Math.min(last, rightFrame));
+    const atLeft = forcedTargetAt(model, left, inputs);
+    const atRight = forcedTargetAt(model, right, inputs);
+    const axes = axesByModel.get(model.index)!;
+    const result = new Map(
+      axes.map((axis): [number, [number, number]] => [
+        axis,
+        [Math.min(atLeft[axis]!, atRight[axis]!), Math.max(atLeft[axis]!, atRight[axis]!)],
+      ]),
+    );
+    for (let index = Math.max(0, bisectRight(model.pieceStarts, left) - 1); index < pieces.length; index += 1) {
+      const piece = pieces[index]!;
+      const start = piece.start_frame;
+      const end = piece.end_frame;
+      if (start > right) break;
+      const lo = Math.max(left, start);
+      const hi = Math.min(right, end);
+      for (const axis of axes) {
+        const bounds = result.get(axis)!;
+        if (lo <= hi) {
+          const coefficients = COEFFICIENT_NAMES.map((name) => piece[name][axis]!);
+          const uStart = (lo - start) / CURVE_TICK_FRAME;
+          const uEnd = (hi - start) / CURVE_TICK_FRAME;
+          const key = `${coefficients.join(",")}|${uStart}|${uEnd}`;
+          let cached = polynomialBoundsCache.get(key);
+          if (cached === undefined) {
+            cached = polynomialPositionBounds(coefficients, uStart, uEnd);
+            polynomialBoundsCache.set(key, cached);
+          }
+          bounds[0] = Math.min(bounds[0], cached[0]);
+          bounds[1] = Math.max(bounds[1], cached[1]);
+        }
+        // PLC 在首末帧、空档用明确的端点值，不能只包系数值
+        for (const [frame, value] of [
+          [start, piece.start_HPY[axis]!],
+          [end, piece.target_HPY[axis]!],
+        ] as const) {
+          if (left <= frame && frame <= right) {
+            bounds[0] = Math.min(bounds[0], value);
+            bounds[1] = Math.max(bounds[1], value);
+          }
+        }
+      }
+    }
+    return result;
+  };
+
+  // 只用来消掉多项式求值的数值尾差，不放宽现场位置 / 速度的执行容差
+  let scoreTolerance = 0;
+  for (const model of models) {
+    const bounds = modelPositionBounds(model, model.pieces[0]!.start_frame, lastOf(model.pieces).end_frame);
+    wholeModelBounds.set(model.index, bounds);
+    for (const [axis, [lower, upper]] of bounds) {
+      const current = model.current[axis]!;
+      const velocity = model.max.velocity[axis]!;
+      const finiteScale = [1, Math.abs(current), ...[lower, upper].filter(Number.isFinite).map(Math.abs)];
+      const positionEpsilon = Math.max(1e-12, 32 * ulp(Math.max(...finiteScale)));
+      if (velocity > 0) scoreTolerance = Math.max(scoreTolerance, positionEpsilon / velocity);
+    }
+  }
+
   // 位置差除以各轴最大速度统一 H/P/Y 量纲；同分还要算完剩余轴，不能把没算完的同分当成最近
   const scoreFrame = (frame: number, cutoff: number): number => {
+    statistics.evaluated_frames += 1;
     let score = 0;
     for (const model of models) {
       const target = forcedTargetAt(model, frame, inputs);
@@ -680,43 +906,91 @@ const selectForcedFrame = (inputs: EntryInputs): SelectedFrame => {
   };
 
   type Best = { frame: number; score: number };
-  /** 先比代价；同分取运行方向上更早遇到的帧 */
-  const consider = (frame: number, best: Best | null): Best => {
-    const score = scoreFrame(frame, best === null ? Number.POSITIVE_INFINITY : best.score);
-    if (
-      best === null ||
-      score < best.score ||
-      (score === best.score && direction * frame < direction * best.frame)
-    ) {
-      return { frame, score };
-    }
-    return best;
+  // 数值等价窗口固定围绕真正的最小代价，不逐次放宽；窗口内取运行方向上先遇到的帧
+  let minimumScore = Number.POSITIVE_INFINITY;
+  const equivalent = tupleHeap<[number, number, number]>();
+  const consider = (frame: number): Best => {
+    const score = scoreFrame(frame, minimumScore + scoreTolerance);
+    minimumScore = Math.min(minimumScore, score);
+    if (score <= minimumScore + scoreTolerance) equivalent.push([direction * frame, frame, score]);
+    while (equivalent.size > 0 && equivalent.peek()![2] > minimumScore + scoreTolerance) equivalent.pop();
+    const [, selectedFrame, selectedScore] = equivalent.peek()!;
+    return { frame: selectedFrame, score: selectedScore };
   };
 
-  const scan = (start: number, end: number, step: number, best: Best | null): Best => {
-    let current = best;
+  const scan = (start: number, end: number, step: number): Best => {
+    let current: Best | null = null;
     const epsilon = Math.abs(step) * 1e-9;
     let frame = start;
     while ((step > 0 && frame <= end + epsilon) || (step < 0 && frame >= end - epsilon)) {
-      // 已有 0 代价的帧，且按运行方向已扫到它之后，不可能更优
-      if (current !== null && current.score === 0 && direction * frame >= direction * current.frame) break;
-      current = consider(frame, current);
+      if (current !== null && minimumScore === 0 && direction * frame >= direction * current.frame) break;
+      current = consider(frame);
       frame += step;
     }
-    // 停止帧可能不与步长对齐：区间终点也要参与比较
-    return consider(end, current);
+    // 参考帧可能不与步长对齐：区间终点也要参与比较
+    return consider(end);
   };
 
   const coarse = inputs.coarseStep;
   const fine = inputs.fineStep;
-  let best =
-    direction > 0
-      ? scan(searchStart, searchEnd, coarse, null)
-      : scan(searchEnd, searchStart, -coarse, null);
-  const fineStart = Math.max(searchStart, best.frame - coarse);
-  const fineEnd = Math.min(searchEnd, best.frame + coarse);
-  best =
-    direction > 0 ? scan(fineStart, fineEnd, fine, best) : scan(fineEnd, fineStart, -fine, best);
+  // 粗搜只给出代价上界
+  let best = direction > 0 ? scan(searchStart, searchEnd, coarse) : scan(searchEnd, searchStart, -coarse);
+
+  // 整个允许方向的细网格都要比较或被位置包络安全排除，不能只细搜粗搜最优的一个盆地
+  const gridOrigin = direction > 0 ? searchStart : searchEnd;
+  const gridCount = Math.floor((searchEnd - searchStart) / fine + 1e-10) + 1;
+  statistics.fine_grid_frames = gridCount;
+  statistics.normalized_position_tolerance = scoreTolerance;
+  const gridFrame = (index: number): number => gridOrigin + direction * index * fine;
+
+  const intervalBound = (firstIndex: number, lastIndex: number): number => {
+    statistics.bound_intervals += 1;
+    const a = gridFrame(firstIndex);
+    const b = gridFrame(lastIndex);
+    let lowerScore = 0;
+    for (const model of models) {
+      for (const [axis, [lower, upper]] of modelPositionBounds(model, Math.min(a, b), Math.max(a, b))) {
+        const current = model.current[axis]!;
+        const delta = Math.max(0, lower - current, current - upper);
+        lowerScore = Math.max(lowerScore, axisCost(delta, model.max.velocity[axis]!));
+      }
+    }
+    return lowerScore;
+  };
+
+  /** 下界已超出等价窗口，或在当前最优之后且不可能改善真正最小代价的区间不用再看 */
+  const competitive = (lower: number, firstIndex: number): boolean => {
+    if (lower > minimumScore + scoreTolerance) return false;
+    return !(
+      direction * gridFrame(firstIndex) >= direction * best.frame &&
+      (minimumScore === 0 || lower >= best.score)
+    );
+  };
+
+  const pending = tupleHeap<[number, number, number]>();
+  pending.push([intervalBound(0, gridCount - 1), 0, gridCount - 1]);
+  while (pending.size > 0) {
+    const [lower, firstIndex, lastIndex] = pending.pop()!;
+    if (!competitive(lower, firstIndex)) {
+      statistics.pruned_grid_frames += lastIndex - firstIndex + 1;
+      continue;
+    }
+    if (lastIndex - firstIndex <= 7) {
+      for (let index = firstIndex; index <= lastIndex; index += 1) best = consider(gridFrame(index));
+      continue;
+    }
+    const middle = Math.floor((firstIndex + lastIndex) / 2);
+    best = consider(gridFrame(middle));
+    for (const [firstChild, lastChild] of [
+      [firstIndex, middle - 1],
+      [middle + 1, lastIndex],
+    ] as const) {
+      if (firstChild > lastChild) continue;
+      const childLower = intervalBound(firstChild, lastChild);
+      if (competitive(childLower, firstChild)) pending.push([childLower, firstChild, lastChild]);
+      else statistics.pruned_grid_frames += lastChild - firstChild + 1;
+    }
+  }
   return {
     frame: best.frame,
     targets: targetsAt(best.frame),
@@ -726,6 +1000,7 @@ const selectForcedFrame = (inputs: EntryInputs): SelectedFrame => {
       referenceFrameMs: stopped,
       searchOriginMs: origin,
       searchRange: [searchStart, searchEnd],
+      statistics,
     },
   };
 };
@@ -1300,6 +1575,7 @@ export const calculateNearestEntry = (parameters: NearestParameters): NearestEnt
     search_range_ms: selection.searchRange,
     selection_metric: "nearest_position",
     position_metric: "max(abs(target-current)/max_velocity_HPY)",
+    search_statistics: selection.statistics ?? {},
     prepare_time_ms: durationMs,
     prepare_time_ms_ceil: prepareTimeMsCeil,
     start_mode: motion.startMode,

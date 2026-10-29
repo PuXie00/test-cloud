@@ -223,3 +223,103 @@ describe("calculateNearestEntry frame selection (指定帧 / 从参考帧按方�
     expect(result).toMatchObject({ frame_selection_mode: "directional_nearest", search_range_ms: [6000, 8000] });
   });
 });
+
+/**
+ * 往返曲线同一位置有两个时刻（python/新就近算法 接入说明第 7 节的例子，两段线性插值）：
+ * 期望值由 _calculate_nearest_entry_v4 计算得到。
+ */
+describe("calculateNearestEntry on a round trip that repeats a position", () => {
+  const roundTrip = (
+    points: Array<[number, number]>,
+    h: number,
+    stop: number,
+    reverse: boolean,
+  ): NearestParameters => {
+    const parameters = structuredClone(example);
+    const template = parameters.models.find((model) => model.model_type === 2)!;
+    const segments = points.slice(1).map(([end, to], index) => {
+      const [start, from] = points[index]!;
+      const zero: Hpy = [0, 0, 0];
+      return {
+        segment_id: index,
+        start_frame: start,
+        end_frame: end,
+        start_HPY: [from, 0, 0] as Hpy,
+        target_HPY: [to, 0, 0] as Hpy,
+        a: [from, 0, 0] as Hpy,
+        b: [(to - from) / ((end - start) / 100), 0, 0] as Hpy,
+        c: zero,
+        d: zero,
+        e: zero,
+        f: zero,
+      };
+    });
+    const model = { ...template, segments, follow_axes: ["H"], active_axes: ["H"], prepare_axes: ["H"] };
+    return {
+      command: {
+        trajectory_run: true,
+        reverse,
+        nearest_start: true,
+        use_specified_time: false,
+        stopped_time_ms: stop,
+        loop_count: 1,
+      },
+      settings: parameters.settings,
+      models: [model],
+      runtime: {
+        models: [
+          {
+            model_id: model.model_id,
+            plc_id: model.plc_id,
+            device_id: model.device_id,
+            position_HPY: [h, 0, 0],
+            velocity_HPY: [0, 0, 0],
+            standstill: true,
+          },
+        ],
+      },
+    };
+  };
+
+  it("keeps the first time the position is met in the running direction", () => {
+    const symmetric: Array<[number, number]> = [[0, 0], [2000, 1000], [4000, 0]];
+    expect(calculateNearestEntry(roundTrip(symmetric, 500, 800, false)).selected_curve_time_ms).toBe(1000);
+    expect(calculateNearestEntry(roundTrip(symmetric, 500, 3200, true)).selected_curve_time_ms).toBe(3000);
+  });
+
+  it("checks the whole fine grid, not only around the coarse best, on an unequal round trip", () => {
+    const unequal: Array<[number, number]> = [[0, 0], [1100, 1000], [2700, 0]];
+    const forward = calculateNearestEntry(roundTrip(unequal, 500, 0, false));
+    // 粗搜正好落在回程的 1900，前支的 550 只在细网格上
+    expect(forward.selected_curve_time_ms).toBe(550);
+    expect(forward.search_statistics).toEqual({
+      method: "position_envelope_branch_and_bound",
+      evaluated_frames: 33,
+      bound_intervals: 11,
+      pruned_grid_frames: 259,
+      full_fine_grid_covered: true,
+      fine_grid_frames: 271,
+      normalized_position_tolerance: 2.4253192047278088e-14,
+    });
+    expect(calculateNearestEntry(roundTrip(unequal, 500, 2700, true)).selected_curve_time_ms).toBe(1900);
+  });
+
+  it.each([500, 499.999999, 499.99, 500.000001])(
+    "does not jump to the return branch over a float tail (H=%s)",
+    (h) => {
+      expect(
+        calculateNearestEntry(roundTrip([[0, 0], [3000, 1000], [4000, 0]], h, 1500, false)).selected_curve_time_ms,
+      ).toBe(1500);
+      expect(
+        calculateNearestEntry(roundTrip([[0, 0], [1000, 1000], [4000, 0]], h, 2500, true)).selected_curve_time_ms,
+      ).toBe(2500);
+    },
+  );
+
+  it("reports no search statistics outside the directional search", () => {
+    const parameters = roundTrip([[0, 0], [2000, 1000], [4000, 0]], 500, 800, false);
+    parameters.command.use_specified_time = true;
+    parameters.command.specified_time_ms = 800;
+    expect(calculateNearestEntry(parameters).search_statistics).toEqual({});
+  });
+});
