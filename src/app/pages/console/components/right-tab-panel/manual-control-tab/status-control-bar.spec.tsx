@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { TestPermissionsProvider } from "@/app/auth/permissions";
 import { StatusControlBar } from "./status-control-bar";
 
@@ -57,9 +57,9 @@ describe("StatusControlBar 按权限显示主操作", () => {
     );
   const labels = () => screen.queryAllByRole("button").map((button) => button.textContent);
 
-  it("只有设备状态：使能、复位", () => {
+  it("只有设备状态：使能、复位、总停止、停止", () => {
     renderWith(["control.device"]);
-    expect(labels()).toEqual(["使能", "复位"]);
+    expect(labels()).toEqual(["使能", "复位", "总停止", "停止"]);
   });
 
   it("只有手动运动：回原、走平", () => {
@@ -75,5 +75,18 @@ describe("StatusControlBar 按权限显示主操作", () => {
   it("都没有时主操作整块不显示", () => {
     renderWith([]);
     expect(screen.queryByText("主操作")).toBeNull();
+  });
+});
+
+describe("StatusControlBar 停止", () => {
+  it("停止和总停止直接回调，不打开确认框", () => {
+    const onStop = vi.fn();
+    const onAllStop = vi.fn();
+    renderBar({ onStop, onAllStop });
+    fireEvent.click(screen.getByRole("button", { name: "停止" }));
+    fireEvent.click(screen.getByRole("button", { name: "总停止" }));
+    expect(onStop).toHaveBeenCalledTimes(1);
+    expect(onAllStop).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 });

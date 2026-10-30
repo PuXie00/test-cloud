@@ -6,6 +6,8 @@ export const MANUAL_OPERATIONS = [
   "couple",
   "enable",
   "reset",
+  "allStop",
+  "stop",
   "home",
   "level",
   "jog",

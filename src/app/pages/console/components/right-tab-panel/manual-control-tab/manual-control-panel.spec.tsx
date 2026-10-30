@@ -9,6 +9,7 @@ const { hookState } = vi.hoisted(() => ({
     snapshots: new Map<number, unknown>(),
     previewSequenceId: null as number | null,
     sequences: [] as { id: number; name: string }[],
+    plcs: [] as { id: number }[],
   },
 }));
 
@@ -29,6 +30,11 @@ vi.mock("@/app/project/use-project", () => ({
     currentProject: { document: { motion: { actionSequences: hookState.sequences } } },
   }),
 }));
+vi.mock("../../../hooks/use-project-store", () => ({
+  useProjectStore: () => ({
+    plcs: hookState.plcs,
+  }),
+}));
 vi.mock("../../../hooks/use-couple-flow", () => ({
   useCoupleFlow: () => ({
     phase: "idle",
@@ -45,6 +51,8 @@ vi.mock("../../../hooks/manual-commands", () => ({
   sendEnableModel: vi.fn(),
   sendHomeModel: vi.fn(),
   sendResetModel: vi.fn(),
+  sendStopModel: vi.fn(),
+  sendAllStopPlc: vi.fn(),
 }));
 vi.mock("./couple-preview-dialog", () => ({ CouplePreviewDialog: () => null }));
 vi.mock("./jog-control", () => ({
@@ -74,13 +82,14 @@ const snapshot = (id: number, name: string) => ({
 
 const renderPanel = () => render(<ManualControlPanel onSaveCurrentPose={vi.fn()} />);
 
-const MAIN_ACTIONS = ["耦合", "使能", "复位", "回原", "走平"];
+const MAIN_ACTIONS = ["耦合", "使能", "复位", "总停止", "停止", "回原", "走平"];
 
 beforeEach(() => {
   hookState.selectedIds = [1];
   hookState.snapshots = new Map<number, unknown>([[1, snapshot(1, "升降灯架-01")]]);
   hookState.previewSequenceId = null;
   hookState.sequences = [{ id: 7, name: "开场" }];
+  hookState.plcs = [{ id: 10 }, { id: 20 }];
 });
 
 afterEach(() => cleanup());
@@ -122,6 +131,21 @@ describe("ManualControlPanel 预览中", () => {
     hookState.previewSequenceId = 99;
     renderPanel();
     expect(screen.getByText("正在预览动作序列，无法操作")).not.toBeNull();
+  });
+});
+
+describe("ManualControlPanel 停止", () => {
+  it("停止传物体 id，总停止传当前全部主控", async () => {
+    const { sendAllStopPlc, sendStopModel } = await import("../../../hooks/manual-commands");
+    hookState.snapshots.set(2, snapshot(2, "升降灯架-02"));
+    hookState.selectedIds = [1, 2];
+    hookState.plcs = [{ id: 10 }, { id: 20 }];
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "停止" }));
+    fireEvent.click(screen.getByRole("button", { name: "总停止" }));
+    expect(sendStopModel).toHaveBeenCalledWith([1, 2]);
+    expect(sendAllStopPlc).toHaveBeenCalledWith([10, 20]);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 });
 

@@ -18,8 +18,9 @@ import { cn } from "@/app/components/ui/utils";
 import { NO_SELECTION_NOTICE, type ManualOperation } from "./manual-control-availability";
 
 type ChoiceActionId = "enable" | "couple";
-type SimpleActionId = "home" | "level" | "reset" | "clearAlarm";
-type MainActionId = ChoiceActionId | SimpleActionId;
+type DialogActionId = "home" | "level" | "reset" | "clearAlarm";
+type ImmediateActionId = "allStop" | "stop";
+type MainActionId = ChoiceActionId | DialogActionId | ImmediateActionId;
 
 type StatusControlBarProps = {
   /** null：未选物体，头部显示「请先选择受控物体」 */
@@ -37,6 +38,8 @@ type StatusControlBarProps = {
   onEnableChoice?: (enableFlag: 0 | 1) => void;
   onReset?: () => void;
   onHome?: () => void;
+  onStop?: () => void;
+  onAllStop?: () => void;
 };
 
 const MAIN_ACTIONS: {
@@ -47,6 +50,8 @@ const MAIN_ACTIONS: {
   { id: "couple", label: "耦合", tone: "primary" },
   { id: "enable", label: "使能", tone: "primary" },
   { id: "reset", label: "复位", tone: "warning" },
+  { id: "allStop", label: "总停止", tone: "default" },
+  { id: "stop", label: "停止", tone: "default" },
   { id: "home", label: "回原", tone: "default" },
   { id: "level", label: "走平", tone: "default" },
 ];
@@ -57,6 +62,8 @@ const ACTION_PERMISSION: Record<MainActionId, PermissionId> = {
   enable: "control.device",
   reset: "control.device",
   clearAlarm: "control.device",
+  allStop: "control.device",
+  stop: "control.device",
   home: "control.manual",
   level: "control.manual",
 };
@@ -81,7 +88,7 @@ const CHOICE_DIALOG: Record<
   },
 };
 
-const SIMPLE_DIALOG: Record<SimpleActionId, { title: string; confirm: string }> = {
+const SIMPLE_DIALOG: Record<DialogActionId, { title: string; confirm: string }> = {
   home: { title: "回原", confirm: "确认回原" },
   level: { title: "走平", confirm: "确认走平" },
   reset: { title: "复位", confirm: "确认复位" },
@@ -90,6 +97,9 @@ const SIMPLE_DIALOG: Record<SimpleActionId, { title: string; confirm: string }> 
 
 const isChoiceAction = (id: MainActionId): id is ChoiceActionId =>
   id === "enable" || id === "couple";
+
+const isDialogAction = (id: MainActionId): id is DialogActionId =>
+  id === "home" || id === "level" || id === "reset" || id === "clearAlarm";
 
 const TONE_CLASS: Record<"primary" | "show" | "warning" | "default", string> = {
   primary: "bg-primary text-primary-foreground",
@@ -114,6 +124,8 @@ export const StatusControlBar = ({
   onEnableChoice,
   onReset,
   onHome,
+  onStop,
+  onAllStop,
 }: StatusControlBarProps) => {
   const [pending, setPending] = useState<MainActionId | null>(null);
   const { can } = usePermissions();
@@ -132,8 +144,20 @@ export const StatusControlBar = ({
     onCoupleChoice?.(coupleFlag);
   };
 
+  const handleActionClick = (id: MainActionId) => {
+    if (id === "stop") {
+      onStop?.();
+      return;
+    }
+    if (id === "allStop") {
+      onAllStop?.();
+      return;
+    }
+    setPending(id);
+  };
+
   const choice = pending && isChoiceAction(pending) ? CHOICE_DIALOG[pending] : null;
-  const simple = pending && !isChoiceAction(pending) ? SIMPLE_DIALOG[pending] : null;
+  const simple = pending && isDialogAction(pending) ? SIMPLE_DIALOG[pending] : null;
   const title = choice?.title ?? simple?.title ?? "";
   const confirmTone = pending === "reset" || pending === "clearAlarm" ? "warning" : "primary";
   const batchCount = batchNames.length;
@@ -180,7 +204,7 @@ export const StatusControlBar = ({
                 key={action.id}
                 type="button"
                 disabled={!allowed(action.id) || (action.id === "couple" && coupleBusy)}
-                onClick={() => setPending(action.id)}
+                onClick={() => handleActionClick(action.id)}
                 className={cn(
                   actionButtonClassName,
                   TONE_CLASS[action.tone],

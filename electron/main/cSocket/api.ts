@@ -289,7 +289,10 @@ export class CsocketApiService {
         }>)
       }
       if (optCmd === 'Info|act') {
-        // console.log('Info|act', JSON.stringify(msg));
+        console.log('Info|act', JSON.stringify(msg));
+        msg!.data!.forEach((item) => {
+          item.runTime = item.runTime * 100
+        });
         this.broadcast(CSOCKET_CHANNELS.readActionRun, msg as CppAckResult<{
           actionId: number, // 动作ID
           state: number, // 动作状态 1:过渡状态，正在走到轨迹上 3： 运行中 
@@ -947,8 +950,12 @@ export class CsocketApiService {
     return this.sendBuilt('Opera|syncMovebegin', '0x010B', [], opts)
   }
   // 减速停止
-  stopModel(items: { deviceId: number, deceleration: number }[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('Opera|stop', '0x0107', items, opts)
+  stopModel(items: { deviceId: number}[], opts?: CsocketSendOpts) {
+    const mapped = items.map((item) => ({
+      deviceId: item.deviceId,
+      deceleration: 0, // 走默认的减速时间
+    }))
+    return this.sendBuilt('Opera|stop', '0x0107', mapped, opts)
   }
   // 急停停止
   eStopModel(items: { deviceId: number, deceleration: number }[], opts?: CsocketSendOpts) {
@@ -998,7 +1005,7 @@ export class CsocketApiService {
   ) {
     return this.sendBuilt('Opera|simulationSwitch', '0x1001', items, opts)
   }
-  // 全场停止
+  // 全场停止 plc主控id
   allStopPlc(items: { deviceId: number }[], opts?: CsocketSendOpts) {
     return this.sendBuilt('Opera|AllStop', '0x1002', items ?? [], opts)
   }

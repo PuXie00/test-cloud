@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAllStopPlcItems,
   buildEnableItems,
   buildHomeMoveTargetItems,
   buildJogModelItems,
   buildResetItems,
+  buildStopItems,
   jogMotionParams,
   toModelJogDirection,
   virtualAxisTypeFromDimKey,
@@ -69,6 +71,14 @@ describe("buildEnableItems / buildResetItems", () => {
 
   it("复位多项", () => {
     expect(buildResetItems([1, 9])).toEqual([{ deviceId: 1 }, { deviceId: 9 }]);
+  });
+
+  it("停止传物体 id", () => {
+    expect(buildStopItems([1, 9])).toEqual([{ deviceId: 1 }, { deviceId: 9 }]);
+  });
+
+  it("总停止传主控 id，重复的只留一个", () => {
+    expect(buildAllStopPlcItems([10, 10, 20])).toEqual([{ deviceId: 10 }, { deviceId: 20 }]);
   });
 });
 
