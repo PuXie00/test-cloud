@@ -237,6 +237,70 @@ export const applyBindMotorsFromAxis = (
   return { ok: true, motors: nextMotors };
 };
 
+export type AutoBindAssignment = {
+  objectId: number;
+  axisKey: string;
+  motorId: number;
+};
+
+export type AutoBindPlan = {
+  assignments: AutoBindAssignment[];
+  /** 没有可用电机、这次没分配到的吊点数 */
+  unplacedAxisCount: number;
+};
+
+const busGroupKey = (motor: Motor) => `${motor.plcId}:${motor.busNo}`;
+
+/**
+ * 按物体和吊点的顺序，把空闲电机分配给未绑定的吊点。
+ * 同一物体的电机必须在同一主控的同一从站口：已有绑定的沿用它的口；
+ * 没有绑定的优先选放得下全部吊点的口，都放不下就选空闲电机最多的口。
+ */
+export const planAutoBind = (
+  objects: readonly ControlledObject[],
+  motors: readonly Motor[],
+): AutoBindPlan => {
+  const free = motors.filter((motor) => motor.selected && motor.controlledObjectId == null);
+  const assignments: AutoBindAssignment[] = [];
+  let unplacedAxisCount = 0;
+
+  for (const object of objects) {
+    if (controlTypeHasNoDriveAxes(object.controlType)) continue;
+    const unboundAxes = object.axes.filter((axis) => !isAxisBound(object.id, axis.key, motors));
+    if (unboundAxes.length === 0) continue;
+
+    const boundMotor = motors.find(
+      (motor) => motor.controlledObjectId === object.id && Boolean(motor.axisKey),
+    );
+    const groups = new Map<string, Motor[]>();
+    for (const motor of free) {
+      const key = busGroupKey(motor);
+      groups.set(key, [...(groups.get(key) ?? []), motor]);
+    }
+    const candidates = boundMotor
+      ? (groups.get(busGroupKey(boundMotor)) ?? [])
+      : ([...groups.values()].find((group) => group.length >= unboundAxes.length) ??
+        [...groups.values()].reduce<Motor[]>(
+          (largest, group) => (group.length > largest.length ? group : largest),
+          [],
+        ));
+
+    const pairCount = Math.min(unboundAxes.length, candidates.length);
+    for (let index = 0; index < pairCount; index += 1) {
+      const motor = candidates[index]!;
+      assignments.push({
+        objectId: object.id,
+        axisKey: unboundAxes[index]!.key,
+        motorId: motor.id,
+      });
+      free.splice(free.indexOf(motor), 1);
+    }
+    unplacedAxisCount += unboundAxes.length - pairCount;
+  }
+
+  return { assignments, unplacedAxisCount };
+};
+
 export const getPlcLinkedObjectIds = (plcId: number, motors: Motor[]): number[] => {
   const ids = new Set<number>();
   for (const motor of motors) {
