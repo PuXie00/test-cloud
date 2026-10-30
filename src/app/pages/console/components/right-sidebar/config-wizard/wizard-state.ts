@@ -8,7 +8,7 @@ import {
   controlTypeHasNoDriveAxes,
 } from "@/app/project/configuration-rules";
 import { formatPlcDisplayName } from "@/app/pages/console/hooks/plc-display-name";
-import type { WizardMeta, WizardStepKey } from "@/app/project/project-document-types";
+import type { WizardStepKey } from "@/app/project/project-document-types";
 import { countBoundAxesOnObject } from "@/app/pages/console/hooks/binding-utils";
 import { reconcileMotors } from "@/app/pages/console/hooks/plc-reconciliation";
 import type { PlcRuntimeState } from "@/app/pages/console/hooks/plc-runtime-types";
@@ -16,21 +16,16 @@ import type { PlcRuntimeState } from "@/app/pages/console/hooks/plc-runtime-type
 export type { WizardStepKey } from "@/app/project/project-document-types";
 
 export const WIZARD_STEPS = [
-  { key: "objects", label: "受控物体", skippable: false },
-  { key: "hardware", label: "主控与驱动单元", skippable: true },
-  { key: "binding", label: "驱动轴绑定", skippable: true },
-  { key: "review", label: "参数确认", skippable: false },
-] as const satisfies readonly { key: WizardStepKey; label: string; skippable: boolean }[];
+  { key: "objects", label: "受控物体" },
+  { key: "hardware", label: "主控与驱动" },
+  { key: "binding", label: "绑定" },
+  { key: "review", label: "检查与下一步" },
+] as const satisfies readonly { key: WizardStepKey; label: string }[];
 
-export const SKIPPABLE_STEPS = new Set<WizardStepKey>(
-  WIZARD_STEPS.filter((step) => step.skippable).map((step) => step.key),
-);
-
-export type WizardReviewSetup = {
+export type WizardSetup = {
   objects: ControlledObject[];
   plcs: Plc[];
   motors: Motor[];
-  simulationOnly: boolean;
 };
 
 export type WizardReviewRuntime = {
@@ -43,8 +38,7 @@ export type ReviewIssueCode =
   | "axis-minimum"
   | "motor-count-mismatch"
   | "plc-disconnected"
-  | "unbound-axes"
-  | "simulation-only";
+  | "unbound-axes";
 
 export type ReviewIssue = {
   code: ReviewIssueCode;
@@ -54,20 +48,10 @@ export type ReviewIssue = {
 };
 
 export const getReviewIssues = (
-  setup: WizardReviewSetup,
+  setup: WizardSetup,
   runtime: WizardReviewRuntime,
 ): ReviewIssue[] => {
   const issues: ReviewIssue[] = [];
-
-  if (setup.simulationOnly) {
-    issues.push({
-      code: "simulation-only",
-      severity: "warning",
-      message: "仅离线仿真",
-      targetStep: "hardware",
-    });
-    return issues;
-  }
 
   for (const object of setup.objects) {
     if (controlTypeHasNoDriveAxes(object.controlType)) continue;
@@ -76,7 +60,7 @@ export const getReviewIssues = (
       issues.push({
         code: "axis-minimum",
         severity: "blocking",
-        message: `${object.name} 驱动轴不足（至少 ${minimum} 轴）`,
+        message: `${object.name} 吊点不足（至少 ${minimum} 个）`,
         targetStep: "objects",
       });
     }
@@ -136,7 +120,7 @@ export const getReviewIssues = (
     issues.push({
       code: "unbound-axes",
       severity: "blocking",
-      message: `仍有 ${bindableAxes - boundAxes} 个驱动轴未绑定`,
+      message: `仍有 ${bindableAxes - boundAxes} 个吊点未绑定`,
       targetStep: "binding",
     });
   }
@@ -144,13 +128,8 @@ export const getReviewIssues = (
   return issues;
 };
 
-export const hasBlockingReviewIssues = (issues: ReviewIssue[]): boolean =>
-  issues.some((issue) => issue.severity === "blocking");
-
 /** 向导的视图：一个认识页，加四个步骤 */
 export type WizardView = "intro" | WizardStepKey;
-
-export type WizardSetup = Pick<WizardReviewSetup, "objects" | "plcs" | "motors">;
 
 export type WizardCounts = {
   objects: number;
@@ -265,7 +244,7 @@ export const getWizardCapabilities = (
   );
   const allConnected = counts.plcs > 0 && connectedPlcIds.size === counts.plcs;
   const connectedMotors = setup.motors.filter((motor) => connectedPlcIds.has(motor.plcId)).length;
-  const blocking = getReviewIssues({ ...setup, simulationOnly: false }, runtime).filter(
+  const blocking = getReviewIssues(setup, runtime).filter(
     (issue) => issue.severity === "blocking",
   );
 
@@ -373,65 +352,4 @@ export const getWizardCapabilities = (
       };
 
   return [preview, connect, debug, linked, show];
-};
-
-export type WizardStepContext = WizardReviewSetup & {
-  meta: WizardMeta;
-};
-
-export const validateWizardStep = (step: WizardStepKey, ctx: WizardStepContext): string | null => {
-  if (ctx.meta.skippedSteps.includes(step)) return null;
-
-  switch (step) {
-    case "objects":
-      if (ctx.objects.length === 0) return "请至少添加一个受控物体";
-      if (ctx.objects.some((object) => !object.name.trim())) return "请填写所有物体名称";
-      return null;
-    case "hardware":
-      return ctx.plcs.length === 0 ? "请至少添加一个主控" : null;
-    case "binding":
-      return null;
-    case "review":
-      return null;
-    default:
-      return null;
-  }
-};
-
-export const isWizardStepDone = (
-  step: WizardStepKey,
-  ctx: WizardStepContext,
-  runtime?: WizardReviewRuntime,
-): boolean => {
-  if (ctx.meta.skippedSteps.includes(step)) return false;
-
-  switch (step) {
-    case "objects":
-      return (
-        ctx.objects.length > 0 &&
-        ctx.objects.every((object) => object.name.trim().length > 0) &&
-        !ctx.objects.some((object) => {
-          if (controlTypeHasNoDriveAxes(object.controlType)) return false;
-          return object.axes.length < CONTROL_TYPE_RULES[object.controlType].minimumDriveAxes;
-        })
-      );
-    case "hardware":
-      return ctx.plcs.length > 0;
-    case "binding": {
-      const bindableAxes = ctx.objects
-        .filter((object) => !controlTypeHasNoDriveAxes(object.controlType))
-        .reduce((count, object) => count + object.axes.length, 0);
-      if (bindableAxes === 0) return true;
-      const bound = ctx.objects.reduce(
-        (count, object) => count + countBoundAxesOnObject(object, ctx.motors),
-        0,
-      );
-      return bound > 0;
-    }
-    case "review":
-      if (!runtime) return false;
-      return !hasBlockingReviewIssues(getReviewIssues(ctx, runtime));
-    default:
-      return false;
-  }
 };

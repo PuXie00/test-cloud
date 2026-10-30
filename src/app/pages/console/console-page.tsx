@@ -50,12 +50,11 @@ import { ConsoleFooter } from "./components/footer/console-footer";
 import { LockScreen } from "./components/lock-screen/lock-screen";
 import { ConsoleLoginProvider } from "./components/login-overlay/console-login-context";
 import { LoginOverlay } from "./components/login-overlay/login-overlay";
-import { ConfigWizardProvider } from "./hooks/use-config-wizard";
 import { ProjectStoreProvider } from "./hooks/use-project-store";
 import { PlcRuntimeProvider, usePlcRuntime } from "./hooks/plc-runtime-provider";
 import { RulesProvider } from "./hooks/use-rules";
 import { ControlLayoutProvider, useControlLayout } from "./hooks/use-control-layout";
-import { NEW_PROJECT_FLAG_KEY } from "./components/right-sidebar/config-wizard/config-wizard-constants";
+import { useEmptyProjectWizardEntry } from "./hooks/use-empty-project-wizard-entry";
 
 /** 任务卡里 PLC 没上报的信息（名称、时长、方向等）从当前工程的序列和执行槽取 */
 const ProjectExecCardsProvider = ({ children }: { children: ReactNode }) => {
@@ -100,31 +99,12 @@ type DevicesRightPanelProps = {
   onTabChange: (tab: RightPanelTab) => void;
 };
 
-/**
- * Right panel for the "devices" nav. Wraps RightSidebar in its required
- * context providers and handles the new-project auto-wizard trigger.
- */
-const DevicesRightPanel = ({ activeTab, onTabChange }: DevicesRightPanelProps) => {
-  const { can } = usePermissions();
-  const canEdit = can("build.edit");
-  useEffect(() => {
-    const isNew = sessionStorage.getItem(NEW_PROJECT_FLAG_KEY) === "1";
-    if (isNew) {
-      sessionStorage.removeItem(NEW_PROJECT_FLAG_KEY);
-      if (!canEdit) return;
-      const timer = window.setTimeout(() => onTabChange("wizard"), 300);
-      return () => window.clearTimeout(timer);
-    }
-  }, [canEdit, onTabChange]);
-
-  return (
-    <ConfigWizardProvider>
-      <RulesProvider>
-        <RightSidebar activeTab={activeTab} onTabChange={onTabChange} />
-      </RulesProvider>
-    </ConfigWizardProvider>
-  );
-};
+/** Right panel for the "devices" nav. Wraps RightSidebar in its required context providers. */
+const DevicesRightPanel = ({ activeTab, onTabChange }: DevicesRightPanelProps) => (
+  <RulesProvider>
+    <RightSidebar activeTab={activeTab} onTabChange={onTabChange} />
+  </RulesProvider>
+);
 
 type ConsoleContentProps = {
   activeNav: LeftNavId;
@@ -206,6 +186,12 @@ const ConsoleInner = () => {
   useEffect(() => {
     if (!devicesTabAllowed) setDevicesRightTab("structure");
   }, [devicesTabAllowed]);
+
+  const enterConfigWizard = useCallback(() => {
+    setActiveNav("devices");
+    setDevicesRightTab("wizard");
+  }, []);
+  useEmptyProjectWizardEntry({ isShow, onEnter: enterConfigWizard });
 
   const handleEmergencyStop = () => {
     emergencyStopAll();

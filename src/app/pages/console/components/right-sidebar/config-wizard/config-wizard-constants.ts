@@ -1,7 +1,4 @@
-export {
-  SKIPPABLE_STEPS,
-  WIZARD_STEPS,
-} from "./wizard-state";
+export { WIZARD_STEPS } from "./wizard-state";
 export {
   CONTROL_TYPE_DEFINITIONS,
   defaultShapeDimensions,
@@ -26,6 +23,3 @@ export const OBJECT_COLORS = [
   "#dee3e6",
   "#3d494d",
 ];
-
-export const WIZARD_META_STORAGE_KEY = "console.devices.wizard.meta";
-export const NEW_PROJECT_FLAG_KEY = "console.devices.wizard.newProject";
