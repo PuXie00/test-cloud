@@ -45,9 +45,9 @@ const ConfigWizardBody = ({ projectId, document }: ConfigWizardBodyProps) => {
       case "objects":
         return <StepAddObjects />;
       case "hardware":
-        return <StepAddPlc />;
+        return <StepAddPlc onNavigate={navigate} />;
       case "binding":
-        return <StepBindAxes />;
+        return <StepBindAxes onNavigate={navigate} />;
       case "review":
         return <StepReview onNavigate={navigate} />;
     }

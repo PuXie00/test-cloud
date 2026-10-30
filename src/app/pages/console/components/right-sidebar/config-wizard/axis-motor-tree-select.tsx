@@ -26,6 +26,8 @@ export type AxisMotorTreeSelectProps = {
   pendingUnbind?: boolean;
   pendingBind?: boolean;
   "aria-label"?: string;
+  /** md：向导里单独使用，字号和触屏目标都放大 */
+  size?: "sm" | "md";
   onChange: (motorId: number | null) => void;
 };
 
@@ -39,6 +41,7 @@ export const AxisMotorTreeSelect = ({
   pendingUnbind = false,
   pendingBind = false,
   "aria-label": ariaLabel,
+  size = "sm",
   onChange,
 }: AxisMotorTreeSelectProps) => {
   const [open, setOpen] = useState(false);
@@ -93,7 +96,10 @@ export const AxisMotorTreeSelect = ({
           type="button"
           aria-label={ariaLabel ?? "选择驱动电机"}
           className={cn(
-            "inline-flex min-h-7 min-w-0 flex-1 items-center gap-1 rounded-sm px-1.5 text-left text-[10px]",
+            "inline-flex min-w-0 flex-1 items-center gap-1 rounded-sm px-1.5 text-left",
+            size === "md"
+              ? "min-h-9 text-body-sm [@media(pointer:coarse)]:min-h-11"
+              : "min-h-7 text-[10px]",
             "hover:bg-accent",
           )}
         >

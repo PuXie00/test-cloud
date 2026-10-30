@@ -5,7 +5,6 @@ import { Button } from "@/app/components/ui/button";
 import { CollapsePanel } from "@/app/components/ics/collapse-panel";
 import { NumericInputGroup } from "@/app/components/ics/numeric-input-group";
 import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-input";
-import { UnitAwareNumericRangeInput } from "@/app/components/ics/unit-aware-numeric-range-input";
 import { Form } from "@/app/components/ui/forms";
 import { Input } from "@/app/components/ui/input";
 import { Select } from "@/app/components/ui/select";
@@ -43,11 +42,6 @@ import { persistPivotChanges } from "@/app/pages/console/3d/viz3d-transform-pers
 import { useProjectStore } from "@/app/pages/console/hooks/use-project-store";
 import { formatPlcDisplayName } from "@/app/pages/console/hooks/plc-display-name";
 import {
-  analyzeControlTypeChangeImpact,
-  EMPTY_CONTROL_TYPE_CHANGE_IMPACT,
-  type ControlTypeChangeImpact,
-} from "@/app/pages/console/hooks/control-type-change";
-import {
   CONTROL_TYPE_DEFINITION_BY_ID,
   defaultShapeDimensions,
   MOTION_AXIS_FIELD_DEFINITIONS,
@@ -59,8 +53,8 @@ import {
 import { ObjectAxesEditor } from "../config-wizard/object-axes-editor";
 import { OBJECT_COLORS } from "../config-wizard/config-wizard-constants";
 import type { ControlledObject, ShapePresetId } from "../config-wizard/config-wizard-types";
-import { ControlTypeSelector } from "./control-type-selector";
-import { ControlTypeChangeConfirmDialog } from "./control-type-change-confirm-dialog";
+import { MotionAxisRangeField } from "./motion-axis-range-field";
+import { ObjectControlTypeField } from "./object-control-type-field";
 import { AXIS_RANGE_CONFIG } from "./motion-axis-range";
 import { MotionAxisSection } from "./motion-axis-section";
 import { ProjectModelLibraryDialog } from "./project-model-library-dialog";
@@ -95,7 +89,6 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
     findObject,
     updateObject,
     mountObjects,
-    changeObjectControlType,
     getObjectBoundPlcId,
     findPlc,
     plcs,
@@ -104,9 +97,6 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
   const { currentProject } = useProject();
   const engine = useViz3DContext();
   const object = findObject(objectId);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [pendingControlType, setPendingControlType] = useState<ControlType | null>(null);
-  const [pendingImpact, setPendingImpact] = useState<ControlTypeChangeImpact | null>(null);
   const [modelLibraryOpen, setModelLibraryOpen] = useState(false);
   const displayLengthUnit = useSessionDisplayLengthUnit();
 
@@ -266,33 +256,6 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
     });
   };
 
-  const handleControlTypeChange = (controlType: ControlType) => {
-    const document = currentProject?.document;
-    if (!document) return;
-    const impact = analyzeControlTypeChangeImpact(document, [objectId], controlType);
-    if (!impact.changed) {
-      changeObjectControlType([objectId], controlType);
-      return;
-    }
-    setPendingControlType(controlType);
-    setPendingImpact(impact);
-    setConfirmOpen(true);
-  };
-
-  const handleConfirmControlTypeChange = () => {
-    if (pendingControlType) {
-      const result = changeObjectControlType([objectId], pendingControlType);
-      if (!result.ok) toast.error(result.reason);
-    }
-    setPendingControlType(null);
-    setPendingImpact(null);
-    setConfirmOpen(false);
-  };
-
-  const pendingTargetLabel = pendingControlType
-    ? CONTROL_TYPE_DEFINITION_BY_ID[pendingControlType].label
-    : "";
-
   const handleMotionAxisChange = (axis: MotionAxisKind, value: MotionAxisParams) => {
     const id = motionAxisIdForKind(axis);
     const normalized = normalizeMotionAxisParams(value);
@@ -422,7 +385,7 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
               <Input />
             </Form.Item>
             <Form.Item label="控制类型">
-              <ControlTypeSelector value={object.controlType} onChange={handleControlTypeChange} />
+              <ObjectControlTypeField objectId={object.id} value={object.controlType} />
             </Form.Item>
             <Form.Item label="关联主控">
               <p className="truncate pt-2 text-body-sm text-muted-foreground">{boundPlcName}</p>
@@ -450,37 +413,15 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
               
               {motionAxes.map((axis) => {
                 const axisValue = motionParams[motionAxisIdForKind(axis)] ?? MOTION_DEFAULTS[axis];
-                const rangeConfig = AXIS_RANGE_CONFIG[axis];
-                const rangeFieldSpec = MOTION_AXIS_FIELD_DEFINITIONS[axis].find(
-                  (field) => field.key === rangeConfig.specKey,
-                );
 
                 return (
                   <div key={axis} className="space-y-3">
-                      {rangeFieldSpec ? (
-                        <div className="space-y-1">
-                          <span className="text-body-sm text-muted-foreground">{rangeConfig.label}</span>
-                          <UnitAwareNumericRangeInput
-                            value={{
-                              min: axisValue[rangeConfig.minKey],
-                              max: axisValue[rangeConfig.maxKey],
-                            }}
-                            onChange={(range) =>
-                              handleMotionAxisChange(axis, {
-                                ...axisValue,
-                                [rangeConfig.minKey]: range.min,
-                                [rangeConfig.maxKey]: range.max,
-                              })
-                            }
-                            unit={rangeFieldSpec.unit}
-                            step={rangeFieldSpec.step ?? 1}
-                            precision={rangeFieldSpec.precision ?? 1}
-                            minAriaLabel={rangeConfig.minAriaLabel}
-                            maxAriaLabel={rangeConfig.maxAriaLabel}
-                          />
-                        </div>
-                      ) : null}
-                    </div>
+                    <MotionAxisRangeField
+                      axis={axis}
+                      value={axisValue}
+                      onChange={(value) => handleMotionAxisChange(axis, value)}
+                    />
+                  </div>
                 );
               })}
               <div className="space-y-1">
@@ -712,20 +653,6 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
           </div>
         </CollapsePanel>
       </Form>
-
-      <ControlTypeChangeConfirmDialog
-        open={confirmOpen}
-        onOpenChange={(open) => {
-          setConfirmOpen(open);
-          if (!open) {
-            setPendingControlType(null);
-            setPendingImpact(null);
-          }
-        }}
-        targetLabel={pendingTargetLabel}
-        impact={pendingImpact ?? EMPTY_CONTROL_TYPE_CHANGE_IMPACT}
-        onConfirm={handleConfirmControlTypeChange}
-      />
 
       <ProjectModelLibraryDialog
         open={modelLibraryOpen}

@@ -6,6 +6,7 @@ import { Select } from "@/app/components/ui/select";
 import {
   CONTROL_TYPE_RULES,
   controlTypeHasNoDriveAxes,
+  maxDriveAxesForControlType,
 } from "@/app/project/configuration-rules";
 import {
   DEFAULT_MODEL_RUN_DIRECTION,
@@ -20,6 +21,7 @@ import {
   validateMultiPointAxesDraft,
 } from "./multi-point-axes/multi-point-axes-draft";
 import { createShapeFootprint } from "./multi-point-axes/multi-point-axes-geometry";
+import { wizardBtnSecondary } from "./wizard-buttons";
 
 const MODEL_RUN_DIRECTION_SELECT_OPTIONS = MODEL_RUN_DIRECTION_OPTIONS.map((option) => ({
   value: String(option.value),
@@ -45,9 +47,16 @@ type ObjectAxesEditorProps = {
   objectId: number;
   controlType: ControlType;
   axes: AxisDefinition[];
+  /** summary：向导里只给吊点数量和调整入口，运行方向、链长等留在属性面板 */
+  variant?: "full" | "summary";
 };
 
-export const ObjectAxesEditor = ({ objectId, controlType, axes }: ObjectAxesEditorProps) => {
+export const ObjectAxesEditor = ({
+  objectId,
+  controlType,
+  axes,
+  variant = "full",
+}: ObjectAxesEditorProps) => {
   const { findObject, updateObject, motors, plcs, applyMultiPointAxesConfiguration } =
     useProjectStore();
   const [multiPointDialogOpen, setMultiPointDialogOpen] = useState(false);
@@ -77,7 +86,65 @@ export const ObjectAxesEditor = ({ objectId, controlType, axes }: ObjectAxesEdit
   if (controlTypeHasNoDriveAxes(controlType)) {
     return (
       <div className="rounded-md bg-muted p-4">
-        <p className="text-body-sm text-muted-foreground">该控制类型无需驱动轴</p>
+        <p className="text-body-sm text-muted-foreground">该控制类型不需要吊点</p>
+      </div>
+    );
+  }
+
+  const issueList =
+    multiPointIssues.length > 0 ? (
+      <ul className="space-y-1 rounded-md bg-input-background px-3 py-2">
+        {multiPointIssues.map((issue) => (
+          <li
+            key={`${issue.code}-${issue.axisKey ?? "global"}-${issue.message}`}
+            className="text-body-sm text-warning"
+          >
+            {issue.axisKey ? (
+              <button
+                type="button"
+                className="text-left text-warning underline-offset-2 hover:underline"
+                onClick={() => handleOpenMultiPointDialog(issue.axisKey)}
+              >
+                {issue.message}
+              </button>
+            ) : (
+              issue.message
+            )}
+          </li>
+        ))}
+      </ul>
+    ) : null;
+
+  const axesDialog = object ? (
+    <MultiPointAxesDialog
+      open={multiPointDialogOpen}
+      object={object}
+      motors={motors}
+      plcs={plcs}
+      initialSelectedAxisKey={initialSelectedAxisKey}
+      onOpenChange={handleMultiPointDialogOpenChange}
+      onApply={(input) => applyMultiPointAxesConfiguration(object.id, input)}
+    />
+  ) : null;
+
+  if (variant === "summary") {
+    const fixedCount = maxDriveAxesForControlType(controlType) === minimumAxes;
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-body-sm text-muted-foreground">
+            当前 {axes.length} 个吊点{fixedCount ? "" : `，至少 ${minimumAxes} 个`}
+          </p>
+          <button
+            type="button"
+            onClick={() => handleOpenMultiPointDialog()}
+            className={wizardBtnSecondary}
+          >
+            调整吊点
+          </button>
+        </div>
+        {issueList}
+        {axesDialog}
       </div>
     );
   }
@@ -122,28 +189,7 @@ export const ObjectAxesEditor = ({ objectId, controlType, axes }: ObjectAxesEdit
         </div>
       </div>
 
-      {multiPointIssues.length > 0 ? (
-        <ul className="space-y-1 rounded-md bg-input-background px-3 py-2">
-          {multiPointIssues.map((issue) => (
-            <li
-              key={`${issue.code}-${issue.axisKey ?? "global"}-${issue.message}`}
-              className="text-body-sm text-warning"
-            >
-              {issue.axisKey ? (
-                <button
-                  type="button"
-                  className="text-left text-warning underline-offset-2 hover:underline"
-                  onClick={() => handleOpenMultiPointDialog(issue.axisKey)}
-                >
-                  {issue.message}
-                </button>
-              ) : (
-                issue.message
-              )}
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      {issueList}
 
       <button
         type="button"
@@ -153,17 +199,7 @@ export const ObjectAxesEditor = ({ objectId, controlType, axes }: ObjectAxesEdit
         打开吊点配置
       </button>
 
-      {object ? (
-        <MultiPointAxesDialog
-          open={multiPointDialogOpen}
-          object={object}
-          motors={motors}
-          plcs={plcs}
-          initialSelectedAxisKey={initialSelectedAxisKey}
-          onOpenChange={handleMultiPointDialogOpenChange}
-          onApply={(input) => applyMultiPointAxesConfiguration(object.id, input)}
-        />
-      ) : null}
+      {axesDialog}
     </div>
   );
 };
