@@ -156,6 +156,8 @@ export const getWizardCounts = ({ objects, plcs, motors }: WizardSetup): WizardC
 
 export type WizardStepProgress = "empty" | "partial" | "done";
 
+const WIZARD_WORK_STEPS = ["objects", "hardware", "binding"] as const;
+
 /** 进度全部从工程数据推导：不记录「已完成」「已跳过」，没配的步骤就是还没配 */
 export const getWizardStepProgress = (
   step: WizardStepKey,
@@ -185,8 +187,6 @@ export const getWizardStepProgress = (
         : "empty";
   }
 };
-
-const WIZARD_WORK_STEPS = ["objects", "hardware", "binding"] as const;
 
 /** 下一个还没做完的步骤；都做完了就是检查 */
 export const getNextWizardStep = (setup: WizardSetup): WizardStepKey =>

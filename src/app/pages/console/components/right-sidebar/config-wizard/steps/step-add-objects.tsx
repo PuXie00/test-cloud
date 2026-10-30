@@ -36,17 +36,11 @@ type ObjectCardProps = {
 
 const ObjectCard = ({ object, selected, onSelect, onRemove }: ObjectCardProps) => {
   const engine = useViz3DContext();
-  const cardRef = useRef<HTMLDivElement>(null);
-
-  // 在 3D 里点选或拖入物体时，把对应的卡片滚到眼前
-  useEffect(() => {
-    if (selected) cardRef.current?.scrollIntoView?.({ block: "nearest" });
-  }, [selected]);
 
   return (
     <div
-      ref={cardRef}
-      className={cn("rounded-md bg-input-background", selected && "ring-1 ring-primary")}
+      data-object-id={object.id}
+      className={cn("scroll-mt-1 rounded-md bg-input-background", selected && "ring-1 ring-primary")}
     >
       <div className="flex items-center gap-1 pr-1">
         <button
@@ -80,7 +74,7 @@ const ObjectCard = ({ object, selected, onSelect, onRemove }: ObjectCardProps) =
         </button>
       </div>
       {selected ? (
-        <div className="px-3 pb-3 pt-1">
+        <div className="rounded-b-md bg-muted p-3">
           <ProjectEditBoundary
             key={object.id}
             ownerPrefix={`wizard:object:${object.id}`}
@@ -103,6 +97,20 @@ export const StepAddObjects = () => {
   const [pickerOpen, setPickerOpen] = useState(false);
   const selectedId = multiSelectedIds.length === 1 ? multiSelectedIds[0] : null;
   const showPicker = objects.length === 0 || pickerOpen;
+  const listRef = useRef<HTMLDivElement>(null);
+  const enteredRef = useRef(false);
+
+  // 在 3D 里点选或新建物体时，把它的卡片滚到眼前；刚进这一步时不滚，先看到标题
+  useEffect(() => {
+    if (!enteredRef.current) {
+      enteredRef.current = true;
+      return;
+    }
+    if (selectedId === null) return;
+    listRef.current
+      ?.querySelector(`[data-object-id="${selectedId}"]`)
+      ?.scrollIntoView?.({ block: "start" });
+  }, [selectedId]);
 
   const selectObject = (id: number) => {
     select(id);
@@ -129,8 +137,10 @@ export const StepAddObjects = () => {
 
     const removed = new Set(pendingIds);
     const remaining = multiSelectedIds.filter((id) => !removed.has(id));
-    if (remaining.length === 0) clearSelection();
-    else if (remaining.length !== multiSelectedIds.length) replaceSelection(remaining);
+    if (remaining.length !== multiSelectedIds.length) {
+      if (remaining.length === 0) clearSelection();
+      else replaceSelection(remaining);
+    }
     if (treeFocus?.kind === "controlled-object" && removed.has(treeFocus.id)) setTreeFocus(null);
 
     if (outcome === "deleted" && pendingName && pendingIds.length === 1) {
@@ -164,7 +174,7 @@ export const StepAddObjects = () => {
               {pickerOpen ? "收起" : "添加物体"}
             </button>
           </div>
-          <div className="space-y-1 rounded-md bg-muted p-2">
+          <div ref={listRef} className="space-y-1 rounded-md bg-muted p-2">
             {objects.map((object) => (
               <ObjectCard
                 key={object.id}

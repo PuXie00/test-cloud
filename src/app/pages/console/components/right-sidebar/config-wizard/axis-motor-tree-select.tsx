@@ -5,7 +5,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/app/components/ui/popover";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/app/components/ui/tooltip";
 import { cn } from "@/app/components/ui/utils";
 import type { AxisBindingRef } from "@/app/pages/console/hooks/binding-utils";
 import { formatMotorDisplayName } from "@/app/pages/console/hooks/motor-mid";
@@ -172,37 +171,30 @@ export const AxisMotorTreeSelect = ({
                         >
                           {busNode.label}
                         </div>
-                        {busNode.motors.map((motorNode) => {
-                          const row = (
-                            <button
-                              key={motorNode.motor.id}
-                              type="button"
-                              disabled={motorNode.disabled}
-                              onClick={() => handleSelectMotor(motorNode.motor.id)}
-                              className={cn(
-                                "flex h-9 w-full items-center rounded-sm py-0 pl-8 pr-2 text-left text-body-sm",
-                                motorNode.selected &&
-                                  "border-l-2 border-primary bg-accent text-foreground",
-                                !motorNode.selected &&
-                                  !motorNode.disabled &&
-                                  "text-foreground hover:bg-accent",
-                                motorNode.disabled &&
-                                  "cursor-not-allowed text-muted-foreground opacity-40",
-                              )}
-                            >
-                              <span className="truncate">{motorNode.label}</span>
-                            </button>
-                          );
-                          if (!motorNode.disabled || !motorNode.disabledReason) return row;
-                          return (
-                            <Tooltip key={motorNode.motor.id}>
-                              <TooltipTrigger asChild>{row}</TooltipTrigger>
-                              <TooltipContent>
+                        {busNode.motors.map((motorNode) => (
+                          <button
+                            key={motorNode.motor.id}
+                            type="button"
+                            disabled={motorNode.disabled}
+                            onClick={() => handleSelectMotor(motorNode.motor.id)}
+                            className={cn(
+                              "flex h-9 w-full items-center gap-2 rounded-sm py-0 pl-8 pr-2 text-left text-body-sm [@media(pointer:coarse)]:h-11",
+                              motorNode.selected &&
+                                "border-l-2 border-primary bg-accent text-foreground",
+                              !motorNode.selected &&
+                                !motorNode.disabled &&
+                                "text-foreground hover:bg-accent",
+                              motorNode.disabled && "cursor-not-allowed text-muted-foreground",
+                            )}
+                          >
+                            <span className="min-w-0 flex-1 truncate">{motorNode.label}</span>
+                            {motorNode.disabledReason ? (
+                              <span className="shrink-0 text-mono-sm text-muted-foreground">
                                 {MOTOR_BIND_DISABLED_LABELS[motorNode.disabledReason]}
-                              </TooltipContent>
-                            </Tooltip>
-                          );
-                        })}
+                              </span>
+                            ) : null}
+                          </button>
+                        ))}
                       </div>
                     ))
                   : null}

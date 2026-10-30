@@ -341,6 +341,31 @@ describe("绑定", () => {
     expect(screen.getByRole("button", { name: "物体-1 吊2 绑定电机" })).toBeTruthy();
   });
 
+  it("选不了的电机直接写明原因，触屏不靠悬停也看得到", async () => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    store = {
+      ...store,
+      objects: [object(1), object(2)],
+      plcs: [plc],
+      motors: [motor(10, { controlledObjectId: 2, axisKey: "0" }), motor(11)],
+    };
+    render(<StepBindAxes onNavigate={onNavigate} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "物体-1 吊1 绑定电机" }));
+    });
+
+    expect(screen.getByText("已绑定其他吊点")).toBeTruthy();
+    vi.unstubAllGlobals();
+  });
+
   it("点物体名会选中它，3D 里看得到是哪一个", () => {
     store = { ...store, objects: [object(1)], plcs: [plc], motors: [motor(10)] };
     render(<StepBindAxes onNavigate={onNavigate} />);

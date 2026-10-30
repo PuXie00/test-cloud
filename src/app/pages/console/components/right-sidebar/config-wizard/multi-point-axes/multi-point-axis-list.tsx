@@ -146,7 +146,7 @@ export const MultiPointAxisList = ({
                 <Tooltip>
                   <TooltipTrigger asChild>{deleteButton}</TooltipTrigger>
                   <TooltipContent>
-                    该控制类型至少需要 {minimumAxes} 个驱动轴
+                    该控制类型至少需要 {minimumAxes} 个吊点
                   </TooltipContent>
                 </Tooltip>
               ) : (
