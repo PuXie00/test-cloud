@@ -24,6 +24,18 @@ describe("AppMenuPanel 按权限隐藏", () => {
     expect(screen.getAllByRole("separator")).toHaveLength(3);
   });
 
+  it("图标统一一种中性色，退出登录也不单独标红", () => {
+    render(<AppMenuPanel open onClose={vi.fn()} />);
+    const nav = screen.getByRole("navigation", { name: "应用菜单" });
+    const icons = [...nav.querySelectorAll("svg")];
+    expect(icons.length).toBeGreaterThan(0);
+    for (const icon of icons) {
+      const colors = (icon.getAttribute("class") ?? "").split(/\s+/).filter((name) => name.startsWith("text-"));
+      expect(colors).toEqual(["text-muted-foreground"]);
+    }
+    expect(nav.querySelector(".text-destructive")).toBeNull();
+  });
+
   it("切换用户先关菜单再打开登录框", () => {
     const onClose = vi.fn();
     const onSwitchUser = vi.fn();
