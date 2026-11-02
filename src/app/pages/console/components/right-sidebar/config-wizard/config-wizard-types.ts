@@ -1,4 +1,4 @@
-export type { WizardMeta, WizardStepKey } from "@/app/project/project-document-types";
+export type { WizardStepKey } from "@/app/project/project-document-types";
 export type {
   MountLayout,
   MountLayoutCircle,
@@ -26,8 +26,6 @@ import type {
 import type { MountLayout } from "@/app/project/project-document-types";
 import type { MotionSpeedControl } from "@/app/project/motion-speed";
 import type { ScannedAxis } from "@/app/pages/console/hooks/plc-runtime-types";
-
-export type WizardStepState = "pending" | "current" | "done" | "skipped";
 
 /** 吊点 XZ 偏移，单位 mm */
 export type AxisMount = { x: number; z: number };

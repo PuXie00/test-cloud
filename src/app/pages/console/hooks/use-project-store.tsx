@@ -52,6 +52,8 @@ import {
   applyBindMotorsFromAxis,
   bindMotorToAxis,
   canBindMotorToObject,
+  planAutoBind,
+  type AutoBindPlan,
   countBoundAxesOnObject,
   getObjectBoundBusNo,
   getObjectBoundPlcId,
@@ -257,6 +259,7 @@ export type ProjectStoreContextValue = {
   addObjectFromShape: (
     shapeId: ShapePresetId,
     position?: Partial<ControlledObject["position"]>,
+    options?: { controlType?: ControlType; namePrefix?: string },
   ) => ControlledObject | null;
   addImportedObject: (modelId: string, name: string) => ControlledObject | null;
   cloneObjectsAt: (
@@ -320,6 +323,8 @@ export type ProjectStoreContextValue = {
     startAxisKey: string,
     motorIds: readonly number[],
   ) => boolean;
+  /** 把空闲电机按顺序分给未绑定的吊点，整次操作算一步撤销 */
+  autoBindAxes: () => AutoBindPlan;
   applyMultiPointAxesConfiguration: (
     objectId: number,
     input: MultiPointAxesConfigurationInput,
@@ -510,13 +515,22 @@ export const ProjectStoreProvider = ({ children }: { children: ReactNode }) => {
   }, [isTrackedEditActive]);
 
   const addObjectFromShape = useCallback(
-    (shapeId: ShapePresetId, position?: Partial<ControlledObject["position"]>) => {
+    (
+      shapeId: ShapePresetId,
+      position?: Partial<ControlledObject["position"]>,
+      options?: { controlType?: ControlType; namePrefix?: string },
+    ) => {
       const shapeLabel = SHAPE_DEFINITIONS.find((shape) => shape.id === shapeId)?.label ?? shapeId;
-      const count = setupRef.current.objects.filter((o) => o.shapePreset === shapeId).length + 1;
+      const namePrefix = options?.namePrefix;
+      const count =
+        setupRef.current.objects.filter((o) =>
+          namePrefix ? o.name.startsWith(`${namePrefix}-`) : o.shapePreset === shapeId,
+        ).length + 1;
       const [id] = allocateSetupEntityIdsInProject(toSetupEntityIdSource(setupRef.current), 1);
       const obj = createControlledObject(id!, {
-        name: `${shapeLabel}-${String(count).padStart(2, "0")}`,
+        name: `${namePrefix ?? shapeLabel}-${String(count).padStart(2, "0")}`,
         shapePreset: shapeId,
+        controlType: options?.controlType,
         position: {
           x: position?.x ?? 0,
           y: position?.y ?? 4000,
@@ -1302,6 +1316,30 @@ export const ProjectStoreProvider = ({ children }: { children: ReactNode }) => {
     [patchSetup],
   );
 
+  const autoBindAxes = useCallback((): AutoBindPlan => {
+    const preview = planAutoBind(setupRef.current.objects, setupRef.current.motors);
+    if (preview.assignments.length === 0) return preview;
+    const result = patchSetup("自动绑定", (prev) => {
+      const plan = planAutoBind(prev.objects, prev.motors);
+      if (plan.assignments.length === 0) return prev;
+      const objectById = new Map(prev.objects.map((object) => [object.id, object]));
+      const assignmentByMotorId = new Map(
+        plan.assignments.map((assignment) => [assignment.motorId, assignment]),
+      );
+      const nextMotors = prev.motors.map((motor) => {
+        const assignment = assignmentByMotorId.get(motor.id);
+        const object = assignment && objectById.get(assignment.objectId);
+        return assignment && object
+          ? bindMotorToAxis(motor, object.id, assignment.axisKey, object.controlType)
+          : motor;
+      });
+      return withClampedObjectsForMotors(prev, nextMotors);
+    });
+    return result.ok
+      ? preview
+      : { assignments: [], unplacedAxisCount: preview.unplacedAxisCount };
+  }, [patchSetup]);
+
   const applyMultiPointAxesConfiguration = useCallback(
     (
       objectId: number,
@@ -1434,6 +1472,7 @@ export const ProjectStoreProvider = ({ children }: { children: ReactNode }) => {
       applyMotorParamsToSelected,
       bindAxis,
       bindMotorsFromAxis,
+      autoBindAxes,
       applyMultiPointAxesConfiguration,
       getAvailableMotorsForAxis,
       getBindingSummary,
@@ -1485,6 +1524,7 @@ export const ProjectStoreProvider = ({ children }: { children: ReactNode }) => {
       applyMotorParamsToSelected,
       bindAxis,
       bindMotorsFromAxis,
+      autoBindAxes,
       applyMultiPointAxesConfiguration,
       getAvailableMotorsForAxis,
       getBindingSummary,

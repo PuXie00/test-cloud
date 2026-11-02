@@ -16,7 +16,7 @@ export type MotorBindDisabledReason =
   | "unselected";
 
 export const MOTOR_BIND_DISABLED_LABELS: Record<MotorBindDisabledReason, string> = {
-  taken: "已绑定其他轴",
+  taken: "已绑定其他吊点",
   plc: "不同主控",
   bus: "不同从站口",
   axisType: "不同轴类型",

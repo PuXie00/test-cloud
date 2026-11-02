@@ -20,7 +20,6 @@ import {
   type KeyboardEvent,
   type MouseEvent,
 } from "react";
-import { toast } from "sonner";
 import { PanelHeader } from "@/app/components/ics/panel-header";
 import { TabBar } from "@/app/components/ics/tab-bar";
 import { TreeView, resolveDropPosition } from "@/app/components/ics/tree";
@@ -40,6 +39,7 @@ import { usePlcRuntime } from "@/app/pages/console/hooks/plc-runtime-provider";
 import { formatMotorDisplayName } from "@/app/pages/console/hooks/motor-mid";
 import { formatPlcDisplayName } from "@/app/pages/console/hooks/plc-display-name";
 import type { InsertMotorsPosition } from "@/app/pages/console/hooks/setup-operations";
+import { useMasterScan } from "@/app/pages/console/hooks/use-master-scan";
 import { useObjectDeletion } from "@/app/pages/console/hooks/use-object-deletion";
 import { useProjectStore } from "@/app/pages/console/hooks/use-project-store";
 import { objectHasUnboundAxes } from "@/app/pages/console/hooks/binding-utils";
@@ -47,7 +47,7 @@ import { idsInRange, resolveSelectionMode } from "@/app/pages/console/hooks/sele
 import { useSelection } from "@/app/pages/console/hooks/use-selection";
 import { resolveMountDropParent } from "@/app/pages/console/hooks/mount-objects";
 import { orderByMountTree, resolveMountParentId } from "@/app/project/object-mount";
-import type { ControlledObject, PlcScanResult } from "./config-wizard/config-wizard-types";
+import type { ControlledObject } from "./config-wizard/config-wizard-types";
 import { MotorAddDialog } from "./config-wizard/dialogs/motor-add-dialog";
 import { PlcAddDialog } from "./config-wizard/dialogs/plc-add-dialog";
 import { PlcScanDialog } from "./config-wizard/dialogs/plc-scan-dialog";
@@ -170,7 +170,7 @@ export const ProjectStructurePanel = () => {
   const objectDeletion = useObjectDeletion();
   // 没有「编辑工程配置」只能浏览：不显示增删、右键菜单，Delete 键和拖动挂载 / 绑定都不生效
   const canEdit = usePermissions().can("build.edit");
-  const { getPlcRuntime, scanAll } = usePlcRuntime();
+  const { getPlcRuntime } = usePlcRuntime();
   const {
     multiSelectedIds,
     multiSelectedMotorIds,
@@ -184,9 +184,7 @@ export const ProjectStructurePanel = () => {
     clearSelection,
   } = useSelection();
   const [structureView, setStructureView] = useState<StructureViewId>("all");
-  const [plcScanOpen, setPlcScanOpen] = useState(false);
-  const [scanningMasters, setScanningMasters] = useState(false);
-  const [scanResults, setScanResults] = useState<PlcScanResult[]>([]);
+  const masterScan = useMasterScan();
   const [plcAddOpen, setPlcAddOpen] = useState(false);
   const [motorAddPlcId, setMotorAddPlcId] = useState<number | null>(null);
   const [motorInsert, setMotorInsert] = useState<{
@@ -1061,29 +1059,6 @@ export const ProjectStructurePanel = () => {
     setTreeFocus({ kind: "motor", id: node.motor.id });
   };
 
-  const handleScanAllMaster = () => {
-    if (scanningMasters) return;
-    setScanningMasters(true);
-    void (async () => {
-      try {
-        const masters = await scanAll();
-        const next = masters
-          .filter((m) => !plcs.some((plc) => plc.ip === m.ip))
-          .map((m) => ({ id: m.ip, ip: m.ip, plcModel: m.plcModel, axis: m.axis }));
-        if (next.length === 0) {
-          toast.success("未发现新主控");
-          return;
-        }
-        setScanResults(next);
-        setPlcScanOpen(true);
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "扫描失败");
-      } finally {
-        setScanningMasters(false);
-      }
-    })();
-  };
-
   return (
     <div className="flex h-full min-h-0 flex-1 flex-row overflow-hidden">
       <div className="custom-scrollbar flex min-h-0 w-[280px] shrink-0 flex-col overflow-y-auto bg-card">
@@ -1171,16 +1146,16 @@ export const ProjectStructurePanel = () => {
                     <button
                       type="button"
                       aria-label="扫描添加主控"
-                      aria-busy={scanningMasters}
-                      disabled={scanningMasters}
+                      aria-busy={masterScan.scanning}
+                      disabled={masterScan.scanning}
                       className={cn(
                         iconBtn,
                         "bg-primary text-primary-foreground hover:text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-40",
                       )}
                       title="扫描"
-                      onClick={handleScanAllMaster}
+                      onClick={masterScan.startScan}
                     >
-                      {scanningMasters ? (
+                      {masterScan.scanning ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
                       ) : (
                         <ScanLine className="h-3.5 w-3.5" aria-hidden />
@@ -1234,9 +1209,9 @@ export const ProjectStructurePanel = () => {
       <PropertySection />
 
       <PlcScanDialog
-        open={plcScanOpen}
-        onOpenChange={setPlcScanOpen}
-        results={scanResults}
+        open={masterScan.resultsOpen}
+        onOpenChange={masterScan.setResultsOpen}
+        results={masterScan.results}
       />
       <PlcAddDialog open={plcAddOpen} onOpenChange={setPlcAddOpen} />
       <MotorAddDialog

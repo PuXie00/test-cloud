@@ -77,7 +77,7 @@ export const ObjectAxesEditor = ({ objectId, controlType, axes }: ObjectAxesEdit
   if (controlTypeHasNoDriveAxes(controlType)) {
     return (
       <div className="rounded-md bg-muted p-4">
-        <p className="text-body-sm text-muted-foreground">该控制类型无需驱动轴</p>
+        <p className="text-body-sm text-muted-foreground">该控制类型不需要吊点</p>
       </div>
     );
   }

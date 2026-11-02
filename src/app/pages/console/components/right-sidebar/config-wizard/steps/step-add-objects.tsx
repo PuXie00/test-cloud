@@ -1,38 +1,132 @@
-import { Box, Cylinder, Circle, CircleDot, Hexagon, Square, X } from "lucide-react";
-import { useCallback, useState } from "react";
+import { Crosshair, Plus, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/app/components/ui/utils";
-import { CONTROL_TYPE_DEFINITIONS, PALETTE_SHAPE_DEFINITIONS } from "@/app/pages/console/components/right-sidebar/config-wizard/config-descriptors";
-import { ControlledObjectForm } from "@/app/pages/console/components/right-sidebar/property-forms/controlled-object-form";
+import { useViz3DContext } from "@/app/pages/console/3d/Viz3DProvider";
 import { DeleteImpactDialog } from "@/app/pages/console/components/right-sidebar/delete-impact-dialog";
 import { ProjectEditBoundary } from "@/app/pages/console/components/right-sidebar/project-edit-boundary";
+import { useConsoleNav } from "@/app/pages/console/hooks/use-console-nav";
 import { useObjectDeletion } from "@/app/pages/console/hooks/use-object-deletion";
 import { useProjectStore } from "@/app/pages/console/hooks/use-project-store";
-import type { ShapePresetId } from "@/app/project/configuration-types";
+import { useSelection } from "@/app/pages/console/hooks/use-selection";
+import {
+  CONTROL_TYPE_DEFINITION_BY_ID,
+  defaultShapeDimensions,
+  toEngineDimensions,
+} from "../config-descriptors";
+import type { ControlledObject } from "../config-wizard-types";
+import { wizardBtnSecondary } from "../wizard-buttons";
+import type { WizardMotionOption } from "../wizard-motion-options";
+import { WizardMotionPicker } from "../wizard-motion-picker";
+import { WizardObjectFields } from "../wizard-object-fields";
+import { nextObjectPlacementX } from "../wizard-state";
+import { WizardStepHeading } from "../wizard-step-heading";
 
-const SHAPE_ICONS: Record<Exclude<ShapePresetId, "external">, typeof Box> = {
-  cube: Box,
-  cyl: Cylinder,
-  sphere: Circle,
-  ring: CircleDot,
-  sqRing: Square,
-  prism6: Hexagon,
+const NEW_OBJECT_SHAPE = "cube";
+
+const iconBtn =
+  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11";
+
+type ObjectCardProps = {
+  object: ControlledObject;
+  selected: boolean;
+  onSelect: () => void;
+  onRemove: () => void;
+};
+
+const ObjectCard = ({ object, selected, onSelect, onRemove }: ObjectCardProps) => {
+  const engine = useViz3DContext();
+
+  return (
+    <div
+      data-object-id={object.id}
+      className={cn("scroll-mt-1 rounded-md bg-input-background", selected && "ring-1 ring-primary")}
+    >
+      <div className="flex items-center gap-1 pr-1">
+        <button
+          type="button"
+          aria-pressed={selected}
+          onClick={onSelect}
+          className="flex min-h-10 min-w-0 flex-1 flex-col justify-center px-3 py-1.5 text-left [@media(pointer:coarse)]:min-h-11"
+        >
+          <span className="truncate text-body-md text-foreground">{object.name}</span>
+          <span className="truncate text-body-sm text-muted-foreground">
+            {CONTROL_TYPE_DEFINITION_BY_ID[object.controlType].label}
+          </span>
+        </button>
+        {selected ? (
+          <button
+            type="button"
+            aria-label={`在 3D 中定位 ${object.name}`}
+            onClick={() => engine.focusSelection()}
+            className={cn(iconBtn, "hover:text-foreground")}
+          >
+            <Crosshair className="h-3.5 w-3.5" aria-hidden />
+          </button>
+        ) : null}
+        <button
+          type="button"
+          aria-label={`删除 ${object.name}`}
+          onClick={onRemove}
+          className={cn(iconBtn, "hover:text-destructive")}
+        >
+          <X className="h-3.5 w-3.5" aria-hidden />
+        </button>
+      </div>
+      {selected ? (
+        <div className="rounded-b-md bg-muted p-3">
+          <ProjectEditBoundary
+            key={object.id}
+            ownerPrefix={`wizard:object:${object.id}`}
+            label="修改受控物体"
+          >
+            <WizardObjectFields object={object} />
+          </ProjectEditBoundary>
+        </div>
+      ) : null}
+    </div>
+  );
 };
 
 export const StepAddObjects = () => {
   const { objects, addObjectFromShape } = useProjectStore();
+  const { navigate } = useConsoleNav();
   const objectDeletion = useObjectDeletion();
-  const [selectedId, setSelectedId] = useState<number | null>(objects[0]?.id ?? null);
+  const { multiSelectedIds, treeFocus, select, replaceSelection, clearSelection, setTreeFocus } =
+    useSelection();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const selectedId = multiSelectedIds.length === 1 ? multiSelectedIds[0] : null;
+  const showPicker = objects.length === 0 || pickerOpen;
+  const listRef = useRef<HTMLDivElement>(null);
+  const enteredRef = useRef(false);
 
-  const handleAddShape = (id: ShapePresetId) => {
-    const object = addObjectFromShape(id);
-    if (!object) return;
-    setSelectedId(object.id);
-    toast.success(`已添加: ${object.name}`);
+  // 在 3D 里点选或新建物体时，把它的卡片滚到眼前；刚进这一步时不滚，先看到标题
+  useEffect(() => {
+    if (!enteredRef.current) {
+      enteredRef.current = true;
+      return;
+    }
+    if (selectedId === null) return;
+    listRef.current
+      ?.querySelector(`[data-object-id="${selectedId}"]`)
+      ?.scrollIntoView?.({ block: "start" });
+  }, [selectedId]);
+
+  const selectObject = (id: number) => {
+    select(id);
+    setTreeFocus({ kind: "controlled-object", id });
   };
 
-  const handleRequestRemove = (id: number) => {
-    objectDeletion.requestDelete([id]);
+  const handleAdd = (option: WizardMotionOption) => {
+    const { w } = toEngineDimensions(NEW_OBJECT_SHAPE, defaultShapeDimensions(NEW_OBJECT_SHAPE));
+    const object = addObjectFromShape(
+      NEW_OBJECT_SHAPE,
+      { x: nextObjectPlacementX(objects, w) },
+      { controlType: option.controlType, namePrefix: option.title },
+    );
+    if (!object) return;
+    selectObject(object.id);
+    setPickerOpen(false);
   };
 
   const handleConfirmRemove = useCallback((): boolean => {
@@ -42,111 +136,69 @@ export const StepAddObjects = () => {
     if (outcome !== "deleted" && outcome !== "no-op") return false;
 
     const removed = new Set(pendingIds);
-    if (selectedId && removed.has(selectedId)) {
-      setSelectedId(
-        objects.find((object) => object.id !== selectedId && !removed.has(object.id))
-          ?.id ?? null,
-      );
+    const remaining = multiSelectedIds.filter((id) => !removed.has(id));
+    if (remaining.length !== multiSelectedIds.length) {
+      if (remaining.length === 0) clearSelection();
+      else replaceSelection(remaining);
     }
+    if (treeFocus?.kind === "controlled-object" && removed.has(treeFocus.id)) setTreeFocus(null);
+
     if (outcome === "deleted" && pendingName && pendingIds.length === 1) {
       toast.warning(`已删除: ${pendingName}`);
     } else if (outcome === "deleted" && pendingIds.length > 1) {
       toast.warning(`已删除 ${pendingIds.length} 个受控物体`);
     }
     return true;
-  }, [objectDeletion, objects, selectedId]);
+  }, [clearSelection, multiSelectedIds, objectDeletion, replaceSelection, setTreeFocus, treeFocus]);
 
   return (
-    <div className="space-y-5">
-      <p className="text-heading-md text-foreground">添加受控物体并配置参数</p>
+    <div className="space-y-4">
+      <WizardStepHeading
+        title="你想让什么动起来？"
+        description="先选运动方式，它决定需要几个吊点。形状只影响 3D 外观，可以之后再改。"
+      />
 
-      <div className="grid grid-cols-3 gap-3">
-        {PALETTE_SHAPE_DEFINITIONS.map((preset) => {
-          const Icon = SHAPE_ICONS[preset.id as Exclude<ShapePresetId, "external">];
-          return (
+      {showPicker ? <WizardMotionPicker onPick={handleAdd} /> : null}
+
+      {objects.length > 0 ? (
+        <section className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-label-caps text-muted-foreground">已添加 ({objects.length})</h3>
             <button
-              key={preset.id}
               type="button"
-              onClick={() => handleAddShape(preset.id)}
-              className="flex min-h-[80px] flex-col items-center justify-center gap-2 rounded-md bg-input-background p-3 transition-all hover:-translate-y-0.5 hover:bg-accent [@media(pointer:coarse)]:min-h-[88px]"
+              aria-expanded={showPicker}
+              className={wizardBtnSecondary}
+              onClick={() => setPickerOpen((open) => !open)}
             >
-              <Icon className="h-6 w-6 text-primary" aria-hidden />
-              <span className="text-body-sm font-medium">{preset.label}</span>
+              <Plus className="h-3.5 w-3.5" aria-hidden />
+              {pickerOpen ? "收起" : "添加物体"}
             </button>
-          );
-        })}
-      </div>
-
-      <div className="grid grid-cols-2 gap-2">
-        {CONTROL_TYPE_DEFINITIONS.map((definition) => (
-          <div
-            key={definition.id}
-            className="rounded-md bg-muted px-3 py-2 text-body-sm text-muted-foreground"
-          >
-            {definition.label} · 至少 {definition.minimumDriveAxes} 轴
           </div>
-        ))}
-      </div>
-
-      <div>
-        <p className="mb-2 text-label-caps text-muted-foreground">
-          已添加的受控物体 ({objects.length})
-        </p>
-        {objects.length === 0 ? (
-          <p className="py-8 text-center text-body-sm text-muted-foreground">
-            尚未添加受控物体，请点击上方模型类型添加
-          </p>
-        ) : (
-          <div className="space-y-1 rounded-md bg-muted p-2">
-            {objects.map((object) => {
-              const shape = PALETTE_SHAPE_DEFINITIONS.find(
-                (preset) => preset.id === object.shapePreset,
-              );
-              const selected = selectedId === object.id;
-              return (
-                <div
-                  key={object.id}
-                  className={cn(
-                    "flex items-center gap-2 rounded-md bg-input-background px-3 py-2",
-                    selected && "ring-1 ring-primary",
-                  )}
-                >
-                  <button
-                    type="button"
-                    className="min-w-0 flex-1 text-left"
-                    onClick={() => setSelectedId(object.id)}
-                  >
-                    <span className="block truncate text-body-sm text-foreground">{object.name}</span>
-                    <span className="truncate text-[10px] text-muted-foreground">
-                      {shape?.label ?? object.shapePreset}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`删除 ${object.name}`}
-                    onClick={() => handleRequestRemove(object.id)}
-                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-destructive"
-                  >
-                    <X className="h-3.5 w-3.5" aria-hidden />
-                  </button>
-                </div>
-              );
-            })}
+          <div ref={listRef} className="space-y-1 rounded-md bg-muted p-2">
+            {objects.map((object) => (
+              <ObjectCard
+                key={object.id}
+                object={object}
+                selected={selectedId === object.id}
+                onSelect={() => selectObject(object.id)}
+                onRemove={() => objectDeletion.requestDelete([object.id])}
+              />
+            ))}
           </div>
-        )}
-      </div>
-
-      {selectedId ? (
-        <div className="rounded-md bg-muted">
-          <ProjectEditBoundary
-            key={selectedId}
-            ownerPrefix={`wizard:object:${selectedId}`}
-            label="修改受控物体"
-          >
-            <ControlledObjectForm objectId={selectedId} />
-          </ProjectEditBoundary>
-        </div>
+        </section>
       ) : null}
+
+      <p className="text-body-sm text-muted-foreground">
+        也可以从 3D 视口右侧把形状拖进来。吊点、速度、加减速和坐标在「工程结构 → 属性」，
+        <button
+          type="button"
+          className="text-primary underline-offset-2 hover:underline"
+          onClick={() => navigate("devices", { devicesTab: "structure" })}
+        >
+          现在打开
+        </button>
+        。
+      </p>
 
       <DeleteImpactDialog
         objectImpact={objectDeletion.impact}

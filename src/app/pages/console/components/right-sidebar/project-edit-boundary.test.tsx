@@ -32,9 +32,9 @@ const wizardPreview = vi.fn((next: number) => {
 let wizardPreviewValue = 0;
 
 vi.mock(
-  "@/app/pages/console/components/right-sidebar/property-forms/controlled-object-form",
+  "@/app/pages/console/components/right-sidebar/config-wizard/wizard-object-fields",
   () => ({
-    ControlledObjectForm: () => (
+    WizardObjectFields: () => (
       <NumericInput
         aria-label="位置 X"
         value={wizardPreviewValue}
@@ -65,8 +65,10 @@ vi.mock("@/app/pages/console/hooks/use-project-store", () => ({
         id: "obj-wizard",
         name: "物体-01",
         shapePreset: "cube",
+        controlType: "singlePointMove",
       },
     ],
+    motors: [],
     plcs: [
       {
         id: "plc-wizard",
@@ -77,6 +79,32 @@ vi.mock("@/app/pages/console/hooks/use-project-store", () => ({
     ],
     addObjectFromShape: vi.fn(),
     removePlc: vi.fn(),
+  }),
+}));
+
+vi.mock("@/app/pages/console/hooks/use-selection", () => ({
+  useSelection: () => ({
+    multiSelectedIds: ["obj-wizard"],
+    treeFocus: { kind: "master", id: "plc-wizard" },
+    select: vi.fn(),
+    replaceSelection: vi.fn(),
+    clearSelection: vi.fn(),
+    setTreeFocus: vi.fn(),
+  }),
+}));
+
+vi.mock("@/app/pages/console/hooks/use-console-nav", () => ({
+  useConsoleNav: () => ({ activeNav: "devices", navigate: vi.fn() }),
+}));
+
+vi.mock("@/app/pages/console/3d/Viz3DProvider", () => ({
+  useViz3DContext: () => ({ focusSelection: vi.fn() }),
+}));
+
+vi.mock("@/app/pages/console/hooks/plc-runtime-provider", () => ({
+  usePlcRuntime: () => ({
+    getPlcRuntime: () => ({ connection: "disconnected" }),
+    scanAll: vi.fn(),
   }),
 }));
 
@@ -98,6 +126,13 @@ vi.mock("sonner", () => ({
 vi.mock("@/app/pages/console/components/right-sidebar/delete-impact-dialog", () => ({
   DeleteImpactDialog: () => null,
 }));
+
+vi.mock(
+  "@/app/pages/console/components/right-sidebar/config-wizard/dialogs/motor-add-dialog",
+  () => ({
+    MotorAddDialog: () => null,
+  }),
+);
 
 vi.mock(
   "@/app/pages/console/components/right-sidebar/config-wizard/dialogs/plc-add-dialog",
@@ -764,7 +799,7 @@ describe("config wizard ProjectEditBoundary wiring", () => {
     });
   });
 
-  it("StepAddObjects wraps ControlledObjectForm so NumericInput scrub is one history step", async () => {
+  it("StepAddObjects wraps WizardObjectFields so NumericInput scrub is one history step", async () => {
     const { StepAddObjects } = await import(
       "./config-wizard/steps/step-add-objects"
     );
@@ -810,7 +845,7 @@ describe("config wizard ProjectEditBoundary wiring", () => {
 
     render(
       <ProjectContext.Provider value={project.asContextValue()}>
-        <StepAddPlc />
+        <StepAddPlc onNavigate={vi.fn()} />
       </ProjectContext.Provider>,
     );
 

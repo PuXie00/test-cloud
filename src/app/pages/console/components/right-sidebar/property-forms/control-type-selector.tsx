@@ -10,30 +10,13 @@ import {
 } from "@/app/components/ui/dialog";
 import { cn } from "@/app/components/ui/utils";
 import type { ControlType } from "@/app/project/configuration-types";
-import oneMoveGif from "@/assets/prompt/one-move.gif";
-import oneRotateGif from "@/assets/prompt/one-rotate.gif";
-import oneUpdownGif from "@/assets/prompt/one-updowm.gif";
-import orbitGif from "@/assets/prompt/orbit.gif";
-import twoSwingGif from "@/assets/prompt/two-swing.gif";
-import fourSwingGif from "@/assets/prompt/four-swing.gif";
-import multiSwingGif from "@/assets/prompt/multi-swing.gif";
 import { CONTROL_TYPE_DEFINITIONS } from "../config-wizard/config-descriptors";
+import { CONTROL_TYPE_PROMPT_GIF } from "./control-type-prompts";
 
 type ControlTypeSelectorProps = {
   value?: ControlType;
   onChange?: (value: ControlType) => void;
   disabled?: boolean;
-};
-
-const CONTROL_TYPE_PROMPT_GIF: Partial<Record<ControlType, string>> = {
-  singlePointMove: oneMoveGif,
-  continuousRotation: oneRotateGif,
-  multiLevelHoist: oneUpdownGif,
-  railCar: orbitGif,
-  twoPointSwing: twoSwingGif,
-  fourPointSwing: fourSwingGif,
-  dualTiltFourPointSwing: fourSwingGif,
-  multiPointSwing: multiSwingGif,
 };
 
 const btnPrimary =

@@ -1,60 +1,73 @@
-import { Check, Circle, FastForward, Play } from "lucide-react";
+import { Check } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
-import { useConfigWizard } from "@/app/pages/console/hooks/use-config-wizard";
 import { WIZARD_STEPS } from "./config-wizard-constants";
-import type { WizardStepKey, WizardStepState } from "./config-wizard-types";
+import {
+  getWizardStepProgress,
+  type WizardSetup,
+  type WizardStepProgress,
+  type WizardView,
+} from "./wizard-state";
 
-const StepIcon = ({ state }: { state: WizardStepState }) => {
-  if (state === "current") return <Play className="h-4 w-4 shrink-0" aria-hidden />;
-  if (state === "done") return <Check className="h-4 w-4 shrink-0" aria-hidden />;
-  if (state === "skipped") return <FastForward className="h-4 w-4 shrink-0" aria-hidden />;
-  return <Circle className="h-4 w-4 shrink-0 opacity-45" aria-hidden />;
+const PROGRESS_LABEL: Record<WizardStepProgress, string> = {
+  empty: "未开始",
+  partial: "未完成",
+  done: "已完成",
 };
 
-export const WizardStepNav = () => {
-  const { meta, getStepState, canNavigateTo, setCurrentStep } = useConfigWizard();
+type WizardStepNavProps = {
+  view: WizardView;
+  setup: WizardSetup;
+  onNavigate: (view: WizardView) => void;
+};
 
-  return (
-    <nav
-      className="custom-scrollbar flex w-[180px] shrink-0 flex-col overflow-y-auto border-r border-border/40 bg-card py-2"
-      aria-label="配置向导步骤"
-    >
-      {WIZARD_STEPS.map((step, index) => {
-        const state = getStepState(step.key);
-        const clickable = canNavigateTo(step.key);
-        const isCurrent = meta.currentStep === step.key;
-
-        return (
-          <button
-            key={step.key}
-            type="button"
-            disabled={!clickable}
-            aria-current={isCurrent ? "step" : undefined}
-            onClick={() => setCurrentStep(step.key as WizardStepKey)}
-            className={cn(
-              "flex min-h-10 w-full items-start gap-2 border-l-2 px-3 py-2.5 text-left transition-colors",
-              "[@media(pointer:coarse)]:min-h-11",
-              isCurrent && "border-primary bg-accent/40 text-primary",
-              state === "done" && !isCurrent && "border-show text-show hover:bg-accent",
-              state === "skipped" && !isCurrent && "border-dashed border-border text-muted-foreground hover:bg-accent",
-              state === "pending" && "border-transparent text-muted-foreground/45",
-              clickable && state !== "pending" && !isCurrent && "hover:bg-accent hover:text-foreground",
-              !clickable && "cursor-not-allowed opacity-50"
-            )}
-          >
-            <StepIcon state={state} />
-            <span className="min-w-0 flex-1">
-              <span className="block text-body-sm leading-tight">{step.label}</span>
-              {step.skippable && (
-                <span className="mt-0.5 block text-[9px] uppercase tracking-wide text-muted-foreground">
-                  可跳过
-                </span>
-              )}
-            </span>
-            <span className="font-mono text-mono-sm tabular-nums text-muted-foreground">{index + 1}</span>
-          </button>
-        );
-      })}
-    </nav>
+const itemClass = (active: boolean) =>
+  cn(
+    "flex min-h-10 min-w-0 flex-1 items-center justify-center gap-1.5 border-b-2 px-1 text-body-sm transition-colors",
+    "[@media(pointer:coarse)]:min-h-11",
+    active
+      ? "border-primary text-primary"
+      : "border-transparent text-muted-foreground hover:bg-accent hover:text-foreground",
   );
-};
+
+/** 顶部步骤条：所有步骤都能随时进入，图标只表示工程数据的进度 */
+export const WizardStepNav = ({ view, setup, onNavigate }: WizardStepNavProps) => (
+  <nav className="flex shrink-0 bg-muted px-2" aria-label="配置向导步骤">
+    <button
+      type="button"
+      aria-current={view === "intro" ? "step" : undefined}
+      onClick={() => onNavigate("intro")}
+      className={itemClass(view === "intro")}
+    >
+      <span className="truncate">认识搭建</span>
+    </button>
+    {WIZARD_STEPS.map((step, index) => {
+      const progress = getWizardStepProgress(step.key, setup);
+      const active = view === step.key;
+      return (
+        <button
+          key={step.key}
+          type="button"
+          aria-current={active ? "step" : undefined}
+          aria-label={`${step.label}，${PROGRESS_LABEL[progress]}`}
+          onClick={() => onNavigate(step.key)}
+          className={itemClass(active)}
+        >
+          {progress === "done" ? (
+            <Check className="h-3.5 w-3.5 shrink-0 text-show" aria-hidden />
+          ) : (
+            <span
+              className={cn(
+                "shrink-0 font-mono text-mono-sm tabular-nums",
+                progress === "partial" && "text-warning",
+              )}
+              aria-hidden
+            >
+              {index + 1}
+            </span>
+          )}
+          <span className="truncate">{step.label}</span>
+        </button>
+      );
+    })}
+  </nav>
+);

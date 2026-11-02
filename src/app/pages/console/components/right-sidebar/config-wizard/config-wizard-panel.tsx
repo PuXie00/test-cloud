@@ -1,58 +1,78 @@
-import { useConfigWizard } from "@/app/pages/console/hooks/use-config-wizard";
-import { WIZARD_STEPS } from "./config-wizard-constants";
-import { WizardFooter } from "./wizard-footer";
-import { WizardSkipBanner } from "./wizard-skip-banner";
-import { WizardStepNav } from "./wizard-step-nav";
+import { useCallback, useMemo, useState } from "react";
+import { useProject } from "@/app/project/use-project";
+import { hydrateSetupFromDocument } from "@/app/project/setup-hydrate";
+import type { ProjectDocument } from "@/app/project/project-document-types";
+import { useProjectStore } from "@/app/pages/console/hooks/use-project-store";
 import { StepAddObjects } from "./steps/step-add-objects";
 import { StepAddPlc } from "./steps/step-add-plc";
 import { StepBindAxes } from "./steps/step-bind-axes";
+import { StepIntro } from "./steps/step-intro";
 import { StepReview } from "./steps/step-review";
+import { WizardFooter } from "./wizard-footer";
+import { resolveInitialWizardView, type WizardSetup, type WizardView } from "./wizard-state";
+import { WizardStepNav } from "./wizard-step-nav";
+import { WizardTopologyStrip } from "./wizard-topology-strip";
+import { readStoredWizardView, writeStoredWizardView } from "./wizard-view-storage";
 
-const SkippedStepPlaceholder = ({ label }: { label: string }) => (
-  <div className="flex min-h-[200px] items-center justify-center rounded-md bg-warning-surface/30 p-6 text-center text-body-sm text-muted-foreground">
-    此步骤已跳过，仅支持离线仿真。点击左侧「{label}」可重新配置。
-  </div>
-);
+type ConfigWizardBodyProps = {
+  projectId: string | null;
+  document: ProjectDocument | null;
+};
 
-export const ConfigWizardPanel = () => {
-  const { meta, isCurrentStepSkipped } = useConfigWizard();
-  const stepDef = WIZARD_STEPS.find((step) => step.key === meta.currentStep);
-  const stepIndex = WIZARD_STEPS.findIndex((step) => step.key === meta.currentStep);
+const ConfigWizardBody = ({ projectId, document }: ConfigWizardBodyProps) => {
+  const { objects, plcs, motors } = useProjectStore();
+  const setup = useMemo<WizardSetup>(() => ({ objects, plcs, motors }), [motors, objects, plcs]);
+  // 切换工程时 store 要等 effect 才换数据，这里直接读工程文档，不会拿上一个工程的内容来判断
+  const [view, setView] = useState<WizardView>(() =>
+    resolveInitialWizardView(
+      projectId ? readStoredWizardView(projectId) : null,
+      document ? hydrateSetupFromDocument(document.setup) : setup,
+    ),
+  );
+
+  const navigate = useCallback(
+    (next: WizardView) => {
+      setView(next);
+      if (projectId) writeStoredWizardView(projectId, next);
+    },
+    [projectId],
+  );
 
   const renderStep = () => {
-    if (isCurrentStepSkipped()) {
-      return <SkippedStepPlaceholder label={stepDef?.label ?? ""} />;
-    }
-    switch (meta.currentStep) {
+    switch (view) {
+      case "intro":
+        return <StepIntro setup={setup} onNavigate={navigate} />;
       case "objects":
         return <StepAddObjects />;
       case "hardware":
-        return <StepAddPlc />;
+        return <StepAddPlc onNavigate={navigate} />;
       case "binding":
-        return <StepBindAxes />;
+        return <StepBindAxes onNavigate={navigate} />;
       case "review":
-        return <StepReview />;
-      default:
-        return null;
+        return <StepReview onNavigate={navigate} />;
     }
   };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex h-10 shrink-0 items-center justify-between bg-muted px-4">
-        <span className="text-heading-md font-semibold text-foreground">配置向导</span>
-        <span className="font-mono text-body-sm tabular-nums text-muted-foreground">
-          步骤 {stepIndex + 1}/{WIZARD_STEPS.length}
-        </span>
+      <WizardStepNav view={view} setup={setup} onNavigate={navigate} />
+      <WizardTopologyStrip view={view} setup={setup} />
+      <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto bg-background p-4">
+        {renderStep()}
       </div>
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        <WizardStepNav />
-        <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto bg-background p-4">
-          {renderStep()}
-        </div>
-      </div>
-      <WizardSkipBanner />
-      <WizardFooter />
+      <WizardFooter view={view} setup={setup} onNavigate={navigate} />
     </div>
+  );
+};
+
+export const ConfigWizardPanel = () => {
+  const { currentProject } = useProject();
+  const projectId = currentProject?.id ?? null;
+  return (
+    <ConfigWizardBody
+      key={projectId ?? "no-project"}
+      projectId={projectId}
+      document={currentProject?.document ?? null}
+    />
   );
 };
