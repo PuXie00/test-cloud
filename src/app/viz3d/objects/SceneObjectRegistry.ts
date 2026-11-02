@@ -103,7 +103,7 @@ export class SceneObjectRegistry implements Disposable {
 
   /**
    * 挂载：子物体根节点挂到父物体 attachmentPivot 下，Babylon 层级自动叠加父物体实时姿态。
-   * 父物体缺失或成环时按顶层处理；挂在其它节点（会话组合）下的顶层物体不动。
+   * 父物体缺失或成环时按顶层处理；挂在其它节点（如多选变换枢轴）下的顶层物体不动。
    */
   syncMountParents(): void {
     const pivots = new Set<TransformNode>([...this.handles.values()].map((h) => h.attachmentPivot));

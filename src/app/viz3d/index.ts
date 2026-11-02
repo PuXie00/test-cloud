@@ -22,7 +22,6 @@ export type { TransformCenterPreset } from "./tools/transform-center";
 export type {
   AlignAxis,
   AlignEdge,
-  AlignMode,
   AxesConfig,
   BoundingBoxKind,
   CameraPose,

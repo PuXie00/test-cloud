@@ -7,10 +7,6 @@ import { UnitAwareNumericRangeInput } from "@/app/components/ics/unit-aware-nume
 import { Select } from "@/app/components/ui/select";
 import { Slider } from "@/app/components/ui/slider";
 import { cn } from "@/app/components/ui/utils";
-import {
-  SCENE_ALIGN_ACTIONS,
-  useSceneBuildActions,
-} from "@/app/pages/console/3d/use-scene-build-actions";
 import { useProjectStore } from "@/app/pages/console/hooks/use-project-store";
 import { useProject } from "@/app/project/use-project";
 import {
@@ -54,6 +50,7 @@ import { ControlTypeSelector } from "./property-forms/control-type-selector";
 import { ControlTypeChangeConfirmDialog } from "./property-forms/control-type-change-confirm-dialog";
 import { AXIS_RANGE_CONFIG } from "./property-forms/motion-axis-range";
 import { MotionAxisSection } from "./property-forms/motion-axis-section";
+import { SceneArrangeSection } from "./scene-arrange-section";
 
 type MultiSelectSummaryPanelProps = {
   objectIds: number[];
@@ -85,9 +82,6 @@ const getSharedValue = <T,>(values: T[]): SharedValue<T> => {
   return first;
 };
 
-const actionBtn =
-  "inline-flex h-8 min-w-[2.5rem] items-center justify-center rounded-md border border-border bg-transparent px-3 text-label-caps text-foreground hover:bg-accent disabled:pointer-events-none disabled:opacity-40 [@media(pointer:coarse)]:h-10";
-
 const VECTOR_PREFIX_COLORS = {
   x: "var(--destructive)",
   y: "var(--show)",
@@ -101,7 +95,6 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
   const [pendingControlType, setPendingControlType] = useState<ControlType | null>(null);
   const [pendingImpact, setPendingImpact] = useState<ControlTypeChangeImpact | null>(null);
   const [pendingIds, setPendingIds] = useState<number[]>([]);
-  const { alignSelection, groupSelection, ungroupSelection } = useSceneBuildActions();
 
   const selectedObjects = useMemo(
     () =>
@@ -110,9 +103,6 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
         .filter((object): object is ControlledObject => Boolean(object)),
     [findObject, objectIds],
   );
-
-  const canMulti = objectIds.length >= 2;
-  const canSingle = objectIds.length >= 1;
 
   /** 控制类型不一致时取运动轴交集；同类型取完整列表 */
   const sharedMotionAxes = useMemo((): MotionAxisKind[] => {
@@ -503,40 +493,7 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
     <div className="flex flex-col gap-4 p-3">
       <p className="text-label-caps text-muted-foreground">已选 {objectIds.length} 个受控物体</p>
 
-      <div className="flex flex-col gap-3">
-        <section className="rounded-md bg-muted p-3" aria-label="对齐">
-          <p className="mb-2 text-label-caps text-muted-foreground">对齐</p>
-          <div className="flex flex-wrap gap-2">
-            {SCENE_ALIGN_ACTIONS.map(({ mode, label, colorClass, hoverClass, icon: Icon }) => (
-              <button
-                key={mode}
-                type="button"
-                disabled={!canMulti}
-                className={cn(actionBtn, "min-w-10 px-2", hoverClass)}
-                aria-label={label}
-                title={label}
-                onClick={() => alignSelection(mode)}
-              >
-                <Icon className={cn("h-4 w-4", colorClass)} aria-hidden />
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="flex flex-wrap gap-2" aria-label="组合">
-          <button type="button" disabled={!canMulti} className={actionBtn} onClick={groupSelection}>
-            组合
-          </button>
-          <button
-            type="button"
-            disabled={!canSingle}
-            className={actionBtn}
-            onClick={ungroupSelection}
-          >
-            解组
-          </button>
-        </section>
-      </div>
+      <SceneArrangeSection selectedCount={objectIds.length} />
 
       <CollapsePanel title="批量属性" defaultOpen>
         <div className="space-y-4">

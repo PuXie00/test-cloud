@@ -24,8 +24,6 @@ type MenuItem = {
   id: string;
   label: string;
   icon: ElementType;
-  iconClassName?: string;
-  labelClassName?: string;
   shortcut?: string;
 };
 
@@ -36,45 +34,39 @@ type MenuSection = {
 const MENU_SECTIONS: MenuSection[] = [
   {
     items: [
-      { id: "project", label: "工程管理", icon: FolderOpen, iconClassName: "text-warning" },
-      { id: "save", label: "保存工程", icon: Save, iconClassName: "text-secondary" },
-      { id: "save-as", label: "工程另存为", icon: Copy, iconClassName: "text-chart-3" },
-      { id: "close", label: "关闭工程", icon: FolderX, iconClassName: "text-chart-5" },
+      { id: "project", label: "工程管理", icon: FolderOpen },
+      { id: "save", label: "保存工程", icon: Save },
+      { id: "save-as", label: "工程另存为", icon: Copy },
+      { id: "close", label: "关闭工程", icon: FolderX },
     ],
   },
   {
     items: [
-      { id: "undo", label: "撤销", icon: Undo2, iconClassName: "text-primary" },
-      { id: "redo", label: "重做", icon: Redo2, iconClassName: "text-secondary" },
+      { id: "undo", label: "撤销", icon: Undo2 },
+      { id: "redo", label: "重做", icon: Redo2 },
     ],
   },
   {
     items: [
-      { id: "log", label: "操作日志与回放", icon: ScrollText, iconClassName: "text-chart-3" },
-      { id: "assets", label: "设备资产管理", icon: Boxes, iconClassName: "text-chart-5" },
-      { id: "signals", label: "外部信号配置", icon: Radio, iconClassName: "text-info" },
-      { id: "collab", label: "多机协作管理", icon: Globe, iconClassName: "text-primary" },
-      { id: "rules", label: "规则编辑器", icon: Zap, iconClassName: "text-warning" },
-      { id: "permissions", label: "用户与权限", icon: UserCog, iconClassName: "text-warning" },
+      { id: "log", label: "操作日志与回放", icon: ScrollText },
+      { id: "assets", label: "设备资产管理", icon: Boxes },
+      { id: "signals", label: "外部信号配置", icon: Radio },
+      { id: "collab", label: "多机协作管理", icon: Globe },
+      { id: "rules", label: "规则编辑器", icon: Zap },
+      { id: "permissions", label: "用户与权限", icon: UserCog },
     ],
   },
   {
     items: [
-      { id: "lock-screen", label: "锁屏", icon: LockKeyhole, iconClassName: "text-primary" },
-      { id: "system", label: "系统设置", icon: Settings, iconClassName: "text-muted-foreground" },
-      { id: "help", label: "帮助", icon: CircleHelp, iconClassName: "text-destructive" },
+      { id: "lock-screen", label: "锁屏", icon: LockKeyhole },
+      { id: "system", label: "系统设置", icon: Settings },
+      { id: "help", label: "帮助", icon: CircleHelp },
     ],
   },
   {
     items: [
-      { id: "switch-user", label: "切换用户", icon: UserRound, iconClassName: "text-primary" },
-      {
-        id: "logout",
-        label: "退出登录",
-        icon: LogOut,
-        iconClassName: "text-destructive",
-        labelClassName: "text-destructive",
-      },
+      { id: "switch-user", label: "切换用户", icon: UserRound },
+      { id: "logout", label: "退出登录", icon: LogOut },
     ],
   },
 ];
@@ -277,15 +269,8 @@ export const AppMenuPanel = ({
                         )}
                         onClick={() => handleItem(resolved.id)}
                       >
-                        <Icon className={cn("h-4 w-4 shrink-0", resolved.iconClassName)} aria-hidden />
-                        <span
-                          className={cn(
-                            "min-w-0 flex-1 truncate",
-                            resolved.labelClassName ?? "text-foreground",
-                          )}
-                        >
-                          {visibleLabel}
-                        </span>
+                        <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                        <span className="min-w-0 flex-1 truncate text-foreground">{visibleLabel}</span>
                         {resolved.shortcut ? (
                           <span className="shrink-0 font-mono text-mono-sm tabular-nums text-muted-foreground">
                             {resolved.shortcut}
