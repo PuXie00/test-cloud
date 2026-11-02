@@ -797,6 +797,7 @@ export class CsocketApiService {
       velocity: 0,
       acceleration: 0,
       deceleration: 0,
+      moveDirection: 0,// 移动方向 0为自动 1为正向 2为反向
     }))
     return this.sendBuilt('Opera|moveAbs', '0x0007', mapped, opts)
   }
@@ -856,7 +857,7 @@ export class CsocketApiService {
   }
   // 读取运行参数
   readAxisRunParamMotor(items: { deviceId: number }[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('Information|readrunconfig', '0x0024', items, opts)
+    return this.sendBuilt('Opera|readrunconfig', '0x0024', items, opts)
     // return {success: true,data: [{deviceId: 2,defaultVelocity: 40,defaultAcceleration: 40,defaultDeceleration: 40,maximumStroke: 6000}]}
   }
   /*
@@ -953,13 +954,21 @@ export class CsocketApiService {
   stopModel(items: { deviceId: number}[], opts?: CsocketSendOpts) {
     const mapped = items.map((item) => ({
       deviceId: item.deviceId,
-      deceleration: 0, // 走默认的减速时间
+      hDeceleration: 0, // 走默认的减速时间
+      pDeceleration: 0, // 走默认的减速时间
+      yDeceleration: 0, // 走默认的减速时间
     }))
     return this.sendBuilt('Opera|stop', '0x0107', mapped, opts)
   }
   // 急停停止
-  eStopModel(items: { deviceId: number, deceleration: number }[], opts?: CsocketSendOpts) {
-    return this.sendBuilt('Opera|eStop', '0x0108', items, opts)
+  eStopModel(items: { deviceId: number }[], opts?: CsocketSendOpts) {
+    const mapped = items.map((item) => ({
+      deviceId: item.deviceId,
+      hDeceleration: 0, // 走默认的减速时间
+      pDeceleration: 0, // 走默认的减速时间
+      yDeceleration: 0, // 走默认的减速时间
+    }))
+    return this.sendBuilt('Opera|eStop', '0x0108', mapped, opts)
   }
   // 配置物体参数(含悬挂点)
   configureModelParamModel(

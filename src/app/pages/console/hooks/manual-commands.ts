@@ -58,17 +58,6 @@ export const buildResetItems = (deviceIds: readonly number[]) =>
 export const buildStopItems = (deviceIds: readonly number[]) =>
   deviceIds.map((deviceId) => ({ deviceId }));
 
-export const buildAllStopPlcItems = (plcIds: readonly number[]) => {
-  const seen = new Set<number>();
-  const items: { deviceId: number }[] = [];
-  for (const deviceId of plcIds) {
-    if (seen.has(deviceId)) continue;
-    seen.add(deviceId);
-    items.push({ deviceId });
-  }
-  return items;
-};
-
 export const buildHomeMoveTargetItems = (deviceIds: readonly number[]): MoveTargetItem[] =>
   deviceIds.map((deviceId) =>
     buildMoveTargetItem({ objectId: String(deviceId), target: {}, current: {} }),
@@ -124,20 +113,6 @@ export const sendStopModel = async (deviceIds: readonly number[]): Promise<void>
   const result = await api.stopModel(items);
   if (isCppAckFailed(result)) {
     toast.error(String(result.message || "停止指令失败"));
-  }
-};
-
-export const sendAllStopPlc = async (plcIds: readonly number[]): Promise<void> => {
-  const items = buildAllStopPlcItems(plcIds);
-  if (items.length === 0) return;
-  const api = window.csocketApi;
-  if (!api?.allStopPlc) {
-    toast.error(DISCONNECTED);
-    return;
-  }
-  const result = await api.allStopPlc(items);
-  if (isCppAckFailed(result)) {
-    toast.error(String(result.message || "总停止指令失败"));
   }
 };
 

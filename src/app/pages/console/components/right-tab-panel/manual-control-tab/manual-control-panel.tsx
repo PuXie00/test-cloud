@@ -1,13 +1,11 @@
 import { Link2 } from "lucide-react";
 import type { CapturedPoseRequest } from "@/app/project/capture-pose-sequence";
 import {
-  sendAllStopPlc,
   sendEnableModel,
   sendHomeModel,
   sendResetModel,
   sendStopModel,
 } from "../../../hooks/manual-commands";
-import { useProjectStore } from "../../../hooks/use-project-store";
 import { useSelection } from "../../../hooks/use-selection";
 import { useSequencePreview } from "../../../hooks/use-sequence-preview";
 import { useProject } from "@/app/project/use-project";
@@ -58,7 +56,6 @@ export const ManualControlPanel = ({
   liveLabel = null,
 }: ManualControlPanelProps) => {
   const { selectedId, multiSelectedIds } = useSelection();
-  const { plcs } = useProjectStore();
   const { getById } = useControlledObjects();
   const { sequenceId: previewSequenceId } = useSequencePreview();
   const { currentProject } = useProject();
@@ -149,10 +146,6 @@ export const ManualControlPanel = ({
     void sendStopModel(deviceIds);
   };
 
-  const handleAllStop = () => {
-    void sendAllStopPlc(plcs.map((plc) => plc.id));
-  };
-
   return (
     <div className="custom-scrollbar h-full overflow-y-auto bg-card-muted">
       {liveLabel ? (
@@ -183,7 +176,6 @@ export const ManualControlPanel = ({
         onReset={handleReset}
         onHome={handleHome}
         onStop={handleStop}
-        onAllStop={handleAllStop}
       />
       {canMove && (
         <>
