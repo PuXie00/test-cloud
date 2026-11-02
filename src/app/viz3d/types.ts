@@ -158,14 +158,6 @@ export type TransformMode = "translate" | "rotate" | "scale";
 
 export type AlignAxis = "x" | "y" | "z";
 export type AlignEdge = "min" | "center" | "max";
-export type AlignMode =
-  | "left"
-  | "hCenter"
-  | "right"
-  | "top"
-  | "vCenter"
-  | "bottom"
-  | "center";
 
 export type BoundingBoxKind = "box" | "sphere";
 

@@ -9,10 +9,15 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 } from "@/app/components/ui/dropdown-menu";
+import { cn } from "@/app/components/ui/utils";
 import { canMountTo, orderByMountTree } from "@/app/project/object-mount";
 import { useProjectStore } from "../../hooks/use-project-store";
 import { useViz3DContext } from "../Viz3DProvider";
-import { SCENE_ALIGN_ACTIONS, useSceneBuildActions } from "../use-scene-build-actions";
+import {
+  SCENE_AXES,
+  SCENE_DISTRIBUTE_MIN_COUNT,
+  useSceneBuildActions,
+} from "../use-scene-build-actions";
 import type { SceneObjectEditActions } from "../use-scene-object-edit-actions";
 
 const menuContentClass =
@@ -84,12 +89,11 @@ export const SceneBuildContextMenuContent = (props: SceneBuildContextMenuContent
   const [mode, setMode] = useState<ToolMode>(() => engine.getMode());
   const [selection, setSelection] = useState(() => engine.getSelection());
   const canMulti = selection.length >= 2;
-  const canSingle = selection.length >= 1;
+  const canDistribute = selection.length >= SCENE_DISTRIBUTE_MIN_COUNT;
   const {
     alignSelection,
+    distributeSelection,
     setTransformCenter,
-    groupSelection,
-    ungroupSelection,
   } = useSceneBuildActions();
   const { objects, mountObjects } = useProjectStore();
   const selectedObjectIds = useMemo(() => selection.map(Number), [selection]);
@@ -169,15 +173,37 @@ export const SceneBuildContextMenuContent = (props: SceneBuildContextMenuContent
           对齐
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent className={subMenuContentClass}>
-          {SCENE_ALIGN_ACTIONS.map(({ mode, label, colorClass, icon: Icon }) => (
+          {SCENE_AXES.flatMap(({ axis, letter, name, colorClass, iconClass, edges }) =>
+            edges.map(({ edge, label, icon: Icon }) => (
+              <DropdownMenuItem
+                key={`${axis}-${edge}`}
+                disabled={!canMulti}
+                className={menuItemClass}
+                onSelect={() => alignSelection(axis, edge)}
+              >
+                <Icon className={cn("h-4 w-4", colorClass, iconClass)} aria-hidden />
+                <span className={cn("font-mono", colorClass)}>{letter}</span>
+                {name} · {label}
+              </DropdownMenuItem>
+            )),
+          )}
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
+
+      <DropdownMenuSub>
+        <DropdownMenuSubTrigger disabled={!canDistribute} className={menuItemClass}>
+          {canDistribute ? "均布" : `均布（至少 ${SCENE_DISTRIBUTE_MIN_COUNT} 个物体）`}
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent className={subMenuContentClass}>
+          {SCENE_AXES.map(({ axis, letter, name, colorClass, iconClass, distributeIcon: Icon }) => (
             <DropdownMenuItem
-              key={mode}
-              disabled={!canMulti}
+              key={axis}
               className={menuItemClass}
-              onSelect={() => alignSelection(mode)}
+              onSelect={() => distributeSelection(axis)}
             >
-              <Icon className={`h-4 w-4 ${colorClass}`} aria-hidden />
-              <span className={colorClass}>{label}</span>
+              <Icon className={cn("h-4 w-4", colorClass, iconClass)} aria-hidden />
+              <span className={cn("font-mono", colorClass)}>{letter}</span>
+              {name}
             </DropdownMenuItem>
           ))}
         </DropdownMenuSubContent>
@@ -211,15 +237,6 @@ export const SceneBuildContextMenuContent = (props: SceneBuildContextMenuContent
         onSelect={() => mountObjects(selectedObjectIds, null)}
       >
         解除挂载
-      </DropdownMenuItem>
-
-      <DropdownMenuSeparator className="bg-border" />
-
-      <DropdownMenuItem disabled={!canMulti} className={menuItemClass} onSelect={groupSelection}>
-        组合
-      </DropdownMenuItem>
-      <DropdownMenuItem disabled={!canSingle} className={menuItemClass} onSelect={ungroupSelection}>
-        解组
       </DropdownMenuItem>
     </DropdownMenuContent>
   );

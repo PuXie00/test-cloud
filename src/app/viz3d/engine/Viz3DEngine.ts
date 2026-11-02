@@ -12,7 +12,7 @@ import { Emitter } from "../events";
 import type { DisplayLengthUnit } from "@/app/project/display-length-units";
 import type {
   AlignAxis,
-  AlignMode,
+  AlignEdge,
   BoundingBoxKind,
   CameraPose,
   Disposable,
@@ -67,7 +67,7 @@ import { PickController } from "../picking/PickController";
 import { raycastGroundPlane } from "../picking/raycast-ground";
 import { ViewportManager } from "../viewports/ViewportManager";
 import { ViewportSaver } from "../cameras/ViewportSaver";
-import { alignByBounds, distributePositions } from "../tools/SceneBuildTools";
+import { alignByBounds, distributeByBounds, type AlignBoundsItem } from "../tools/SceneBuildTools";
 import { TransformController } from "../tools/TransformController";
 import {
   intersectModelRotationAxes,
@@ -87,7 +87,6 @@ import {
   type TransformCenterPreset,
 } from "../tools/transform-center";
 import { BoundingBox } from "../state/BoundingBox";
-import { GroupManager } from "../state/GroupManager";
 import { MeasureMarkers } from "../state/MeasureMarkers";
 import {
   groundDistanceFromAabb,
@@ -100,7 +99,6 @@ import {
   getWorldBounds,
   getWorldPosition,
   projectWorldToScreen,
-  setNodeMetadata,
   type WorldBounds,
 } from "../babylon/utils";
 import type { SceneObjectHandle } from "../objects/SceneObjectRegistry";
@@ -144,7 +142,6 @@ export type Viz3DEventMap = {
   transformEnd: TransformEndPayload;
   transformEndBatch: TransformEndPayload[];
   transformCancel: void;
-  groupChange: { groups: string[] };
   modelLoaded: ModelLoadedPayload;
   measure: MeasurePayload;
   recordingState: RecordingStatePayload;
@@ -182,8 +179,6 @@ export class Viz3DEngine implements Disposable {
   private displayLengthUnit: DisplayLengthUnit = "mm";
   private slotElement: HTMLElement | null = null;
   private transformController: TransformController | null = null;
-  private groupManager: GroupManager | null = null;
-  private readonly groupNodes = new Map<string, TransformNode>();
   private readonly boundingBoxes = new Map<string, BoundingBox>();
   private modelLoader: ModelLoader | null = null;
   private measureMarkers: MeasureMarkers | null = null;
@@ -273,9 +268,6 @@ export class Viz3DEngine implements Disposable {
     this.selectionBoxManager?.dispose();
     this.selectionBoxManager = null;
 
-    this.groupNodes.forEach((node) => node.dispose());
-    this.groupNodes.clear();
-    this.groupManager = null;
 
     this.objectRegistry?.dispose();
     this.objectRegistry = null;
@@ -774,7 +766,19 @@ export class Viz3DEngine implements Disposable {
     this.objectRegistry?.get(id)?.setColor(hex);
   }
 
-  align(ids: string[], mode: AlignMode): TransformEndPayload[] {
+  align(ids: string[], axis: AlignAxis, edge: AlignEdge): TransformEndPayload[] {
+    return this.applyObjectLayout(ids, (items) => alignByBounds(items, axis, edge));
+  }
+
+  distribute(ids: string[], axis: AlignAxis): TransformEndPayload[] {
+    return this.applyObjectLayout(ids, (items) => distributeByBounds(items, axis));
+  }
+
+  /** 按世界包围盒算出目标位置再写回；只返回确实移动了的物体，没动就是空数组 */
+  private applyObjectLayout(
+    ids: string[],
+    resolve: (items: AlignBoundsItem[]) => Record<string, Vec3>,
+  ): TransformEndPayload[] {
     const shouldReattach = this.releaseTransformAttachmentsForObjectSync();
     const editableIds = ids.filter((id) => this.canEditObject(id));
     const items = editableIds.flatMap((id) => {
@@ -795,13 +799,15 @@ export class Viz3DEngine implements Disposable {
         },
       ];
     });
-    const aligned = alignByBounds(items, mode);
-    const payloads = editableIds.flatMap((id) => {
-      const position = aligned[id];
-      if (!position) {
+    const targets = resolve(items);
+    // 子物体跟随父物体：先摆父物体，子物体再按世界坐标落位，否则会被父物体带偏
+    const parentsFirst = [...editableIds].sort((a, b) => this.mountDepth(a) - this.mountDepth(b));
+    const payloads = parentsFirst.flatMap((id) => {
+      const target = targets[id];
+      if (!target || this.isAtWorldPosition(id, target)) {
         return [];
       }
-      const payload = this.applyPosition(id, position);
+      const payload = this.applyPosition(id, target);
       return payload ? [payload] : [];
     });
     if (shouldReattach) {
@@ -810,25 +816,32 @@ export class Viz3DEngine implements Disposable {
     return payloads;
   }
 
-  distribute(ids: string[], axis: AlignAxis): TransformEndPayload[] {
-    const editableIds = ids.filter((id) => this.canEditObject(id));
-    const items = editableIds.flatMap((id) => {
-      const handle = this.objectRegistry?.get(id);
-      if (!handle) {
-        return [];
-      }
-      const world = asTransformNode(handle.object3d).getAbsolutePosition();
-      return [{ id, position: { x: world.x, y: world.y, z: world.z } }];
-    });
-    const distributed = distributePositions(items, axis);
-    return editableIds.flatMap((id) => {
-      const position = distributed[id];
-      if (!position) {
-        return [];
-      }
-      const payload = this.applyPosition(id, position);
-      return payload ? [payload] : [];
-    });
+  private mountDepth(id: string): number {
+    let depth = 0;
+    let parent = this.objectRegistry?.getMountParent(id);
+    while (parent) {
+      depth += 1;
+      parent = this.objectRegistry?.getMountParent(parent.id);
+    }
+    return depth;
+  }
+
+  private isAtWorldPosition(id: string, position: Vec3): boolean {
+    const handle = this.objectRegistry?.get(id);
+    if (!handle) {
+      return false;
+    }
+    const node = asTransformNode(handle.object3d);
+    if (node.parent) {
+      refreshWorldMatrixChain(node.parent as TransformNode);
+    }
+    node.computeWorldMatrix(true);
+    const world = node.getAbsolutePosition();
+    return (
+      Math.abs(world.x - position.x) < POSITION_EPSILON_M &&
+      Math.abs(world.y - position.y) < POSITION_EPSILON_M &&
+      Math.abs(world.z - position.z) < POSITION_EPSILON_M
+    );
   }
 
   addBoundingBox(id: string, kind: BoundingBoxKind): void {
@@ -850,28 +863,6 @@ export class Viz3DEngine implements Disposable {
     }
     bbox.dispose();
     this.boundingBoxes.delete(id);
-  }
-
-  group(ids: string[]): string | null {
-    const groupId = this.groupManager?.group(ids) ?? null;
-    if (groupId) {
-      this.events.emit("groupChange", { groups: this.getGroups() });
-    }
-    return groupId;
-  }
-
-  ungroup(groupId: string): void {
-    this.groupManager?.ungroup(groupId);
-    const groupNode = this.groupNodes.get(groupId);
-    if (groupNode) {
-      groupNode.dispose();
-      this.groupNodes.delete(groupId);
-    }
-    this.events.emit("groupChange", { groups: this.getGroups() });
-  }
-
-  getGroups(): string[] {
-    return this.groupManager?.getGroups() ?? [];
   }
 
   createAIModel(): never {
@@ -1493,10 +1484,6 @@ export class Viz3DEngine implements Disposable {
     });
     this.pickController = new PickController();
 
-    this.groupManager = new GroupManager((childId, parentGroupId) => {
-      this.reparentObject(childId, parentGroupId);
-    });
-
     this.telemetryController = new TelemetryController(
       registry,
       this.sceneManager.getLabelRenderer(),
@@ -1961,7 +1948,7 @@ export class Viz3DEngine implements Disposable {
 
   /**
    * 释放 Gizmo 后把世界姿态写回节点，返回要落盘的姿态：顶层物体为世界值，
-   * 挂载子物体为相对父物体的局部值；其它父节点（会话组合）保持原样。
+   * 挂载子物体为相对父物体的局部值；其它父节点（如多选变换枢轴）保持原样。
    */
   private bakeObjectWorldPose(
     handle: { id: string; object3d: unknown },
@@ -2010,41 +1997,15 @@ export class Viz3DEngine implements Disposable {
     }
     bbox.update(readObjectBounds(handle) as never);
   }
-
-  private reparentObject(childId: string, parentGroupId: string | null): void {
-    const handle = this.objectRegistry?.get(childId);
-    const scene = this.sceneManager?.scene;
-    if (!handle || !scene) {
-      return;
-    }
-
-    // 挂载子物体始终跟随父物体，不进会话组合
-    if (this.objectRegistry?.getMountParent(childId)) {
-      return;
-    }
-
-    const child = asTransformNode(handle.object3d);
-    child.setParent(null, true);
-
-    if (!parentGroupId) {
-      child.setParent(null, true);
-      return;
-    }
-
-    let groupNode = this.groupNodes.get(parentGroupId);
-    if (!groupNode) {
-      groupNode = new TransformNode(parentGroupId, scene);
-      setNodeMetadata(groupNode, "viz3dGroupId", parentGroupId);
-      this.groupNodes.set(parentGroupId, groupNode);
-    }
-    child.setParent(groupNode, true);
-  }
 }
 
 const primaryColorHex = (colors: Viz3DColorMap): string =>
   `#${colors.primary.toString(16).padStart(6, "0")}`;
 
 const asTransformNode = (node: unknown): TransformNode => node as TransformNode;
+
+/** 对齐、均布判断「没动」的容差：0.001 mm */
+const POSITION_EPSILON_M = 1e-6;
 
 const readObjectBounds = (handle: SceneObjectHandle): WorldBounds =>
   getWorldBounds(asTransformNode(handle.selectionBoundsTarget));
