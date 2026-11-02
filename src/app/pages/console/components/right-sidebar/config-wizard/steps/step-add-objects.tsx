@@ -189,7 +189,7 @@ export const StepAddObjects = () => {
       ) : null}
 
       <p className="text-body-sm text-muted-foreground">
-        也可以从 3D 视口右侧把形状拖进来。速度、加减速和坐标在「工程结构 → 属性」，
+        也可以从 3D 视口右侧把形状拖进来。吊点、速度、加减速和坐标在「工程结构 → 属性」，
         <button
           type="button"
           className="text-primary underline-offset-2 hover:underline"

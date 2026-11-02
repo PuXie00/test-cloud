@@ -15,7 +15,6 @@ import {
   toEngineDimensions,
 } from "./config-descriptors";
 import type { ControlledObject } from "./config-wizard-types";
-import { ObjectAxesEditor } from "./object-axes-editor";
 
 const SHAPE_OPTIONS = PALETTE_SHAPE_DEFINITIONS.map((shape) => ({
   label: shape.label,
@@ -103,16 +102,6 @@ export const WizardObjectFields = ({ object }: { object: ControlledObject }) => 
           onChange={(value) => handleRangeChange(axis, value)}
         />
       ))}
-
-      <div className="space-y-1">
-        <span className={fieldLabelClass}>吊点</span>
-        <ObjectAxesEditor
-          objectId={object.id}
-          controlType={object.controlType}
-          axes={object.axes}
-          variant="summary"
-        />
-      </div>
     </div>
   );
 };
