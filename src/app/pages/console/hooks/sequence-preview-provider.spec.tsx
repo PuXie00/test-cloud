@@ -211,12 +211,29 @@ describe("SequencePreviewProvider", () => {
     expect(result.current.isPlaying).toBe(false);
   });
 
-  it("setMultiplier(4) advances about 4× faster than 1× for the same dt", () => {
+  it("starts playing at 5× by default; autoplay: false waits", () => {
     const { result } = renderHook(() => useSequencePreview(), { wrapper: SequencePreviewProvider });
-    const ticks = 8;
+    act(() => {
+      result.current.startPreview(1);
+    });
+    expect(result.current.isPlaying).toBe(true);
+    expect(result.current.multiplier).toBe(5);
+
+    act(() => {
+      result.current.stopPreview();
+      result.current.startPreview(1, { autoplay: false });
+    });
+    expect(result.current.isPlaying).toBe(false);
+  });
+
+  it("setMultiplier(10) advances about 10× faster than 1× for the same dt", () => {
+    const { result } = renderHook(() => useSequencePreview(), { wrapper: SequencePreviewProvider });
+    // 10 倍下 4 帧走 640 ms，还在 1 s 的序列里
+    const ticks = 4;
 
     act(() => {
       result.current.startPreview(1, { autoplay: true });
+      result.current.setMultiplier(1);
     });
     advanceFrames(ticks);
     const slow = result.current.cursorMs;
@@ -228,19 +245,19 @@ describe("SequencePreviewProvider", () => {
 
     act(() => {
       result.current.startPreview(1, { autoplay: true });
-      result.current.setMultiplier(4);
+      result.current.setMultiplier(10);
     });
     advanceFrames(ticks);
     const fast = result.current.cursorMs;
 
-    expect(fast / slow).toBeCloseTo(4, 1);
+    expect(fast / slow).toBeCloseTo(10, 1);
   });
 
   it("play at the end rewinds to 0 then plays", () => {
     const { result } = renderHook(() => useSequencePreview(), { wrapper: SequencePreviewProvider });
 
     act(() => {
-      result.current.startPreview(1);
+      result.current.startPreview(1, { autoplay: false });
     });
     act(() => {
       result.current.setCursorMs(result.current.totalMs);

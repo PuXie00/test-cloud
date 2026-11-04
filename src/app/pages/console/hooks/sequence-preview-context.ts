@@ -2,7 +2,11 @@ import { createContext } from "react";
 import type { ResolvedActionSequence } from "@/app/project/action-sequence/resolve-sequence";
 import type { PreviewTimeline } from "./sequence-preview-timeline";
 
-export type SequencePreviewMultiplier = 1 | 2 | 4;
+export type SequencePreviewMultiplier = 1 | 2 | 5 | 10;
+
+/** 预览倍速档位；进入预览默认 5 倍，最高 10 倍（再乘推子的速度百分比） */
+export const PREVIEW_MULTIPLIERS: readonly SequencePreviewMultiplier[] = [1, 2, 5, 10];
+export const DEFAULT_PREVIEW_MULTIPLIER: SequencePreviewMultiplier = 5;
 
 export type SequencePreviewState = {
   sequenceId: number | null;
@@ -19,6 +23,7 @@ export type SequencePreviewState = {
 
 export type StartPreviewOptions = {
   faderPercent?: number;
+  /** 进入后直接播放；默认 true */
   autoplay?: boolean;
   holdMode?: boolean;
   nearest?: boolean;

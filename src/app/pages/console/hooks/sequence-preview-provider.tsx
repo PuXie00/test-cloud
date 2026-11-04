@@ -25,6 +25,7 @@ import { useConsoleNav } from "./use-console-nav";
 import { useOptionalControlledObjects } from "./use-controlled-objects";
 import { advancePreviewTimeline, buildPreviewTimeline } from "./sequence-preview-timeline";
 import {
+  DEFAULT_PREVIEW_MULTIPLIER,
   SequencePreviewContext,
   type SequencePreviewMultiplier,
   type SequencePreviewState,
@@ -40,7 +41,7 @@ const IDLE_STATE: SequencePreviewState = {
   isPlaying: false,
   holdMode: false,
   faderPercent: 100,
-  multiplier: 1,
+  multiplier: DEFAULT_PREVIEW_MULTIPLIER,
   totalMs: 0,
   resolved: null,
   timeline: null,
@@ -128,10 +129,11 @@ export const SequencePreviewProvider: FC<{ children: ReactNode }> = ({ children 
     const next: SequencePreviewState = {
       sequenceId,
       cursorMs: 0,
-      isPlaying: !!options?.autoplay,
+      // 进入预览就开始播放，默认 5 倍速
+      isPlaying: options?.autoplay ?? true,
       holdMode: !!options?.holdMode,
       faderPercent: options?.faderPercent ?? 100,
-      multiplier: 1,
+      multiplier: DEFAULT_PREVIEW_MULTIPLIER,
       totalMs: timeline.totalMs,
       resolved,
       timeline,

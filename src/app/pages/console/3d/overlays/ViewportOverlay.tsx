@@ -12,6 +12,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
+import { useProject } from "@/app/project/use-project";
 import type { ToolMode } from "@/app/viz3d";
 import { pendingGoEntries } from "../../hooks/go-ready";
 import { useGoReady } from "../../hooks/go-ready-provider";
@@ -159,6 +160,34 @@ const CurrentPoseToggle = () => {
   );
 };
 
+/**
+ * 预览时 3D 窗口和实时画面要一眼分得开：整圈描边 + 顶部「预览」标签（长按预览没有进度条时也有）。
+ * 用 secondary（非实时）色，和实时运行的绿色、选中的青色都区分开。
+ */
+export const PreviewFrame = ({ sequenceId }: { sequenceId: number }) => {
+  const { currentProject } = useProject();
+  const name = currentProject?.document?.motion.actionSequences.find(
+    (sequence) => sequence.id === sequenceId,
+  )?.name;
+  return (
+    <>
+      <div
+        aria-hidden
+        data-testid="preview-frame"
+        className="pointer-events-none absolute inset-0 rounded-md border-2 border-secondary"
+      />
+      <div
+        role="status"
+        className="pointer-events-none absolute left-1/2 top-11 flex max-w-[80%] -translate-x-1/2 items-center gap-1.5 rounded-full bg-secondary px-3 py-1 text-body-sm font-semibold text-secondary-foreground"
+      >
+        <span className="inline-block size-2 shrink-0 rounded-full bg-secondary-foreground" aria-hidden />
+        <span className="truncate">{name ? `预览「${name}」` : "预览"}</span>
+        <span className="shrink-0 font-normal">· 设备不动</span>
+      </div>
+    </>
+  );
+};
+
 export const ViewportOverlay = () => {
   const engine = useViz3DContext();
   const { activeNav } = useConsoleNav();
@@ -239,6 +268,9 @@ export const ViewportOverlay = () => {
           </div>
         ) : null}
       </div>
+      {(isControl || isSequences) && preview.sequenceId !== null ? (
+        <PreviewFrame sequenceId={preview.sequenceId} />
+      ) : null}
       {(isControl || isSequences) && preview.sequenceId !== null && !preview.holdMode ? (
         <SequencePreviewBar />
       ) : null}
