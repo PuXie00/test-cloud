@@ -99,7 +99,7 @@ describe("preset projections", () => {
       <TimelineEditor {...createTimelineProps(sequenceWithSharedSlope, handleSelect)} />,
     );
     fireEvent.click(screen.getAllByRole("button", { name: /静态预设.*斜面/ })[1]!);
-    expect(handleSelect).toHaveBeenCalledWith({ kind: "block", blockId: "slope-1" });
+    expect(handleSelect).toHaveBeenCalledWith({ kind: "block", blockId: "slope-1" }, "replace");
   });
 
   it("dragging any projection moves the source preset", () => {
@@ -162,7 +162,7 @@ describe("dynamic preset projections", () => {
     expect(ticks).toHaveLength(2);
     expect(ticks[0]!.getAttribute("role")).not.toBe("button");
     fireEvent.click(ticks[0]!);
-    expect(handleSelect).toHaveBeenCalledWith({ kind: "block", blockId: "dynamic-1" });
+    expect(handleSelect).toHaveBeenCalledWith({ kind: "block", blockId: "dynamic-1" }, "replace");
     expect(handleSelect.mock.calls.every((call) => call[0]?.kind === "block")).toBe(true);
     fireEvent.pointerDown(ticks[1]!, { clientX: 40 });
     fireEvent.pointerMove(window, { clientX: 90 });
@@ -297,8 +297,8 @@ describe("command event markers", () => {
     fireEvent.pointerDown(playhead, { clientX: 100 });
     fireEvent.pointerMove(window, { clientX: 180 });
     fireEvent.pointerUp(window);
-    expect(handleSelect).toHaveBeenCalledWith({ kind: "block", blockId: "enable-1" });
-    expect(handleSelect).toHaveBeenCalledWith({ kind: "block", blockId: "disable-1" });
+    expect(handleSelect).toHaveBeenCalledWith({ kind: "block", blockId: "enable-1" }, "replace");
+    expect(handleSelect).toHaveBeenCalledWith({ kind: "block", blockId: "disable-1" }, "replace");
     expect(enableModel).not.toHaveBeenCalled();
     expect(window.csocketApi.enableModel).not.toHaveBeenCalled();
   });

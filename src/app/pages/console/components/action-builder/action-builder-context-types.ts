@@ -65,6 +65,8 @@ export type ActionBuilderContextValue = {
   handleSelectionChange: (selection: SequenceSelection) => void;
   handleObjectSelect: (objectId: number) => void;
   handleObjectsSelect: (objectIds: number[]) => void;
+  /** 轨道上点块时物体跟着块：只改物体选中，不清块的选中（全局选中由调用方一起改） */
+  handleObjectsFollow: (objectIds: number[]) => void;
   handleCursorChange: (ms: number) => void;
   handlePlaybackCursorChange: (ms: number) => void;
   handleInsertTimelineBlock: (block: TimelineBlock) => boolean;

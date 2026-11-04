@@ -5,9 +5,16 @@ import type {
   TimelineBlock,
   TimelineMarker,
 } from "@/app/project/action-sequence/types";
+import { blockObjectIds } from "./timeline/timeline-snap";
 
 /** 从运动区间点选进来：属性面板先显示运动区间 */
 export type SelectionFocus = "segments";
+
+/**
+ * 轨道上点选块时物体选中怎么跟：replace 单击（所属物体没全选中时换成它们），
+ * add Ctrl 点、框选（加进去）。曲线视图和程序里改的选中不带这个，物体不跟。
+ */
+export type ObjectFollow = "replace" | "add";
 
 /**
  * 时间轴选中的块。运动区间没有单独的选中：两端的块都选中就是选中了这个区间，
@@ -31,6 +38,25 @@ export type SequenceSelectionLookup =
     }
   | { kind: "markers"; markers: TimelineMarker[] }
   | null;
+
+/**
+ * 轨道上点选块之后物体选中该是什么；不用变时返回 null。
+ * 块所属的物体都已选中时不动（选好的一组物体不被拆散）；否则单击换成它们，Ctrl 点、框选加进去。
+ * 只取消选中块、或块的选中清空时物体不变。
+ */
+export const followedObjectIds = (
+  sequence: ActionSequenceConfig,
+  selection: SequenceSelection,
+  follow: ObjectFollow,
+  currentObjectIds: readonly number[],
+): number[] | null => {
+  const ids = new Set(selectionBlockIds(selection));
+  const owners = [
+    ...new Set(sequence.blocks.filter((block) => ids.has(block.id)).flatMap(blockObjectIds)),
+  ];
+  if (owners.length === 0 || owners.every((id) => currentObjectIds.includes(id))) return null;
+  return follow === "add" ? [...new Set([...currentObjectIds, ...owners])] : owners;
+};
 
 export const findAuthoredBlock = (
   sequence: ActionSequenceConfig,

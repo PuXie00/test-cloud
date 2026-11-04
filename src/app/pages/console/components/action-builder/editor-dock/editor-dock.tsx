@@ -17,7 +17,14 @@ import {
   clipboardShortcutOf,
   type ContextMenuAction,
 } from "../action-clipboard-menu";
-import { isBlockSelected, selectionBlockIds, selectionMarkerIds } from "../sequence-selection";
+import {
+  followedObjectIds,
+  isBlockSelected,
+  selectionBlockIds,
+  selectionMarkerIds,
+  type ObjectFollow,
+  type SequenceSelection,
+} from "../sequence-selection";
 import {
   TIMELINE_PX_PER_SECOND_MAX,
   TIMELINE_PX_PER_SECOND_MIN,
@@ -65,6 +72,7 @@ const SequenceEditor = () => {
     cursorMs,
     timelinePxPerSecond,
     handleSelectionChange,
+    handleObjectsFollow,
     handleCursorChange,
     handlePlaybackCursorChange,
     handleMoveTimelineBlock,
@@ -101,7 +109,7 @@ const SequenceEditor = () => {
     handleLoopChange,
     sequenceIssues,
   } = useActionBuilder();
-  const { multiSelectedIds, select, toggleMulti, replaceSelection } = useSelection();
+  const { selectedId, multiSelectedIds, select, toggleMulti, replaceSelection } = useSelection();
   // 没有「编辑动作序列」：时间轴只读，能播放、跳转、看曲线，不能拖、删、加标记、粘贴
   const canEdit = usePermissions().can("action.edit");
 
@@ -121,6 +129,17 @@ const SequenceEditor = () => {
       return;
     }
     select(objectId);
+  };
+  // 轨道上点选块时物体选中跟着走（3D、左侧轨道、手动控制都对上），规则见 followedObjectIds
+  const handleTimelineSelectionChange = (next: SequenceSelection, follow?: ObjectFollow) => {
+    handleSelectionChange(next);
+    if (!follow || !sequence) return;
+    const current =
+      multiSelectedIds.length > 0 ? multiSelectedIds : selectedId != null ? [selectedId] : [];
+    const objectIds = followedObjectIds(sequence, next, follow, current);
+    if (objectIds === null) return;
+    handleObjectsFollow(objectIds);
+    replaceSelection(objectIds);
   };
   const rootRef = useRef<HTMLDivElement>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -305,7 +324,7 @@ const SequenceEditor = () => {
       event.target instanceof Element ? event.target.closest<HTMLElement>("[data-block-id]") : null;
     const blockId = target?.dataset.blockId;
     if (blockId && !isBlockSelected(selection, blockId)) {
-      handleSelectionChange({ kind: "block", blockId });
+      handleTimelineSelectionChange({ kind: "block", blockId }, "replace");
     }
   };
 
@@ -384,7 +403,7 @@ const SequenceEditor = () => {
             cursorMs={cursorMs}
             isPlaying={isPlaying}
             timelinePxPerSecond={timelinePxPerSecond}
-            onSelectionChange={handleSelectionChange}
+            onSelectionChange={handleTimelineSelectionChange}
             onCursorChange={handleCursorChange}
             onPoseMove={canEdit ? handleMoveTimelineBlock : ignoreEdit}
             onPresetMove={canEdit ? handleMoveTimelineBlock : ignoreEdit}
