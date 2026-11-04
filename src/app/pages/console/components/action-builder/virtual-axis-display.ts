@@ -115,7 +115,7 @@ const COMPACT_OPTIONS: FormatLengthFamilyOptions = {
 };
 
 /** 四舍五入到 0 的负数不显示成 -0.0 */
-const withoutNegativeZero = (text: string): string =>
+export const withoutNegativeZero = (text: string): string =>
   /^-0(\.0*)?$/.test(text) ? text.slice(1) : text;
 
 export const formatVirtualAxisCompact = (
