@@ -138,6 +138,28 @@ describe("action builder drafts", () => {
     expect(saved(result, id).blocks).toHaveLength(2);
   });
 
+  it("saves every savable draft at once and keeps the unrepaired ones", async () => {
+    const { result } = renderBuilder();
+    await openFixtureProject(result);
+    const good = createWithTwoPoses(result);
+    const bad = createWithTwoPoses(result);
+    act(() => result.current.builder.handleRenameSequence("待修复的"));
+    // 2 秒走 1000 万 mm，必然超速
+    act(() => result.current.builder.handleInsertTimelineBlock(pose("c", 7, 13_000, 10_000_000)));
+    expect([...result.current.builder.draftSequenceIds].sort()).toEqual([good, bad].sort());
+
+    let outcome: { saved: number; blocked: string[] } | undefined;
+    act(() => {
+      outcome = result.current.builder.handleSaveAll();
+    });
+
+    expect(outcome).toEqual({ saved: 1, blocked: ["待修复的"] });
+    expect(saved(result, good).blocks.map((block) => block.id)).toEqual(["a", "b"]);
+    expect(saved(result, bad).blocks).toEqual([]);
+    expect([...result.current.builder.draftSequenceIds]).toEqual([bad]);
+    expect(toast.warning).toHaveBeenCalledWith("「待修复的」待修复，没有保存");
+  });
+
   it("drops the draft when edits return to the saved content", async () => {
     const { result } = renderBuilder();
     await openFixtureProject(result);

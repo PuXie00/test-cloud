@@ -166,6 +166,15 @@ const sequence: ActionSequenceConfig = {
 
 const resolved = resolveActionSequence(sequence);
 
+/** 再加一个别的物体的位姿：和 pose 一起选是多选位姿，不是一个运动区间 */
+const withOther: ActionSequenceConfig = {
+  ...sequence,
+  blocks: [
+    ...sequence.blocks,
+    { id: "other", kind: "pose", objectId: 12, atMs: 2500, pose: { v1: 4, v2: 5, v3: 6 } },
+  ],
+};
+
 
 
 const handlers = {
@@ -742,7 +751,7 @@ describe("SequencePropertiesPanel multi-pose", () => {
 
   it("shows the multi-pose editor when every selected block is a pose", () => {
 
-    renderPanel({ selection: { kind: "multi-block", blockIds: ["pose", "later"] } });
+    renderPanel({ sequence: withOther, selection: { kind: "multi-block", blockIds: ["pose", "other"] } });
 
     expect(screen.getByRole("heading", { name: "多选位姿" })).not.toBeNull();
 
@@ -825,7 +834,7 @@ describe("SequencePropertiesPanel multi-pose", () => {
 
   it("shows a mixed absolute value as --", () => {
 
-    renderPanel({ selection: { kind: "multi-block", blockIds: ["pose", "later"] } });
+    renderPanel({ sequence: withOther, selection: { kind: "multi-block", blockIds: ["pose", "other"] } });
 
     expect(screen.getByLabelText("虚轴1").textContent).toContain("--");
 
@@ -835,7 +844,7 @@ describe("SequencePropertiesPanel multi-pose", () => {
 
   it("resets the relative draft to 0 after a batch write", () => {
 
-    renderPanel({ selection: { kind: "multi-block", blockIds: ["pose", "later"] } });
+    renderPanel({ sequence: withOther, selection: { kind: "multi-block", blockIds: ["pose", "other"] } });
 
     fireEvent.click(screen.getByRole("tab", { name: "相对" }));
 
@@ -845,7 +854,7 @@ describe("SequencePropertiesPanel multi-pose", () => {
 
     expect(builderState.current.handleApplyPoseAxisWrite).toHaveBeenCalledWith(
 
-      ["pose", "later"],
+      ["pose", "other"],
 
       { mode: "rel", axis: "v1", value: 1 },
 
@@ -856,9 +865,9 @@ describe("SequencePropertiesPanel multi-pose", () => {
   });
 
   it("deletes every selected pose from the multi-pose panel", () => {
-    renderPanel({ selection: { kind: "multi-block", blockIds: ["pose", "later"] } });
+    renderPanel({ sequence: withOther, selection: { kind: "multi-block", blockIds: ["pose", "other"] } });
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
-    expect(handlers.onDeleteBlock).toHaveBeenCalledWith(["pose", "later"]);
+    expect(handlers.onDeleteBlock).toHaveBeenCalledWith(["pose", "other"]);
   });
 
   it("deletes a mixed multi-selection", () => {

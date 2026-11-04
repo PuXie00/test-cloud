@@ -743,6 +743,93 @@ export const writeSegmentProfiles = (
   return finalize(next);
 };
 
+/** 按速度改阶段时的一条写入：曲线（fromRef→toRef）某个轴的新曲线和这段曲线的新时长 */
+export type SegmentRetimeWrite = {
+  objectId: number;
+  fromRef: string;
+  toRef: string;
+  axis: VirtualAxisId;
+  profile: MotionProfile;
+  /** 新时长（0.1 s 的整数倍）；起止时刻按 fromRef、toRef 在序列里现在的位置算 */
+  durationMs: number;
+};
+
+/**
+ * 按速度改阶段：曲线换成新的，时长变了的把终点挪过去，这个物体终点及以后的块跟着一起平移，
+ * 后面的区间形状不变；其它物体不动（几个物体共用的预设随它平移）。
+ * 一次写几段时同一物体的平移累加。新终点越过曲线中间的位姿，或平移后和别的动作重叠时不改。
+ */
+export const retimeSegmentCurves = (
+  sequence: ActionSequenceConfig,
+  writes: readonly SegmentRetimeWrite[],
+  options?: SequenceEditOptions,
+): EditResult => {
+  if (writes.length === 0) return { ok: true, sequence };
+  let resolved: ReturnType<typeof resolveActionSequence>;
+  try {
+    resolved = resolveActionSequence(sequence);
+  } catch {
+    return { ok: false, reason: "invalid-preset" };
+  }
+  const deltasByObject = new Map<number, Array<{ atMs: number; deltaMs: number }>>();
+  for (const write of writes) {
+    const points = resolved.posesByObject.get(write.objectId) ?? [];
+    const startMs = points.find((point) => point.sourceRef === write.fromRef)?.atMs;
+    const endMs = points.find((point) => point.sourceRef === write.toRef)?.atMs;
+    if (startMs === undefined || endMs === undefined) return { ok: false, reason: "missing-block" };
+    const durationMs = snapTimeMs(write.durationMs);
+    if (!(durationMs > 0)) return { ok: false, reason: "invalid-time-range" };
+    const deltaMs = durationMs - (endMs - startMs);
+    if (deltaMs === 0) continue;
+    // 轴在中间位姿经过时，新终点不能早于（或落在）中间那些位姿上
+    const crossesInner = points.some(
+      (point) => point.atMs > startMs && point.atMs < endMs && point.atMs >= startMs + durationMs,
+    );
+    if (crossesInner) return { ok: false, reason: "invalid-time-range" };
+    const list = deltasByObject.get(write.objectId) ?? [];
+    list.push({ atMs: endMs, deltaMs });
+    deltasByObject.set(write.objectId, list);
+  }
+  const shiftOf = (objectId: number, atMs: number): number =>
+    (deltasByObject.get(objectId) ?? []).reduce(
+      (sum, item) => (item.atMs <= atMs ? sum + item.deltaMs : sum),
+      0,
+    );
+  const next = cloneSequence(sequence);
+  if (deltasByObject.size > 0) {
+    next.blocks = next.blocks.map((block) => {
+      const atMs = blockTimeMs(block);
+      // 几个物体共用的块取变化最大的那个物体的平移
+      const shift = blockObjectIds(block)
+        .map((objectId) => shiftOf(objectId, atMs))
+        .reduce((best, value) => (Math.abs(value) > Math.abs(best) ? value : best), 0);
+      return shift === 0 ? block : snapBlockTimes(shiftBlock(block, shift));
+    });
+    if (next.blocks.some((block) => timeRangeError(block))) {
+      return { ok: false, reason: "invalid-time-range" };
+    }
+  }
+  for (const write of writes) {
+    const index = next.segments.findIndex(
+      (item) => item.fromRef === write.fromRef && item.toRef === write.toRef,
+    );
+    const base =
+      index >= 0
+        ? next.segments[index]!.settings.profiles
+        : createDefaultAxisProfiles(snapTimeMs(write.durationMs));
+    const config: MotionSegmentConfig = {
+      fromRef: write.fromRef,
+      toRef: write.toRef,
+      settings: {
+        profiles: { ...cloneAxisProfiles(base), [write.axis]: cloneMotionProfile(write.profile) },
+      },
+    };
+    if (index >= 0) next.segments[index] = config;
+    else next.segments.push(config);
+  }
+  return commitBlocks(sequence, next, options);
+};
+
 export type ExplodeResult =
   | { ok: true; sequence: ActionSequenceConfig; createdIds: string[] }
   | { ok: false; reason: SequenceEditError };

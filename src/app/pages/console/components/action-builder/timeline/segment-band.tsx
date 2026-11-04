@@ -93,7 +93,10 @@ export const SegmentBand = ({
       onClick={handleClick}
       onPointerDown={handlePointerDown}
       className={cn(
-        "absolute top-1/2 z-0 flex h-5 -translate-y-1/2 items-center justify-center overflow-visible rounded-sm px-1",
+        "absolute top-1/2 flex h-5 -translate-y-1/2 items-center justify-center overflow-visible rounded-sm px-1",
+        // 区间平时压在位姿下面；拖动时抬到和标尺同层（在它后面渲染，所以盖得住），
+        // 第一行的时刻标签不被标尺挡住，两端的位姿仍在上面
+        dragging ? "z-10" : "z-0",
         onMove && "cursor-grab active:cursor-grabbing",
         invalid
           ? selected

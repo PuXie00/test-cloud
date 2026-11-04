@@ -616,15 +616,15 @@ describe("timeline navigation tools", () => {
     expect(capturedEditor.current?.revealCursorRequestId).toBe(3);
   });
 
-  it("only uses the selected objects' keyframes when objects are selected", () => {
+  it("uses the whole sequence's keyframes even when objects are selected", () => {
     selectionState.ids = [8];
     const handleCursorChange = vi.fn();
     mockBuilder({ sequence: navSequence, cursorMs: 2000, handleCursorChange });
     render(<EditorDock />);
     fireEvent.click(screen.getByRole("button", { name: "下一个关键帧" }));
-    expect(handleCursorChange).toHaveBeenLastCalledWith(4000);
+    expect(handleCursorChange).toHaveBeenLastCalledWith(3000);
     fireEvent.click(screen.getByRole("button", { name: "上一个关键帧" }));
-    expect(handleCursorChange).toHaveBeenLastCalledWith(0);
+    expect(handleCursorChange).toHaveBeenLastCalledWith(1000);
   });
 
   it("fits the timeline and toggles snapping from the toolbar and keys", () => {

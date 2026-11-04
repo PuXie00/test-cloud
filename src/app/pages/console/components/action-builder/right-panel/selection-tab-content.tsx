@@ -31,7 +31,6 @@ type SelectionTabContentProps = {
   onDeleteBlock: (blockIds?: string | string[]) => void;
   onCreatePose: (objectIds: number[]) => void;
   onCreateSetEnabled: (objectIds: number[], enabled: boolean) => void;
-  onCreateSequence: (objectIds: number[]) => void;
   onApplyStaticPreset: (presetId: string, objectIds: number[]) => void;
   onApplyDynamicPreset: (presetId: string, objectIds: number[]) => void;
 };
@@ -58,7 +57,6 @@ export const SelectionTabContent = ({
   onDeleteBlock,
   onCreatePose,
   onCreateSetEnabled,
-  onCreateSequence,
   onApplyStaticPreset,
   onApplyDynamicPreset,
 }: SelectionTabContentProps) => {
@@ -92,7 +90,6 @@ export const SelectionTabContent = ({
           sequenceMissing={sequenceMissingHint}
           onCreatePose={onCreatePose}
           onCreateSetEnabled={onCreateSetEnabled}
-          onCreateSequence={onCreateSequence}
           onApplyStaticPreset={onApplyStaticPreset}
           onApplyDynamicPreset={onApplyDynamicPreset}
         />

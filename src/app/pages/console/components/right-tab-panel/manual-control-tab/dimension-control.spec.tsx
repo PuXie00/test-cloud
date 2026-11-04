@@ -311,6 +311,38 @@ describe("DimensionControl GO", () => {
   });
 });
 
+describe("DimensionControl 清除时另外要做的事", () => {
+  it("给了 onClear 时清除 GO 目标后再调用它", () => {
+    selectLiftAndSwing();
+    hookState.goState = {
+      phase: "armed",
+      mode: "abs",
+      entries: [{ objectId: "2", target: { v1: 10, v2: 0, v3: 0 }, current: {} }],
+    };
+    const onClear = vi.fn();
+    render(
+      <DisplayLengthUnitProvider initialUnit="mm">
+        <DimensionControl objectIds={[2]} onClear={onClear} />
+      </DisplayLengthUnitProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "取消选中物体 GO" }));
+    expect(hookState.cancel).toHaveBeenCalledWith(["2"]);
+    expect(onClear).toHaveBeenCalledTimes(1);
+  });
+
+  it("没有 GO 目标或不能操作时也能点，只做 onClear", () => {
+    selectLiftAndSwing();
+    const onClear = vi.fn();
+    render(
+      <DisplayLengthUnitProvider initialUnit="mm">
+        <DimensionControl objectIds={[2]} disabled onClear={onClear} />
+      </DisplayLengthUnitProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "取消选中物体 GO" }));
+    expect(onClear).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("DimensionControl 没有当前位置读数", () => {
   it("虚轴旁不再显示当前位置，看 3D 标签", () => {
     selectLiftAndSwing();

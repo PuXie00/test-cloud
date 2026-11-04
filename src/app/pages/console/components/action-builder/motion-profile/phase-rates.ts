@@ -8,7 +8,10 @@ import {
 import type { MotionProfile } from "@/app/project/action-sequence/types";
 import { TIME_STEP_MS, snapTimeMs } from "../timeline/timeline-data";
 
-/** 阶段的填法：按时间填加减速时间，或按速度填加减速度（区间时长都不变） */
+/**
+ * 阶段的填法：按时间填加减速时间（区间时长不变）；按速度填加速度、匀速速度、减速度，
+ * 区间时长跟着算，终点和后面的块一起挪
+ */
 export type PhaseInputMode = "time" | "speed";
 
 export const PHASE_INPUT_MODE_TABS: ReadonlyArray<{ id: PhaseInputMode; label: string }> = [
@@ -105,57 +108,116 @@ export const profileFromRates = (input: {
   };
 };
 
-export const RATES_DO_NOT_FIT_MESSAGE = "加减速度太小或进出速度太快，这段时间里排不下";
+export const SPEED_UNREACHABLE_MESSAGE = "行程太短，按这组加减速度到不了这个匀速速度";
 
 export type RatePhase = "accel" | "decel";
 
+/** 按速度改出来的曲线和这段曲线的新时长 */
+export type RetimedProfile = { profile: MotionProfile; durationMs: number };
+
+const relativeError = (actual: number, target: number): number =>
+  Math.abs(actual - target) / target;
+
 /**
- * 按速度时拖数值、点 ‹ ›：加速度（或减速度）走 steps 档。阶段时间只能是 0.1 s 的整数倍，
- * 所以一档 = 这一段的时间差 0.1 s：steps 为正时间缩短、变化率变大，为负反之。
- * 另一段在 0.1 s 上重新挑时间，让它的变化率尽量保持原值。到头或排不下时返回 null。
+ * 按速度：加速度、匀速速度、减速度按所填的走，行程和进出速度不变，求这段的时长。
+ * 时长和两段变速时间都要落在 0.1 s 上：在精确时长附近的几档里挑三个值最接近所填的。
+ * 行程太短到不了这个匀速速度，或取整后排不下时返回 null。
  */
-export const stepPhaseRate = (input: {
+export const retimeFromRates = (input: {
+  distance: number;
+  boundary?: MotionBoundary;
+  acceleration: number;
+  cruiseSpeed: number;
+  deceleration: number;
+}): RetimedProfile | null => {
+  const { distance, boundary, acceleration, cruiseSpeed, deceleration } = input;
+  const vs = boundary?.startSpeed ?? 0;
+  const ve = boundary?.endSpeed ?? 0;
+  if (![distance, acceleration, cruiseSpeed, deceleration, vs, ve].every(Number.isFinite)) return null;
+  if (!(distance > 0) || !(acceleration > 0) || !(cruiseSpeed > 0) || !(deceleration > 0)) return null;
+  const accelSec = Math.abs(cruiseSpeed - vs) / acceleration;
+  const decelSec = Math.abs(cruiseSpeed - ve) / deceleration;
+  const cruiseDistance =
+    distance - ((vs + cruiseSpeed) / 2) * accelSec - ((cruiseSpeed + ve) / 2) * decelSec;
+  if (cruiseDistance < -1e-9 * distance) return null;
+  const exactSteps =
+    ((accelSec + Math.max(0, cruiseDistance) / cruiseSpeed + decelSec) * 1000) / TIME_STEP_MS;
+  // 下取整、上取整，再往上两档：两段变速至少各 0.1 s、中间还要有匀速，很短的区间要多留一点
+  const first = Math.max(1, Math.floor(exactSteps));
+  let best: { result: RetimedProfile; error: number } | null = null;
+  for (let steps = first; steps <= Math.ceil(exactSteps) + 2; steps += 1) {
+    const durationMs = steps * TIME_STEP_MS;
+    const profile = profileFromRates({ distance, durationMs, boundary, acceleration, deceleration });
+    if (profile?.kind !== "trapezoid") continue;
+    if (profile.params.accelMs + profile.params.decelMs >= durationMs) continue;
+    const rates = trapezoidRatesOf(profile, distance, durationMs, boundary);
+    if (!rates) continue;
+    const error = Math.max(
+      relativeError(rates.acceleration, acceleration),
+      relativeError(rates.cruiseSpeed, cruiseSpeed),
+      relativeError(rates.deceleration, deceleration),
+    );
+    if (best === null || error < best.error) best = { result: { profile, durationMs }, error };
+  }
+  return best?.result ?? null;
+};
+
+/**
+ * 按速度点加速度（或减速度）的 − +：一档 = 这段变速时间差 0.1 s（steps 为正时变短、变化率变大），
+ * 匀速速度和另一段的变化率不变，时长跟着算。到头或排不下时返回 null。
+ */
+export const stepRetimedRate = (input: {
   profile: MotionProfile;
   distance: number;
   durationMs: number;
   boundary?: MotionBoundary;
   phase: RatePhase;
   steps: number;
-}): MotionProfile | null => {
+}): RetimedProfile | null => {
   const { profile, distance, durationMs, boundary, phase, steps } = input;
   if (profile.kind !== "trapezoid" || steps === 0) return null;
   const current = trapezoidRatesOf(profile, distance, durationMs, boundary);
   if (!current) return null;
-  const { accelMs, decelMs } = profile.params;
-  const ownMs = (phase === "accel" ? accelMs : decelMs) - steps * TIME_STEP_MS;
+  const ownMs = (phase === "accel" ? profile.params.accelMs : profile.params.decelMs) - steps * TIME_STEP_MS;
   if (ownMs < TIME_STEP_MS) return null;
-  const targetOther = phase === "accel" ? current.deceleration : current.acceleration;
-  const build = (otherMs: number): MotionProfile => ({
-    kind: "trapezoid",
-    params: phase === "accel" ? { accelMs: ownMs, decelMs: otherMs } : { accelMs: otherMs, decelMs: ownMs },
+  const edgeSpeed = phase === "accel" ? (boundary?.startSpeed ?? 0) : (boundary?.endSpeed ?? 0);
+  const rate = Math.abs(current.cruiseSpeed - edgeSpeed) / (ownMs / 1000);
+  if (!(rate > 0)) return null;
+  return retimeFromRates({
+    distance,
+    boundary,
+    acceleration: phase === "accel" ? rate : current.acceleration,
+    cruiseSpeed: current.cruiseSpeed,
+    deceleration: phase === "decel" ? rate : current.deceleration,
   });
-  const errorOf = (otherMs: number): number | null => {
-    if (otherMs < TIME_STEP_MS || ownMs + otherMs >= durationMs) return null;
-    const rates = trapezoidRatesOf(build(otherMs), distance, durationMs, boundary);
-    if (!rates) return null;
-    return Math.abs((phase === "accel" ? rates.deceleration : rates.acceleration) - targetOther);
-  };
-  // 从另一段现在的时间（放不下时先缩到放得下）出发，往误差变小的方向一档一档找
-  const otherMs = phase === "accel" ? decelMs : accelMs;
-  let bestMs = Math.min(otherMs, Math.floor((durationMs - ownMs - 1) / TIME_STEP_MS) * TIME_STEP_MS);
-  let bestError = errorOf(bestMs);
-  if (bestError === null) return null;
-  for (const direction of [-1, 1]) {
-    let ms = bestMs + direction * TIME_STEP_MS;
-    let error = errorOf(ms);
-    while (error !== null && error < bestError) {
-      bestMs = ms;
-      bestError = error;
-      ms += direction * TIME_STEP_MS;
-      error = errorOf(ms);
-    }
-  }
-  return build(bestMs);
+};
+
+/**
+ * 按速度点匀速速度的 − +：一档 = 时长差 0.1 s（steps 为正时变短、更快），加减速度不变。
+ * 排不下时返回 null。
+ */
+export const stepRetimedSpeed = (input: {
+  profile: MotionProfile;
+  distance: number;
+  durationMs: number;
+  boundary?: MotionBoundary;
+  steps: number;
+}): RetimedProfile | null => {
+  const { profile, distance, durationMs, boundary, steps } = input;
+  if (profile.kind !== "trapezoid" || steps === 0) return null;
+  const current = trapezoidRatesOf(profile, distance, durationMs, boundary);
+  if (!current) return null;
+  const nextMs = durationMs - steps * TIME_STEP_MS;
+  if (nextMs < TIME_STEP_MS) return null;
+  const next = profileFromRates({
+    distance,
+    durationMs: nextMs,
+    boundary,
+    acceleration: current.acceleration,
+    deceleration: current.deceleration,
+  });
+  if (next?.kind !== "trapezoid" || next.params.accelMs + next.params.decelMs >= nextMs) return null;
+  return { profile: next, durationMs: nextMs };
 };
 
 /**

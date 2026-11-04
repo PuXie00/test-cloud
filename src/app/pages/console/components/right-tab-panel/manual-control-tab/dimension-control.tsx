@@ -24,6 +24,8 @@ type DimensionControlProps = {
   disabled?: boolean;
   /** 操作这些物体；不传时跟随全局选择 */
   objectIds?: readonly number[];
+  /** 「清除」时另外要做的事（动作页：取消选中的位姿）；给了时没有 GO 目标也能点 */
+  onClear?: () => void;
 };
 
 /** 输入框里还没写入 GO 目标的值：绝对是输入的位置，相对是相对当前实际位置的增量 */
@@ -36,7 +38,7 @@ const targetSignature = (target: VirtualAxisValues | undefined): string =>
  * 维度控制：虚轴的批量编辑规则和动作页「多选位姿」一致（见 dimension-edit.ts），
  * 区别是写入先设为 GO 目标并显示影子模型，按 GO 才执行。
  */
-export const DimensionControl = ({ disabled = false, objectIds }: DimensionControlProps) => {
+export const DimensionControl = ({ disabled = false, objectIds, onClear }: DimensionControlProps) => {
   const { selectedId, multiSelectedIds } = useSelection();
   const { getById } = useControlledObjects();
   const { objects } = useProjectStore();
@@ -95,7 +97,7 @@ export const DimensionControl = ({ disabled = false, objectIds }: DimensionContr
   const selectedObjectIds = participants.map((item) => item.objectId);
   const selectedEntries = goEntriesForObjectIds(state.entries, selectedObjectIds);
   const canGoSelected = pendingGoEntries(selectedEntries).length > 0;
-  const canCancelSelected = selectedEntries.length > 0;
+  const canCancelSelected = selectedEntries.length > 0 || onClear !== undefined;
 
   const handleGo = () => {
     if (selectedObjectIds.length === 0) return;
@@ -103,8 +105,8 @@ export const DimensionControl = ({ disabled = false, objectIds }: DimensionContr
   };
 
   const handleCancel = () => {
-    if (selectedObjectIds.length === 0) return;
-    cancel(selectedObjectIds);
+    if (selectedObjectIds.length > 0) cancel(selectedObjectIds);
+    onClear?.();
   };
 
   return (
@@ -154,7 +156,8 @@ export const DimensionControl = ({ disabled = false, objectIds }: DimensionContr
               <button
                 type="button"
                 aria-label="取消选中物体 GO"
-                disabled={disabled || !canCancelSelected}
+                // 设备离线等不能操作时，动作页仍可以用它清掉选中的位姿
+                disabled={(disabled && onClear === undefined) || !canCancelSelected}
                 onClick={handleCancel}
                 className="h-10 flex-1 rounded-sm border border-primary font-semibold text-primary hover:bg-primary/10 disabled:pointer-events-none disabled:opacity-40"
               >

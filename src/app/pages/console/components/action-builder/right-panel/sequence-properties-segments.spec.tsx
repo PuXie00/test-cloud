@@ -14,6 +14,7 @@ const { builderState, toastWarning } = vi.hoisted(() => ({
       getLivePose: () => null,
       handleApplyPoseAxisWrite: vi.fn(),
       handleWriteSegmentProfiles: vi.fn(),
+      handleRetimeSegmentCurves: vi.fn(),
       handlePhaseInputModeChange: vi.fn(),
       phaseInputMode: "time" as "time" | "speed",
       sequenceIssues: [] as unknown[],
@@ -56,19 +57,20 @@ const oneSpan: ActionSequenceConfig = {
 
 const renderPanel = (sequence: ActionSequenceConfig, selection: SequenceSelection) => {
   const onUpdateSegment = vi.fn();
+  const onReplaceBlock = vi.fn();
   render(
     <DisplayLengthUnitProvider initialUnit="mm">
       <SequencePropertiesPanel
         sequence={sequence}
         resolved={resolveActionSequence(sequence)}
         selection={selection}
-        onReplaceBlock={vi.fn()}
+        onReplaceBlock={onReplaceBlock}
         onUpdateSegment={onUpdateSegment}
         onDeleteBlock={vi.fn()}
       />
     </DisplayLengthUnitProvider>,
   );
-  return { onUpdateSegment };
+  return { onUpdateSegment, onReplaceBlock };
 };
 
 const phases = () => within(screen.getByRole("region", { name: "阶段" }));
@@ -98,26 +100,64 @@ afterEach(() => {
   cleanup();
   builderState.current.phaseInputMode = "time";
   builderState.current.handleWriteSegmentProfiles.mockClear();
+  builderState.current.handleRetimeSegmentCurves.mockClear();
   builderState.current.handlePhaseInputModeChange.mockClear();
   toastWarning.mockClear();
 });
 
-describe("segment tabs in a multi-selection", () => {
-  it("opens on the segment when the selection came from clicking it", () => {
-    renderPanel(oneSpan, { kind: "multi-block", blockIds: ["a", "b"], focus: "segments" });
+describe("one selected segment", () => {
+  it("edits both end poses above the curve, without tabs", () => {
+    const { onReplaceBlock } = renderPanel(oneSpan, {
+      kind: "multi-block",
+      blockIds: ["a", "b"],
+      focus: "segments",
+    });
     expect(screen.getByRole("heading", { name: "运动区间" })).not.toBeNull();
+    expect(screen.queryByRole("tab", { name: "位姿（2）" })).toBeNull();
     expect(screen.getByRole("slider", { name: "加速结束" })).not.toBeNull();
 
-    fireEvent.click(screen.getByRole("tab", { name: "位姿（2）" }));
-    expect(screen.getByRole("heading", { name: "多选位姿" })).not.toBeNull();
-    expect(screen.getByLabelText("虚轴1")).not.toBeNull();
+    const start = within(screen.getByRole("region", { name: "起点位姿" }));
+    const end = within(screen.getByRole("region", { name: "终点位姿" }));
+    expect(start.getByText("0.0 s")).not.toBeNull();
+    expect(end.getByText("5.0 s")).not.toBeNull();
+    // 终点的虚轴1 加一档
+    const endV1 = end.getByLabelText("虚轴1").closest("[data-history-interaction='numeric']");
+    fireEvent.mouseDown(within(endV1 as HTMLElement).getByRole("button", { name: "增加" }));
+    fireEvent.mouseUp(within(endV1 as HTMLElement).getByRole("button", { name: "增加" }));
+    expect(onReplaceBlock).toHaveBeenCalledWith(expect.objectContaining({ id: "b" }));
+    expect(onReplaceBlock).not.toHaveBeenCalledWith(expect.objectContaining({ id: "a" }));
   });
 
-  it("opens on the poses for a box selection that also covers a segment", () => {
+  it("deletes both ends from the segment view", () => {
+    const onDeleteBlock = vi.fn();
+    render(
+      <DisplayLengthUnitProvider initialUnit="mm">
+        <SequencePropertiesPanel
+          sequence={oneSpan}
+          resolved={resolveActionSequence(oneSpan)}
+          selection={{ kind: "multi-block", blockIds: ["a", "b"], focus: "segments" }}
+          onReplaceBlock={vi.fn()}
+          onUpdateSegment={vi.fn()}
+          onDeleteBlock={onDeleteBlock}
+        />
+      </DisplayLengthUnitProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    expect(onDeleteBlock).toHaveBeenCalledWith(["a", "b"]);
+  });
+
+  it("shows the same view for a box selection of exactly its two ends", () => {
     renderPanel(oneSpan, { kind: "multi-block", blockIds: ["a", "b"] });
+    expect(screen.getByRole("heading", { name: "运动区间" })).not.toBeNull();
+    expect(screen.getByRole("region", { name: "终点位姿" })).not.toBeNull();
+  });
+
+  it("keeps the tabs when more than the segment's ends are selected", () => {
+    renderPanel(twoSpans, { kind: "multi-block", blockIds: ["a1", "b1", "a2"] });
     expect(screen.getByRole("heading", { name: "多选位姿" })).not.toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: "运动区间（1）" }));
     expect(screen.getByRole("heading", { name: "运动区间" })).not.toBeNull();
+    expect(screen.queryByRole("region", { name: "终点位姿" })).toBeNull();
   });
 
   it("switches the phase input mode from the segment editor", () => {
@@ -169,67 +209,78 @@ describe("按速度 on one segment", () => {
     expect(phases().queryByRole("spinbutton", { name: "加速时间" })).toBeNull();
   });
 
-  it("keeps the deceleration and the duration when the acceleration changes", () => {
+  const retimeWrites = () =>
+    builderState.current.handleRetimeSegmentCurves.mock.calls.map(([writes]) => writes[0]);
+
+  it("keeps the cruise speed and deceleration and changes the duration when the acceleration changes", () => {
     builderState.current.phaseInputMode = "speed";
     const { onUpdateSegment } = renderPanel(oneSpan, {
       kind: "multi-block",
       blockIds: ["a", "b"],
       focus: "segments",
     });
-    // 200 mm/s² 加速、100 mm/s² 减速走完 400：精确是 0.46 s / 0.93 s；
-    // 取整到 0.1 s 的组合里，不超过所填值又最接近的是 0.5 s / 1.0 s（188.2 / 94.1）
+    // 加速度 200：0.5 s 加速 + 1 s 减速 + 3.25 s 匀速，约 4.75 s
     typeNumeric("加速度", "200");
-    expect(onUpdateSegment).toHaveBeenCalledWith("a", "b", {
-      profiles: expect.objectContaining({
-        v1: { kind: "trapezoid", params: { accelMs: 500, decelMs: 1000 } },
-      }),
+    expect(onUpdateSegment).not.toHaveBeenCalled();
+    const [write] = retimeWrites();
+    expect(write).toMatchObject({
+      objectId: 1,
+      fromRef: "a",
+      toRef: "b",
+      axis: "v1",
+      profile: { kind: "trapezoid", params: { accelMs: 500, decelMs: 1000 } },
     });
+    expect([4700, 4800]).toContain(write.durationMs);
+  });
+
+  it("takes a typed cruise speed and works out the duration", () => {
+    builderState.current.phaseInputMode = "speed";
+    renderPanel(oneSpan, { kind: "multi-block", blockIds: ["a", "b"], focus: "segments" });
+    typeNumeric("匀速速度", "80");
+    expect(retimeWrites()).toEqual([
+      {
+        objectId: 1,
+        fromRef: "a",
+        toRef: "b",
+        axis: "v1",
+        profile: { kind: "trapezoid", params: { accelMs: 800, decelMs: 800 } },
+        durationMs: 5800,
+      },
+    ]);
   });
 
   it("steps the acceleration one 0.1 s level per + click", () => {
     builderState.current.phaseInputMode = "speed";
-    const { onUpdateSegment } = renderPanel(oneSpan, {
-      kind: "multi-block",
-      blockIds: ["a", "b"],
-      focus: "segments",
-    });
-    const [accelUp, cruiseUp] = stepButtons("增加");
-    expect((cruiseUp as HTMLButtonElement).disabled).toBe(true);
+    renderPanel(oneSpan, { kind: "multi-block", blockIds: ["a", "b"], focus: "segments" });
+    const [accelUp] = stepButtons("增加");
     fireEvent.click(accelUp!);
     fireEvent.click(accelUp!);
     // 两档：加速时间 1.0 s → 0.9 s → 0.8 s
-    const accelMs = onUpdateSegment.mock.calls.map(
-      ([, , settings]) => (settings.profiles.v1 as { params: { accelMs: number } }).params.accelMs,
-    );
-    expect(accelMs).toEqual([900, 800]);
+    expect(retimeWrites().map((write) => write.profile.params.accelMs)).toEqual([900, 800]);
+  });
+
+  it("steps the cruise speed one 0.1 s of duration per click", () => {
+    builderState.current.phaseInputMode = "speed";
+    renderPanel(oneSpan, { kind: "multi-block", blockIds: ["a", "b"], focus: "segments" });
+    const [, cruiseUp] = stepButtons("增加");
+    fireEvent.click(cruiseUp!);
+    expect(retimeWrites().map((write) => write.durationMs)).toEqual([4900]);
   });
 
   it("steps the deceleration one level per − click", () => {
     builderState.current.phaseInputMode = "speed";
-    const { onUpdateSegment } = renderPanel(oneSpan, {
-      kind: "multi-block",
-      blockIds: ["a", "b"],
-      focus: "segments",
-    });
+    renderPanel(oneSpan, { kind: "multi-block", blockIds: ["a", "b"], focus: "segments" });
     const [, , decelDown] = stepButtons("减少");
     fireEvent.click(decelDown!);
-    expect(onUpdateSegment).toHaveBeenCalledWith("a", "b", {
-      profiles: expect.objectContaining({
-        v1: expect.objectContaining({ params: expect.objectContaining({ decelMs: 1100 }) }),
-      }),
-    });
+    expect(retimeWrites()[0]?.profile.params.decelMs).toBe(1100);
   });
 
-  it("warns and keeps the curve when the rates cannot cover the distance in time", () => {
+  it("warns and keeps the curve when the distance is too short for the speed", () => {
     builderState.current.phaseInputMode = "speed";
-    const { onUpdateSegment } = renderPanel(oneSpan, {
-      kind: "multi-block",
-      blockIds: ["a", "b"],
-      focus: "segments",
-    });
+    renderPanel(oneSpan, { kind: "multi-block", blockIds: ["a", "b"], focus: "segments" });
     typeNumeric("加速度", "10");
-    expect(onUpdateSegment).not.toHaveBeenCalled();
-    expect(toastWarning).toHaveBeenCalledWith("加减速度太小或进出速度太快，这段时间里排不下");
+    expect(builderState.current.handleRetimeSegmentCurves).not.toHaveBeenCalled();
+    expect(toastWarning).toHaveBeenCalledWith("行程太短，按这组加减速度到不了这个匀速速度");
   });
 });
 
@@ -284,7 +335,7 @@ describe("batch editing several segments", () => {
     ]);
   });
 
-  it("gives every selected segment the same acceleration by speed", () => {
+  it("gives every selected segment the same acceleration by speed and retimes each", () => {
     builderState.current.phaseInputMode = "speed";
     renderPanel(twoSpans, both);
     expect(valueOf("匀速速度")).toBe("125.0");
@@ -292,31 +343,30 @@ describe("batch editing several segments", () => {
     expect(accel.value).toBe("");
     expect(accel.placeholder).toBe("--");
 
-    // 各段保持自己的减速度（312.5、156.25）；取整后不超过所填值
+    // 各段保持自己的匀速和减速度（312.5、156.25），时长各自算：约 2.05 s、3.85 s
     typeNumeric("加速度", "250");
-    const [writes] = builderState.current.handleWriteSegmentProfiles.mock.calls[0]!;
+    expect(builderState.current.handleWriteSegmentProfiles).not.toHaveBeenCalled();
+    const [writes] = builderState.current.handleRetimeSegmentCurves.mock.calls[0]!;
     expect(writes).toEqual([
-      expect.objectContaining({
-        fromRef: "a1",
-        profile: { kind: "trapezoid", params: { accelMs: 600, decelMs: 500 } },
-      }),
-      expect.objectContaining({
-        fromRef: "a2",
-        profile: { kind: "trapezoid", params: { accelMs: 500, decelMs: 800 } },
-      }),
+      expect.objectContaining({ objectId: 1, fromRef: "a1", toRef: "b1", axis: "v1" }),
+      expect.objectContaining({ objectId: 2, fromRef: "a2", toRef: "b2", axis: "v1" }),
+    ]);
+    expect([2000, 2100]).toContain(writes[0].durationMs);
+    expect([3800, 3900]).toContain(writes[1].durationMs);
+    expect(writes.map((write: { profile: { params: { accelMs: number } } }) => write.profile.params.accelMs)).toEqual([
+      500, 500,
     ]);
   });
 
-  it("skips and reports the segments a rate cannot fit", () => {
+  it("skips and reports the segments that cannot reach the speed", () => {
     builderState.current.phaseInputMode = "speed";
     renderPanel(twoSpans, both);
-    // 保持各自的加速度时，2 s 走 200 的减速度至少要约 147 mm/s²，4 s 走 400 约 74 就够
-    typeNumeric("减速度", "100");
-    const calls = builderState.current.handleWriteSegmentProfiles.mock.calls;
-    const writes = calls[0]?.[0] ?? [];
+    // 加速度 30、匀速 125：加速要走 260，2 s 那段只有 200
+    typeNumeric("加速度", "30");
+    const [writes] = builderState.current.handleRetimeSegmentCurves.mock.calls[0]!;
     expect(writes.map((write: { fromRef: string }) => write.fromRef)).toEqual(["a2"]);
     expect(toastWarning).toHaveBeenCalledWith(
-      "有 1 段没有修改：加减速度太小或进出速度太快，这段时间里排不下",
+      "有 1 段没有修改：行程太短，按这组加减速度到不了这个匀速速度",
     );
   });
 });

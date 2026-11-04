@@ -11,6 +11,7 @@ import type {
   ActionSequenceConfig,
   AxisMotionProfiles,
   ModelPose,
+  MotionProfile,
   MotionSegmentSettings,
 } from "@/app/project/action-sequence/types";
 import { useSessionDisplayLengthUnit } from "@/app/project/display-length-unit-provider";
@@ -131,8 +132,13 @@ export const SegmentEditor = ({
   segment: ResolvedMotionSegment;
   onUpdateSegment: (fromRef: string, toRef: string, settings: MotionSegmentSettings) => void;
 }) => {
-  const { getTimelineObject, sequenceIssues, phaseInputMode, handlePhaseInputModeChange } =
-    useActionBuilder();
+  const {
+    getTimelineObject,
+    sequenceIssues,
+    phaseInputMode,
+    handlePhaseInputModeChange,
+    handleRetimeSegmentCurves,
+  } = useActionBuilder();
   const display = useSessionDisplayLengthUnit();
   const object = getTimelineObject(segment.objectId);
   const { motions, profiles, axisContext } = segmentEditContext(segment, object);
@@ -149,6 +155,20 @@ export const SegmentEditor = ({
       const base = configProfiles(motion.fromRef, motion.toRef, motion.durationMs);
       onUpdateSegment(motion.fromRef, motion.toRef, { profiles: { ...base, [axis]: next[axis] } });
     }
+  };
+  // 按速度：这一轴的整段曲线换时长，终点和这个物体后面的块一起挪
+  const handleAxisRetime = (axis: VirtualAxisId, profile: MotionProfile, durationMs: number) => {
+    const motion = motions[axis];
+    handleRetimeSegmentCurves([
+      {
+        objectId: segment.objectId,
+        fromRef: motion.fromRef,
+        toRef: motion.toRef,
+        axis,
+        profile,
+        durationMs,
+      },
+    ]);
   };
   return (
     <>
@@ -169,6 +189,7 @@ export const SegmentEditor = ({
         }}
         phaseInputMode={phaseInputMode}
         onPhaseInputModeChange={handlePhaseInputModeChange}
+        onAxisRetime={handleAxisRetime}
         onChange={handleProfilesChange}
       />
     </>

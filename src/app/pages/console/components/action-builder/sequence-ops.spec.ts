@@ -16,6 +16,7 @@ import {
   pasteTimelineBlocks,
   replaceTimelineBlock,
   resizeDynamicPreset,
+  retimeSegmentCurves,
   shiftTimelineBlocks,
   updatePosesFromLive,
   updateSegmentSettings,
@@ -918,6 +919,115 @@ describe("writeSegmentProfiles", () => {
 
   it("returns the same sequence when there is nothing to write", () => {
     expect(writeSegmentProfiles(twoSpans, [])).toBe(twoSpans);
+  });
+});
+
+describe("retimeSegmentCurves", () => {
+  const trap = (accelMs: number, decelMs: number) =>
+    ({ kind: "trapezoid", params: { accelMs, decelMs } }) as const;
+  // 物体 1：a@0 → b@5000 → c@8000，9 s 有一条指令；物体 2 在 6 s 有一个位姿
+  const track: ActionSequenceConfig = {
+    id: 1,
+    name: "track",
+    trajectoryMode: false,
+    blocks: [
+      { id: "a", kind: "pose", objectId: 1, atMs: 0, pose: { v1: 0 } },
+      { id: "b", kind: "pose", objectId: 1, atMs: 5000, pose: { v1: 400 } },
+      { id: "c", kind: "pose", objectId: 1, atMs: 8000, pose: { v1: 0 } },
+      {
+        id: "en",
+        kind: "instruction",
+        presetId: "set-enabled",
+        objectId: 1,
+        atMs: 9000,
+        instr: { enabled: false },
+      },
+      { id: "x", kind: "pose", objectId: 2, atMs: 6000, pose: { v1: 100 } },
+    ],
+    segments: [],
+  };
+  const timeOf = (sequence: ActionSequenceConfig, id: string) => {
+    const block = sequence.blocks.find((item) => item.id === id);
+    return block && block.kind !== "dynamic-preset" ? block.atMs : undefined;
+  };
+
+  it("moves the end and the object's later blocks by the change in duration", () => {
+    const result = retimeSegmentCurves(track, [
+      { objectId: 1, fromRef: "a", toRef: "b", axis: "v1", profile: trap(800, 800), durationMs: 5800 },
+    ]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(["a", "b", "c", "en", "x"].map((id) => timeOf(result.sequence, id))).toEqual([
+      0, 5800, 8800, 9800, 6000,
+    ]);
+    const settings = result.sequence.segments.find((item) => item.fromRef === "a" && item.toRef === "b");
+    expect(settings?.settings.profiles.v1).toEqual(trap(800, 800));
+    // 后面的区间时长不变
+    const after = resolveActionSequence(result.sequence).segments.find((item) => item.fromRef === "b");
+    expect(after?.durationMs).toBe(3000);
+  });
+
+  it("pulls the later blocks in when the curve gets shorter", () => {
+    const result = retimeSegmentCurves(track, [
+      { objectId: 1, fromRef: "a", toRef: "b", axis: "v1", profile: trap(500, 500), durationMs: 4000 },
+    ]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(["b", "c", "en", "x"].map((id) => timeOf(result.sequence, id))).toEqual([4000, 7000, 8000, 6000]);
+  });
+
+  it("adds up the shifts of several curves on one object", () => {
+    const result = retimeSegmentCurves(track, [
+      { objectId: 1, fromRef: "a", toRef: "b", axis: "v1", profile: trap(800, 800), durationMs: 5500 },
+      { objectId: 1, fromRef: "b", toRef: "c", axis: "v1", profile: trap(800, 800), durationMs: 4000 },
+    ]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(["b", "c", "en"].map((id) => timeOf(result.sequence, id))).toEqual([5500, 9500, 10500]);
+  });
+
+  it("refuses to end a pass-through curve before a pose it passes", () => {
+    const passing: ActionSequenceConfig = {
+      ...track,
+      blocks: [
+        { id: "a", kind: "pose", objectId: 1, atMs: 0, pose: { v1: 0, v2: 0 } },
+        { id: "m", kind: "pose", objectId: 1, atMs: 2000, pose: { v2: 10 } },
+        { id: "b", kind: "pose", objectId: 1, atMs: 5000, pose: { v1: 400, v2: 0 } },
+      ],
+    };
+    expect(
+      retimeSegmentCurves(passing, [
+        { objectId: 1, fromRef: "a", toRef: "b", axis: "v1", profile: trap(500, 500), durationMs: 2000 },
+      ]),
+    ).toEqual({ ok: false, reason: "invalid-time-range" });
+    const longer = retimeSegmentCurves(passing, [
+      { objectId: 1, fromRef: "a", toRef: "b", axis: "v1", profile: trap(500, 500), durationMs: 3000 },
+    ]);
+    expect(longer.ok && timeOf(longer.sequence, "b")).toBe(3000);
+  });
+
+  it("refuses a shift that runs into another motion of a shared preset", () => {
+    // 物体 1 缩短 2.5 s，两个物体共用的静态预设跟着从 8 s 挪到 5.5 s，和物体 2 在 5.5 s 的位姿撞上
+    const shared: ActionSequenceConfig = {
+      ...track,
+      blocks: [
+        { id: "a", kind: "pose", objectId: 1, atMs: 0, pose: { v1: 0 } },
+        { id: "b", kind: "pose", objectId: 1, atMs: 5000, pose: { v1: 400 } },
+        { id: "y", kind: "pose", objectId: 2, atMs: 5500, pose: { v1: 100 } },
+        {
+          id: "p",
+          kind: "static-preset",
+          presetId: "static-flat",
+          orderedObjectIds: [1, 2],
+          params: { v1: 0 },
+          atMs: 8000,
+        },
+      ],
+    };
+    const result = retimeSegmentCurves(shared, [
+      { objectId: 1, fromRef: "a", toRef: "b", axis: "v1", profile: trap(500, 500), durationMs: 2500 },
+    ]);
+    expect(result.ok).toBe(false);
   });
 });
 

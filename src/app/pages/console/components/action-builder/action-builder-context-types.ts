@@ -12,7 +12,7 @@ import type { ContextSelection } from "./context-bar/selection-context-bar";
 import type { PhaseInputMode } from "./motion-profile/phase-rates";
 import type { CurveGraph, TimelineViewMode } from "./timeline/curve-data";
 import type { ActionRightTab } from "./right-panel/action-right-panel";
-import type { PoseAxisWrite, SegmentProfileWrite } from "./sequence-ops";
+import type { PoseAxisWrite, SegmentProfileWrite, SegmentRetimeWrite } from "./sequence-ops";
 import type { SequenceSelection } from "./sequence-selection";
 import type {
   ControlledObject as TimelineControlledObject,
@@ -89,6 +89,8 @@ export type ActionBuilderContextValue = {
   ) => void;
   /** 多选运动区间改阶段：一次写多段曲线 */
   handleWriteSegmentProfiles: (writes: readonly SegmentProfileWrite[]) => boolean;
+  /** 按速度改阶段：曲线时长跟着变，终点和这个物体后面的块一起平移；改不了时提示 */
+  handleRetimeSegmentCurves: (writes: readonly SegmentRetimeWrite[]) => boolean;
   handleBlockDelete: (blockIds?: string | string[]) => void;
   /** 拆解预设：换成各物体的关键点位姿；不传时拆选中的预设 */
   handleExplodePresets: (blockIds?: readonly string[]) => void;
@@ -132,6 +134,8 @@ export type ActionBuilderContextValue = {
   handleProgramItemMove: (chapterId: string, fromIndex: number, toIndex: number) => void;
   /** 把选中序列的草稿保存到节目列表（不是保存工程）；待修复时提示先修复 */
   handleSave: () => void;
+  /** 保存所有能保存的草稿（离开动作页时）；待修复的不保存、留着草稿，返回它们的名字 */
+  handleSaveAll: () => { saved: number; blocked: string[] };
   /** 动作编辑页自己的撤销 / 重做（和搭建的工程历史分开），含序列内容和重命名、新建、删除、改节目 */
   canUndoEdit: boolean;
   canRedoEdit: boolean;

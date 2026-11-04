@@ -5,7 +5,6 @@ import { ObjectSelectionPanel } from "./object-selection-panel";
 
 const onCreatePose = vi.fn();
 const onCreateSetEnabled = vi.fn();
-const onCreateSequence = vi.fn();
 const onApplyStaticPreset = vi.fn();
 const onApplyDynamicPreset = vi.fn();
 
@@ -20,7 +19,6 @@ const renderPanel = (selectedObjectIds: number[], options: RenderOptions = {}) =
       selectedObjectIds={selectedObjectIds}
       onCreatePose={onCreatePose}
       onCreateSetEnabled={onCreateSetEnabled}
-      onCreateSequence={onCreateSequence}
       onApplyStaticPreset={onApplyStaticPreset}
       onApplyDynamicPreset={onApplyDynamicPreset}
     />,
@@ -30,7 +28,6 @@ afterEach(() => {
   cleanup();
   onCreatePose.mockClear();
   onCreateSetEnabled.mockClear();
-  onCreateSequence.mockClear();
   onApplyStaticPreset.mockClear();
   onApplyDynamicPreset.mockClear();
 });
@@ -72,14 +69,18 @@ describe("object selection creation", () => {
     expect(screen.getByText("同一时刻全体同一位姿")).not.toBeNull();
     expect(screen.getAllByText("1 位姿/物体").length).toBeGreaterThan(0);
     expect(screen.getAllByText("≥2 位姿/物体").length).toBeGreaterThan(0);
-    expect(onCreateSequence).not.toHaveBeenCalled();
   });
 
-  it("has 新建动作序列 and not 新建 Cue", () => {
+  it("has no 新建动作序列 or 新建 Cue; without a sequence it points to the library", () => {
     renderPanel([7], { mode: "empty" });
+    expect(screen.queryByRole("button", { name: "新建动作序列" })).toBeNull();
     expect(screen.queryByRole("button", { name: "新建 Cue" })).toBeNull();
     expect(screen.queryByRole("button", { name: "加入当前 Cue" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "新建动作序列" }));
-    expect(onCreateSequence).toHaveBeenCalledWith([7]);
+    expect(screen.getByText("在动作序列库选择或新建动作序列后再添加位姿")).not.toBeNull();
+  });
+
+  it("has no 新建动作序列 while editing a sequence", () => {
+    renderPanel([7]);
+    expect(screen.queryByRole("button", { name: "新建动作序列" })).toBeNull();
   });
 });

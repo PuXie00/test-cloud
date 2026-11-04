@@ -392,8 +392,14 @@ export const TimelineToolbar = ({
             type="button"
             onClick={onSave}
             disabled={!canSave}
-            title={canSave ? "保存到节目列表（不是保存工程）" : "没有未保存的修改"}
-            className="inline-flex h-7 items-center gap-1.5 rounded-sm px-2 text-body-sm text-foreground transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-40"
+            title={canSave ? "有未保存的修改：保存到节目列表（不是保存工程）" : "没有未保存的修改"}
+            className={cn(
+              "inline-flex h-7 items-center gap-1.5 rounded-sm px-2 text-body-sm transition-colors disabled:pointer-events-none disabled:opacity-40",
+              // 有草稿时黄色描边提醒，不保存节目和执行用的还是旧版本
+              canSave
+                ? "border border-warning font-semibold text-warning hover:bg-warning-surface"
+                : "text-foreground hover:bg-accent",
+            )}
           >
             <Save className="h-3.5 w-3.5" aria-hidden />
             保存
