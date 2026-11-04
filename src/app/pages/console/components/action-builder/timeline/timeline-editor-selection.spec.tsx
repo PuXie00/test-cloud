@@ -99,7 +99,7 @@ describe("pointer on a motion segment", () => {
     expect(onCursorChange).not.toHaveBeenCalled();
     expect(onBlocksShift).not.toHaveBeenCalled();
     expect(onSelectionChange).toHaveBeenCalledTimes(1);
-    expect(onSelectionChange).toHaveBeenCalledWith({ kind: "block", blockId: "a2" });
+    expect(onSelectionChange).toHaveBeenCalledWith({ kind: "block", blockId: "a2" }, "add");
   });
 
   it("selects both end poses on a plain click without moving the playhead", () => {
@@ -114,7 +114,7 @@ describe("pointer on a motion segment", () => {
       kind: "multi-block",
       blockIds: ["a1", "a2"],
       focus: "segments",
-    });
+    }, "replace");
   });
 
   it("drags both end poses of an unselected segment and keeps them selected afterwards", () => {
@@ -131,7 +131,7 @@ describe("pointer on a motion segment", () => {
       kind: "multi-block",
       blockIds: ["a1", "a2"],
       focus: "segments",
-    });
+    }, "replace");
     expect(onBlocksShift).toHaveBeenLastCalledWith(["a1", "a2"], 500);
   });
 
@@ -182,12 +182,12 @@ describe("pointer on a motion segment", () => {
       kind: "multi-block",
       blockIds: ["b1", "a1", "a2"],
       focus: "segments",
-    });
+    }, "add");
     cleanup();
 
     const second = setup({ selection: { kind: "multi-block", blockIds: ["a1", "a2", "b1"] } });
     fireEvent.click(second.band, { metaKey: true });
-    expect(second.onSelectionChange).toHaveBeenLastCalledWith({ kind: "block", blockId: "b1" });
+    expect(second.onSelectionChange).toHaveBeenLastCalledWith({ kind: "block", blockId: "b1" }, "add");
   });
 });
 
@@ -204,9 +204,9 @@ describe("pointer on a block", () => {
     expect(onSelectionChange).toHaveBeenLastCalledWith({
       kind: "multi-block",
       blockIds: ["a1", "b1"],
-    });
+    }, "add");
     fireEvent.click(screen.getByRole("button", { name: /位姿 a1/ }), { ctrlKey: true });
-    expect(onSelectionChange).toHaveBeenLastCalledWith(null);
+    expect(onSelectionChange).toHaveBeenLastCalledWith(null, "add");
   });
 
   it("keeps a group selected after dragging one of its poses", () => {
@@ -245,7 +245,7 @@ describe("pointer on a block", () => {
     fireEvent.pointerUp(window);
     fireEvent.click(pose);
     expect(onSelectionChange).toHaveBeenCalledTimes(1);
-    expect(onSelectionChange).toHaveBeenCalledWith({ kind: "block", blockId: "a2" });
+    expect(onSelectionChange).toHaveBeenCalledWith({ kind: "block", blockId: "a2" }, "replace");
     expect(onPoseMove).toHaveBeenLastCalledWith("a2", 4600);
   });
 
@@ -264,6 +264,6 @@ describe("pointer on a block", () => {
     fireEvent.pointerUp(window);
     fireEvent.click(pose, { ctrlKey: true });
     expect(onPoseMove).not.toHaveBeenCalled();
-    expect(onSelectionChange).toHaveBeenCalledWith({ kind: "block", blockId: "a2" });
+    expect(onSelectionChange).toHaveBeenCalledWith({ kind: "block", blockId: "a2" }, "add");
   });
 });

@@ -56,7 +56,7 @@ describe("sequence track", () => {
       kind: "multi-block",
       blockIds: ["first", "later"],
       focus: "segments",
-    });
+    }, "replace");
   });
 
   it("presses a segment whenever both end poses are selected", () => {
@@ -169,7 +169,7 @@ describe("sequence track", () => {
     const handleSelect = vi.fn();
     render(<TimelineEditor {...createTimelineProps(sequence, handleSelect)} />);
     fireEvent.click(screen.getByRole("button", { name: /位姿 first/ }));
-    expect(handleSelect).toHaveBeenCalledWith({ kind: "block", blockId: "first" });
+    expect(handleSelect).toHaveBeenCalledWith({ kind: "block", blockId: "first" }, "replace");
   });
 
   it("dragging a pose calls onPoseMove", () => {
@@ -396,7 +396,7 @@ describe("timeline interaction", () => {
     expect(onSelectionChange).toHaveBeenCalledWith({
       kind: "multi-block",
       blockIds: ["first", "later"],
-    });
+    }, "add");
   });
 
   it("fills leftover space below the last track with the same time-band background", () => {

@@ -14,10 +14,11 @@ const sequence: ActionSequenceConfig = {
   segments: [],
 };
 
-const { builderState, capturedEditor, selectionState } = vi.hoisted(() => ({
+const { builderState, capturedEditor, selectionState, replaceSelection } = vi.hoisted(() => ({
   builderState: { current: {} as Record<string, unknown> },
   capturedEditor: { current: null as TimelineEditorProps | null },
   selectionState: { ids: [] as number[] },
+  replaceSelection: vi.fn(),
 }));
 
 vi.mock("../timeline/timeline-editor", () => ({
@@ -39,7 +40,7 @@ vi.mock("../use-action-builder", () => ({
 
 vi.mock("../../../hooks/use-selection", () => ({
   useSelection: () => ({
-    replaceSelection: vi.fn(),
+    replaceSelection,
     selectedId: null,
     multiSelectedIds: selectionState.ids,
   }),
@@ -50,6 +51,7 @@ vi.mock("@/app/project/display-length-unit-provider", () => ({
 }));
 
 const handleSelectionChange = vi.fn();
+const handleObjectsFollow = vi.fn();
 const handleMoveTimelineBlock = vi.fn();
 const handleResizeDynamicPreset = vi.fn();
 
@@ -85,6 +87,7 @@ const mockBuilder = (overrides: Record<string, unknown> = {}) => {
     canPasteBlock: false,
     dockMode: "sequence",
     handleSelectionChange,
+    handleObjectsFollow,
     handleCursorChange: vi.fn(),
     handlePlaybackCursorChange: vi.fn(),
     handleMoveTimelineBlock,
@@ -130,7 +133,8 @@ describe("editor dock sequence editor", () => {
     expect(props!.sequence).toBe(sequence);
     expect(props!.resolved).toEqual(resolveActionSequence(sequence));
     expect(props!.selection).toBeNull();
-    expect(props!.onSelectionChange).toBe(handleSelectionChange);
+    props!.onSelectionChange({ kind: "block", blockId: "pose-1" });
+    expect(handleSelectionChange).toHaveBeenCalledWith({ kind: "block", blockId: "pose-1" });
     expect(props!.onPoseMove).toBe(handleMoveTimelineBlock);
     expect(props!.onPresetMove).toBe(handleMoveTimelineBlock);
     expect(props!.onDynamicPresetResize).toBe(handleResizeDynamicPreset);
@@ -827,5 +831,44 @@ describe("timeline markers in the dock", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /演员入场/ }));
     expect(handleSelectionChange).toHaveBeenCalledWith({ kind: "markers", markerIds: ["m2"] });
     expect(handleCursorChange).toHaveBeenCalledWith(3000);
+  });
+});
+
+describe("objects follow a block clicked on the tracks", () => {
+  const twoObjects: ActionSequenceConfig = {
+    ...sequence,
+    blocks: [
+      { id: "a", kind: "pose", objectId: 7, atMs: 0, pose: { v1: 0 } },
+      { id: "c", kind: "pose", objectId: 8, atMs: 0, pose: { v1: 0 } },
+    ],
+  };
+
+  afterEach(() => {
+    selectionState.ids = [];
+    replaceSelection.mockClear();
+    handleObjectsFollow.mockClear();
+    handleSelectionChange.mockClear();
+  });
+
+  it("selects the block's object when it is not selected yet", () => {
+    selectionState.ids = [7];
+    mockBuilder({ sequence: twoObjects });
+    render(<EditorDock />);
+    capturedEditor.current?.onSelectionChange({ kind: "block", blockId: "c" }, "replace");
+    expect(handleSelectionChange).toHaveBeenCalledWith({ kind: "block", blockId: "c" });
+    expect(handleObjectsFollow).toHaveBeenCalledWith([8]);
+    expect(replaceSelection).toHaveBeenCalledWith([8]);
+  });
+
+  it("leaves the objects alone for an already selected object or a curve-view pick", () => {
+    selectionState.ids = [7, 8];
+    mockBuilder({ sequence: twoObjects });
+    render(<EditorDock />);
+    capturedEditor.current?.onSelectionChange({ kind: "block", blockId: "c" }, "replace");
+    selectionState.ids = [7];
+    capturedEditor.current?.onSelectionChange({ kind: "block", blockId: "c" });
+    expect(handleSelectionChange).toHaveBeenCalledTimes(2);
+    expect(replaceSelection).not.toHaveBeenCalled();
+    expect(handleObjectsFollow).not.toHaveBeenCalled();
   });
 });

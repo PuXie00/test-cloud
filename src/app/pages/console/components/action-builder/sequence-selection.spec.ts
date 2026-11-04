@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
 import {
+  followedObjectIds,
   lookupSequenceSelection,
   pruneSequenceSelection,
   segmentEndpointBlockIds,
@@ -11,6 +12,7 @@ import {
   toggleBlockSelection,
   toggleMarkerSelection,
   toggleSegmentSelection,
+  type SequenceSelection,
 } from "./sequence-selection";
 
 // 物体 1：p0 → p1 → p2 → 静态预设；物体 2：q0 → 静态预设
@@ -160,5 +162,27 @@ describe("marker selection", () => {
     ).toBeNull();
     const kept = { kind: "markers" as const, markerIds: ["m1"] };
     expect(pruneSequenceSelection([withMarkers], kept)).toBe(kept);
+  });
+});
+
+describe("objects following a block click on the tracks", () => {
+  const block = (blockId: string) => ({ kind: "block", blockId }) as const;
+
+  it("keeps the selected objects when the block's objects are already among them", () => {
+    expect(followedObjectIds(sequence, block("p1"), "replace", [1, 2, 3])).toBeNull();
+    expect(followedObjectIds(sequence, block("flat"), "replace", [2, 1])).toBeNull();
+  });
+
+  it("replaces them on a plain click, adds on Ctrl or box select", () => {
+    expect(followedObjectIds(sequence, block("q0"), "replace", [1, 3])).toEqual([2]);
+    expect(followedObjectIds(sequence, block("q0"), "add", [1, 3])).toEqual([1, 3, 2]);
+    // 预设块带上它的全部物体
+    expect(followedObjectIds(sequence, block("flat"), "replace", [3])).toEqual([1, 2]);
+    const box: SequenceSelection = { kind: "multi-block", blockIds: ["p0", "q0"] };
+    expect(followedObjectIds(sequence, box, "add", [])).toEqual([1, 2]);
+  });
+
+  it("leaves the objects alone when no block is selected any more", () => {
+    expect(followedObjectIds(sequence, null, "replace", [1])).toBeNull();
   });
 });

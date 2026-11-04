@@ -666,7 +666,20 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     setSequenceMissingHint(false);
   }, []);
 
+  /**
+   * 轨道上点块时物体选中跟着块走：只改物体，不清块的选中。
+   * 全局选中随后同步回来时（ActionBuilderSelectionSync → handleObjectsSelect）认出是这一次，不清块。
+   */
+  const followedObjectsKeyRef = useRef<string | null>(null);
+  const handleObjectsFollow = useCallback((objectIds: number[]) => {
+    followedObjectsKeyRef.current = objectIds.join(",");
+    setSelectedObjectIds(objectIds);
+  }, []);
+
   const handleObjectsSelect = useCallback((objectIds: number[]) => {
+    const followed = followedObjectsKeyRef.current === objectIds.join(",");
+    followedObjectsKeyRef.current = null;
+    if (followed) return;
     setSelectedObjectIds((prev) => {
       if (prev.length === objectIds.length && prev.every((id, index) => id === objectIds[index])) {
         return prev;
@@ -1783,6 +1796,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleSelectionChange,
       handleObjectSelect,
       handleObjectsSelect,
+      handleObjectsFollow,
       handleCursorChange,
       handlePlaybackCursorChange,
       handleInsertTimelineBlock,
@@ -1868,6 +1882,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleSelectionChange,
       handleObjectSelect,
       handleObjectsSelect,
+      handleObjectsFollow,
       handleCursorChange,
       handlePlaybackCursorChange,
       handleInsertTimelineBlock,

@@ -28,6 +28,7 @@ import {
   toggleBlockSelection,
   toggleMarkerSelection,
   toggleSegmentSelection,
+  type ObjectFollow,
   type SequenceSelection,
 } from "../sequence-selection";
 import { MARKER_LANE_HEIGHT_PX, TimelineMarkerLane } from "./timeline-markers";
@@ -90,7 +91,8 @@ export type TimelineEditorProps = {
   cursorMs: number;
   isPlaying?: boolean;
   timelinePxPerSecond: number;
-  onSelectionChange: (selection: SequenceSelection) => void;
+  /** follow：轨道上点选时物体选中怎么跟（见 ObjectFollow）；不传时物体不跟 */
+  onSelectionChange: (selection: SequenceSelection, follow?: ObjectFollow) => void;
   onCursorChange: (ms: number) => void;
   onPoseMove: (blockId: string, atMs: number) => void;
   onPresetMove: (blockId: string, atMs: number) => void;
@@ -401,18 +403,31 @@ export const TimelineEditor = ({
     return new Set(segments.map((segment) => segment.key));
   }, [resolved, selection]);
 
-  const handleBlockSelect = (blockId: string, additive: boolean) => {
-    onSelectionChange(
+  /** follow 为 null 时只改块的选中，物体不跟 */
+  const selectAndFollow = (next: SequenceSelection, follow: ObjectFollow | null) => {
+    if (follow) onSelectionChange(next, follow);
+    else onSelectionChange(next);
+  };
+
+  /** follow 为 false：曲线视图里点选，物体选中不跟（曲线按选中的物体显示） */
+  const handleBlockSelect = (blockId: string, additive: boolean, follow = true) => {
+    selectAndFollow(
       additive ? toggleBlockSelection(selection, blockId) : { kind: "block", blockId },
+      follow ? (additive ? "add" : "replace") : null,
     );
   };
 
   /** 点区间等于选中它两端的块 */
-  const handleSegmentSelect = (segment: ResolvedMotionSegment, additive: boolean) => {
-    onSelectionChange(
+  const handleSegmentSelect = (
+    segment: ResolvedMotionSegment,
+    additive: boolean,
+    follow = true,
+  ) => {
+    selectAndFollow(
       additive
         ? toggleSegmentSelection(resolved, selection, segment)
         : segmentSelection(resolved, segment),
+      follow ? (additive ? "add" : "replace") : null,
     );
   };
 
@@ -604,7 +619,7 @@ export const TimelineEditor = ({
         },
         pxPerSecond,
       );
-      onSelectionChange(selectionFromBlockIds(hits));
+      onSelectionChange(selectionFromBlockIds(hits), "add");
     };
 
     window.addEventListener("pointermove", handleMove);
@@ -627,7 +642,7 @@ export const TimelineEditor = ({
     if (dragSelectedRef.current) return;
     dragSelectedRef.current = true;
     if (!selectionBlockIds(selection).includes(blockId)) {
-      onSelectionChange({ kind: "block", blockId });
+      onSelectionChange({ kind: "block", blockId }, "replace");
     }
   };
 
@@ -684,7 +699,7 @@ export const TimelineEditor = ({
       if (endpoints.length === 0) return;
       const ids = selectionBlockIds(selection);
       const selected = endpoints.every((id) => ids.includes(id));
-      if (!selected) onSelectionChange(selectionFromBlockIds(endpoints, "segments"));
+      if (!selected) onSelectionChange(selectionFromBlockIds(endpoints, "segments"), "replace");
       drag = { blockIds: selected ? ids : endpoints, originStartMs: segment.startMs };
       segmentDragRef.current = drag;
     }
@@ -781,10 +796,10 @@ export const TimelineEditor = ({
       return;
     }
     if (segment.configurable) {
-      handleSegmentSelect(segment, additive);
+      handleSegmentSelect(segment, additive, false);
       return;
     }
-    if (segment.ownerPresetBlockId) handleBlockSelect(segment.ownerPresetBlockId, additive);
+    if (segment.ownerPresetBlockId) handleBlockSelect(segment.ownerPresetBlockId, additive, false);
   };
 
   const marqueeStyle = (() => {
@@ -932,7 +947,7 @@ export const TimelineEditor = ({
                   objectName={(objectId) => objectNameById.get(objectId) ?? `模型 ${objectId}`}
                   emphasizedObjectIds={emphasizedObjectIds}
                   snapEnabled={snapEnabled}
-                  onBlockSelect={handleBlockSelect}
+                  onBlockSelect={(blockId, additive) => handleBlockSelect(blockId, additive, false)}
                   onCurveSelect={handleCurveSelect}
                   onBackgroundClick={handleCurveBackgroundClick}
                   onMarquee={(blockIds) => onSelectionChange(selectionFromBlockIds(blockIds))}
