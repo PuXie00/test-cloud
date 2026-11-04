@@ -1,14 +1,10 @@
 import { useEffect, type PointerEvent as ReactPointerEvent } from "react";
 import { Pause, Play, RotateCcw, X } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
-import {
-  useSequencePreview,
-  type SequencePreviewMultiplier,
-} from "../../hooks/use-sequence-preview";
+import { useSequencePreview } from "../../hooks/use-sequence-preview";
+import { PREVIEW_MULTIPLIERS } from "../../hooks/sequence-preview-context";
 import { formatExecTime } from "../../hooks/sequence-run-status";
 import { previewPhaseAt, type PreviewTimeline } from "../../hooks/sequence-preview-timeline";
-
-const SPEED_OPTIONS: SequencePreviewMultiplier[] = [1, 2, 4];
 
 const TRANSITION_HATCH =
   "bg-[repeating-linear-gradient(135deg,var(--secondary)_0px,var(--secondary)_3px,transparent_3px,transparent_6px)]";
@@ -149,7 +145,7 @@ export const SequencePreviewBar = () => {
               )}`}
         </span>
       </span>
-      {SPEED_OPTIONS.map((speed) => (
+      {PREVIEW_MULTIPLIERS.map((speed) => (
         <button
           key={speed}
           type="button"

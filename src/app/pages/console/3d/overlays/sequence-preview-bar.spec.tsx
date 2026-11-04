@@ -126,9 +126,13 @@ describe("SequencePreviewBar", () => {
     expect(screen.getByText("00:04.5 / 00:12.0")).toBeTruthy();
   });
 
-  it("clicking 4× calls setMultiplier(4)", () => {
+  it("offers 1× to 10× and clicking 10× calls setMultiplier(10)", () => {
     render(<SequencePreviewBar />);
-    fireEvent.click(screen.getByRole("button", { name: "4×" }));
-    expect(setMultiplier).toHaveBeenCalledWith(4);
+    for (const name of ["1×", "2×", "5×", "10×"]) {
+      expect(screen.getByRole("button", { name })).not.toBeNull();
+    }
+    expect(screen.queryByRole("button", { name: "4×" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "10×" }));
+    expect(setMultiplier).toHaveBeenCalledWith(10);
   });
 });
