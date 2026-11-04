@@ -1,8 +1,5 @@
 import type { ButtonHTMLAttributes, ElementType } from "react";
 import {
-  ChevronDown,
-  Eye,
-  Flag,
   Magnet,
   Maximize2,
   Minus,
@@ -18,6 +15,8 @@ import {
   SkipForward,
   Trash2,
   Undo2,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -413,19 +412,19 @@ export const TimelineToolbar = ({
       ) : null}
       <div className="ml-1 flex h-7 items-center rounded-sm bg-input-background">
         <ToolbarIcon
-          icon={Minus}
+          icon={ZoomIn}
           label="缩小间隔（块变宽）"
           onClick={onZoomOut}
           disabled={!canZoomOut}
         />
         <span
-          className="min-w-12 px-1 text-center font-mono text-mono-sm tabular-nums text-muted-foreground"
+          className="w-6 text-center font-mono text-mono-sm tabular-nums text-muted-foreground"
           title="自适应主刻度（秒）"
         >
           {formatMajorStep(majorStepSec)}
         </span>
         <ToolbarIcon
-          icon={Plus}
+          icon={ZoomOut}
           label="放大间隔（块变窄）"
           onClick={onZoomIn}
           disabled={!canZoomIn}

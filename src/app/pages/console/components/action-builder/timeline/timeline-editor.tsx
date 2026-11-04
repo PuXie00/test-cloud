@@ -482,8 +482,8 @@ export const TimelineEditor = ({
       event.preventDefault();
       const nextPx = clampTimelinePxPerSecond(
         event.deltaY < 0
-          ? pxPerSecond / TIMELINE_ZOOM_FACTOR
-          : pxPerSecond * TIMELINE_ZOOM_FACTOR,
+          ? pxPerSecond * TIMELINE_ZOOM_FACTOR
+          : pxPerSecond / TIMELINE_ZOOM_FACTOR,
       );
       if (nextPx === pxPerSecond) return;
 

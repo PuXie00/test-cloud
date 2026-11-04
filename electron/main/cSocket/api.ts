@@ -289,10 +289,6 @@ export class CsocketApiService {
         }>)
       }
       if (optCmd === 'Info|act') {
-        console.log('Info|act', JSON.stringify(msg));
-        msg!.data!.forEach((item) => {
-          item.runTime = item.runTime * 100
-        });
         this.broadcast(CSOCKET_CHANNELS.readActionRun, msg as CppAckResult<{
           actionId: number, // 动作ID
           state: number, // 动作状态 1:过渡状态，正在走到轨迹上 3： 运行中 
@@ -1316,12 +1312,15 @@ export class CsocketApiService {
   }
   // 界面侧事件（如保存工程）交给 C++ 写入；C++ 写完后会通过 Info|log 推送
   logWrite(items: LogWriteParams[], opts?: CsocketSendOpts): Promise<SendData> {
-    // return this.sendBuilt('Log|write', '', items, opts)
-    const written = items
-      .map((item) => mockLogWrite(item, this.ctx.userName).data?.[0])
-      .filter((record): record is LogRecord => !!record)
-    this.broadcast(CSOCKET_CHANNELS.logPush, { success: true, data: written })
-    return Promise.resolve({ success: true, data: written })
+    items.forEach((item) => {
+      item.category = 'system'
+    })
+    return this.sendBuilt('Log|write', '', items, opts)
+    // const written = items
+    //   .map((item) => mockLogWrite(item, this.ctx.userName).data?.[0])
+    //   .filter((record): record is LogRecord => !!record)
+    // this.broadcast(CSOCKET_CHANNELS.logPush, { success: true, data: written })
+    // return Promise.resolve({ success: true, data: written })
   }
 
   // 读取主控状态（轮询）

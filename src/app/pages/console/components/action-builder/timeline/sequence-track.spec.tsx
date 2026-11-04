@@ -451,7 +451,9 @@ describe("timeline interaction", () => {
     const scroll = document.querySelector("[data-testid='timeline-scroll']") as HTMLElement;
     mockRect(scroll, { left: 0, top: 0, width: 800, height: 120 });
     fireEvent.wheel(scroll, { deltaY: -100, clientX: 300, ctrlKey: false });
-    expect(onTimelinePxPerSecondChange).toHaveBeenCalled();
+    expect(onTimelinePxPerSecondChange).toHaveBeenCalledWith(125);
+    fireEvent.wheel(scroll, { deltaY: 100, clientX: 300, ctrlKey: false });
+    expect(onTimelinePxPerSecondChange).toHaveBeenLastCalledWith(80);
   });
 
   it("binds wheel zoom as a non-passive listener so preventDefault can run", () => {
