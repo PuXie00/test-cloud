@@ -1,8 +1,10 @@
 import { Fragment } from "react";
 import { cn } from "@/app/components/ui/utils";
 import {
+  axisIconStyle,
   SCENE_AXES,
   SCENE_DISTRIBUTE_MIN_COUNT,
+  useAxisScreenDirections,
   useSceneBuildActions,
 } from "@/app/pages/console/3d/use-scene-build-actions";
 
@@ -15,11 +17,12 @@ type SceneArrangeSectionProps = {
   selectedCount: number;
 };
 
-/** 多选时的对齐和均布：图标画移动方向，文字写明含义，不靠悬停提示 */
+/** 多选时的对齐和均布：图标画当前视图里的移动方向，文字写明含义，不靠悬停提示 */
 export const SceneArrangeSection = ({ selectedCount }: SceneArrangeSectionProps) => {
   const { alignSelection, distributeSelection } = useSceneBuildActions();
   const canAlign = selectedCount >= 2;
   const canDistribute = selectedCount >= SCENE_DISTRIBUTE_MIN_COUNT;
+  const directions = useAxisScreenDirections();
 
   return (
     <section className="space-y-2 rounded-md bg-muted p-3" aria-label="对齐与均布">
@@ -27,7 +30,9 @@ export const SceneArrangeSection = ({ selectedCount }: SceneArrangeSectionProps)
         <span />
         <span className="text-label-caps text-muted-foreground">对齐</span>
         <span />
-        {SCENE_AXES.map(({ axis, letter, name, colorClass, iconClass, distributeIcon: DistributeIcon, edges }) => (
+        {SCENE_AXES.map(({ axis, letter, name, colorClass, followsView, distributeIcon: DistributeIcon, edges }) => {
+          const iconStyle = axisIconStyle(axis, followsView, directions);
+          return (
           <Fragment key={axis}>
             <span className="whitespace-nowrap text-body-sm text-muted-foreground">
               <span className={cn("font-mono", colorClass)}>{letter}</span> {name}
@@ -42,7 +47,7 @@ export const SceneArrangeSection = ({ selectedCount }: SceneArrangeSectionProps)
                   className={btnClass}
                   onClick={() => alignSelection(axis, edge)}
                 >
-                  <Icon className={cn(iconSizeClass, colorClass, iconClass)} aria-hidden />
+                  <Icon className={cn(iconSizeClass, colorClass)} style={iconStyle} aria-hidden />
                   {label}
                 </button>
               ))}
@@ -54,11 +59,12 @@ export const SceneArrangeSection = ({ selectedCount }: SceneArrangeSectionProps)
               className={btnClass}
               onClick={() => distributeSelection(axis)}
             >
-              <DistributeIcon className={cn(iconSizeClass, colorClass, iconClass)} aria-hidden />
+              <DistributeIcon className={cn(iconSizeClass, colorClass)} style={iconStyle} aria-hidden />
               均布
             </button>
           </Fragment>
-        ))}
+          );
+        })}
       </div>
       <p className="text-body-sm text-muted-foreground">
         {canDistribute

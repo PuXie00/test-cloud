@@ -7,7 +7,7 @@ import { ObjectStatusBadge } from "./object-status-badge";
 
 const formatAxisCell = (
   value: number | null | undefined,
-  unit: "mm" | "°",
+  unit: string,
   displayUnit: ReturnType<typeof useSessionDisplayLengthUnit>,
 ): string => {
   if (value === null || value === undefined) return "—";
@@ -72,7 +72,7 @@ export const ObjectMonitorTable = ({
                 />
               </td>
               <td className="px-3 py-2 font-mono text-mono-sm tabular-nums text-muted-foreground">
-                {formatAxisCell(positions?.h, "mm", displayUnit)}
+                {formatAxisCell(positions?.h, descriptor.dimensions[0]?.unit ?? "mm", displayUnit)}
               </td>
               <td className="px-3 py-2 font-mono text-mono-sm tabular-nums text-muted-foreground">
                 {formatAxisCell(positions?.p, "°", displayUnit)}
