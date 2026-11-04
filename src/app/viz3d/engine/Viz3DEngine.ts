@@ -68,6 +68,11 @@ import { raycastGroundPlane } from "../picking/raycast-ground";
 import { ViewportManager } from "../viewports/ViewportManager";
 import { ViewportSaver } from "../cameras/ViewportSaver";
 import { alignByBounds, distributeByBounds, type AlignBoundsItem } from "../tools/SceneBuildTools";
+import {
+  computeAxisScreenDirections,
+  DEFAULT_AXIS_SCREEN_DIRECTIONS,
+  type AxisScreenDirections,
+} from "../tools/axis-screen-direction";
 import { TransformController } from "../tools/TransformController";
 import {
   intersectModelRotationAxes,
@@ -146,6 +151,7 @@ export type Viz3DEventMap = {
   measure: MeasurePayload;
   recordingState: RecordingStatePayload;
   hoistLabelModeChange: HoistLabelMode;
+  axisScreenChange: AxisScreenDirections;
 };
 
 export class Viz3DEngine implements Disposable {
@@ -162,6 +168,7 @@ export class Viz3DEngine implements Disposable {
   private motorSelectionManager: MotorSelectionManager | null = null;
   private pickController: PickController | null = null;
   private viewportManager: ViewportManager | null = null;
+  private axisScreenDirections: AxisScreenDirections = DEFAULT_AXIS_SCREEN_DIRECTIONS;
   private readonly viewportSaver = new ViewportSaver();
   private mode: ToolMode = "select";
   private hoistLabelMode: HoistLabelMode = DEFAULT_HOIST_LABEL_MODE;
@@ -814,6 +821,25 @@ export class Viz3DEngine implements Disposable {
       this.syncTransformAttachment();
     }
     return payloads;
+  }
+
+  /** 当前主视图里 +X、+Z 在屏幕上的朝向，对齐和均布的图标跟着它转 */
+  getAxisScreenDirections(): AxisScreenDirections {
+    return this.axisScreenDirections;
+  }
+
+  /** 每帧算一次，只在跨过 45° 档位时通知，转视角时界面不会每帧刷新 */
+  private syncAxisScreenDirections(): void {
+    const camera = this.viewportManager?.getPrimaryCamera();
+    if (!camera) {
+      return;
+    }
+    const next = computeAxisScreenDirections(camera.getViewMatrix());
+    if (next.x === this.axisScreenDirections.x && next.z === this.axisScreenDirections.z) {
+      return;
+    }
+    this.axisScreenDirections = next;
+    this.events.emit("axisScreenChange", next);
   }
 
   private mountDepth(id: string): number {
@@ -1553,6 +1579,7 @@ export class Viz3DEngine implements Disposable {
     const slotRect = this.getLocalSlotRect();
     this.viewportManager.tick(performance.now());
     this.viewportManager.render(this.babylonEngine, this.sceneManager.scene, slotRect);
+    this.syncAxisScreenDirections();
 
     if (this.slotElement && slotRect.width > 0 && slotRect.height > 0) {
       this.telemetryController?.syncLabelPositions();

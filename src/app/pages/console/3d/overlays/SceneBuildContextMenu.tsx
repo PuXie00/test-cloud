@@ -14,8 +14,10 @@ import { canMountTo, orderByMountTree } from "@/app/project/object-mount";
 import { useProjectStore } from "../../hooks/use-project-store";
 import { useViz3DContext } from "../Viz3DProvider";
 import {
+  axisIconStyle,
   SCENE_AXES,
   SCENE_DISTRIBUTE_MIN_COUNT,
+  useAxisScreenDirections,
   useSceneBuildActions,
 } from "../use-scene-build-actions";
 import type { SceneObjectEditActions } from "../use-scene-object-edit-actions";
@@ -90,6 +92,7 @@ export const SceneBuildContextMenuContent = (props: SceneBuildContextMenuContent
   const [selection, setSelection] = useState(() => engine.getSelection());
   const canMulti = selection.length >= 2;
   const canDistribute = selection.length >= SCENE_DISTRIBUTE_MIN_COUNT;
+  const directions = useAxisScreenDirections();
   const {
     alignSelection,
     distributeSelection,
@@ -173,7 +176,7 @@ export const SceneBuildContextMenuContent = (props: SceneBuildContextMenuContent
           对齐
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent className={subMenuContentClass}>
-          {SCENE_AXES.flatMap(({ axis, letter, name, colorClass, iconClass, edges }) =>
+          {SCENE_AXES.flatMap(({ axis, letter, name, colorClass, followsView, edges }) =>
             edges.map(({ edge, label, icon: Icon }) => (
               <DropdownMenuItem
                 key={`${axis}-${edge}`}
@@ -181,7 +184,11 @@ export const SceneBuildContextMenuContent = (props: SceneBuildContextMenuContent
                 className={menuItemClass}
                 onSelect={() => alignSelection(axis, edge)}
               >
-                <Icon className={cn("h-4 w-4", colorClass, iconClass)} aria-hidden />
+                <Icon
+                  className={cn("h-4 w-4", colorClass)}
+                  style={axisIconStyle(axis, followsView, directions)}
+                  aria-hidden
+                />
                 <span className={cn("font-mono", colorClass)}>{letter}</span>
                 {name} · {label}
               </DropdownMenuItem>
@@ -195,13 +202,17 @@ export const SceneBuildContextMenuContent = (props: SceneBuildContextMenuContent
           {canDistribute ? "均布" : `均布（至少 ${SCENE_DISTRIBUTE_MIN_COUNT} 个物体）`}
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent className={subMenuContentClass}>
-          {SCENE_AXES.map(({ axis, letter, name, colorClass, iconClass, distributeIcon: Icon }) => (
+          {SCENE_AXES.map(({ axis, letter, name, colorClass, followsView, distributeIcon: Icon }) => (
             <DropdownMenuItem
               key={axis}
               className={menuItemClass}
               onSelect={() => distributeSelection(axis)}
             >
-              <Icon className={cn("h-4 w-4", colorClass, iconClass)} aria-hidden />
+              <Icon
+                className={cn("h-4 w-4", colorClass)}
+                style={axisIconStyle(axis, followsView, directions)}
+                aria-hidden
+              />
               <span className={cn("font-mono", colorClass)}>{letter}</span>
               {name}
             </DropdownMenuItem>

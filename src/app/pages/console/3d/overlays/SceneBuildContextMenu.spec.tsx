@@ -9,14 +9,17 @@ const distribute = vi.fn();
 const updateObjectsBatch = vi.fn();
 let selection: string[] = [];
 
+const engine = {
+  getMode: () => "select",
+  getSelection: () => selection,
+  getAxisScreenDirections: () => ({ x: 180, z: 225 }),
+  events: { on: vi.fn(), off: vi.fn() },
+  align,
+  distribute,
+};
+
 vi.mock("../Viz3DProvider", () => ({
-  useViz3DContext: () => ({
-    getMode: () => "select",
-    getSelection: () => selection,
-    events: { on: vi.fn(), off: vi.fn() },
-    align,
-    distribute,
-  }),
+  useViz3DContext: () => engine,
 }));
 vi.mock("../../hooks/use-project-store", () => ({
   useProjectStore: () => ({
@@ -75,10 +78,12 @@ describe("右键菜单的对齐与均布", () => {
     await openSub(/^对齐/);
 
     const item = screen.getByRole("menuitem", { name: /Z\s*前后 · 中心/ });
-    expect(item.querySelector("svg")?.getAttribute("class")).toContain("-rotate-45");
+    expect((item.querySelector("svg") as SVGElement).style.transform).toBe("rotate(-225deg)");
     fireEvent.click(item);
 
     expect(align).toHaveBeenCalledWith(["1", "2"], "z", "center");
+    expect(screen.getByRole("menuitem", { name: /X\s*左右 · 最小/ })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /Z\s*前后 · 最大/ })).toBeTruthy();
     expect(screen.queryByText(/向左|向右|双向/)).toBeNull();
   });
 

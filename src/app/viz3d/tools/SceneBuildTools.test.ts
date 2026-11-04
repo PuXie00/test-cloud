@@ -49,6 +49,25 @@ describe("alignByBounds", () => {
     expect(next.small.x).toBe(10);
   });
 
+  it("aligns x min edges to the selection's smallest x", () => {
+    const next = alignByBounds([wide, small], "x", "min");
+    expect(next.wide.x).toBe(0);
+    expect(next.small).toEqual({ x: -1.5, y: 6, z: 3 });
+  });
+
+  it("aligns x max edges to the selection's largest x", () => {
+    const next = alignByBounds([wide, small], "x", "max");
+    expect(next.wide.x).toBe(8.5);
+    expect(next.small.x).toBe(10);
+  });
+
+  it("aligns z min and max edges", () => {
+    expect(alignByBounds([wide, small], "z", "min").small.z).toBe(-0.5);
+    const max = alignByBounds([wide, small], "z", "max");
+    expect(max.wide).toEqual({ x: 0, y: 0, z: 2.5 });
+    expect(max.small.z).toBe(3);
+  });
+
   it("aligns centers on z, which had no tool before", () => {
     const next = alignByBounds([wide, small], "z", "center");
     expect(next.wide).toEqual({ x: 0, y: 0, z: 1.25 });
