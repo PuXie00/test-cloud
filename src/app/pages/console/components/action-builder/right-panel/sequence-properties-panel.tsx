@@ -32,6 +32,7 @@ import { RepairBand } from "./repair-band";
 import { SegmentEditor, SegmentStatusBadge, segmentStatusOf } from "./segment-editor";
 import {
   lookupSequenceSelection,
+  segmentEndpointBlockIds,
   type SelectionFocus,
   type SequenceSelection,
 } from "../sequence-selection";
@@ -405,6 +406,84 @@ const PoseAxesEditor = ({
   );
 };
 
+/** 一个位姿的编辑：待修复提示、各轴（绝对 / 相对、经过、经过速度）和到达时间 */
+const PoseBlockFields = ({
+  block,
+  resolved,
+  onReplaceBlock,
+}: {
+  block: PoseBlock;
+  resolved: ResolvedActionSequence;
+  onReplaceBlock: (block: TimelineBlock) => void;
+}) => {
+  const { getTimelineObject, sequenceIssues } = useActionBuilder();
+  const resolvedPoint = resolved.poses.find((point) => point.sourceBlockId === block.id);
+  return (
+    <>
+      <RepairBand
+        items={formatRepairItems(sequenceIssues ?? [], { blockId: block.id }, {
+          objectName: (id) => getTimelineObject(id)?.name,
+        })}
+      />
+      <PoseAxesEditor
+        key={block.id}
+        pose={block.pose}
+        passSpeeds={block.passSpeeds ?? {}}
+        passThrough={resolvedPoint?.pose}
+        junctions={resolvedPoint?.junctions ?? {}}
+        uncontrolledAxes={uncontrolledAxesOf(resolved, block.objectId)}
+        objectId={block.objectId}
+        onChange={({ pose, passSpeeds }) => {
+          const { passSpeeds: _previous, ...rest } = block;
+          onReplaceBlock(
+            Object.keys(passSpeeds).length > 0 ? { ...rest, pose, passSpeeds } : { ...rest, pose },
+          );
+        }}
+      />
+      <Field label="时间">
+        <UnitAwareNumericInput
+          aria-label="到达时间"
+          value={msToSeconds(block.atMs)}
+          unit="s"
+          step={0.1}
+          precision={1}
+          min={0}
+          onChange={(seconds) => onReplaceBlock({ ...block, atMs: secondsToMs(seconds) })}
+        />
+      </Field>
+    </>
+  );
+};
+
+/** 运动区间的一端：是位姿就直接改；是预设的关键点时提示去点预设改 */
+const SegmentEndpointSection = ({
+  label,
+  atMs,
+  block,
+  resolved,
+  onReplaceBlock,
+}: {
+  label: string;
+  atMs: number;
+  block: TimelineBlock | undefined;
+  resolved: ResolvedActionSequence;
+  onReplaceBlock: (block: TimelineBlock) => void;
+}) => (
+  <section className="mb-2 rounded-md bg-muted p-3" aria-label={label}>
+    <h3 className="mb-2 flex items-center justify-between text-label-caps text-muted-foreground">
+      <span>{label}</span>
+      <span className="font-mono text-mono-sm tabular-nums">{formatTime(atMs)} s</span>
+    </h3>
+    {block?.kind === "pose" ? (
+      <PoseBlockFields block={block} resolved={resolved} onReplaceBlock={onReplaceBlock} />
+    ) : block?.kind === "static-preset" || block?.kind === "dynamic-preset" ? (
+      <p className="text-body-sm text-muted-foreground">
+        是预设「{presetBlockTitle(block)}」的关键点，单独点选预设修改
+      </p>
+    ) : null}
+  </section>
+);
+
 const MultiPoseAxesEditor = ({ poses }: { poses: PoseBlock[] }) => {
   const { getTimelineObject, handleApplyPoseAxisWrite } = useActionBuilder();
   const [mode, setMode] = useState<AxisEditMode>("abs");
@@ -545,16 +624,20 @@ const otherKindsSummary = (blocks: readonly TimelineBlock[]): string | null => {
  */
 const MultiSelectionProperties = ({
   sequence,
+  resolved,
   blocks,
   segments,
   focus,
+  onReplaceBlock,
   onUpdateSegment,
   onDeleteBlock,
 }: {
   sequence: ActionSequenceConfig;
+  resolved: ResolvedActionSequence;
   blocks: TimelineBlock[];
   segments: ResolvedMotionSegment[];
   focus?: SelectionFocus;
+  onReplaceBlock: (block: TimelineBlock) => void;
   onUpdateSegment: SequencePropertiesPanelProps["onUpdateSegment"];
   onDeleteBlock: (blockId: string | string[]) => void;
 }) => {
@@ -590,6 +673,47 @@ const MultiSelectionProperties = ({
   const setPickedTab = (next: MultiTab) => setPicked({ key: selectionKey, tab: next });
   const handleDeleteSelected = () => onDeleteBlock(blocks.map((block) => block.id));
   const others = otherKindsSummary(blocks);
+
+  // 只选了一个运动区间（选中的正好是它两端的块）：两端的位姿和曲线放在一起改，不分页签
+  const lone = segments.length === 1 ? segments[0] : undefined;
+  const loneEnds = lone ? segmentEndpointBlockIds(resolved, lone) : [];
+  if (
+    lone &&
+    loneEnds.length === blocks.length &&
+    blocks.every((block) => loneEnds.includes(block.id))
+  ) {
+    const blockAt = (ref: string) => {
+      const blockId = resolved.poses.find((point) => point.sourceRef === ref)?.sourceBlockId;
+      return blocks.find((block) => block.id === blockId);
+    };
+    return (
+      <PropertiesShell
+        title="运动区间"
+        plain
+        headerStatus={
+          <SegmentStatusBadge status={segmentStatusOf(lone, getTimelineObject(lone.objectId))} />
+        }
+        onDelete={handleDeleteSelected}
+        actions={explodeAction}
+      >
+        <SegmentEndpointSection
+          label="起点位姿"
+          atMs={lone.startMs}
+          block={blockAt(lone.fromRef)}
+          resolved={resolved}
+          onReplaceBlock={onReplaceBlock}
+        />
+        <SegmentEndpointSection
+          label="终点位姿"
+          atMs={lone.endMs}
+          block={blockAt(lone.toRef)}
+          resolved={resolved}
+          onReplaceBlock={onReplaceBlock}
+        />
+        <SegmentEditor sequence={sequence} segment={lone} onUpdateSegment={onUpdateSegment} />
+      </PropertiesShell>
+    );
+  }
 
   if (tab === undefined) {
     return (
@@ -745,7 +869,7 @@ export const SequencePropertiesPanel = ({
   onUpdateSegment,
   onDeleteBlock,
 }: SequencePropertiesPanelProps) => {
-  const { getTimelineObject, sequenceIssues, handleExplodePresets } = useActionBuilder();
+  const { handleExplodePresets } = useActionBuilder();
   if (selection === null) {
     return <EmptyProperties />;
   }
@@ -764,9 +888,11 @@ export const SequencePropertiesPanel = ({
     return (
       <MultiSelectionProperties
         sequence={sequence}
+        resolved={resolved}
         blocks={lookup.blocks}
         segments={lookup.segments}
         focus={lookup.focus}
+        onReplaceBlock={onReplaceBlock}
         onUpdateSegment={onUpdateSegment}
         onDeleteBlock={onDeleteBlock}
       />
@@ -777,40 +903,9 @@ export const SequencePropertiesPanel = ({
 
   if (block.kind === "pose") {
     const poseBlock: PoseBlock = block;
-    const resolvedPoint = resolved.poses.find((point) => point.sourceBlockId === poseBlock.id);
     return (
       <PropertiesShell title="位姿" onDelete={() => onDeleteBlock(poseBlock.id)}>
-        <RepairBand
-          items={formatRepairItems(sequenceIssues ?? [], { blockId: poseBlock.id }, {
-            objectName: (id) => getTimelineObject(id)?.name,
-          })}
-        />
-        <PoseAxesEditor
-          key={poseBlock.id}
-          pose={poseBlock.pose}
-          passSpeeds={poseBlock.passSpeeds ?? {}}
-          passThrough={resolvedPoint?.pose}
-          junctions={resolvedPoint?.junctions ?? {}}
-          uncontrolledAxes={uncontrolledAxesOf(resolved, poseBlock.objectId)}
-          objectId={poseBlock.objectId}
-          onChange={({ pose, passSpeeds }) => {
-            const { passSpeeds: _previous, ...rest } = poseBlock;
-            onReplaceBlock(
-              Object.keys(passSpeeds).length > 0 ? { ...rest, pose, passSpeeds } : { ...rest, pose },
-            );
-          }}
-        />
-        <Field label="时间">
-          <UnitAwareNumericInput
-            aria-label="到达时间"
-            value={msToSeconds(poseBlock.atMs)}
-            unit="s"
-            step={0.1}
-            precision={1}
-            min={0}
-            onChange={(seconds) => onReplaceBlock({ ...poseBlock, atMs: secondsToMs(seconds) })}
-          />
-        </Field>
+        <PoseBlockFields block={poseBlock} resolved={resolved} onReplaceBlock={onReplaceBlock} />
       </PropertiesShell>
     );
   }

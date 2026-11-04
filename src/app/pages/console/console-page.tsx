@@ -1,13 +1,17 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ActionBuilderProvider } from "./components/action-builder/action-builder-context";
 import { ActionBuilderRightSidebar } from "./components/action-builder/action-builder-right-sidebar";
 import { ActionBuilderSelectionSync } from "./components/action-builder/action-builder-selection-sync";
 import { ContentLibraryPanel } from "./components/action-builder/content-library/content-library-panel";
 import { EditorDock } from "./components/action-builder/editor-dock/editor-dock";
+import {
+  UnsavedLeaveGuard,
+  type UnsavedLeaveGuard as LeaveGuard,
+} from "./components/action-builder/unsaved-leave-guard";
 import { BuildDebugLifecycle } from "./components/build-debug/build-debug-lifecycle";
 import { BuildDebugProvider } from "./components/build-debug/build-debug-provider";
 import { ConsoleModeProvider, useConsoleMode } from "./hooks/use-console-mode";
-import { ConsoleNavProvider } from "./hooks/use-console-nav";
+import { ConsoleNavProvider, type ConsoleNavOptions } from "./hooks/use-console-nav";
 import { ControlledObjectsProvider } from "./hooks/use-controlled-objects";
 import { LogStreamProvider } from "./hooks/use-log-stream";
 import { useActionCardSeed } from "./hooks/action-card-seed";
@@ -198,15 +202,24 @@ const ConsoleInner = () => {
     void allStopAll();
   };
 
+  // 用户切页面（左侧导航、页面里的跳转）离开动作页时，有未保存的序列先弹窗；
+  // 切演出模式、权限变化引起的跳转不拦
+  const leaveGuardRef = useRef<LeaveGuard | null>(null);
+  const requestNav = (id: LeftNavId, options?: ConsoleNavOptions) => {
+    const proceed = () => {
+      setActiveNav(id);
+      if (options?.devicesTab) setDevicesRightTab(options.devicesTab);
+    };
+    if (activeNav === "sequences" && id !== "sequences" && leaveGuardRef.current?.(proceed)) return;
+    proceed();
+  };
+
   return (
     <ControlLayoutProvider>
       <Viz3DProvider>
         <ConsoleNavProvider
           activeNav={activeNav}
-          navigate={(id, options) => {
-            setActiveNav(id);
-            if (options?.devicesTab) setDevicesRightTab(options.devicesTab);
-          }}
+          navigate={requestNav}
         >
           <SequencePreviewProvider>
             <GoReadyProvider>
@@ -218,7 +231,7 @@ const ConsoleInner = () => {
                 {!isShow && (
                   <LeftSidebar
                     active={activeNav}
-                    onChange={setActiveNav}
+                    onChange={requestNav}
                     className="h-full shrink-0"
                   />
                 )}
@@ -248,6 +261,7 @@ const ConsoleInner = () => {
               <Viz3DTransformSync />
               <Viz3DSelectionSync />
               <ActionBuilderSelectionSync />
+              <UnsavedLeaveGuard guardRef={leaveGuardRef} />
               <StructureSelectionBridge />
               <BuildDebugLifecycle />
               <AiConsoleViewSync devicesTab={devicesRightTab} />

@@ -44,6 +44,8 @@ type ManualControlPanelProps = {
   saveBlockedReason?: string | null;
   /** 顶部的联机说明 */
   liveLabel?: string | null;
+  /** 维度控制「清除」时另外要做的事（动作页：取消选中的位姿） */
+  onClearTargets?: () => void;
 };
 
 /** 手动控制：状态条 / 点动 / 维度控制 / 快捷操作；控制页与动作页共用 */
@@ -54,6 +56,7 @@ export const ManualControlPanel = ({
   saveLabel,
   saveBlockedReason = null,
   liveLabel = null,
+  onClearTargets,
 }: ManualControlPanelProps) => {
   const { selectedId, multiSelectedIds } = useSelection();
   const { getById } = useControlledObjects();
@@ -185,7 +188,11 @@ export const ManualControlPanel = ({
             disabled={!availability.allowed("jog")}
             settingsDisabled={!availability.allowed("jogSettings")}
           />
-          <DimensionControl objectIds={selectedIds} disabled={!availability.allowed("dimension")} />
+          <DimensionControl
+            objectIds={selectedIds}
+            disabled={!availability.allowed("dimension")}
+            onClear={onClearTargets}
+          />
         </>
       )}
       {canWritePose && (

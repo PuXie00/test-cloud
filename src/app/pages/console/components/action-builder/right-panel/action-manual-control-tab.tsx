@@ -24,8 +24,14 @@ import { useActionBuilder } from "../use-action-builder";
  * - 「取当前」把实时位置写进选中位姿；没选位姿时写到播放头，没选序列则新建序列（不加入节目）
  */
 export const ActionManualControlTab = () => {
-  const { sequence, selection, cursorMs, handleSaveCurrentPose, handleUpdatePosesFromLive } =
-    useActionBuilder();
+  const {
+    sequence,
+    selection,
+    cursorMs,
+    handleSaveCurrentPose,
+    handleUpdatePosesFromLive,
+    handleSelectionChange,
+  } = useActionBuilder();
   const { getById } = useControlledObjects();
   const { objects } = useProjectStore();
   const { state, bind } = useGoReady();
@@ -95,6 +101,8 @@ export const ActionManualControlTab = () => {
       saveLabel={captureLabel(live, sequence, cursorMs)}
       saveBlockedReason={saveBlockedReason}
       onSaveCurrentPose={handleSave}
+      // 选着位姿时「清除」连选中的位姿一起清掉，手动控制回到操作选中的物体
+      onClearTargets={live.kind === "none" ? undefined : () => handleSelectionChange(null)}
     />
   );
 };

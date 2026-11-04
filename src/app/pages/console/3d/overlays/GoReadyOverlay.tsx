@@ -1,8 +1,18 @@
+import { resolveLivePoseSelection } from "../../components/action-builder/live-pose-edit";
+import { useActionBuilder } from "../../components/action-builder/use-action-builder";
 import { pendingGoEntries } from "../../hooks/go-ready";
 import { useGoReady } from "../../hooks/go-ready-provider";
+import { useConsoleNav } from "../../hooks/use-console-nav";
 
 export const GoReadyOverlay = () => {
   const { state, go, cancel } = useGoReady();
+  const { activeNav } = useConsoleNav();
+  const { sequence, selection, activeRightTab, handleSelectionChange } = useActionBuilder();
+  // 动作页「当前位置」里 GO 目标是选中的位姿：清除时连选中的位姿一起清掉，和手动控制里的「清除」一样
+  const clearsPoses =
+    activeNav === "sequences" &&
+    activeRightTab === "manual" &&
+    resolveLivePoseSelection(sequence, selection).kind !== "none";
 
   if (state.phase === "idle") return null;
 
@@ -13,6 +23,7 @@ export const GoReadyOverlay = () => {
   };
   const handleCancelAll = () => {
     cancel();
+    if (clearsPoses) handleSelectionChange(null);
   };
 
   return (

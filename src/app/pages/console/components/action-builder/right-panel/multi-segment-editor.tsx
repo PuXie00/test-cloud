@@ -17,11 +17,13 @@ import { roundProjectCoordinate } from "@/app/project/project-quantity";
 import { PhaseInputModeTabs } from "../motion-profile/motion-profile-editor";
 import { axisHasWarning, resolveEnabledAxes } from "../motion-profile/motion-profile-status";
 import {
-  RATES_DO_NOT_FIT_MESSAGE,
-  profileFromRates,
-  stepPhaseRate,
+  SPEED_UNREACHABLE_MESSAGE,
+  retimeFromRates,
   stepPhaseTime,
+  stepRetimedRate,
+  stepRetimedSpeed,
   type RatePhase,
+  type RetimedProfile,
   trapezoidRatesOf,
 } from "../motion-profile/phase-rates";
 import {
@@ -29,7 +31,7 @@ import {
   RateRow,
   TimeRow,
 } from "../motion-profile/trapezoid-profile-editor";
-import type { SegmentProfileWrite } from "../sequence-ops";
+import type { SegmentProfileWrite, SegmentRetimeWrite } from "../sequence-ops";
 import { VIRTUAL_AXIS_IDS } from "../timeline/timeline-data";
 import { useActionBuilder } from "../use-action-builder";
 import { getVirtualAxisCanonicalUnit } from "../virtual-axis-display";
@@ -37,6 +39,7 @@ import { segmentEditContext } from "./segment-editor";
 
 /** 某个轴在选中区间里要改的一段曲线；轴在端点经过时几个区间共用一段 */
 type AxisCurve = {
+  objectId: number;
   motion: ResolvedAxisMotion;
   distance: number;
   unit: string;
@@ -59,8 +62,13 @@ const sharedValue = (values: readonly (number | undefined)[]): number | undefine
  * （跨过端点的整段曲线只写一次）。
  */
 export const MultiSegmentEditor = ({ segments }: { segments: ResolvedMotionSegment[] }) => {
-  const { getTimelineObject, phaseInputMode, handlePhaseInputModeChange, handleWriteSegmentProfiles } =
-    useActionBuilder();
+  const {
+    getTimelineObject,
+    phaseInputMode,
+    handlePhaseInputModeChange,
+    handleWriteSegmentProfiles,
+    handleRetimeSegmentCurves,
+  } = useActionBuilder();
 
   const enabledAxesOf = (segment: ResolvedMotionSegment) =>
     resolveEnabledAxes(getTimelineObject(segment.objectId)?.enabledAxes ?? []);
@@ -79,7 +87,12 @@ export const MultiSegmentEditor = ({ segments }: { segments: ResolvedMotionSegme
       const distance = Math.abs(motion.to - motion.from);
       if (!motion.configurable || distance === 0 || motion.profile.kind !== "trapezoid") continue;
       const object = getTimelineObject(segment.objectId);
-      curves.push({ motion, distance, unit: getVirtualAxisCanonicalUnit(axis, object?.controlType) });
+      curves.push({
+        objectId: segment.objectId,
+        motion,
+        distance,
+        unit: getVirtualAxisCanonicalUnit(axis, object?.controlType),
+      });
     }
     return curves;
   };
@@ -106,15 +119,12 @@ export const MultiSegmentEditor = ({ segments }: { segments: ResolvedMotionSegme
   const paramsOf = (curve: AxisCurve) =>
     curve.motion.profile.kind === "trapezoid" ? curve.motion.profile.params : null;
 
-  const write = (makeProfile: (curve: AxisCurve) => MotionProfile | null, reportMisfit: boolean) => {
+  /** 按时间：时长不变，只换曲线 */
+  const write = (makeProfile: (curve: AxisCurve) => MotionProfile | null) => {
     const writes: SegmentProfileWrite[] = [];
-    let misfits = 0;
     for (const curve of curves) {
       const profile = makeProfile(curve);
-      if (!profile) {
-        misfits += 1;
-        continue;
-      }
+      if (!profile) continue;
       writes.push({
         fromRef: curve.motion.fromRef,
         toRef: curve.motion.toRef,
@@ -124,50 +134,94 @@ export const MultiSegmentEditor = ({ segments }: { segments: ResolvedMotionSegme
       });
     }
     if (writes.length > 0) handleWriteSegmentProfiles(writes);
+  };
+
+  /** 按速度：每段按自己的结果换时长，终点和这个物体后面的块一起挪 */
+  const retime = (makeRetimed: (curve: AxisCurve) => RetimedProfile | null, reportMisfit: boolean) => {
+    const writes: SegmentRetimeWrite[] = [];
+    let misfits = 0;
+    for (const curve of curves) {
+      const next = makeRetimed(curve);
+      if (!next) {
+        misfits += 1;
+        continue;
+      }
+      writes.push({
+        objectId: curve.objectId,
+        fromRef: curve.motion.fromRef,
+        toRef: curve.motion.toRef,
+        axis: currentAxis,
+        profile: next.profile,
+        durationMs: next.durationMs,
+      });
+    }
+    if (writes.length > 0) handleRetimeSegmentCurves(writes);
     if (reportMisfit && misfits > 0) {
-      toast.warning(`有 ${misfits} 段没有修改：${RATES_DO_NOT_FIT_MESSAGE}`);
+      toast.warning(`有 ${misfits} 段没有修改：${SPEED_UNREACHABLE_MESSAGE}`);
     }
   };
 
-  const writeRates = (acceleration: number | null, deceleration: number | null) =>
-    write((curve) => {
+  const writeRates = (patch: Partial<{ acceleration: number; cruiseSpeed: number; deceleration: number }>) =>
+    retime((curve) => {
       const rates = ratesOf(curve);
-      const nextAcceleration = acceleration ?? rates?.acceleration ?? deceleration;
-      const nextDeceleration = deceleration ?? rates?.deceleration ?? acceleration;
-      if (nextAcceleration == null || nextDeceleration == null) return null;
-      return profileFromRates({
-        distance: curve.distance,
-        durationMs: curve.motion.durationMs,
-        boundary: curve.motion,
-        acceleration: nextAcceleration,
-        deceleration: nextDeceleration,
-      });
+      if (!rates) return null;
+      return retimeFromRates({ distance: curve.distance, boundary: curve.motion, ...rates, ...patch });
     }, true);
 
-  // 点 − + 时每段各自走一档（阶段时间差 0.1 s）；还没重新渲染就来了下一下时从刚写的接着走
+  // 点 − + 时每段各自走一档；还没重新渲染就来了下一下时从刚写的接着走
   const curveKey = (curve: AxisCurve) => `${curve.motion.fromRef}->${curve.motion.toRef}`;
-  const latestProfilesRef = useRef(new Map<string, MotionProfile>());
-  latestProfilesRef.current = new Map(curves.map((curve) => [curveKey(curve), curve.motion.profile]));
-  const stepEach = (stepOne: (curve: AxisCurve, profile: MotionProfile) => MotionProfile | null) =>
-    write((curve) => {
-      const key = curveKey(curve);
-      const next = stepOne(curve, latestProfilesRef.current.get(key) ?? curve.motion.profile);
-      if (next) latestProfilesRef.current.set(key, next);
-      return next;
-    }, false);
+  const latestRef = useRef(new Map<string, RetimedProfile>());
+  latestRef.current = new Map(
+    curves.map((curve) => [
+      curveKey(curve),
+      { profile: curve.motion.profile, durationMs: curve.motion.durationMs },
+    ]),
+  );
+  const latestOf = (curve: AxisCurve): RetimedProfile =>
+    latestRef.current.get(curveKey(curve)) ?? {
+      profile: curve.motion.profile,
+      durationMs: curve.motion.durationMs,
+    };
+  const remember = (curve: AxisCurve, next: RetimedProfile | null) => {
+    if (next) latestRef.current.set(curveKey(curve), next);
+    return next;
+  };
   const stepRates = (phase: RatePhase) => (delta: number) =>
-    stepEach((curve, profile) =>
-      stepPhaseRate({
-        profile,
-        distance: curve.distance,
-        durationMs: curve.motion.durationMs,
-        boundary: curve.motion,
-        phase,
-        steps: delta,
-      }),
+    retime(
+      (curve) =>
+        remember(
+          curve,
+          stepRetimedRate({
+            ...latestOf(curve),
+            distance: curve.distance,
+            boundary: curve.motion,
+            phase,
+            steps: delta,
+          }),
+        ),
+      false,
+    );
+  const stepSpeeds = (delta: number) =>
+    retime(
+      (curve) =>
+        remember(
+          curve,
+          stepRetimedSpeed({
+            ...latestOf(curve),
+            distance: curve.distance,
+            boundary: curve.motion,
+            steps: delta,
+          }),
+        ),
+      false,
     );
   const stepTimes = (phase: RatePhase) => (delta: number) =>
-    stepEach((curve, profile) => stepPhaseTime(profile, curve.motion.durationMs, phase, delta));
+    write((curve) => {
+      const latest = latestOf(curve);
+      const next = stepPhaseTime(latest.profile, latest.durationMs, phase, delta);
+      remember(curve, next ? { profile: next, durationMs: latest.durationMs } : null);
+      return next;
+    });
 
   const editable = curves.length > 0;
   const allRates = curves.map(ratesOf);
@@ -229,21 +283,23 @@ export const MultiSegmentEditor = ({ segments }: { segments: ResolvedMotionSegme
               value={shared.acceleration}
               unit={unit === undefined ? undefined : `${unit}/s²`}
               readOnly={!editable}
-              onValueCommit={editable ? (next) => writeRates(next, null) : undefined}
+              onValueCommit={editable ? (next) => writeRates({ acceleration: next }) : undefined}
               onStep={editable ? stepRates("accel") : undefined}
             />
             <RateRow
               label={labels.middle}
               value={shared.cruiseSpeed}
               unit={unit === undefined ? undefined : `${unit}/s`}
-              readOnly
+              readOnly={!editable}
+              onValueCommit={editable ? (next) => writeRates({ cruiseSpeed: next }) : undefined}
+              onStep={editable ? stepSpeeds : undefined}
             />
             <RateRow
               label={labels.last}
               value={shared.deceleration}
               unit={unit === undefined ? undefined : `${unit}/s²`}
               readOnly={!editable}
-              onValueCommit={editable ? (next) => writeRates(null, next) : undefined}
+              onValueCommit={editable ? (next) => writeRates({ deceleration: next }) : undefined}
               onStep={editable ? stepRates("decel") : undefined}
             />
           </div>
@@ -256,8 +312,7 @@ export const MultiSegmentEditor = ({ segments }: { segments: ResolvedMotionSegme
               readOnly={!editable}
               onValueCommit={
                 editable
-                  ? (nextMs) =>
-                      write((curve) => withTrapezoidAccelMs(curve.motion.profile, nextMs), false)
+                  ? (nextMs) => write((curve) => withTrapezoidAccelMs(curve.motion.profile, nextMs))
                   : undefined
               }
               onStep={editable ? stepTimes("accel") : undefined}
@@ -275,8 +330,7 @@ export const MultiSegmentEditor = ({ segments }: { segments: ResolvedMotionSegme
               readOnly={!editable}
               onValueCommit={
                 editable
-                  ? (nextMs) =>
-                      write((curve) => withTrapezoidDecelMs(curve.motion.profile, nextMs), false)
+                  ? (nextMs) => write((curve) => withTrapezoidDecelMs(curve.motion.profile, nextMs))
                   : undefined
               }
               onStep={editable ? stepTimes("decel") : undefined}
@@ -284,9 +338,11 @@ export const MultiSegmentEditor = ({ segments }: { segments: ResolvedMotionSegme
           </div>
         )}
         <p className="mt-2 text-body-sm text-muted-foreground">
-          {editable
-            ? `改动写给 ${axisName(currentAxis)} 在动的 ${curves.length} 段曲线，各段时长不变`
-            : `选中的区间里 ${axisName(currentAxis)} 没有位移`}
+          {!editable
+            ? `选中的区间里 ${axisName(currentAxis)} 没有位移`
+            : phaseInputMode === "speed"
+              ? `改动写给 ${axisName(currentAxis)} 在动的 ${curves.length} 段曲线，各段时长跟着变，后面的块一起挪`
+              : `改动写给 ${axisName(currentAxis)} 在动的 ${curves.length} 段曲线，各段时长不变`}
         </p>
       </section>
     </div>

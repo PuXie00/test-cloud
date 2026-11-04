@@ -18,7 +18,6 @@ export const ActionBuilderRightSidebar = () => {
     handleBlockDelete,
     handleCreatePose,
     handleCreateSetEnabled,
-    handleCreateSequence,
     handleApplyStaticPreset,
     handleApplyDynamicPreset,
   } = useActionBuilder();
@@ -51,7 +50,6 @@ export const ActionBuilderRightSidebar = () => {
       onDeleteBlock={handleBlockDelete}
       onCreatePose={handleCreatePose}
       onCreateSetEnabled={handleCreateSetEnabled}
-      onCreateSequence={handleCreateSequence}
       onApplyStaticPreset={handleApplyStaticPreset}
       onApplyDynamicPreset={handleApplyDynamicPreset}
     />

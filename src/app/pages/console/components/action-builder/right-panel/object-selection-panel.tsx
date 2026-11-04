@@ -18,7 +18,6 @@ type ObjectSelectionPanelProps = {
   sequenceMissing?: boolean;
   onCreatePose: (objectIds: number[]) => void;
   onCreateSetEnabled: (objectIds: number[], enabled: boolean) => void;
-  onCreateSequence: (objectIds: number[]) => void;
   onApplyStaticPreset: (presetId: string, objectIds: number[]) => void;
   onApplyDynamicPreset: (presetId: string, objectIds: number[]) => void;
 };
@@ -32,7 +31,6 @@ export const ObjectSelectionPanel = ({
   sequenceMissing = false,
   onCreatePose,
   onCreateSetEnabled,
-  onCreateSequence,
   onApplyStaticPreset,
   onApplyDynamicPreset,
 }: ObjectSelectionPanelProps) => {
@@ -133,16 +131,9 @@ export const ObjectSelectionPanel = ({
         </>
       )}
 
-      <SectionHeader title="新建" />
-      <div className="grid grid-cols-1 gap-2">
-        <button
-          type="button"
-          onClick={() => onCreateSequence(selectedObjectIds)}
-          className="rounded-md border border-border bg-transparent py-2 text-body-sm text-foreground hover:bg-accent"
-        >
-          新建动作序列
-        </button>
-      </div>
+      {mode === "empty" && (
+        <p className="text-body-sm text-muted-foreground">在动作序列库选择或新建动作序列后再添加位姿</p>
+      )}
     </div>
   );
 };

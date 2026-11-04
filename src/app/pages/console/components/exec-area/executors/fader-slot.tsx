@@ -17,6 +17,8 @@ const LONG_PRESS_MOVE_PX = 8;
 type FaderSlotProps = {
   slot: FaderSlotState;
   repairMessage?: string | null;
+  /** 动作页里有没保存的修改；提示优先于待修复，不拦 Ready / GO（运行上次保存的版本） */
+  unsaved?: boolean;
   isPreviewing: boolean;
   onPreviewToggle: () => void;
   onPreviewHoldStart: () => void;
@@ -31,6 +33,7 @@ type FaderSlotProps = {
 export const FaderSlot = ({
   slot,
   repairMessage,
+  unsaved = false,
   isPreviewing,
   onPreviewToggle,
   onPreviewHoldStart,
@@ -59,6 +62,7 @@ export const FaderSlot = ({
   const isRehearsal = mode === "rehearsal";
   const canDropSequence = isRehearsal && canAssign;
   const reasonId = `fader-slot-repair-${slot.index}`;
+  const notice = unsaved ? "未保存" : repairMessage;
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startPointRef = useRef<{ x: number; y: number } | null>(null);
@@ -162,7 +166,9 @@ export const FaderSlot = ({
               ? "border-warning/50"
               : isReady
                 ? "border-show/50"
-                : "border-border",
+                : unsaved
+                  ? "border-warning/50"
+                  : "border-border",
       )}
     >
       {!isEmpty ? (
@@ -262,9 +268,9 @@ export const FaderSlot = ({
       >
         {slot.sequence?.name}
       </span>
-      {repairMessage ? (
+      {notice ? (
         <span id={reasonId} className="pointer-events-none relative z-[1] line-clamp-2 text-body-sm text-warning">
-          {repairMessage}
+          {notice}
         </span>
       ) : null}
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
@@ -295,7 +301,7 @@ export const FaderSlot = ({
         disabled={isBlocked || !canRun}
         aria-busy={slot.isBusy || undefined}
         aria-label={`${slot.label} ${actionLabel}`}
-        aria-describedby={repairMessage ? reasonId : undefined}
+        aria-describedby={notice ? reasonId : undefined}
         onClick={onGo}
         className={cn(
           "relative z-10 inline-flex h-9 shrink-0 items-center justify-center gap-1 rounded-sm font-semibold transition-colors disabled:pointer-events-none disabled:opacity-30",

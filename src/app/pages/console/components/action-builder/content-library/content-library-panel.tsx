@@ -241,7 +241,7 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
             <p className="font-mono text-[10px] tabular-nums text-muted-foreground">
               {`${formatDurationSeconds(sequenceDurationMs(entry.sequence))} · ${countSequenceBlocks(entry.sequence)} 块`}
               {unsaved ? (
-                <span className="ml-1.5 font-sans text-body-sm text-primary">未保存</span>
+                <span className="ml-1.5 font-sans text-body-sm text-warning">未保存</span>
               ) : null}
               {needsRepair ? (
                 <span className="ml-1.5 font-sans text-body-sm text-warning">待修复</span>

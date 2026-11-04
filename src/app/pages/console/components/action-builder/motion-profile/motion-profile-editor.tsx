@@ -50,6 +50,8 @@ export type MotionProfileEditorProps = {
   /** 区间模式下阶段的填法；给了切换回调才显示「按时间 / 按速度」 */
   phaseInputMode?: PhaseInputMode;
   onPhaseInputModeChange?: (mode: PhaseInputMode) => void;
+  /** 按速度改出来的曲线和这一轴整段曲线的新时长 */
+  onAxisRetime?: (axis: VirtualAxisId, profile: MotionProfile, durationMs: number) => void;
 };
 
 const axisName = (axis: VirtualAxisId): string => axis.toUpperCase();
@@ -309,6 +311,7 @@ export const MotionProfileEditor = ({
   axisNotes,
   phaseInputMode = "time",
   onPhaseInputModeChange,
+  onAxisRetime,
 }: MotionProfileEditorProps) => {
   const enabledAxes = (axisContext
     ? resolveEnabledAxes(axisContext.enabledAxes)
@@ -508,6 +511,11 @@ export const MotionProfileEditor = ({
               withPassSpeeds={withPassSpeeds}
               inputMode={phaseInputMode}
               rateContext={{ distance: travelDistance, boundary: currentBoundary, unit }}
+              onRetime={
+                onAxisRetime
+                  ? (profile, nextDurationMs) => onAxisRetime(currentAxis, profile, nextDurationMs)
+                  : undefined
+              }
             />
           ) : (
             <p className="text-body-sm text-muted-foreground">未知曲线</p>

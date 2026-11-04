@@ -63,10 +63,8 @@ describe("snap targets", () => {
 });
 
 describe("keyframes", () => {
-  it("uses the focused objects when the sequence has them, else the whole sequence", () => {
+  it("uses every block of the sequence", () => {
     expect(keyframeTimesMs(sequence, 9000)).toEqual([0, 500, 1200, 3400, 6000, 9000]);
-    expect(keyframeTimesMs(sequence, 9000, [8])).toEqual([0, 500, 3400, 9000]);
-    expect(keyframeTimesMs(sequence, 9000, [99])).toEqual([0, 500, 1200, 3400, 6000, 9000]);
   });
 
   it("finds the previous and next keyframe strictly around the playhead", () => {

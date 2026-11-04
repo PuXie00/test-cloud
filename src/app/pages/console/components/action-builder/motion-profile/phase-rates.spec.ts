@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { calculateMotionProfileKinematics } from "@/app/project/action-sequence/motion-profile";
 import type { MotionProfile } from "@/app/project/action-sequence/types";
-import { profileFromRates, stepPhaseRate, stepPhaseTime, trapezoidRatesOf } from "./phase-rates";
+import {
+  profileFromRates,
+  retimeFromRates,
+  stepPhaseTime,
+  stepRetimedRate,
+  stepRetimedSpeed,
+  trapezoidRatesOf,
+} from "./phase-rates";
 
 const trap = (accelMs: number, decelMs: number): MotionProfile => ({
   kind: "trapezoid",
@@ -103,52 +110,76 @@ describe("rounding the solved phase times", () => {
   });
 });
 
-describe("stepping a rate one 0.1 s level at a time", () => {
-  const span = { distance: 400, durationMs: 5000 };
-  const ratesOf = (profile: MotionProfile | null) => trapezoidRatesOf(profile!, span.distance, span.durationMs)!;
-  const paramsOf = (profile: MotionProfile | null) =>
+describe("按速度 sets the duration", () => {
+  const paramsOf = (profile: MotionProfile | undefined) =>
     profile?.kind === "trapezoid" ? profile.params : null;
 
-  it("shortens or lengthens the phase by 0.1 s and keeps the other rate close", () => {
-    const up = stepPhaseRate({ profile: trap(1000, 1000), ...span, phase: "accel", steps: 1 });
-    expect(paramsOf(up)?.accelMs).toBe(900);
-    expect(ratesOf(up).acceleration).toBeGreaterThan(100);
-    expect(Math.abs(ratesOf(up).deceleration - 100)).toBeLessThan(10);
-
-    const down = stepPhaseRate({ profile: trap(1000, 1000), ...span, phase: "accel", steps: -1 });
-    expect(paramsOf(down)?.accelMs).toBe(1100);
-    expect(ratesOf(down).acceleration).toBeLessThan(100);
-
-    const decel = stepPhaseRate({ profile: trap(1000, 1000), ...span, phase: "decel", steps: 2 });
-    expect(paramsOf(decel)?.decelMs).toBe(800);
-    expect(ratesOf(decel).deceleration).toBeGreaterThan(100);
+  it("solves the duration from the three rates", () => {
+    // 400 走 80 mm/s、加减速度 100：0.8 s 变速 + 4.2 s 匀速 = 5.8 s
+    expect(
+      retimeFromRates({ distance: 400, acceleration: 100, cruiseSpeed: 80, deceleration: 100 }),
+    ).toEqual({ profile: trap(800, 800), durationMs: 5800 });
+    expect(
+      retimeFromRates({ distance: 400, acceleration: 100, cruiseSpeed: 100, deceleration: 100 }),
+    ).toEqual({ profile: trap(1000, 1000), durationMs: 5000 });
   });
 
-  it("changes the value on every step, in the direction dragged", () => {
-    for (const direction of [1, -1]) {
-      let profile: MotionProfile = trap(1000, 1000);
-      let last = ratesOf(profile).acceleration;
-      for (let i = 0; i < 5; i += 1) {
-        profile = stepPhaseRate({ profile, ...span, phase: "accel", steps: direction })!;
-        const next = ratesOf(profile).acceleration;
-        expect(direction > 0 ? next > last : next < last).toBe(true);
-        last = next;
-      }
-    }
+  it("rounds the duration to 0.1 s and leaves room for cruising", () => {
+    // 正好是三角形（0 s 匀速）：时长往上取一档，速度略低于所填
+    const result = retimeFromRates({ distance: 400, acceleration: 100, cruiseSpeed: 200, deceleration: 100 });
+    expect(result).not.toBeNull();
+    expect(result!.durationMs % 100).toBe(0);
+    const params = paramsOf(result!.profile)!;
+    expect(params.accelMs + params.decelMs).toBeLessThan(result!.durationMs);
+    expect(trapezoidRatesOf(result!.profile, 400, result!.durationMs)!.cruiseSpeed).toBeLessThan(200);
   });
 
-  it("stops at the 0.1 s minimum and when the phases no longer fit the span", () => {
-    expect(stepPhaseRate({ profile: trap(100, 1000), ...span, phase: "accel", steps: 1 })).toBeNull();
-    expect(stepPhaseRate({ profile: trap(1000, 1000), ...span, phase: "accel", steps: -45 })).toBeNull();
-    expect(stepPhaseRate({ profile: trap(1000, 1000), ...span, phase: "accel", steps: 0 })).toBeNull();
+  it("returns null when the distance is too short to reach the speed", () => {
+    expect(
+      retimeFromRates({ distance: 100, acceleration: 100, cruiseSpeed: 200, deceleration: 100 }),
+    ).toBeNull();
+    expect(retimeFromRates({ distance: 100, acceleration: 0, cruiseSpeed: 50, deceleration: 100 })).toBeNull();
   });
 
-  it("steps a span with pass speeds too", () => {
-    const boundary = { startSpeed: 150, endSpeed: 0 };
-    const before = trapezoidRatesOf(trap(1000, 1000), 400, 5000, boundary)!;
-    const next = stepPhaseRate({ profile: trap(1000, 1000), ...span, boundary, phase: "decel", steps: 1 });
-    expect(paramsOf(next)?.decelMs).toBe(900);
-    expect(trapezoidRatesOf(next!, 400, 5000, boundary)!.deceleration).toBeGreaterThan(before.deceleration);
+  it("keeps the pass speeds at the ends", () => {
+    const boundary = { startSpeed: 50, endSpeed: 0 };
+    const result = retimeFromRates({ distance: 400, boundary, acceleration: 100, cruiseSpeed: 100, deceleration: 100 });
+    // 50→100 用 0.5 s 走 37.5，100→0 用 1 s 走 50，匀速 312.5 走 3.125 s：共 4.625 s
+    expect(result?.durationMs).toBeGreaterThanOrEqual(4600);
+    expect(result?.durationMs).toBeLessThanOrEqual(4700);
+    expect(paramsOf(result?.profile)).toEqual({ accelMs: 500, decelMs: 1000 });
+  });
+
+  it("steps the cruise speed one 0.1 s of duration at a time", () => {
+    const span = { distance: 400, durationMs: 5000 };
+    const faster = stepRetimedSpeed({ profile: trap(1000, 1000), ...span, steps: 1 });
+    expect(faster?.durationMs).toBe(4900);
+    expect(trapezoidRatesOf(faster!.profile, 400, 4900)!.cruiseSpeed).toBeGreaterThan(100);
+    const slower = stepRetimedSpeed({ profile: trap(1000, 1000), ...span, steps: -2 });
+    expect(slower?.durationMs).toBe(5200);
+    expect(trapezoidRatesOf(slower!.profile, 400, 5200)!.cruiseSpeed).toBeLessThan(100);
+    expect(stepRetimedSpeed({ profile: trap(1000, 1000), ...span, steps: 0 })).toBeNull();
+  });
+
+  it("steps a rate by 0.1 s of its ramp and keeps the cruise speed", () => {
+    const span = { distance: 400, durationMs: 5000 };
+    const up = stepRetimedRate({ profile: trap(1000, 1000), ...span, phase: "accel", steps: 1 });
+    expect(paramsOf(up?.profile)).toEqual({ accelMs: 900, decelMs: 1000 });
+    // 加速少 0.1 s，匀速多走 5 → 时长约 4.95 s
+    expect([4900, 5000]).toContain(up?.durationMs);
+    const rates = trapezoidRatesOf(up!.profile, 400, up!.durationMs)!;
+    expect(rates.acceleration).toBeGreaterThan(100);
+    expect(Math.abs(rates.cruiseSpeed - 100)).toBeLessThan(3);
+
+    const down = stepRetimedRate({ profile: trap(1000, 1000), ...span, phase: "decel", steps: -2 });
+    expect(paramsOf(down?.profile)).toEqual({ accelMs: 1000, decelMs: 1200 });
+    expect(down!.durationMs).toBeGreaterThan(5000);
+  });
+
+  it("stops at the 0.1 s minimum ramp", () => {
+    expect(
+      stepRetimedRate({ profile: trap(100, 1000), distance: 400, durationMs: 5000, phase: "accel", steps: 1 }),
+    ).toBeNull();
   });
 });
 

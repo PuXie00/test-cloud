@@ -101,8 +101,10 @@ import {
   updatePosesFromLive,
   updateSegmentSettings,
   writeSegmentProfiles,
+  retimeSegmentCurves,
   type EditResult,
   type SegmentProfileWrite,
+  type SegmentRetimeWrite,
 } from "./sequence-ops";
 import {
   pruneSequenceSelection,
@@ -157,6 +159,13 @@ const PASTE_ERROR_MESSAGE: Record<SequenceEditError, string> = {
 const INSERT_ERROR_MESSAGE: Partial<Record<SequenceEditError, string>> = {
   "motion-overlap": "该时刻和物体已有的动作重叠，无法插入",
   "time-conflict": "所选物体在该时刻已有动作块，无法插入",
+};
+
+/** 按速度改时长被拒时的提示 */
+const RETIME_ERROR_MESSAGE: Partial<Record<SequenceEditError, string>> = {
+  "motion-overlap": "按这个速度挪动后会和已有的动作重叠，没有修改",
+  "time-conflict": "按这个速度挪动后同一时刻会有两个动作块，没有修改",
+  "invalid-time-range": "按这个速度时长太短，终点会越过中间的位姿，没有修改",
 };
 
 /** 在播放头位置给多个物体新建或更新动作块的结果 */
@@ -836,6 +845,22 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     (writes: readonly SegmentProfileWrite[]): boolean =>
       updateSelectedSequence((current) => writeSegmentProfiles(current, writes)),
     [updateSelectedSequence],
+  );
+
+  const handleRetimeSegmentCurves = useCallback(
+    (writes: readonly SegmentRetimeWrite[]): boolean => {
+      let failure: SequenceEditError | null = null;
+      const ok = applySequenceEdit((current) => {
+        const result = retimeSegmentCurves(current, writes, sequenceEditOptions);
+        if (!result.ok) failure = result.reason;
+        return result;
+      });
+      if (failure) {
+        toast.warning(RETIME_ERROR_MESSAGE[failure as SequenceEditError] ?? "无法按这个速度修改");
+      }
+      return ok;
+    },
+    [applySequenceEdit, sequenceEditOptions],
   );
 
   const [phaseInputMode, setPhaseInputMode] = useState<PhaseInputMode>("time");
@@ -1625,6 +1650,32 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     toast.success(`已保存「${draft.name}」，节目列表已更新`);
   }, [selectedSequenceId, currentProject?.document, commitSequences, setDraft]);
 
+  /** 保存所有能保存的草稿（离开动作页时用）；待修复的留着草稿，返回它们的名字 */
+  const handleSaveAll = useCallback((): { saved: number; blocked: string[] } => {
+    const document = currentProject?.document;
+    const drafted = draftsRef.current;
+    if (!document || drafted.size === 0) return { saved: 0, blocked: [] };
+    const savable = new Map<number, ActionSequenceConfig>();
+    const blocked: string[] = [];
+    for (const [id, draft] of drafted) {
+      if (getSequenceContentRepairIssue(document, draft)) blocked.push(draft.name);
+      else savable.set(id, draft);
+    }
+    if (savable.size > 0) {
+      const nextSequences = motionRef.current.sequences.map((item) => savable.get(item.id) ?? item);
+      if (!commitSequences(nextSequences)) {
+        toast.error("保存失败");
+        return { saved: 0, blocked };
+      }
+      replaceDrafts(new Map([...drafted].filter(([id]) => !savable.has(id))));
+      toast.success(`已保存 ${savable.size} 个动作序列，节目列表已更新`);
+    }
+    if (blocked.length > 0) {
+      toast.warning(`${blocked.map((name) => `「${name}」`).join("")}待修复，没有保存`);
+    }
+    return { saved: savable.size, blocked };
+  }, [currentProject?.document, commitSequences, replaceDrafts]);
+
   /**
    * 退回到某一步：序列的增删、顺序、名字和节目列表写回工程；
    * 还在的序列保持当前已保存的版本（保存不撤销），看到的内容和它不同就作为草稿。
@@ -1746,6 +1797,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleResizeDynamicPreset,
       handleUpdateSegmentSettings,
       handleWriteSegmentProfiles,
+      handleRetimeSegmentCurves,
       handleBlockDelete,
       handleExplodePresets,
       handleRelayoutPreset,
@@ -1779,6 +1831,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleProgramItemRemove,
       handleProgramItemMove,
       handleSave,
+      handleSaveAll,
       canUndoEdit: editorHistory.past.length > 0,
       canRedoEdit: editorHistory.future.length > 0,
       handleUndoEdit,
@@ -1829,6 +1882,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleResizeDynamicPreset,
       handleUpdateSegmentSettings,
       handleWriteSegmentProfiles,
+      handleRetimeSegmentCurves,
       handleBlockDelete,
       handleExplodePresets,
       handleRelayoutPreset,
@@ -1861,6 +1915,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleProgramItemRemove,
       handleProgramItemMove,
       handleSave,
+      handleSaveAll,
       editorHistory,
       handleUndoEdit,
       handleRedoEdit,

@@ -19,13 +19,15 @@ import {
 } from "@/app/project/display-length-units";
 import { formatTime, secondsToMs, snapTimeMs } from "../timeline/timeline-data";
 import {
-  RATES_DO_NOT_FIT_MESSAGE,
-  profileFromRates,
-  stepPhaseRate,
+  SPEED_UNREACHABLE_MESSAGE,
+  retimeFromRates,
   stepPhaseTime,
+  stepRetimedRate,
+  stepRetimedSpeed,
   trapezoidRatesOf,
   type RatePhase,
   type PhaseInputMode,
+  type RetimedProfile,
 } from "./phase-rates";
 
 export type TrapezoidProfileEditorProps = {
@@ -39,10 +41,12 @@ export type TrapezoidProfileEditorProps = {
   readOnly?: boolean;
   /** 两端带经过速度：首尾两段是从经过速度变到匀速，不一定从 0 起、到 0 止 */
   withPassSpeeds?: boolean;
-  /** 按速度：填加减速度，区间时长不变，匀速速度和阶段时间跟着算 */
+  /** 按速度：填加速度、匀速速度、减速度，时长和阶段时间跟着算（要给 onRetime） */
   inputMode?: PhaseInputMode;
   /** 按速度时用：这段的行程（绝对值）、进出速度和轴的长度单位（mm 或 °） */
   rateContext?: { distance: number; boundary?: MotionBoundary; unit: string };
+  /** 按速度改出来的曲线和这段的新时长 */
+  onRetime?: (profile: MotionProfile, durationMs: number) => void;
 };
 
 const formatPhaseValue = (valueMs: number, timeUnit: "ms" | "s"): string => {
@@ -242,6 +246,7 @@ export const TrapezoidProfileEditor = ({
   withPassSpeeds = false,
   inputMode = "time",
   rateContext,
+  onRetime,
 }: TrapezoidProfileEditorProps) => {
   const labels = phaseFieldLabels(inputMode, withPassSpeeds);
   const cruiseMs = cruiseMsOf(value, durationMs);
@@ -287,7 +292,7 @@ export const TrapezoidProfileEditor = ({
         </label>
       ) : null}
 
-      {inputMode === "speed" && rateContext ? (
+      {inputMode === "speed" && rateContext && onRetime ? (
         <RateFields
           value={value}
           durationMs={durationMs}
@@ -295,7 +300,7 @@ export const TrapezoidProfileEditor = ({
           labels={labels}
           disabled={disabled}
           readOnly={readOnly}
-          onChange={onChange}
+          onRetime={onRetime}
         />
       ) : (
         <div className="flex flex-col gap-1.5">
@@ -324,7 +329,10 @@ export const TrapezoidProfileEditor = ({
   );
 };
 
-/** 按速度：改加速度时保持减速度，改减速度时保持加速度，算出新的阶段时间 */
+/**
+ * 按速度：三个值都能改，改哪个就保持另外两个，时长跟着算。
+ * 点 − +：加减速度一档是这段变速时间差 0.1 s，匀速速度一档是时长差 0.1 s。
+ */
 const RateFields = ({
   value,
   durationMs,
@@ -332,7 +340,7 @@ const RateFields = ({
   labels,
   disabled,
   readOnly,
-  onChange,
+  onRetime,
 }: {
   value: MotionProfile;
   durationMs: number;
@@ -340,27 +348,34 @@ const RateFields = ({
   labels: { first: string; middle: string; last: string };
   disabled: boolean;
   readOnly: boolean;
-  onChange: (profile: MotionProfile) => void;
+  onRetime: (profile: MotionProfile, durationMs: number) => void;
 }) => {
   const { distance, boundary, unit } = rateContext;
   const rates = trapezoidRatesOf(value, distance, durationMs, boundary);
-  const editable = !readOnly && value.kind === "trapezoid" && distance > 0;
+  const editable = !readOnly && value.kind === "trapezoid" && distance > 0 && rates !== null;
   // 连点 − + 时还没重新渲染就来了下一下，从刚写的那一档接着走
-  const latestRef = useRef(value);
-  latestRef.current = value;
-  const commit = (acceleration: number, deceleration: number) => {
-    const next = profileFromRates({ distance, durationMs, boundary, acceleration, deceleration });
+  const latestRef = useRef<RetimedProfile>({ profile: value, durationMs });
+  latestRef.current = { profile: value, durationMs };
+  const write = (next: RetimedProfile) => {
+    latestRef.current = next;
+    onRetime(next.profile, next.durationMs);
+  };
+  const commit = (patch: Partial<{ acceleration: number; cruiseSpeed: number; deceleration: number }>) => {
+    if (!rates) return;
+    const next = retimeFromRates({ distance, boundary, ...rates, ...patch });
     if (!next) {
-      toast.warning(RATES_DO_NOT_FIT_MESSAGE);
+      toast.warning(SPEED_UNREACHABLE_MESSAGE);
       return;
     }
-    onChange(next);
+    write(next);
   };
-  const step = (phase: RatePhase) => (delta: number) => {
-    const next = stepPhaseRate({ profile: latestRef.current, distance, durationMs, boundary, phase, steps: delta });
-    if (!next) return;
-    latestRef.current = next;
-    onChange(next);
+  const stepRate = (phase: RatePhase) => (delta: number) => {
+    const next = stepRetimedRate({ ...latestRef.current, distance, boundary, phase, steps: delta });
+    if (next) write(next);
+  };
+  const stepSpeed = (delta: number) => {
+    const next = stepRetimedSpeed({ ...latestRef.current, distance, boundary, steps: delta });
+    if (next) write(next);
   };
   return (
     <div className="flex flex-col gap-1.5">
@@ -370,17 +385,17 @@ const RateFields = ({
         unit={`${unit}/s²`}
         disabled={disabled}
         readOnly={!editable}
-        onValueCommit={
-          editable ? (next) => commit(next, rates?.deceleration ?? next) : undefined
-        }
-        onStep={editable ? step("accel") : undefined}
+        onValueCommit={editable ? (next) => commit({ acceleration: next }) : undefined}
+        onStep={editable ? stepRate("accel") : undefined}
       />
       <RateRow
         label={labels.middle}
         value={rates?.cruiseSpeed}
         unit={`${unit}/s`}
         disabled={disabled}
-        readOnly
+        readOnly={!editable}
+        onValueCommit={editable ? (next) => commit({ cruiseSpeed: next }) : undefined}
+        onStep={editable ? stepSpeed : undefined}
       />
       <RateRow
         label={labels.last}
@@ -388,10 +403,8 @@ const RateFields = ({
         unit={`${unit}/s²`}
         disabled={disabled}
         readOnly={!editable}
-        onValueCommit={
-          editable ? (next) => commit(rates?.acceleration ?? next, next) : undefined
-        }
-        onStep={editable ? step("decel") : undefined}
+        onValueCommit={editable ? (next) => commit({ deceleration: next }) : undefined}
+        onStep={editable ? stepRate("decel") : undefined}
       />
     </div>
   );

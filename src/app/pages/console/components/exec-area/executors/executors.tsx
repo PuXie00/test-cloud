@@ -5,6 +5,7 @@ import { useProject } from "@/app/project/use-project";
 import { useProgram } from "../../../hooks/use-program";
 import { useExecutorSlots } from "../../../hooks/use-executor-slots";
 import { useSequencePreview } from "../../../hooks/use-sequence-preview";
+import { useActionBuilder } from "../../action-builder/use-action-builder";
 import { ExecutorPaginationBar } from "./executor-pagination-bar";
 import { FaderSlot } from "./fader-slot";
 
@@ -18,6 +19,8 @@ export const Executors = memo(({ onTriggerSequence }: ExecutorsProps) => {
   const { program, reorderItemInChapter, moveItemAcrossChapter, currentChapterId, currentPageIndex } =
     useProgram();
   const { currentProject } = useProject();
+  // 动作页里有没保存的草稿：推子槽提醒，运行的仍是上次保存的版本
+  const { draftSequenceIds } = useActionBuilder();
   const { sequenceId: previewSequenceId, togglePreview, startPreview, stopPreview } =
     useSequencePreview();
   const document = currentProject?.document;
@@ -59,6 +62,7 @@ export const Executors = memo(({ onTriggerSequence }: ExecutorsProps) => {
                   key={slot.index}
                   slot={slot}
                   repairMessage={repairMessage}
+                  unsaved={slot.sequence ? draftSequenceIds.has(slot.sequence.id) : false}
                   isPreviewing={previewSequenceId === slot.sequence?.id}
                   onPreviewToggle={() =>
                     slot.sequence &&

@@ -162,10 +162,10 @@ const SequenceEditor = () => {
   const totalMs = resolved?.totalMs ?? 0;
   const canPlay = resolved !== null && totalMs > 0;
 
-  // 选了物体时只在它们的关键帧之间跳
+  // 在整条序列的关键帧之间跳，和选中的物体无关
   const keyframes = useMemo(
-    () => (sequence ? keyframeTimesMs(sequence, totalMs, multiSelectedIds) : []),
-    [sequence, totalMs, multiSelectedIds],
+    () => (sequence ? keyframeTimesMs(sequence, totalMs) : []),
+    [sequence, totalMs],
   );
   const prevKeyframe = previousKeyframeMs(keyframes, cursorMs);
   const nextKeyframe = nextKeyframeMs(keyframes, cursorMs);
