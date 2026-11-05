@@ -16,7 +16,6 @@ const toast = vi.hoisted(() => ({ warning: vi.fn(), success: vi.fn(), error: vi.
 vi.mock("sonner", () => ({ toast }));
 
 const LOCK = "2 个轴运动中，搭建暂时只读";
-const ACTION_LOCK = "2 个轴运动中，动作暂时不能保存";
 
 const wrapper = ({ children }: { children: ReactNode }) =>
   createElement(ProjectProvider, null, children);
@@ -71,7 +70,7 @@ describe("ProjectProvider edit lock", () => {
     const { result } = await renderProject();
     const before = result.current.currentProject!.document!.setup;
 
-    act(() => result.current.setEditLock("setup", LOCK));
+    act(() => result.current.setSetupEditLock(LOCK));
     let outcome: ReturnType<typeof result.current.runTrackedDocumentUpdate> | undefined;
     act(() => {
       outcome = result.current.runTrackedDocumentUpdate("改分组", withGroup("a"));
@@ -86,7 +85,7 @@ describe("ProjectProvider edit lock", () => {
     });
     expect(outcome).toEqual({ ok: true, changed: false });
 
-    act(() => result.current.setEditLock("setup", null));
+    act(() => result.current.setSetupEditLock(null));
     act(() => {
       outcome = result.current.runTrackedDocumentUpdate("改分组", withGroup("a"));
     });
@@ -97,11 +96,11 @@ describe("ProjectProvider edit lock", () => {
     const { result } = await renderProject();
     const before = result.current.currentProject!.document!.setup;
 
-    act(() => result.current.setEditLock("setup", LOCK));
+    act(() => result.current.setSetupEditLock(LOCK));
     act(() => {
       expect(result.current.beginTrackedEdit("drag", "移动")).toBe(false);
     });
-    act(() => result.current.setEditLock("setup", null));
+    act(() => result.current.setSetupEditLock(null));
 
     act(() => {
       expect(result.current.beginTrackedEdit("drag", "移动")).toBe(true);
@@ -109,7 +108,7 @@ describe("ProjectProvider edit lock", () => {
     });
     expect(result.current.currentProject!.document!.setup).not.toBe(before);
 
-    act(() => result.current.setEditLock("setup", LOCK));
+    act(() => result.current.setSetupEditLock(LOCK));
     let committed: ReturnType<typeof result.current.commitTrackedEdit> | undefined;
     act(() => {
       committed = result.current.commitTrackedEdit("drag");
@@ -127,7 +126,7 @@ describe("ProjectProvider edit lock", () => {
     });
     const changed = result.current.currentProject!.document!.setup;
 
-    act(() => result.current.setEditLock("setup", LOCK));
+    act(() => result.current.setSetupEditLock(LOCK));
     let undone: ReturnType<typeof result.current.undoProjectConfiguration> | undefined;
     act(() => {
       undone = result.current.undoProjectConfiguration();
@@ -136,31 +135,49 @@ describe("ProjectProvider edit lock", () => {
     expect(result.current.currentProject!.document!.setup).toBe(changed);
   });
 
-  it("blocks action-sequence writes from the editor and AI, not the control page program", async () => {
+  it("refuses to change or delete a running action's sequence, and only that one", async () => {
     const { result } = await renderProject();
+    act(() => {
+      result.current.updateCurrentDocument(withSequence(9001), "motion");
+      result.current.updateCurrentDocument(withSequence(9002), "motion");
+    });
     const sequences = () => result.current.currentProject!.document!.motion.actionSequences;
-    const count = sequences().length;
+    // 动作编辑写入工程时整体复制序列
+    const mapSequences =
+      (map: (items: ProjectDocument["motion"]["actionSequences"]) => ProjectDocument["motion"]["actionSequences"]) =>
+      (document: ProjectDocument): ProjectDocument => ({
+        ...document,
+        motion: { ...document.motion, actionSequences: map(structuredClone(document.motion.actionSequences)) },
+      });
+    const rename = (id: number, name: string) =>
+      mapSequences((items) => items.map((item) => (item.id === id ? { ...item, name } : item)));
+    const remove = (id: number) => mapSequences((items) => items.filter((item) => item.id !== id));
 
-    act(() => result.current.setEditLock("motion", ACTION_LOCK));
+    act(() => result.current.setRunningSequenceIds(new Set([9001])));
     let outcome: ReturnType<typeof result.current.updateCurrentDocument> | undefined;
     act(() => {
-      outcome = result.current.updateCurrentDocument(withSequence(9001), "motion");
+      outcome = result.current.updateCurrentDocument(rename(9001, "改名"), "motion");
     });
-    expect(outcome).toEqual({ ok: false, changed: false, reason: ACTION_LOCK });
+    expect(outcome).toEqual({ ok: false, changed: false, reason: "「序列9001」正在运行，停下后再修改" });
     act(() => {
-      outcome = result.current.updateCurrentDocument(withSequence(9002), "ai");
+      outcome = result.current.updateCurrentDocument(remove(9001), "ai");
     });
     expect(outcome?.ok).toBe(false);
-    expect(sequences()).toHaveLength(count);
+    expect(sequences().find((item) => item.id === 9001)?.name).toBe("序列9001");
 
+    // 别的序列、新建序列照常
     act(() => {
-      outcome = result.current.updateCurrentDocument(withSequence(9003), "program");
+      outcome = result.current.updateCurrentDocument(rename(9002, "改名"), "motion");
+    });
+    expect(outcome).toEqual({ ok: true, changed: true });
+    act(() => {
+      outcome = result.current.updateCurrentDocument(withSequence(9003), "ai");
     });
     expect(outcome).toEqual({ ok: true, changed: true });
 
-    // 动作锁不影响搭建
+    // 控制页的节目操作不拦
     act(() => {
-      outcome = result.current.runTrackedDocumentUpdate("改分组", withGroup("b"));
+      outcome = result.current.updateCurrentDocument(remove(9001), "program");
     });
     expect(outcome).toEqual({ ok: true, changed: true });
   });

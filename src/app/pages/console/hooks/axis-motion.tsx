@@ -15,23 +15,21 @@ export type AxisMotion = {
   movingAxisIds: readonly number[];
 };
 
-/** 轴运动时各处不能做的事，null 表示不受限 */
+/** 轴运动时各处不能做的事，null 表示不受限（动作保存看对应动作是否在运行，见 action-run） */
 export type AxisMotionLocks = {
   setup: string | null;
-  action: string | null;
   download: string | null;
 };
 
 const NO_MOTION: AxisMotion = { movingAxisIds: [] };
 
-const NO_LOCKS: AxisMotionLocks = { setup: null, action: null, download: null };
+const NO_LOCKS: AxisMotionLocks = { setup: null, download: null };
 
 export const axisMotionLocks = (movingCount: number): AxisMotionLocks =>
   movingCount === 0
     ? NO_LOCKS
     : {
         setup: `${movingCount} 个轴运动中，搭建暂时只读`,
-        action: `${movingCount} 个轴运动中，动作暂时不能保存`,
         download: downloadBlockedByMotionMessage(movingCount),
       };
 
@@ -132,23 +130,16 @@ export const useSetupEditState = (): SetupEditState => {
   }, [canEdit, setup]);
 };
 
-/** 把轴运动锁交给工程数据层：搭建的修改、动作序列的写入在那里统一拦 */
+/** 把轴运动锁交给工程数据层：搭建的修改在那里统一拦 */
 export const AxisMotionEditLockSync = () => {
-  const { setEditLock } = useProject();
-  const locks = useAxisMotionLocks();
+  const { setSetupEditLock } = useProject();
+  const { setup } = useAxisMotionLocks();
 
   useEffect(() => {
-    setEditLock("setup", locks.setup);
-    setEditLock("motion", locks.action);
-  }, [locks, setEditLock]);
+    setSetupEditLock(setup);
+  }, [setup, setSetupEditLock]);
 
-  useEffect(
-    () => () => {
-      setEditLock("setup", null);
-      setEditLock("motion", null);
-    },
-    [setEditLock],
-  );
+  useEffect(() => () => setSetupEditLock(null), [setSetupEditLock]);
 
   return null;
 };

@@ -61,6 +61,7 @@ import {
   useTelemetryListening,
 } from "./hooks/plc-runtime-provider";
 import { AxisMotionEditLockSync, AxisMotionProvider } from "./hooks/axis-motion";
+import { ActionRunEditLockSync, ActionRunProvider } from "./hooks/action-run";
 import { RulesProvider } from "./hooks/use-rules";
 import { ControlLayoutProvider, useControlLayout } from "./hooks/use-control-layout";
 import { useEmptyProjectWizardEntry } from "./hooks/use-empty-project-wizard-entry";
@@ -290,33 +291,36 @@ const ConsoleInner = () => {
 
 export const ConsolePage = () => (
   <AxisMotionProvider>
-    <AxisMotionEditLockSync />
-    <ConsoleModeProvider>
-      <SelectionProvider>
-        <ProgramProvider>
-          <ProgramScopedProviders>
-            <ProjectStoreProvider>
-              <PlcRuntimeProvider>
-                <ProjectExecCardsProvider>
-                  <ControlledObjectsProvider>
-                    <LogStreamProvider>
-                      <ActionBuilderProvider>
-                        <AlignmentChecklistProvider>
-                          <BuildDebugProvider>
-                            <ConsoleLoginProvider>
-                              <ConsoleInner />
-                            </ConsoleLoginProvider>
-                          </BuildDebugProvider>
-                        </AlignmentChecklistProvider>
-                      </ActionBuilderProvider>
-                    </LogStreamProvider>
-                  </ControlledObjectsProvider>
-                </ProjectExecCardsProvider>
-              </PlcRuntimeProvider>
-            </ProjectStoreProvider>
-          </ProgramScopedProviders>
-        </ProgramProvider>
-      </SelectionProvider>
-    </ConsoleModeProvider>
+    <ActionRunProvider>
+      <AxisMotionEditLockSync />
+      <ActionRunEditLockSync />
+      <ConsoleModeProvider>
+        <SelectionProvider>
+          <ProgramProvider>
+            <ProgramScopedProviders>
+              <ProjectStoreProvider>
+                <PlcRuntimeProvider>
+                  <ProjectExecCardsProvider>
+                    <ControlledObjectsProvider>
+                      <LogStreamProvider>
+                        <ActionBuilderProvider>
+                          <AlignmentChecklistProvider>
+                            <BuildDebugProvider>
+                              <ConsoleLoginProvider>
+                                <ConsoleInner />
+                              </ConsoleLoginProvider>
+                            </BuildDebugProvider>
+                          </AlignmentChecklistProvider>
+                        </ActionBuilderProvider>
+                      </LogStreamProvider>
+                    </ControlledObjectsProvider>
+                  </ProjectExecCardsProvider>
+                </PlcRuntimeProvider>
+              </ProjectStoreProvider>
+            </ProgramScopedProviders>
+          </ProgramProvider>
+        </SelectionProvider>
+      </ConsoleModeProvider>
+    </ActionRunProvider>
   </AxisMotionProvider>
 );

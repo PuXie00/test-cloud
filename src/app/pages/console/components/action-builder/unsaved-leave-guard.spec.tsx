@@ -2,16 +2,13 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createRef, type MutableRefObject } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SaveAllResult } from "./action-builder-context-types";
 import { UnsavedLeaveGuard, type UnsavedLeaveGuard as Guard } from "./unsaved-leave-guard";
 
-const { motionLock, handleSaveAll } = vi.hoisted(() => ({
-  motionLock: { action: null as string | null },
-  handleSaveAll: vi.fn(() => ({ saved: 0, blocked: [] as string[] })),
-}));
-
-vi.mock("../../hooks/axis-motion", () => ({
-  useAxisMotionLocks: () => ({ setup: null, action: motionLock.action, download: null }),
-}));
+const { saveAllResult, handleSaveAll } = vi.hoisted(() => {
+  const saveAllResult = { current: { saved: 1, blocked: [], running: [] } as SaveAllResult };
+  return { saveAllResult, handleSaveAll: vi.fn(() => saveAllResult.current) };
+});
 
 vi.mock("@/app/project/project-motion-readiness", () => ({
   getSequenceContentRepairIssue: () => null,
@@ -41,7 +38,7 @@ const openGuard = () => {
 
 describe("UnsavedLeaveGuard", () => {
   beforeEach(() => {
-    motionLock.action = null;
+    saveAllResult.current = { saved: 1, blocked: [], running: [] };
     handleSaveAll.mockClear();
   });
 
@@ -54,15 +51,10 @@ describe("UnsavedLeaveGuard", () => {
     expect(proceed).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the dialog open when saving is refused while axes move", () => {
-    motionLock.action = "1 个轴运动中，动作暂时不能保存";
+  it("stays open when a draft could not be saved because its action is running", () => {
+    saveAllResult.current = { saved: 0, blocked: [], running: ["开场"] };
     const proceed = openGuard();
-    // 不常驻提示文字，按下才由 handleSaveAll 提示
-    expect(screen.queryByText(motionLock.action)).toBeNull();
-    const saveAll = screen.getByRole("button", { name: "全部保存" }) as HTMLButtonElement;
-    expect(saveAll.disabled).toBe(false);
-
-    fireEvent.click(saveAll);
+    fireEvent.click(screen.getByRole("button", { name: "全部保存" }));
     expect(handleSaveAll).toHaveBeenCalledTimes(1);
     expect(proceed).not.toHaveBeenCalled();
     expect(screen.getByRole("alertdialog")).not.toBeNull();

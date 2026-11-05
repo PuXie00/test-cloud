@@ -25,6 +25,7 @@ import { AuthContext } from "@/app/auth/auth-provider";
 import { applyDocumentUpdate } from "./project-document-update";
 import type { ManualJogSettings, ProjectDocument } from "./project-document-types";
 import { normalizeManualJog } from "./manual-jog";
+import { runningSequenceEditBlock } from "./running-sequence-lock";
 import { validateProjectDocument } from "./project-document-validate";
 import {
   getProjectAPI,
@@ -60,12 +61,6 @@ export type DocumentRevision = {
   value: number;
   origin: DocumentMutationOrigin;
 };
-
-/**
- * 外部条件（如轴运动中）暂时不许改工程，reason 为 null 表示不锁：
- * setup = 搭建（跟踪修改、拖拽事务、撤销重做）；motion = 动作编辑和 AI 写入的动作序列（不含控制页节目）
- */
-export type ProjectEditLockScope = "setup" | "motion";
 
 export type ProjectUpdateResult =
   | { ok: true; changed: boolean }
@@ -125,7 +120,10 @@ type ProjectContextValue = {
     updater: (document: ProjectDocument) => ProjectDocument,
     origin?: Extract<DocumentMutationOrigin, "motion" | "program" | "ai">,
   ) => ProjectUpdateResult;
-  setEditLock: (scope: ProjectEditLockScope, reason: string | null) => void;
+  /** 轴运动中等暂时不许改搭建（跟踪修改、拖拽事务、撤销重做），null 表示不锁 */
+  setSetupEditLock: (reason: string | null) => void;
+  /** 正在运行的动作（Info|act，actionId 即序列 id）：动作编辑和 AI 不能改动或删掉这些序列 */
+  setRunningSequenceIds: (ids: ReadonlySet<number>) => void;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   filteredProjects: ProjectRecord[];
@@ -225,13 +223,15 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
   const activeTransactionOriginRef = useRef<
     Extract<DocumentMutationOrigin, "setup" | "project-command">
   >("setup");
-  const editLockRef = useRef<Record<ProjectEditLockScope, string | null>>({
-    setup: null,
-    motion: null,
-  });
+  const setupLockRef = useRef<string | null>(null);
+  const runningSequenceIdsRef = useRef<ReadonlySet<number>>(new Set());
 
-  const setEditLock = useCallback((scope: ProjectEditLockScope, reason: string | null) => {
-    editLockRef.current = { ...editLockRef.current, [scope]: reason };
+  const setSetupEditLock = useCallback((reason: string | null) => {
+    setupLockRef.current = reason;
+  }, []);
+
+  const setRunningSequenceIds = useCallback((ids: ReadonlySet<number>) => {
+    runningSequenceIdsRef.current = ids;
   }, []);
 
   const isDirty =
@@ -760,7 +760,7 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       }
 
       const active = historyRef.current.activeTransaction;
-      const setupLock = editLockRef.current.setup;
+      const setupLock = setupLockRef.current;
       if (active) {
         if (origin === "project-command") {
           return failUpdate("活动事务进行中，无法执行 project-command");
@@ -819,7 +819,7 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
     if (historyRef.current.activeTransaction) {
       return false;
     }
-    const setupLock = editLockRef.current.setup;
+    const setupLock = setupLockRef.current;
     if (setupLock) {
       notifyEditLock(setupLock);
       return false;
@@ -873,7 +873,7 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       }
 
       // 拖拽途中被锁（如轴开始运动）也按校验失败撤回这次修改
-      const setupLock = editLockRef.current.setup;
+      const setupLock = setupLockRef.current;
       const validation = validateProjectDocument(current.document);
       const rejection = setupLock
         ? notifyEditLock(setupLock)
@@ -957,8 +957,8 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
     if (isSavingRef.current || isRestoringVersionRef.current) {
       return failHistory("正在保存或恢复版本，无法撤销");
     }
-    if (editLockRef.current.setup) {
-      return failHistory(notifyEditLock(editLockRef.current.setup));
+    if (setupLockRef.current) {
+      return failHistory(notifyEditLock(setupLockRef.current));
     }
     const current = currentProjectRef.current;
     const configState = currentConfigurationStateRef.current;
@@ -990,8 +990,8 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
     if (isSavingRef.current || isRestoringVersionRef.current) {
       return failHistory("正在保存或恢复版本，无法重做");
     }
-    if (editLockRef.current.setup) {
-      return failHistory(notifyEditLock(editLockRef.current.setup));
+    if (setupLockRef.current) {
+      return failHistory(notifyEditLock(setupLockRef.current));
     }
     const current = currentProjectRef.current;
     const configState = currentConfigurationStateRef.current;
@@ -1027,11 +1027,6 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       if (historyRef.current.activeTransaction) {
         return failUpdate("活动事务进行中，无法执行非跟踪更新");
       }
-      // 控制页的节目操作（program）不受动作锁影响
-      const motionLock = origin === "program" ? null : editLockRef.current.motion;
-      if (motionLock) {
-        return failUpdate(notifyEditLock(motionLock));
-      }
       const current = currentProjectRef.current;
       const configState = currentConfigurationStateRef.current;
       if (!current?.document || !configState) {
@@ -1062,6 +1057,18 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       }
       if (nextDoc.motion === current.document.motion) {
         return okUpdate(false);
+      }
+      // 正在运行的动作不能改；控制页的节目操作（program）不受影响
+      const runningBlock =
+        origin === "program"
+          ? null
+          : runningSequenceEditBlock(
+              current.document.motion.actionSequences,
+              nextDoc.motion.actionSequences,
+              runningSequenceIdsRef.current,
+            );
+      if (runningBlock) {
+        return failUpdate(notifyEditLock(runningBlock));
       }
 
       const validation = validateProjectDocument(nextDoc);
@@ -1166,7 +1173,8 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       undoProjectConfiguration,
       redoProjectConfiguration,
       updateCurrentDocument,
-      setEditLock,
+      setSetupEditLock,
+      setRunningSequenceIds,
       searchQuery,
       setSearchQuery,
       filteredProjects,
@@ -1206,7 +1214,8 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       undoProjectConfiguration,
       redoProjectConfiguration,
       updateCurrentDocument,
-      setEditLock,
+      setSetupEditLock,
+      setRunningSequenceIds,
       searchQuery,
       filteredProjects,
     ],

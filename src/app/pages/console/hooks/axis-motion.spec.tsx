@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TestPermissionsProvider } from "@/app/auth/permissions";
 import type { PermissionId } from "@shared/auth/permissions";
 
-const { setEditLock } = vi.hoisted(() => ({ setEditLock: vi.fn() }));
-vi.mock("@/app/project/use-project", () => ({ useProject: () => ({ setEditLock }) }));
+const { setSetupEditLock } = vi.hoisted(() => ({ setSetupEditLock: vi.fn() }));
+vi.mock("@/app/project/use-project", () => ({ useProject: () => ({ setSetupEditLock }) }));
 
 import {
   AxisMotionEditLockSync,
@@ -36,7 +36,7 @@ const installApi = () => {
 beforeEach(() => {
   snapshot = { success: true, data: [] };
   offAxis.mockClear();
-  setEditLock.mockClear();
+  setSetupEditLock.mockClear();
   installApi();
 });
 
@@ -112,24 +112,22 @@ describe("AxisMotionProvider", () => {
 });
 
 describe("AxisMotionEditLockSync", () => {
-  it("locks setup and action writes while axes move and releases them after", async () => {
+  it("locks setup while axes move and releases it after", async () => {
     const { unmount } = render(
       createElement(AxisMotionProvider, null, createElement(AxisMotionEditLockSync)),
     );
-    expect(setEditLock).toHaveBeenLastCalledWith("motion", null);
+    expect(setSetupEditLock).toHaveBeenLastCalledWith(null);
 
     act(() => emitAxis(frame([{ deviceId: 1, axisStatus: 3 }, { deviceId: 2, axisStatus: 3 }])));
-    expect(setEditLock).toHaveBeenCalledWith("setup", "2 个轴运动中，搭建暂时只读");
-    expect(setEditLock).toHaveBeenCalledWith("motion", "2 个轴运动中，动作暂时不能保存");
+    expect(setSetupEditLock).toHaveBeenLastCalledWith("2 个轴运动中，搭建暂时只读");
 
     act(() => emitAxis(frame([{ deviceId: 1, axisStatus: 2 }, { deviceId: 2, axisStatus: 2 }])));
-    expect(setEditLock).toHaveBeenCalledWith("setup", null);
+    expect(setSetupEditLock).toHaveBeenLastCalledWith(null);
 
-    setEditLock.mockClear();
     act(() => emitAxis(frame([{ deviceId: 1, axisStatus: 3 }])));
+    setSetupEditLock.mockClear();
     unmount();
-    expect(setEditLock).toHaveBeenCalledWith("setup", null);
-    expect(setEditLock).toHaveBeenLastCalledWith("motion", null);
+    expect(setSetupEditLock).toHaveBeenLastCalledWith(null);
   });
 });
 
