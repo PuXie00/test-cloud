@@ -9,6 +9,7 @@ import {
 import { downloadBlockedByMotionMessage, movingAxisIds } from "@shared/csocket/axis-info";
 import { usePermissions } from "@/app/auth/permissions";
 import { useProject } from "@/app/project/use-project";
+import { useSystemStatusNormal } from "./plc-runtime-provider";
 
 export type AxisMotion = {
   /** 正在运动的轴 id（升序） */
@@ -25,11 +26,15 @@ const NO_MOTION: AxisMotion = { movingAxisIds: [] };
 
 const NO_LOCKS: AxisMotionLocks = { setup: null, download: null };
 
-export const axisMotionLocks = (movingCount: number): AxisMotionLocks =>
+/**
+ * 搭建只读只在聚合状态「正常」时生效（工程不匹配、挂起等状态下照常可改）；
+ * 下载检查不看状态，下载本来就是在工程不匹配时做的
+ */
+export const axisMotionLocks = (movingCount: number, systemNormal = true): AxisMotionLocks =>
   movingCount === 0
     ? NO_LOCKS
     : {
-        setup: `${movingCount} 个轴运动中，搭建暂时只读`,
+        setup: systemNormal ? `${movingCount} 个轴运动中，搭建暂时只读` : null,
         download: downloadBlockedByMotionMessage(movingCount),
       };
 
@@ -112,7 +117,8 @@ export const useAxisMotion = (): AxisMotion => useContext(AxisMotionContext);
 
 export const useAxisMotionLocks = (): AxisMotionLocks => {
   const count = useAxisMotion().movingAxisIds.length;
-  return useMemo(() => axisMotionLocks(count), [count]);
+  const systemNormal = useSystemStatusNormal();
+  return useMemo(() => axisMotionLocks(count, systemNormal), [count, systemNormal]);
 };
 
 export type SetupEditState = { readOnly: boolean; reason: string | null };

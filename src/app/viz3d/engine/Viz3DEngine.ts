@@ -64,6 +64,7 @@ import { SelectionManager } from "../state/SelectionManager";
 import { MotorSelectionManager } from "../state/MotorSelectionManager";
 import { SelectionBoxManager } from "../state/SelectionBoxManager";
 import { PickController } from "../picking/PickController";
+import { objectModeSelection } from "../picking/object-mode-pick";
 import { raycastGroundPlane } from "../picking/raycast-ground";
 import { ViewportManager } from "../viewports/ViewportManager";
 import { ViewportSaver } from "../cameras/ViewportSaver";
@@ -1305,18 +1306,12 @@ export class Viz3DEngine implements Disposable {
       return this.pickMotorTarget(pickTarget, mode, clearOnMiss);
     }
 
-    if (pickTarget?.kind === "motor") {
-      this.setMotorSelection(pickTarget.id);
-    } else if (pickTarget?.kind === "hoist-axis") {
-      if (pickTarget.motorId) {
-        this.setMotorSelection(pickTarget.motorId);
-      } else {
-        this.clearMotorSelection();
-        this.selectionManager.select(pickTarget.objectId, mode);
-      }
-    } else if (pickTarget?.kind === "object") {
+    const selection = objectModeSelection(pickTarget);
+    if (selection?.kind === "motor") {
+      this.setMotorSelection(selection.id);
+    } else if (selection?.kind === "object") {
       this.clearMotorSelection();
-      this.selectionManager.select(pickTarget.id, mode);
+      this.selectionManager.select(selection.id, mode);
     } else if (mode === "single" && clearOnMiss) {
       this.selectionManager.clear();
       this.clearMotorSelection();

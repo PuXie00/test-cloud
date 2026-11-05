@@ -5,10 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TestPermissionsProvider } from "@/app/auth/permissions";
 import type { PermissionId } from "@shared/auth/permissions";
 
-const { setSetupEditLock } = vi.hoisted(() => ({ setSetupEditLock: vi.fn() }));
+const { setSetupEditLock, status } = vi.hoisted(() => ({
+  setSetupEditLock: vi.fn(),
+  status: { normal: true },
+}));
 vi.mock("@/app/project/use-project", () => ({ useProject: () => ({ setSetupEditLock }) }));
+vi.mock("./plc-runtime-provider", () => ({ useSystemStatusNormal: () => status.normal }));
 
 import {
+  axisMotionLocks,
   AxisMotionEditLockSync,
   AxisMotionProvider,
   ingestAxisStatusFrame,
@@ -111,7 +116,29 @@ describe("AxisMotionProvider", () => {
   });
 });
 
+describe("axisMotionLocks", () => {
+  it("locks setup only while the system status is normal, the download check always", () => {
+    expect(axisMotionLocks(2, true)).toEqual({
+      setup: "2 个轴运动中，搭建暂时只读",
+      download: "2 个轴运动中，全部停止后再下载",
+    });
+    expect(axisMotionLocks(2, false)).toEqual({
+      setup: null,
+      download: "2 个轴运动中，全部停止后再下载",
+    });
+    expect(axisMotionLocks(0, true)).toEqual({ setup: null, download: null });
+  });
+});
+
 describe("AxisMotionEditLockSync", () => {
+  it("does not lock setup when the system status is not normal", () => {
+    status.normal = false;
+    render(createElement(AxisMotionProvider, null, createElement(AxisMotionEditLockSync)));
+    act(() => emitAxis(frame([{ deviceId: 1, axisStatus: 3 }])));
+    expect(setSetupEditLock).not.toHaveBeenCalledWith(expect.any(String));
+    status.normal = true;
+  });
+
   it("locks setup while axes move and releases it after", async () => {
     const { unmount } = render(
       createElement(AxisMotionProvider, null, createElement(AxisMotionEditLockSync)),
