@@ -15,6 +15,9 @@ type CollapsePanelProps = {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   className?: string;
+  /** 标题栏右侧的补充信息（如时间），折叠时也显示 */
+  extra?: ReactNode;
+  contentClassName?: string;
   children?: ReactNode;
 };
 
@@ -24,6 +27,8 @@ export const CollapsePanel = ({
   open,
   onOpenChange,
   className,
+  extra,
+  contentClassName,
   children,
 }: CollapsePanelProps) => (
   <Collapsible
@@ -50,9 +55,15 @@ export const CollapsePanel = ({
           aria-hidden
         />
         <span className="truncate text-label-caps text-foreground">{title}</span>
+        {extra ? <span className="ml-auto shrink-0">{extra}</span> : null}
       </div>
     </CollapsibleTrigger>
-    <CollapsibleContent className="min-w-0 overflow-hidden rounded-b-md bg-background p-3 data-[state=closed]:hidden">
+    <CollapsibleContent
+      className={cn(
+        "min-w-0 overflow-hidden rounded-b-md bg-background p-3 data-[state=closed]:hidden",
+        contentClassName,
+      )}
+    >
       {children}
     </CollapsibleContent>
   </Collapsible>
