@@ -42,7 +42,7 @@ describe("previewPathPoints", () => {
         { key: "0", motorId: null, mount: { x: -0.7, z: 0 }, index: 0, motorDisplayIndex: null },
         { key: "1", motorId: null, mount: { x: 0.7, z: 0 }, index: 1, motorDisplayIndex: null },
       ],
-      kinematics: kinematics({ controlType: "twoPointSwing" }),
+      kinematics: kinematics({ controlType: "dualTiltFourPointSwing" }),
     };
     const [rest, swung] = previewPathPoints(config, [{ v1: 0 }, { v1: 0, v2: 90 }]);
     expect(rest).toEqual({ x: 1, y: 2, z: 3 });

@@ -59,7 +59,7 @@ describe("applyObjectMount", () => {
 
   it("keeps only Y rotation for swing children under a rotated parent", () => {
     const tilted = object(5, { rotation: { x: 10, y: 0, z: 0 }, controlType: "staticProp" });
-    const swing = object(6, { controlType: "fourPointSwing", position: { x: 0, y: -1000, z: 0 } });
+    const swing = object(6, { controlType: "dualTiltFourPointSwing", position: { x: 0, y: -1000, z: 0 } });
     const next = applyObjectMount([tilted, swing], [6], 5);
     expect(next[1]!.rotation).toEqual({ x: 0, y: 0, z: 0 });
   });

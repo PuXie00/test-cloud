@@ -39,7 +39,7 @@ const motor = (
 describe("planAutoBind", () => {
   it("按物体和吊点顺序分配空闲电机", () => {
     const plan = planAutoBind(
-      [object(1, "twoPointSwing", 2), object(2, "singlePointMove", 1)],
+      [object(1, "singlePointMove", 2), object(2, "singlePointMove", 1)],
       [motor(10, 9, 0), motor(11, 9, 0), motor(12, 9, 0)],
     );
     expect(plan.unplacedAxisCount).toBe(0);
@@ -52,7 +52,7 @@ describe("planAutoBind", () => {
 
   it("同一物体的电机都在同一个从站口", () => {
     const plan = planAutoBind(
-      [object(1, "fourPointSwing", 4)],
+      [object(1, "dualTiltFourPointSwing", 4)],
       [motor(10, 9, 0), motor(11, 9, 1), motor(12, 9, 1), motor(13, 9, 1), motor(14, 9, 1)],
     );
     expect(plan.assignments.map((item) => item.motorId)).toEqual([11, 12, 13, 14]);
@@ -61,7 +61,7 @@ describe("planAutoBind", () => {
 
   it("没有放得下的口时选空闲电机最多的口，并报告没分配到的吊点", () => {
     const plan = planAutoBind(
-      [object(1, "fourPointSwing", 4)],
+      [object(1, "dualTiltFourPointSwing", 4)],
       [motor(10, 9, 0), motor(11, 9, 1), motor(12, 9, 1)],
     );
     expect(plan.assignments.map((item) => item.motorId)).toEqual([11, 12]);
@@ -70,7 +70,7 @@ describe("planAutoBind", () => {
 
   it("已有绑定的物体沿用它的主控和口，只补未绑定的吊点", () => {
     const plan = planAutoBind(
-      [object(1, "twoPointSwing", 2)],
+      [object(1, "singlePointMove", 2)],
       [
         motor(10, 9, 1, { controlledObjectId: 1, axisKey: "0" }),
         motor(11, 9, 0),
@@ -83,7 +83,7 @@ describe("planAutoBind", () => {
 
   it("已有绑定的口没有空闲电机时不跨口分配", () => {
     const plan = planAutoBind(
-      [object(1, "twoPointSwing", 2)],
+      [object(1, "singlePointMove", 2)],
       [motor(10, 9, 1, { controlledObjectId: 1, axisKey: "0" }), motor(11, 9, 0)],
     );
     expect(plan.assignments).toEqual([]);

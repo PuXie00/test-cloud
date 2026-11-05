@@ -13,6 +13,10 @@ import {
 } from "./control-type-code";
 import { PROJECT_SCHEMA_VERSION } from "./project-document-types";
 import { motionAxisIdForKind } from "./virtual-axis-mapping";
+import {
+  controlTypeHasMultiLevelParams,
+  MULTI_LEVEL_MAX_SECTIONS,
+} from "./multi-level-hoist";
 import { motionAxisHasDefaultMaxVelocity } from "./virtual-axis-max-velocity";
 import { INSTRUCTION_PRESET_IDS } from "./action-sequence/instruction-registry";
 
@@ -246,6 +250,37 @@ const validateDriveAxisMount = (
   a.finite(mount.z, `${path}.z`);
 };
 
+/** 多级升降的分段配置：只有多级升降可以有；分段点不超过 10 个且严格递增，保留比例 0–100 */
+const validateMultiLevel = (
+  value: unknown,
+  controlType: ControlType,
+  path: string,
+  a: StructuralAssertions,
+): void => {
+  if (value === undefined) return;
+  if (!controlTypeHasMultiLevelParams(controlType)) {
+    a.fail(path, "expected multiLevel only for multi-level hoist");
+    return;
+  }
+  const config = a.record(value, path);
+  const points = a.array(config.adjustDistances, `${path}.adjustDistances`);
+  if (points.length > MULTI_LEVEL_MAX_SECTIONS) {
+    a.fail(`${path}.adjustDistances`, `expected at most ${MULTI_LEVEL_MAX_SECTIONS} section points`);
+  }
+  let previous = -Infinity;
+  for (let index = 0; index < points.length; index += 1) {
+    const point = a.finite(points[index], `${path}.adjustDistances[${index}]`);
+    if (point <= previous) {
+      a.fail(`${path}.adjustDistances[${index}]`, "expected strictly increasing positions");
+    }
+    previous = point;
+  }
+  const ratio = a.finite(config.decelerationRatio, `${path}.decelerationRatio`);
+  if (ratio < 0 || ratio > 100) {
+    a.fail(`${path}.decelerationRatio`, "expected a number in [0, 100]");
+  }
+};
+
 const validateMountLayout = (
   value: unknown,
   path: string,
@@ -448,6 +483,7 @@ const validateCurrentObject = (value: unknown, path: string, a: StructuralAssert
       a.fail(`${path}.mountRotation`, "expected mountRotation only for multi-point swing");
     }
   }
+  validateMultiLevel(object.multiLevel, controlType, `${path}.multiLevel`, a);
   validateVector(object.rotation, `${path}.rotation`, a);
   const rotation = a.record(object.rotation, `${path}.rotation`);
   for (const axis of ["x", "y", "z"] as const) {

@@ -53,10 +53,12 @@ import {
 import { ObjectAxesEditor } from "../config-wizard/object-axes-editor";
 import { OBJECT_COLORS } from "../config-wizard/config-wizard-constants";
 import type { ControlledObject, ShapePresetId } from "../config-wizard/config-wizard-types";
+import { STROKE_LIMITS } from "@/app/project/stroke-limits";
 import { MotionAxisRangeField } from "./motion-axis-range-field";
 import { ObjectControlTypeField } from "./object-control-type-field";
 import { AXIS_RANGE_CONFIG } from "./motion-axis-range";
 import { MotionAxisSection } from "./motion-axis-section";
+import { MultiLevelSection } from "./multi-level-section";
 import { ProjectModelLibraryDialog } from "./project-model-library-dialog";
 import { ShapeDimensionFields } from "./shape-dimension-fields";
 
@@ -420,6 +422,7 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
                       axis={axis}
                       value={axisValue}
                       onChange={(value) => handleMotionAxisChange(axis, value)}
+                      limits={STROKE_LIMITS[object.controlType][motionAxisIdForKind(axis)]}
                     />
                   </div>
                 );
@@ -521,6 +524,19 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
             </div>
           </CollapsePanel>
         )}
+
+        {object.controlType === "multiLevelHoist" && object.multiLevel ? (
+          <CollapsePanel title="多级配置">
+            <MultiLevelSection
+              config={object.multiLevel}
+              stroke={{
+                min: (motionParams.h ?? MOTION_DEFAULTS.move).minAngle,
+                max: (motionParams.h ?? MOTION_DEFAULTS.move).maxAngle,
+              }}
+              onChange={(multiLevel) => updateObject(objectId, { multiLevel })}
+            />
+          </CollapsePanel>
+        ) : null}
 
         <CollapsePanel title="3D 模型">
           <div className="space-y-3">

@@ -191,6 +191,8 @@ export class Viz3DEngine implements Disposable {
   private measureMarkers: MeasureMarkers | null = null;
   private boxSelectEnabled = true;
   private pickMode: PickMode = "object";
+  /** 点选、框选都跳过的物体（工程物体 id），如控制页、动作页的占位物体 */
+  private unpickableSnapshotIds: ReadonlySet<string> = new Set();
   /** 搭建界面专属：变换中心标记等场景编辑可视化 */
   private sceneEditEnabled = false;
   private selectionBoxManager: SelectionBoxManager | null = null;
@@ -1107,6 +1109,17 @@ export class Viz3DEngine implements Disposable {
     return this.pickMode;
   }
 
+  /** 这些物体（工程物体 id）点选、框选都选不中，点击会穿过它们 */
+  setUnpickableObjects(snapshotIds: Iterable<string>): void {
+    this.unpickableSnapshotIds = new Set(snapshotIds);
+  }
+
+  private isPickable(engineObjectId: string): boolean {
+    if (this.unpickableSnapshotIds.size === 0) return true;
+    const snapshotId = this.resolveSnapshotId(engineObjectId);
+    return snapshotId === null || !this.unpickableSnapshotIds.has(snapshotId);
+  }
+
   setSceneEditEnabled(enabled: boolean): void {
     this.sceneEditEnabled = enabled;
     if (!enabled) {
@@ -1146,10 +1159,13 @@ export class Viz3DEngine implements Disposable {
 
     this.clearMotorSelection();
 
-    const items = this.objectRegistry.list().map((handle) => ({
-      id: handle.id,
-      corners: projectCorners(readObjectBounds(handle)),
-    }));
+    const items = this.objectRegistry
+      .list()
+      .filter((handle) => this.isPickable(handle.id))
+      .map((handle) => ({
+        id: handle.id,
+        corners: projectCorners(readObjectBounds(handle)),
+      }));
 
     const ids = selectIdsInScreenRect(screenRect, items);
     if (selectionMode === "additive") {
@@ -1281,6 +1297,7 @@ export class Viz3DEngine implements Disposable {
 
     const targets = this.objectRegistry
       .list()
+      .filter((handle) => this.isPickable(handle.id))
       .map((handle) => asTransformNode(handle.object3d));
     const pickTarget = this.pickController.pick(canvasX, canvasY, target.camera, targets);
 

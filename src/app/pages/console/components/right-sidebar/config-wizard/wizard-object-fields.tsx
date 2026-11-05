@@ -2,6 +2,7 @@ import { Input } from "@/app/components/ui/input";
 import { Select } from "@/app/components/ui/select";
 import { normalizeMotionAxisParams } from "@/app/project/motion-acceleration";
 import { motionAxisIdForKind } from "@/app/project/virtual-axis-mapping";
+import { STROKE_LIMITS } from "@/app/project/stroke-limits";
 import type { MotionAxisKind, MotionAxisParams, ShapePresetId } from "@/app/project/configuration-types";
 import { useProjectStore } from "@/app/pages/console/hooks/use-project-store";
 import { MotionAxisRangeField } from "../property-forms/motion-axis-range-field";
@@ -100,6 +101,7 @@ export const WizardObjectFields = ({ object }: { object: ControlledObject }) => 
           axis={axis}
           value={object.motionParams?.[motionAxisIdForKind(axis)] ?? MOTION_DEFAULTS[axis]}
           onChange={(value) => handleRangeChange(axis, value)}
+          limits={STROKE_LIMITS[object.controlType][motionAxisIdForKind(axis)]}
         />
       ))}
     </div>

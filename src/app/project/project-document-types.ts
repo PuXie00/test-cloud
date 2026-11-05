@@ -8,6 +8,7 @@ import type {
 } from "./configuration-types";
 import type { ControlTypeCode } from "./control-type-code";
 import type { MotionSpeedControl } from "./motion-speed";
+import type { MultiLevelConfig } from "./multi-level-hoist";
 import type { SavedView } from "./saved-view";
 
 export type { SavedView } from "./saved-view";
@@ -173,6 +174,8 @@ export type ControlledObjectConfig = {
   mountRotation?: number;
   /** 多点吊点布局参数；缺失按 custom */
   mountLayout?: MountLayout;
+  /** 多级升降的中间分段点和过分段点速度保留比例；仅多级升降 */
+  multiLevel?: MultiLevelConfig;
   driveAxes: DriveAxisBinding[];
   motionParams: MotionParamsByAxis;
   /** 最大轴速度，速度比例基准；不是虚轴 1 运行上限 */

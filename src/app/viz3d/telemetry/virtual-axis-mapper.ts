@@ -25,7 +25,7 @@ export const DEG_TO_RAD = Math.PI / 180;
 
 const ZERO: Vec3 = { x: 0, y: 0, z: 0 };
 const UP: Vec3 = { x: 0, y: 1, z: 0 };
-/** 四点摆摆动 X：沿局部 +x；摆动 Y：PLC 以 0/1 号吊点（z<0）为正端，即沿局部 −z */
+/** 多点倾斜摆动 X：沿局部 +x；摆动 Y：PLC 以 0/1 号吊点（z<0）为正端，即沿局部 −z */
 const SWING_X_DIR: Vec3 = { x: 1, y: 0, z: 0 };
 const SWING_Y_DIR: Vec3 = { x: 0, y: 0, z: -1 };
 const PLC_X: Vec3 = { x: 1, y: 0, z: 0 };
@@ -77,7 +77,7 @@ const rotationPose: PoseResolver = ({ kinematics, values }) => ({
 });
 
 /**
- * 两点/四点摆单向摆动（YXZ liangdian / sidian 正解）：θ>0 时 −u 端抬高 sinθ·half，
+ * 四点单向摆动（YXZ sidian 正解）：θ>0 时 −u 端抬高 sinθ·half，
  * 吊点平面沿 u 滑移 ∓(θ/90)³·half（方向 2 PLC 对角度取反，滑移随之反号）。
  */
 const planarSwing = (
@@ -93,29 +93,6 @@ const planarSwing = (
   };
 };
 
-const twoPointPose: PoseResolver = (input) => {
-  const { config, kinematics, values } = input;
-  const lift = liftOf(input);
-  const [a, b] = config.hoistAxes ?? [];
-  if (!a || !b) return { ...restPose(), lift };
-  const dx = b.mount.x - a.mount.x;
-  const dz = b.mount.z - a.mount.z;
-  const length = Math.hypot(dx, dz);
-  if (length === 0) return { ...restPose(), lift };
-  const swing = planarSwing(
-    values.v2,
-    { x: dx / length, y: 0, z: dz / length },
-    length / 2,
-    kinematics.runDirection,
-  );
-  return {
-    lift,
-    rotation: swing.rotation,
-    pivot: hoistPlanePivot(config, (a.mount.x + b.mount.x) / 2, (a.mount.z + b.mount.z) / 2),
-    shift: swing.shift,
-  };
-};
-
 const mountBounds = (config: SceneObjectConfig) => {
   const mounts = (config.hoistAxes ?? []).map((axis) => axis.mount);
   if (mounts.length === 0) return { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
@@ -124,7 +101,7 @@ const mountBounds = (config: SceneObjectConfig) => {
   return { minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs) };
 };
 
-/** PLC 四点摆 X/Y 不同时摆动，组合顺序不影响结果 */
+/** 多点倾斜（PLC 四点正解）X/Y 不同时摆动，组合顺序不影响结果 */
 const fourPointPose: PoseResolver = (input) => {
   const { config, kinematics, values } = input;
   const bounds = mountBounds(config);
@@ -176,8 +153,6 @@ const POSE_BY_CONTROL_TYPE: Record<ControlType, PoseResolver> = {
   multiLevelHoist: liftPose,
   singlePointRotation: rotationPose,
   continuousRotation: rotationPose,
-  twoPointSwing: twoPointPose,
-  fourPointSwing: fourPointPose,
   dualTiltFourPointSwing: fourPointPose,
   multiPointSwing: multiPointPose,
   railCar: restPose,

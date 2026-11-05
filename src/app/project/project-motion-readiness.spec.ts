@@ -8,8 +8,8 @@ import { createEmptyDocument } from "./project-document-empty";
 const swingObject = (): ControlledObjectConfig => ({
   id: 8,
   name: "swing",
-  controlType: 6,
-  enabledVirtualAxes: ["v1", "v2"],
+  controlType: 8,
+  enabledVirtualAxes: ["v1", "v2", "v3"],
   shapePreset: "cube",
   shapeDimensions: { width: 1, height: 1, depth: 1 },
   dimensions: { w: 1, h: 1, d: 1 },
@@ -28,6 +28,7 @@ const swingObject = (): ControlledObjectConfig => ({
   motionParams: {
     h: { ...MOTION_DEFAULTS.move },
     p: { ...MOTION_DEFAULTS.swingX, defaultMaxVelocity: 4 },
+    y: { ...MOTION_DEFAULTS.swingY },
   },
   params: {},
 });

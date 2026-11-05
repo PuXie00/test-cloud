@@ -10,6 +10,7 @@ import {
 } from "./hoist-point-defaults";
 import { normalizeMaxAxisVelocity } from "./motion-speed";
 import { normalizeMotionParams } from "./motion-acceleration";
+import { resolveMultiLevelParams } from "./multi-level-hoist";
 import { normalizeObjectRotationDeg } from "./object-rotation";
 
 export const controlledObjectConfigToWizard = (
@@ -37,6 +38,7 @@ export const controlledObjectConfigToWizard = (
     ),
     ...resolveSwingYawModelParams(controlType, config),
     ...(config.mountLayout !== undefined ? { mountLayout: config.mountLayout } : {}),
+    ...resolveMultiLevelParams(controlType, config),
     axes: config.driveAxes.map((axis, index) => ({
       key: axis.key,
       custom: axis.custom ?? false,

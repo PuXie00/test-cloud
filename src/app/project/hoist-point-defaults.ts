@@ -60,11 +60,6 @@ const MOUNTS_BY_CONTROL_TYPE: Partial<Record<ControlType, AxisMount[]>> = {
   singlePointRotation: [{ x: 0, z: 0 }],
   continuousRotation: [{ x: 0, z: 0 }],
   multiLevelHoist: [{ x: 0, z: 0 }],
-  twoPointSwing: [
-    { x: -700, z: 0 },
-    { x: 700, z: 0 },
-  ],
-  fourPointSwing: FOUR_POINT_MOUNTS,
   dualTiltFourPointSwing: FOUR_POINT_MOUNTS,
   multiPointSwing: FOUR_POINT_MOUNTS,
   railCar: [],

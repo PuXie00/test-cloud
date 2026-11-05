@@ -67,7 +67,7 @@ describe("getWizardCounts", () => {
   it("需要绑定的吊点不含无驱动轴的物体", () => {
     const counts = getWizardCounts(
       setup({
-        objects: [object(1, "twoPointSwing", 2), object(2, "staticProp", 0)],
+        objects: [object(1, "singlePointMove", 2), object(2, "staticProp", 0)],
         plcs: [plc(9)],
         motors: [motor(10, 9, { objectId: 1, axisKey: "0" }), motor(11, 9)],
       }),
@@ -80,7 +80,7 @@ describe("getWizardStepProgress", () => {
   it("物体：没有是 empty，缺名称或吊点不足是 partial", () => {
     expect(getWizardStepProgress("objects", setup())).toBe("empty");
     expect(
-      getWizardStepProgress("objects", setup({ objects: [object(1, "fourPointSwing", 2)] })),
+      getWizardStepProgress("objects", setup({ objects: [object(1, "dualTiltFourPointSwing", 2)] })),
     ).toBe("partial");
     expect(
       getWizardStepProgress(
@@ -102,7 +102,7 @@ describe("getWizardStepProgress", () => {
   });
 
   it("绑定：只绑了一部分不算完成", () => {
-    const objects = [object(1, "twoPointSwing", 2)];
+    const objects = [object(1, "singlePointMove", 2)];
     expect(getWizardStepProgress("binding", setup({ objects }))).toBe("empty");
     expect(
       getWizardStepProgress(
@@ -207,7 +207,7 @@ describe("getWizardCapabilities", () => {
   it("单台调试不依赖绑定，联动才要求全部绑定", () => {
     const motors = [motor(10, 9)];
     const capabilities = getWizardCapabilities(
-      setup({ objects: [object(1, "twoPointSwing", 2)], plcs: [plc(9)], motors }),
+      setup({ objects: [object(1, "singlePointMove", 2)], plcs: [plc(9)], motors }),
       runtimeWith([9], motors),
       { alignmentConfirmed: false },
     );

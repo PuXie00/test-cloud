@@ -14,9 +14,10 @@ import {
   resolveVirtualAxisMaxVelocity,
 } from "@/app/project/virtual-axis-max-velocity";
 import { isCppAckFailed } from "@shared/csocket/ack";
+import { adjustDistancesForPlc } from "@/app/project/multi-level-hoist";
 import { runCsocket } from "./motor-csocket-payload";
 
-export type ModelTypeCode = 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+export type ModelTypeCode = 2 | 3 | 4 | 5 | 7 | 8 | 10;
 
 const MODEL_TYPE_BY_CONTROL_TYPE: Record<
   Exclude<ControlType, "staticProp">,
@@ -27,10 +28,8 @@ const MODEL_TYPE_BY_CONTROL_TYPE: Record<
   multiLevelHoist: 3,
   continuousRotation: 4,
   railCar: 5,
-  twoPointSwing: 6,
   multiPointSwing: 7,
   dualTiltFourPointSwing: 8,
-  fourPointSwing: 9,
 };
 
 export const encodeModelType = (controlType: ControlType): ModelTypeCode | null =>
@@ -123,6 +122,10 @@ export type ModelParamCount = ModelBindingParamCount & {
   yMaxDeceleration?: number;
   yAbnormalDeceleration?: number;
   yDefaultMaxVelocity?: number;
+  /** 多级升降：中间分段点数量、位置（mm，严格递增）和过分段点速度保留比例（%） */
+  nSections?: number;
+  adjustDistanceList?: { adjustDistance: number }[];
+  decelerationRatio?: number;
 };
 
 export type ModelConfigurePayload = {
@@ -189,6 +192,20 @@ const prefixedAxisFields = (prefix: "p" | "y", axis: MappedAxis) =>
         yAbnormalDeceleration: axis.abnormalDeceleration,
       };
 
+/** 多级升降的分段配置；行程外的分段点（行程改小后）不下发 */
+const multiLevelFields = (object: ControlledObject, h: MappedAxis) => {
+  if (object.controlType !== "multiLevelHoist" || !object.multiLevel) return {};
+  const points = adjustDistancesForPlc(object.multiLevel.adjustDistances, {
+    min: h.minStroke,
+    max: h.maxStroke,
+  });
+  return {
+    nSections: points.length,
+    adjustDistanceList: points.map((adjustDistance) => ({ adjustDistance })),
+    decelerationRatio: object.multiLevel.decelerationRatio,
+  };
+};
+
 export const buildModelParamPayload = (
   object: ControlledObject,
   motors: readonly Motor[],
@@ -240,6 +257,7 @@ export const buildModelParamPayload = (
       ...(p && pRaw?.defaultMaxVelocity !== undefined ? { pDefaultMaxVelocity: pRaw.defaultMaxVelocity } : {}),
       ...(y ? prefixedAxisFields("y", y) : {}),
       ...(y && yRaw?.defaultMaxVelocity !== undefined ? { yDefaultMaxVelocity: yRaw.defaultMaxVelocity } : {}),
+      ...multiLevelFields(object, h),
     },
   };
 };

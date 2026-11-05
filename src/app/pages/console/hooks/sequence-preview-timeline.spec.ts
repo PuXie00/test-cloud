@@ -79,9 +79,9 @@ describe("previewPosesAtCursor", () => {
     const timeline = buildPreviewTimeline(resolved.totalMs, plan, false);
     expect(previewPosesAtCursor(resolved, timeline, 0).get(1)).toEqual(fixtureCurrent[1]);
     const joined = previewPosesAtCursor(resolved, timeline, timeline.transitionMs);
-    const target = plan.members.find((member) => member.objectId === 2)!.target;
-    expect(joined.get(2)!.v1).toBeCloseTo(target.v1, 6);
-    expect(joined.get(2)!.v2).toBeCloseTo(target.v2, 6);
+    const target = plan.members.find((member) => member.objectId === 3)!.target;
+    expect(joined.get(3)!.v1).toBeCloseTo(target.v1, 6);
+    expect(joined.get(3)!.v2).toBeCloseTo(target.v2, 6);
   });
 });
 

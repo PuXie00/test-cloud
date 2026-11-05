@@ -25,6 +25,7 @@ import type {
 } from "@/app/project/configuration-types";
 import type { MountLayout } from "@/app/project/project-document-types";
 import type { MotionSpeedControl } from "@/app/project/motion-speed";
+import type { MultiLevelConfig } from "@/app/project/multi-level-hoist";
 import type { ScannedAxis } from "@/app/pages/console/hooks/plc-runtime-types";
 
 /** 吊点 XZ 偏移，单位 mm */
@@ -71,6 +72,8 @@ export type ControlledObject = {
   mountRotation?: number;
   /** 多点吊点布局参数；缺失按 custom */
   mountLayout?: MountLayout;
+  /** 多级升降的中间分段点和过分段点速度保留比例；仅多级升降 */
+  multiLevel?: MultiLevelConfig;
   axes: AxisDefinition[];
   modelId?: string;
   /** 扩展属性占位；后续扩展使用 */

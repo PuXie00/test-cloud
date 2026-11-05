@@ -4,8 +4,6 @@ import { encodeSolverType } from "./couple-kinematics-type";
 
 describe("encodeSolverType", () => {
   it("maps swing and single-point move to Python type codes", () => {
-    expect(encodeSolverType("twoPointSwing")).toBe(32);
-    expect(encodeSolverType("fourPointSwing")).toBe(64);
     expect(encodeSolverType("dualTiltFourPointSwing")).toBe(64);
     expect(encodeSolverType("multiPointSwing")).toBe(63);
     expect(encodeSolverType("singlePointMove")).toBe(31);

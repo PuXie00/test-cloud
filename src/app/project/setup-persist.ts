@@ -19,6 +19,7 @@ import {
 import { encodeControlType } from "./control-type-code";
 import { normalizeMaxAxisVelocity } from "./motion-speed";
 import { normalizeMotionParams } from "./motion-acceleration";
+import { resolveMultiLevelParams } from "./multi-level-hoist";
 import type {
   ControlType,
   ControlledObjectConfig,
@@ -147,6 +148,7 @@ export const wizardControlledObjectToConfig = (object: ControlledObject): Contro
         }
       : {}),
     ...(mountLayout !== undefined ? { mountLayout } : {}),
+    ...resolveMultiLevelParams(controlType, object),
     driveAxes: ensureMinimumDriveAxes(
       controlType,
       object.axes.map((axis) => ({

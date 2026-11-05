@@ -147,12 +147,12 @@ describe("受控物体", () => {
     addObjectFromShape.mockReturnValue(object(5));
     render(<StepAddObjects />);
 
-    fireEvent.click(screen.getByRole("button", { name: /四点摆/ }));
+    fireEvent.click(screen.getByRole("button", { name: /多点倾斜/ }));
 
     expect(addObjectFromShape).toHaveBeenCalledWith(
       "cube",
       { x: 0 },
-      { controlType: "fourPointSwing", namePrefix: "四点摆" },
+      { controlType: "dualTiltFourPointSwing", namePrefix: "多点倾斜" },
     );
     expect(select).toHaveBeenCalledWith(5);
     expect(setTreeFocus).toHaveBeenCalledWith({ kind: "controlled-object", id: 5 });
@@ -164,7 +164,7 @@ describe("受控物体", () => {
     render(<StepAddObjects />);
 
     fireEvent.click(screen.getByRole("button", { name: "添加物体" }));
-    fireEvent.click(screen.getByRole("button", { name: /两点摆/ }));
+    fireEvent.click(screen.getByRole("button", { name: /多点摆/ }));
 
     expect(addObjectFromShape.mock.calls[0]![1]).toEqual({ x: 3000 });
   });
@@ -174,7 +174,7 @@ describe("受控物体", () => {
     selection = { ...selection, multiSelectedIds: [2] };
     render(<StepAddObjects />);
 
-    expect(screen.queryByRole("button", { name: /两点摆/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /多点摆/ })).toBeNull();
     expect(screen.getAllByText("物体字段")).toHaveLength(1);
     expect(screen.getByRole("button", { name: /物体-2/, pressed: true })).toBeTruthy();
   });

@@ -324,15 +324,18 @@ describe("virtual axis max velocity fields", () => {
         motors: [],
         controlledObjects: [
           makeObject(OBJECT_A, "A", {
-            controlType: 6,
-            enabledVirtualAxes: ["v1", "v2"],
+            controlType: 8,
+            enabledVirtualAxes: ["v1", "v2", "v3"],
             motionParams: {
               h: { ...MOTION_DEFAULTS.move },
               p: { ...MOTION_DEFAULTS.swingX, defaultMaxVelocity: undefined },
+              y: { ...MOTION_DEFAULTS.swingY },
             },
             driveAxes: [
               { key: "0", mount: { x: 0, z: 0 } },
               { key: "1", mount: { x: 1, z: 0 } },
+              { key: "2", mount: { x: 1, z: 1 } },
+              { key: "3", mount: { x: 0, z: 1 } },
             ],
           }),
         ],

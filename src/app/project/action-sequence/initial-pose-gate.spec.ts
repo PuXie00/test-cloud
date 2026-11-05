@@ -9,7 +9,7 @@ import {
   preparedPosesMatchTelemetry,
   remainingProgramMs,
 } from "./initial-pose-gate";
-import { fixtureObjects, fixtureSequence, twoPointFixture } from "./nearest-start.fixture";
+import { fixtureObjects, fixtureSequence, fourPointFixture } from "./nearest-start.fixture";
 
 const singlePointObject = (
   overrides: Partial<ControlledObjectConfig> = {},
@@ -220,7 +220,7 @@ describe("evaluateStartGate", () => {
     });
     expect(result.status).toBe("transition");
     if (result.status === "transition") {
-      expect(result.plan.members.map((member) => member.objectId)).toEqual([1, 2, 3, 4]);
+      expect(result.plan.members.map((member) => member.objectId)).toEqual([1, 3, 4]);
     }
   });
 });
@@ -403,23 +403,23 @@ describe("remainingProgramMs", () => {
 });
 
 describe("axes the sequence never sets", () => {
-  // 两点摆只动升降，摆动轴在所有位姿上都不设定
+  // 摆动物体只动升降，摆动轴在所有位姿上都不设定
   const liftOnly: ActionSequenceConfig = {
     id: 1,
     name: "lift",
     trajectoryMode: false,
     blocks: [
-      { id: "a", kind: "pose", objectId: 2, atMs: 0, pose: { v1: 10 } },
-      { id: "b", kind: "pose", objectId: 2, atMs: 4000, pose: { v1: 400 } },
+      { id: "a", kind: "pose", objectId: 3, atMs: 0, pose: { v1: 10 } },
+      { id: "b", kind: "pose", objectId: 3, atMs: 4000, pose: { v1: 400 } },
     ],
     segments: [],
   };
   const gateAt = (h: number, p: number) =>
     evaluateStartGate({
       sequence: liftOnly,
-      objects: [twoPointFixture()],
+      objects: [fourPointFixture()],
       motors: [],
-      telemetryByObjectId: new Map([[2, { h, p, y: 0 }]]),
+      telemetryByObjectId: new Map([[3, { h, p, y: 0 }]]),
       nearest: false,
       reverse: false,
     });

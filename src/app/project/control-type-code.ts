@@ -1,9 +1,9 @@
 import type { ControlType } from "./configuration-types";
 
 /** 工程文件落盘的 controlType 数字码 */
-export type ControlTypeCode = 0 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+export type ControlTypeCode = 0 | 2 | 3 | 4 | 5 | 7 | 8 | 10;
 
-export const CONTROL_TYPE_CODES = [0, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
+export const CONTROL_TYPE_CODES = [0, 2, 3, 4, 5, 7, 8, 10] as const;
 
 const CODE_TO_CONTROL_TYPE = {
   0: "staticProp",
@@ -11,10 +11,8 @@ const CODE_TO_CONTROL_TYPE = {
   3: "multiLevelHoist",
   4: "continuousRotation",
   5: "railCar",
-  6: "twoPointSwing",
   7: "multiPointSwing",
   8: "dualTiltFourPointSwing",
-  9: "fourPointSwing",
   10: "singlePointRotation",
 } as const satisfies Record<ControlTypeCode, ControlType>;
 
@@ -24,10 +22,8 @@ const CONTROL_TYPE_TO_CODE: Record<ControlType, ControlTypeCode> = {
   multiLevelHoist: 3,
   continuousRotation: 4,
   railCar: 5,
-  twoPointSwing: 6,
   multiPointSwing: 7,
   dualTiltFourPointSwing: 8,
-  fourPointSwing: 9,
   singlePointRotation: 10,
 };
 

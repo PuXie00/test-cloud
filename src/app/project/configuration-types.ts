@@ -5,8 +5,6 @@ export type ControlType =
   | "multiLevelHoist"
   | "railCar"
   | "staticProp"
-  | "twoPointSwing"
-  | "fourPointSwing"
   | "dualTiltFourPointSwing"
   | "multiPointSwing";
 

@@ -48,8 +48,8 @@ describe("changeObjectControlType motionParams", () => {
 
   it("keeps h when the kind stays move, and adds defaults for new axes", () => {
     const h = { ...MOTION_DEFAULTS.move, maxAngle: 8000 };
-    const next = changed(objectOf({ motionParams: { h } }), "twoPointSwing");
-    expect(next.motionParams).toEqual({ h, p: MOTION_DEFAULTS.swingX });
+    const next = changed(objectOf({ motionParams: { h } }), "dualTiltFourPointSwing");
+    expect(next.motionParams).toEqual({ h, p: MOTION_DEFAULTS.swingX, y: MOTION_DEFAULTS.swingY });
   });
 
   it("keeps p and y across swing types, including swingY to yawY", () => {
@@ -60,7 +60,7 @@ describe("changeObjectControlType motionParams", () => {
     };
     const next = changed(
       objectOf({
-        controlType: "fourPointSwing",
+        controlType: "dualTiltFourPointSwing",
         motionParams,
         motionSpeedControl: { speedRatio: 1, overrides: { y: { enabled: true, speed: 1 } } },
       }),
@@ -73,7 +73,7 @@ describe("changeObjectControlType motionParams", () => {
   it("drops axes the new control type does not have", () => {
     const next = changed(
       objectOf({
-        controlType: "twoPointSwing",
+        controlType: "dualTiltFourPointSwing",
         motionParams: {
           h: { ...MOTION_DEFAULTS.move },
           p: { ...MOTION_DEFAULTS.swingX },
@@ -84,5 +84,26 @@ describe("changeObjectControlType motionParams", () => {
     );
     expect(Object.keys(next.motionParams ?? {})).toEqual(["h"]);
     expect(next.motionSpeedControl?.overrides).toEqual({});
+  });
+});
+
+describe("changeObjectControlType per-type params", () => {
+  it("clamps kept strokes into the new type's range", () => {
+    const next = changed(
+      objectOf({
+        controlType: "multiLevelHoist",
+        motionParams: { h: { ...MOTION_DEFAULTS.move, minAngle: -800, maxAngle: 3000 } },
+      }),
+      "singlePointMove",
+    );
+    expect(next.motionParams?.h).toMatchObject({ minAngle: 0, maxAngle: 3000 });
+  });
+
+  it("adds the multi-level config when becoming a multi-level hoist and drops it after", () => {
+    const hoist = changed(objectOf({}), "multiLevelHoist");
+    expect(hoist.multiLevel).toEqual({ adjustDistances: [], decelerationRatio: 50 });
+    const withPoints = { ...hoist, multiLevel: { adjustDistances: [200], decelerationRatio: 30 } };
+    expect(changed(withPoints, "singlePointMove")).not.toHaveProperty("multiLevel");
+    expect(changed(withPoints, "staticProp")).not.toHaveProperty("multiLevel");
   });
 });
