@@ -67,6 +67,30 @@ export const setUnlitHexMaterialColor = (material: StandardMaterial, hex: number
   material.diffuseColor = color.clone();
 };
 
+/**
+ * 标记用材质（吊点、调试指示）：有光照能看出形体，再带一点自发光，暗面不发黑、颜色仍鲜明。
+ * glow 是自发光占本色的比例。
+ */
+export const createMarkerMaterial = (
+  scene: Scene,
+  name: string,
+  hex: number,
+  glow: number,
+): StandardMaterial => {
+  const material = new StandardMaterial(name, scene);
+  material.specularColor = new Color3(0.25, 0.25, 0.25);
+  material.specularPower = 48;
+  setMarkerMaterialColor(material, hex, glow);
+  return material;
+};
+
+export const setMarkerMaterialColor = (material: StandardMaterial, hex: number, glow: number): void => {
+  const color = hexToColor3(hex);
+  material.diffuseColor = color;
+  material.emissiveColor = color.scale(glow);
+  material.ambientColor = color.scale(0.2);
+};
+
 export const configureUnlitTexturedMaterial = (material: StandardMaterial): void => {
   material.disableLighting = true;
   material.roughness = 1;
