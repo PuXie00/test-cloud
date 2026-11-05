@@ -45,6 +45,7 @@ vi.mock("@/app/pages/console/hooks/plc-runtime-provider", () => ({
     markMismatchDialogConsumed: vi.fn(),
     systemStatus: { kind: "normal" },
   }),
+  useSystemStatusNormal: () => true,
 }));
 vi.mock(
   "@/app/pages/console/components/drive-debug/alignment-checklist/alignment-checklist-provider",

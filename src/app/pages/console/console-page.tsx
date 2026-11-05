@@ -279,6 +279,8 @@ const ConsoleInner = () => {
               <UnsavedLeaveGuard guardRef={leaveGuardRef} />
               <StructureSelectionBridge />
               <PlaceholderSelectionSync />
+              <AxisMotionEditLockSync />
+              <ActionRunEditLockSync />
               <BuildDebugLifecycle />
               <AiConsoleViewSync devicesTab={devicesRightTab} />
             </div>
@@ -294,8 +296,6 @@ const ConsoleInner = () => {
 export const ConsolePage = () => (
   <AxisMotionProvider>
     <ActionRunProvider>
-      <AxisMotionEditLockSync />
-      <ActionRunEditLockSync />
       <ConsoleModeProvider>
         <SelectionProvider>
           <ProgramProvider>

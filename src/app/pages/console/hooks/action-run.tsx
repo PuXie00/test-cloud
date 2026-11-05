@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useProject } from "@/app/project/use-project";
+import { useSystemStatusNormal } from "./plc-runtime-provider";
 import { ACTION_RUN_STALE_MS, parseActionRunReports } from "./exec-card-run-status";
 
 /** 有动作在运行时多久查一次是否已停（PLC 不通知停止，只是不再上报） */
@@ -65,7 +66,11 @@ export const ActionRunProvider = ({ children }: { children: ReactNode }) => {
   return <ActionRunContext.Provider value={running}>{children}</ActionRunContext.Provider>;
 };
 
-export const useRunningActionIds = (): ReadonlySet<number> => useContext(ActionRunContext);
+/** 正在运行的动作；只在聚合状态「正常」时算数，其它状态下动作照常可以保存 */
+export const useRunningActionIds = (): ReadonlySet<number> => {
+  const running = useContext(ActionRunContext);
+  return useSystemStatusNormal() ? running : NO_RUNNING;
+};
 
 /** 把正在运行的动作交给工程数据层：动作编辑和 AI 改动这些序列时在那里统一拦 */
 export const ActionRunEditLockSync = () => {

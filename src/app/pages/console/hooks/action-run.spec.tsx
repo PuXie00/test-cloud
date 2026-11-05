@@ -3,8 +3,12 @@ import { act, cleanup, render, renderHook } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { setRunningSequenceIds } = vi.hoisted(() => ({ setRunningSequenceIds: vi.fn() }));
+const { setRunningSequenceIds, status } = vi.hoisted(() => ({
+  setRunningSequenceIds: vi.fn(),
+  status: { normal: true },
+}));
 vi.mock("@/app/project/use-project", () => ({ useProject: () => ({ setRunningSequenceIds }) }));
+vi.mock("./plc-runtime-provider", () => ({ useSystemStatusNormal: () => status.normal }));
 
 import {
   ActionRunEditLockSync,
@@ -100,6 +104,18 @@ describe("ActionRunProvider", () => {
       });
     }
     expect(renders).toBe(settled);
+  });
+
+  it("counts running actions only while the system status is normal", () => {
+    const { result, rerender } = renderHook(() => useRunningActionIds(), { wrapper });
+    act(() => emitAct(report(5)));
+    expect([...result.current]).toEqual([5]);
+    status.normal = false;
+    rerender();
+    expect(result.current.size).toBe(0);
+    status.normal = true;
+    rerender();
+    expect([...result.current]).toEqual([5]);
   });
 
   it("unsubscribes and clears its timer on unmount", () => {
