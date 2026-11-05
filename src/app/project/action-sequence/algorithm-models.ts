@@ -66,12 +66,9 @@ const mountOf = (axis: DriveAxisBinding): { x: number; z: number } => axis.mount
 const positive = (value: number | undefined, fallback: number): number =>
   typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
 
-/** 业务模型类型：2 单点、6 两点、7 四点、8 多点；其余单轴物体都按单点 */
-const businessModelType = (object: ControlledObjectConfig): 2 | 6 | 7 | 8 => {
+/** 业务模型类型：2 单点、7 四点（多点倾斜）、8 多点；其余单轴物体都按单点 */
+const businessModelType = (object: ControlledObjectConfig): 2 | 7 | 8 => {
   switch (decodeControlType(object.controlType)) {
-    case "twoPointSwing":
-      return 6;
-    case "fourPointSwing":
     case "dualTiltFourPointSwing":
       return 7;
     case "multiPointSwing":
@@ -81,9 +78,8 @@ const businessModelType = (object: ControlledObjectConfig): 2 | 6 | 7 | 8 => {
   }
 };
 
-/** 两点、四点按正解固定 2、4 个吊点；多点按吊点数；单点至少 1 个 */
-const motorCountOf = (modelType: 2 | 6 | 7 | 8, object: ControlledObjectConfig): number => {
-  if (modelType === 6) return 2;
+/** 四点按正解固定 4 个吊点；多点按吊点数；单点至少 1 个 */
+const motorCountOf = (modelType: 2 | 7 | 8, object: ControlledObjectConfig): number => {
   if (modelType === 7) return 4;
   if (modelType === 8) return object.driveAxes.length;
   return Math.max(1, object.driveAxes.length);
@@ -155,14 +151,6 @@ const maxHeightFor = (object: ControlledObjectConfig): number =>
     )?.maxAngle,
     positive(object.dimensions.h, 1),
   );
-
-const twoPointLength = (object: ControlledObjectConfig): number => {
-  const [first, second] = object.driveAxes;
-  if (!first || !second) return positive(object.dimensions.w, 1);
-  const start = mountOf(first);
-  const end = mountOf(second);
-  return positive(Math.hypot(start.x - end.x, start.z - end.z), positive(object.dimensions.w, 1));
-};
 
 const fourPointSpans = (object: ControlledObjectConfig): [number, number] => {
   const mounts = object.driveAxes.map(mountOf);
@@ -373,19 +361,15 @@ export const buildAlgorithmModels = (source: AlgorithmModelSource): AlgorithmMod
       segments,
     };
     const [base1, base2] = baseHeights(object);
-    if (modelType === 6 || modelType === 7) {
+    if (modelType === 7) {
       model.BaseHight1 = base1;
       model.BaseHight2 = base2;
       model.maxheight = maxHeightFor(object);
-      if (modelType === 6) {
-        model.lLenth_inside = twoPointLength(object);
-      } else {
-        const [length, width] = fourPointSpans(object);
-        model.lLenth_inside = length;
-        model.wLenth_inside = width;
-        // 四点正解只支持一个倾斜方向：Y 在动就用 Y，否则用 P
-        model.moveWhat = follow.includes("Y") ? 2 : follow.includes("P") ? 1 : prepare.includes("Y") ? 2 : 1;
-      }
+      const [length, width] = fourPointSpans(object);
+      model.lLenth_inside = length;
+      model.wLenth_inside = width;
+      // 四点正解只支持一个倾斜方向：Y 在动就用 Y，否则用 P
+      model.moveWhat = follow.includes("Y") ? 2 : follow.includes("P") ? 1 : prepare.includes("Y") ? 2 : 1;
     } else if (modelType === 8) {
       model.Baseheight1 = base1;
       model.Baseheight2 = base2;

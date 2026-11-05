@@ -44,6 +44,7 @@ import { GoReadyProvider } from "./hooks/go-ready-provider";
 import { SequencePreviewProvider } from "./hooks/sequence-preview-provider";
 import { Viz3DSelectionSync } from "./3d/Viz3DSelectionSync";
 import { StructureSelectionBridge } from "./3d/StructureSelectionBridge";
+import { PlaceholderSelectionSync } from "./3d/PlaceholderSelectionSync";
 import { Viz3DConsoleNavSync } from "./3d/Viz3DConsoleNavSync";
 import { Viz3DTransformSync } from "./3d/Viz3DTransformSync";
 import { ViewportSlot, ViewportSlotProvider } from "./3d/viewport-slot-context";
@@ -277,6 +278,7 @@ const ConsoleInner = () => {
               <ActionBuilderSelectionSync />
               <UnsavedLeaveGuard guardRef={leaveGuardRef} />
               <StructureSelectionBridge />
+              <PlaceholderSelectionSync />
               <BuildDebugLifecycle />
               <AiConsoleViewSync devicesTab={devicesRightTab} />
             </div>

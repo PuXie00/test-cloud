@@ -54,14 +54,6 @@ const motorsForObject = (object: ControlledObject, motors: readonly Motor[]): Mo
       },
   );
 
-const mountDistance = (object: ControlledObject): number => {
-  const [a, b] = object.axes;
-  if (!a || !b) return 0;
-  const dx = a.mount.x - b.mount.x;
-  const dz = a.mount.z - b.mount.z;
-  return Math.hypot(dx, dz);
-};
-
 const mountBBoxSpan = (object: ControlledObject): [number, number] => {
   const xs = object.axes.map((axis) => axis.mount.x);
   const zs = object.axes.map((axis) => axis.mount.z);
@@ -84,13 +76,11 @@ const solverAxisParams = (
 };
 
 const paramsForType = (object: ControlledObject, type: SolverTypeCode): number[][] => {
-  if (type === 32) return [[mountDistance(object)]];
   if (type === 64) return [mountBBoxSpan(object)];
   return object.axes.map((axis) => [axis.mount.x, axis.mount.z, 0]);
 };
 
 const rimForType = (object: ControlledObject, type: SolverTypeCode): number[] => {
-  if (type === 32) return [object.dimensions.w];
   if (type === 64) return [object.dimensions.w, object.dimensions.d];
   return [object.safetyRadius ?? 0];
 };

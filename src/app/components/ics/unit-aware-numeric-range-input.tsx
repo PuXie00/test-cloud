@@ -1,6 +1,10 @@
 import { cn } from "@/app/components/ui/utils";
 import { UnitAwareNumericInput } from "./unit-aware-numeric-input";
-import type { NumericRangeInputProps, NumericRangeValue } from "./numeric-range-input";
+import {
+  rangeInputBounds,
+  type NumericRangeInputProps,
+  type NumericRangeValue,
+} from "./numeric-range-input";
 
 export type UnitAwareNumericRangeInputProps = NumericRangeInputProps;
 export type { NumericRangeValue };
@@ -21,10 +25,19 @@ export const UnitAwareNumericRangeInput = ({
   maxAriaLabel = "最大值",
   minMixed = false,
   maxMixed = false,
+  minCeiling,
+  maxFloor,
 }: UnitAwareNumericRangeInputProps) => {
   const sharedProps = { step, precision, unit, disabled, readOnly };
-  const minUpperBound = maxMixed || max == null ? value.max : Math.min(value.max, max);
-  const maxLowerBound = minMixed || min == null ? value.min : Math.max(value.min, min);
+  const { minInputMax, maxInputMin } = rangeInputBounds({
+    value,
+    min,
+    max,
+    minCeiling,
+    maxFloor,
+    minMixed,
+    maxMixed,
+  });
 
   const handleMinChange = (next: number) => {
     onChange({ min: next, max: value.max });
@@ -51,7 +64,7 @@ export const UnitAwareNumericRangeInput = ({
         mixed={minMixed}
         value={value.min}
         min={min}
-        max={minMixed ? max : minUpperBound}
+        max={minInputMax}
         onChange={handleMinChange}
         onCommit={handleMinCommit}
         className="[@media(pointer:coarse)]:h-10"
@@ -64,7 +77,7 @@ export const UnitAwareNumericRangeInput = ({
         {...sharedProps}
         mixed={maxMixed}
         value={value.max}
-        min={maxMixed ? min : maxLowerBound}
+        min={maxInputMin}
         max={max}
         onChange={handleMaxChange}
         onCommit={handleMaxCommit}

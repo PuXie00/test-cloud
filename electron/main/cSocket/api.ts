@@ -136,6 +136,10 @@ type ModelParamCount = {
   yMaxDeceleration?: number
   yAbnormalDeceleration?: number
   yDefaultMaxVelocity?: number
+  // 多级升降：中间分段点数量、位置列表（mm，严格递增，不含行程端点）、过分段点速度保留比例（%）
+  nSections?: number
+  adjustDistanceList?: { adjustDistance: number }[]
+  decelerationRatio?: number
 }
 
 const broadcast = (channel: string, payload: unknown) => {

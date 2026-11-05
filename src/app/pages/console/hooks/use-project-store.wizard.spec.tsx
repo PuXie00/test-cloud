@@ -51,19 +51,19 @@ describe("向导用到的工程操作", () => {
       created = result.current.store.addObjectFromShape(
         "cube",
         { x: 5000 },
-        { controlType: "fourPointSwing", namePrefix: "四点摆" },
+        { controlType: "dualTiltFourPointSwing", namePrefix: "多点倾斜" },
       );
     });
 
     expect(created).toMatchObject({
-      name: "四点摆-01",
-      controlType: "fourPointSwing",
+      name: "多点倾斜-01",
+      controlType: "dualTiltFourPointSwing",
       position: { x: 5000, y: 4000, z: 0 },
     });
     expect(result.current.store.objects).toHaveLength(before + 1);
     expect(result.current.store.objects.at(-1)?.axes).toHaveLength(4);
     expect(result.current.project.currentProject?.document?.setup.controlledObjects.at(-1)).toMatchObject(
-      { name: "四点摆-01" },
+      { name: "多点倾斜-01" },
     );
   });
 
@@ -79,12 +79,12 @@ describe("向导用到的工程操作", () => {
     const result = await openProject();
 
     await act(async () => {
-      result.current.store.addObjectFromShape("cube", {}, { controlType: "twoPointSwing" });
+      result.current.store.addObjectFromShape("cube", {}, { controlType: "dualTiltFourPointSwing" });
     });
     const object = result.current.store.objects.at(-1)!;
     const plcId = result.current.store.plcs[0]!.id;
     await act(async () => {
-      result.current.store.addMotor({ productModel: result.current.store.motors[0]!.productModel, plcId, busNo: 1 }, 2);
+      result.current.store.addMotor({ productModel: result.current.store.motors[0]!.productModel, plcId, busNo: 1 }, 4);
     });
     const bindingsOf = () =>
       result.current.store.motors.filter((motor) => motor.controlledObjectId === object.id);
@@ -95,8 +95,8 @@ describe("向导用到的工程操作", () => {
       plan = result.current.store.autoBindAxes();
     });
 
-    expect(plan!.assignments.filter((item) => item.objectId === object.id)).toHaveLength(2);
-    expect(bindingsOf().map((motor) => motor.axisKey).sort()).toEqual(["0", "1"]);
+    expect(plan!.assignments.filter((item) => item.objectId === object.id)).toHaveLength(4);
+    expect(bindingsOf().map((motor) => motor.axisKey).sort()).toEqual(["0", "1", "2", "3"]);
     expect(new Set(bindingsOf().map((motor) => `${motor.plcId}:${motor.busNo}`)).size).toBe(1);
 
     expect(result.current.project.undoLabel).toBe("自动绑定");

@@ -52,7 +52,7 @@ const snapshot = (
 
 const motion = (min: number, max: number) => ({ minAngle: min, maxAngle: max });
 
-/** 选中升降灯架（1，只有虚轴 1）和四点摆（2，三根虚轴） */
+/** 选中升降灯架（1，只有虚轴 1）和多点倾斜（2，三根虚轴） */
 const selectLiftAndSwing = () => {
   hookState.selectedIds = [1, 2];
   hookState.snapshots = new Map<number, unknown>([
@@ -63,7 +63,7 @@ const selectLiftAndSwing = () => {
     { id: 1, controlType: "singlePointMove", motionParams: { h: motion(0, 1000) } },
     {
       id: 2,
-      controlType: "fourPointSwing",
+      controlType: "dualTiltFourPointSwing",
       motionParams: { h: motion(0, 500), p: motion(-30, 30), y: motion(-20, 20) },
     },
   ];
@@ -133,7 +133,7 @@ describe("DimensionControl 显示", () => {
     hookState.snapshots.set(1, snapshot(1, [HEIGHT], { h: 250 }));
     renderControl();
     expect(numericOf("虚轴1").textContent).toContain("--");
-    // 虚轴 2 只有四点摆有，不受升降灯架影响
+    // 虚轴 2 只有多点倾斜有，不受升降灯架影响
     expect(numericOf("虚轴2").textContent).toContain("5.0");
   });
 

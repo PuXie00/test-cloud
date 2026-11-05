@@ -48,6 +48,7 @@ import { OBJECT_COLORS } from "./config-wizard/config-wizard-constants";
 import type { ControlledObject, ShapePresetId } from "./config-wizard/config-wizard-types";
 import { ControlTypeSelector } from "./property-forms/control-type-selector";
 import { ControlTypeChangeConfirmDialog } from "./property-forms/control-type-change-confirm-dialog";
+import { strokeLimitsFor } from "@/app/project/stroke-limits";
 import { AXIS_RANGE_CONFIG } from "./property-forms/motion-axis-range";
 import { MotionAxisSection } from "./property-forms/motion-axis-section";
 import { SceneArrangeSection } from "./scene-arrange-section";
@@ -629,6 +630,11 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
                 const minShared = getSharedAxisField(axis, rangeConfig.minKey);
                 const maxShared = getSharedAxisField(axis, rangeConfig.maxKey);
                 const display = getAxisDisplayParams(axis);
+                // 各物体类型的行程范围取交集
+                const limits = strokeLimitsFor(
+                  selectedObjects.map((object) => object.controlType),
+                  motionAxisIdForKind(axis),
+                );
                 return (
                   <div key={`range-${axis}`} className="space-y-1">
                     <span className="text-body-sm text-muted-foreground">
@@ -646,6 +652,10 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
                         maxMixed={maxShared === MIXED}
                         onChange={(range) => handleMotionRangeChange(axis, range)}
                         onCommit={(range) => handleMotionRangeChange(axis, range)}
+                        min={limits?.minStroke.min}
+                        minCeiling={limits?.minStroke.max}
+                        maxFloor={limits?.maxStroke.min}
+                        max={limits?.maxStroke.max}
                         unit={rangeFieldSpec.unit}
                         step={rangeFieldSpec.step ?? 1}
                         precision={rangeFieldSpec.precision ?? 1}

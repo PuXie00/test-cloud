@@ -8,6 +8,8 @@ import {
   resolveSwingYawModelParams,
 } from "@/app/project/configuration-rules";
 import type { ControlType } from "@/app/project/configuration-types";
+import { resolveMultiLevelParams } from "@/app/project/multi-level-hoist";
+import { clampStroke, STROKE_LIMITS } from "@/app/project/stroke-limits";
 import {
   DEFAULT_MODEL_RUN_DIRECTION,
   DEFAULT_PULLEY_DISTANCE,
@@ -300,6 +302,7 @@ export const changeObjectControlType = (
           initialTiltDirection: _dropInitialTilt,
           mountRotation: _dropMountRotation,
           mountLayout: _dropMountLayout,
+          multiLevel: _dropMultiLevel,
           ...rest
         } = item;
         return {
@@ -329,8 +332,10 @@ export const changeObjectControlType = (
       object.motionParams?.[id] !== undefined &&
       !(id === "h" && hKindChanged),
   );
+  // 沿用的参数收进新类型的行程范围
   for (const id of keptAxisIds) {
-    motionParams[id] = object.motionParams?.[id];
+    const kept = object.motionParams?.[id];
+    motionParams[id] = kept ? clampStroke(kept, STROKE_LIMITS[resolved][id]) : kept;
   }
   const motionSpeedControl = keepSpeedOverrides(object.motionSpeedControl, keptAxisIds);
 
@@ -349,6 +354,7 @@ export const changeObjectControlType = (
         initialTiltDirection: _dropInitialTilt,
         mountRotation: _dropMountRotation,
         mountLayout: _dropMountLayout,
+        multiLevel: _dropMultiLevel,
         ...rest
       } = item;
 
@@ -363,6 +369,7 @@ export const changeObjectControlType = (
         modelRunDirection: item.modelRunDirection ?? DEFAULT_MODEL_RUN_DIRECTION,
         maxAxisVelocity: item.maxAxisVelocity ?? DEFAULT_MAX_AXIS_VELOCITY,
         ...resolveSwingYawModelParams(resolved, item),
+        ...resolveMultiLevelParams(resolved, item),
       };
     }),
     motors: state.motors.map((motor) => {

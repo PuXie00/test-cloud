@@ -16,12 +16,9 @@ const controlTypeToMonitorType = (controlType: ControlType): ControlledObjectTyp
     case "singlePointRotation":
     case "continuousRotation":
       return "rotator";
-    case "fourPointSwing":
     case "dualTiltFourPointSwing":
     case "multiPointSwing":
       return "lift-pitch";
-    case "twoPointSwing":
-      return "lift-truss";
     case "singlePointMove":
     case "multiLevelHoist":
       return "mover";

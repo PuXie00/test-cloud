@@ -26,29 +26,12 @@ const baseObject = (overrides: Partial<ControlledObjectConfig>): ControlledObjec
 export const singlePointFixture = (): ControlledObjectConfig =>
   baseObject({ id: 1, name: "单点", maxAxisVelocity: 400 });
 
-export const twoPointFixture = (): ControlledObjectConfig =>
-  baseObject({
-    id: 2,
-    name: "两点",
-    controlType: 6,
-    enabledVirtualAxes: ["v1", "v2"],
-    pulleyDistance: 100,
-    maxAxisVelocity: 500,
-    driveAxes: [
-      { key: "0", mount: { x: -1000, z: 0 } },
-      { key: "1", mount: { x: 1000, z: 0 } },
-    ],
-    motionParams: {
-      h: { ...MOTION_DEFAULTS.move, maxAngle: 8000 },
-      p: { ...MOTION_DEFAULTS.swingX },
-    },
-  });
-
 export const fourPointFixture = (): ControlledObjectConfig =>
   baseObject({
     id: 3,
     name: "四点",
-    controlType: 9,
+    // 多点倾斜按四点正解（业务模型 7）
+    controlType: 8,
     enabledVirtualAxes: ["v1", "v2", "v3"],
     pulleyDistance: 100,
     maxAxisVelocity: 500,
@@ -92,7 +75,6 @@ export const multiPointFixture = (): ControlledObjectConfig =>
 
 export const fixtureObjects = (): ControlledObjectConfig[] => [
   singlePointFixture(),
-  twoPointFixture(),
   fourPointFixture(),
   multiPointFixture(),
 ];
@@ -101,7 +83,6 @@ const pose = (v1: number, v2 = 0, v3 = 0): ModelPose => ({ v1, v2, v3 });
 
 const posesFor: Record<number, Array<[number, ModelPose]>> = {
   1: [[0, pose(0)], [4000, pose(500)], [7500, pose(1000)], [12000, pose(500)]],
-  2: [[0, pose(1000)], [6000, pose(1800, 10)], [11000, pose(2200, -5)]],
   3: [[0, pose(1000)], [6000, pose(1800, 8)], [11500, pose(2200, 8)], [16000, pose(1600)]],
   4: [[0, pose(1000)], [7000, pose(1800, 6, -10)], [15000, pose(2300, -8, 15)]],
 };
@@ -127,7 +108,6 @@ export const fixtureSequence = (trajectoryMode: boolean, loop = false): ActionSe
 
 export const fixtureCurrent: Record<number, ModelPose> = {
   1: pose(120),
-  2: pose(1100, 2),
   3: pose(1050, 1),
   4: pose(1080, 1, -1),
 };

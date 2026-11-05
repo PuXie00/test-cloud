@@ -21,7 +21,7 @@ export type { VirtualAxisId };
 
 export type ControlTypeRule = {
   minimumDriveAxes: number;
-  /** 存在时表示驱动轴数量上限；等于 minimumDriveAxes 即固定数量（如四点摆固定 4 吊点） */
+  /** 存在时表示驱动轴数量上限；等于 minimumDriveAxes 即固定数量 */
   maxDriveAxes?: number;
   motionAxes: readonly MotionAxisKind[];
 };
@@ -34,12 +34,6 @@ export const CONTROL_TYPE_RULES = {
   railCar: { minimumDriveAxes: 0, motionAxes: [] },
   /** 3D 占位/美化：无吊点、无运动参数 */
   staticProp: { minimumDriveAxes: 0, motionAxes: [] },
-  twoPointSwing: { minimumDriveAxes: 2, motionAxes: ["move", "swingX"] },
-  fourPointSwing: {
-    minimumDriveAxes: 4,
-    maxDriveAxes: 4,
-    motionAxes: ["move", "swingX", "swingY"],
-  },
   dualTiltFourPointSwing: {
     minimumDriveAxes: 4,
     motionAxes: ["move", "swingX", "swingY"],
@@ -54,8 +48,6 @@ export const ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE = {
   multiLevelHoist: ["v1"],
   railCar: [],
   staticProp: [],
-  twoPointSwing: ["v1", "v2"],
-  fourPointSwing: ["v1", "v2", "v3"],
   dualTiltFourPointSwing: ["v1", "v2", "v3"],
   multiPointSwing: ["v1", "v2", "v3"],
 } as const satisfies Record<ControlType, readonly VirtualAxisId[]>;

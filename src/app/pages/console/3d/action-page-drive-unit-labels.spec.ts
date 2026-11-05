@@ -6,8 +6,8 @@ const pose = (v1: number, v2 = 0, v3 = 0): ModelPose => ({ v1, v2, v3 });
 
 describe("collectActionPageDriveUnitLabels", () => {
   const objects = [
-    { id: 7, controlType: "fourPointSwing" as const },
-    { id: 8, controlType: "fourPointSwing" as const },
+    { id: 7, controlType: "dualTiltFourPointSwing" as const },
+    { id: 8, controlType: "dualTiltFourPointSwing" as const },
     { id: 9, controlType: "staticProp" as const },
   ];
 

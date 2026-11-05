@@ -23,6 +23,7 @@ import {
   resolveSwingYawModelParams,
 } from "@/app/project/configuration-rules";
 import type { ControlType } from "@/app/project/configuration-types";
+import { resolveMultiLevelParams } from "@/app/project/multi-level-hoist";
 import {
   defaultShapeDimensions,
   SHAPE_DEFINITIONS,
@@ -203,6 +204,7 @@ const createControlledObject = (
     pulleyDistance: DEFAULT_PULLEY_DISTANCE,
     modelRunDirection: DEFAULT_MODEL_RUN_DIRECTION,
     ...resolveSwingYawModelParams(controlType),
+    ...resolveMultiLevelParams(controlType),
     axes: buildAxesForControlType(controlType),
     params: {},
     ...(input.modelId !== undefined ? { modelId: input.modelId } : {}),

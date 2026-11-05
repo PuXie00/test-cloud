@@ -63,7 +63,7 @@ const select = (
 };
 
 const LIFT = { id: 1, dimensions: [HEIGHT], controlType: "singlePointMove" };
-const SWING = { id: 2, dimensions: [HEIGHT, PITCH, YAW], controlType: "fourPointSwing" };
+const SWING = { id: 2, dimensions: [HEIGHT, PITCH, YAW], controlType: "dualTiltFourPointSwing" };
 const ROTATOR = { id: 3, dimensions: [ANGLE], controlType: "singlePointRotation" };
 
 const renderJog = (dimensions: Dim[]) =>

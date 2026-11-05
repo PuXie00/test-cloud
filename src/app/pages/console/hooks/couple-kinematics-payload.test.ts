@@ -37,10 +37,10 @@ const motor = (id: number, objectId: number, axisKey: string): Motor => ({
   params: {},
 });
 
-const twoPoint: ControlledObject = {
+const base: ControlledObject = {
   id: 42,
-  name: "Two",
-  controlType: "twoPointSwing",
+  name: "Base",
+  controlType: "singlePointMove",
   shapePreset: "cube",
   shapeDimensions: { width: 2000, height: 1000, depth: 400 },
   dimensions: { w: 2000, h: 1000, d: 400 },
@@ -62,10 +62,10 @@ const twoPoint: ControlledObject = {
 };
 
 const fourPoint: ControlledObject = {
-  ...twoPoint,
+  ...base,
   id: 43,
   name: "Four",
-  controlType: "fourPointSwing",
+  controlType: "dualTiltFourPointSwing",
   dimensions: { w: 1800, h: 1000, d: 900 },
   motionParams: {
     h: axisParams({ minAngle: 0, maxAngle: 800 }),
@@ -81,7 +81,7 @@ const fourPoint: ControlledObject = {
 };
 
 const multiPoint: ControlledObject = {
-  ...twoPoint,
+  ...base,
   id: 44,
   name: "Multi",
   controlType: "multiPointSwing",
@@ -104,7 +104,7 @@ const multiPoint: ControlledObject = {
 describe("assignSolverIndexes", () => {
   it("uses 1-based array slots, not object ids", () => {
     const indexed = assignSolverIndexes([
-      { objectId: 42, payload: { type: 32 } },
+      { objectId: 42, payload: { type: 64 } },
       { objectId: 99, payload: { type: 63 } },
     ]);
     expect(indexed.map((item) => item.index)).toEqual([1, 2]);
@@ -113,29 +113,6 @@ describe("assignSolverIndexes", () => {
 });
 
 describe("buildSolverCallItem", () => {
-  it("builds a two-point request with span, rim, and motor lengths in axis order", () => {
-    const item = buildSolverCallItem({
-      object: twoPoint,
-      motors: [motor(7, 42, "1"), motor(6, 42, "0")],
-      motorPositions: new Map([
-        [6, 110],
-        [7, 130],
-      ]),
-      hpy: [200, 5, 0],
-      index: 1,
-    });
-    expect(item.index).toBe(1);
-    expect(item.type).toBe(32);
-    expect(item.origin_distance1).toBe(120);
-    expect(item.origin_distance2).toBe(0);
-    expect(item.params).toEqual([[1000]]);
-    expect(item.motor_H).toEqual([110, 130]);
-    expect(item.limit_data[0]).toEqual([10, 800]);
-    expect(item.limit_rim).toEqual([2000]);
-    expect(item.HPY).toEqual([200, 5, 0]);
-    expect(item.betainit).toBe(0);
-  });
-
   it("builds a four-point request with bbox spans and two rim values", () => {
     const item = buildSolverCallItem({
       object: fourPoint,

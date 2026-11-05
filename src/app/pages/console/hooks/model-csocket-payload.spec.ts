@@ -62,19 +62,6 @@ const hoistObject: ControlledObject = {
   axes: [{ key: "0", custom: false, mount: { x: 0, z: 0 } }],
 };
 
-const twoPointSwingObject: ControlledObject = {
-  ...baseObject,
-  controlType: "twoPointSwing",
-  motionParams: {
-    h: axisParams(),
-    p: axisParams({ minAngle: -20, maxAngle: 20, speed: 2, defaultMaxVelocity: 4 }),
-  },
-  axes: [
-    { key: "0", custom: true, mount: { x: 100, z: 0 } },
-    { key: "1", custom: true, mount: { x: -100, z: 0 } },
-  ],
-};
-
 describe("buildModelParamPayload max velocity", () => {
   it("includes p/y max velocity and never hMaxVelocity", () => {
     const payload = buildModelParamPayload(multiPointObject, []);
@@ -87,13 +74,6 @@ describe("buildModelParamPayload max velocity", () => {
     const payload = buildModelParamPayload(hoistObject, []);
     expect(payload?.paramCount).not.toHaveProperty("pDefaultMaxVelocity");
     expect(payload?.paramCount).not.toHaveProperty("yDefaultMaxVelocity");
-  });
-
-  it("includes only pDefaultMaxVelocity for two-point swing", () => {
-    const payload = buildModelParamPayload(twoPointSwingObject, []);
-    expect(payload?.paramCount.pDefaultMaxVelocity).toBe(4);
-    expect(payload?.paramCount).not.toHaveProperty("yDefaultMaxVelocity");
-    expect(payload?.paramCount).not.toHaveProperty("hMaxVelocity");
   });
 });
 
@@ -125,5 +105,31 @@ describe("buildModelParamPayload max acceleration", () => {
     const payload = buildModelParamPayload(hoistObject, []);
     expect(payload?.paramCount.hMaxAcceleration).toBe(500);
     expect(payload?.paramCount.hMaxDeceleration).toBe(500);
+  });
+});
+
+describe("buildModelParamPayload multi-level hoist", () => {
+  const multiLevelObject: ControlledObject = {
+    ...hoistObject,
+    controlType: "multiLevelHoist",
+    motionParams: { h: axisParams({ minAngle: 0, maxAngle: 1000 }) },
+    multiLevel: { adjustDistances: [100, 400, 1200], decelerationRatio: 60 },
+  };
+
+  it("sends section count, positions inside the stroke and the speed ratio", () => {
+    const payload = buildModelParamPayload(multiLevelObject, []);
+    expect(payload?.paramCount).toMatchObject({
+      modelType: 3,
+      nSections: 2,
+      adjustDistanceList: [{ adjustDistance: 100 }, { adjustDistance: 400 }],
+      decelerationRatio: 60,
+    });
+  });
+
+  it("does not send them for other types", () => {
+    const payload = buildModelParamPayload(hoistObject, []);
+    expect(payload?.paramCount).not.toHaveProperty("nSections");
+    expect(payload?.paramCount).not.toHaveProperty("adjustDistanceList");
+    expect(payload?.paramCount).not.toHaveProperty("decelerationRatio");
   });
 });

@@ -11,7 +11,7 @@ import { MotorMonitorTable } from "./motor-monitor-table";
 import { ObjectMonitorCard } from "./object-monitor-card";
 import { ObjectMonitorTable } from "./object-monitor-table";
 import type { ControlledObjectStatus } from "./monitor-data";
-import { isMonitorEmpty, isMonitorMotorsEmpty } from "./monitor-utils";
+import { isMonitoredControlType, isMonitorEmpty, isMonitorMotorsEmpty } from "./monitor-utils";
 
 type MonitorGridProps = { className?: string };
 
@@ -26,13 +26,22 @@ export const MonitorGrid = ({ className }: MonitorGridProps) => {
   const [objectStatusFilter, setObjectStatusFilter] = useState<ControlledObjectStatus | "all">("all");
   const [motorStatusFilter, setMotorStatusFilter] = useState<string>("all");
 
-  const monitorEmpty = isMonitorEmpty(document, objects.length);
+  // 占位物体不进监控
+  const monitoredIds = useMemo(
+    () =>
+      new Set(
+        objects.filter((object) => isMonitoredControlType(object.controlType)).map((object) => object.id),
+      ),
+    [objects],
+  );
+  const monitorEmpty = isMonitorEmpty(document, monitoredIds.size);
   const motorsEmpty = isMonitorMotorsEmpty(motors.length);
   const isCurrentEmpty = entity === "object" ? monitorEmpty : motorsEmpty;
 
   const filteredObjects = useMemo(
     () =>
       snapshots.filter((snapshot) => {
+        if (!monitoredIds.has(snapshot.descriptor.id)) return false;
         if (objectStatusFilter !== "all" && snapshot.descriptor.status !== objectStatusFilter) {
           return false;
         }
@@ -41,7 +50,7 @@ export const MonitorGrid = ({ className }: MonitorGridProps) => {
         }
         return true;
       }),
-    [snapshots, search, objectStatusFilter],
+    [snapshots, monitoredIds, search, objectStatusFilter],
   );
 
   const filteredMotors = useMemo(

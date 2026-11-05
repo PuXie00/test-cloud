@@ -3,7 +3,6 @@ import oneMoveGif from "@/assets/prompt/one-move.gif";
 import oneRotateGif from "@/assets/prompt/one-rotate.gif";
 import oneUpdownGif from "@/assets/prompt/one-updowm.gif";
 import orbitGif from "@/assets/prompt/orbit.gif";
-import twoSwingGif from "@/assets/prompt/two-swing.gif";
 import fourSwingGif from "@/assets/prompt/four-swing.gif";
 import multiSwingGif from "@/assets/prompt/multi-swing.gif";
 
@@ -13,8 +12,6 @@ export const CONTROL_TYPE_PROMPT_GIF: Partial<Record<ControlType, string>> = {
   continuousRotation: oneRotateGif,
   multiLevelHoist: oneUpdownGif,
   railCar: orbitGif,
-  twoPointSwing: twoSwingGif,
-  fourPointSwing: fourSwingGif,
   dualTiltFourPointSwing: fourSwingGif,
   multiPointSwing: multiSwingGif,
 };

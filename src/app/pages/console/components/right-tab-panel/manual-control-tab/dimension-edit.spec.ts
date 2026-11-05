@@ -34,13 +34,13 @@ const object = (
   ranges: { h?: [number, number]; p?: [number, number]; y?: [number, number] } = {},
 ): AxisRangeSource => ({
   id,
-  controlType: "fourPointSwing",
+  controlType: "dualTiltFourPointSwing",
   motionParams: Object.fromEntries(
     Object.entries(ranges).map(([key, [minAngle, maxAngle]]) => [key, { minAngle, maxAngle }]),
   ),
 });
 
-/** 1 号：升降（v1）；2 号：四点摆（v1 v2 v3） */
+/** 1 号：升降（v1）；2 号：多点倾斜（v1 v2 v3） */
 const liftAndSwing = (positions?: {
   lift?: { h?: number } | null;
   swing?: { h?: number; p?: number; y?: number } | null;
@@ -77,7 +77,7 @@ describe("显示", () => {
 
   it("单位只在会被写入的物体都一致时显示", () => {
     expect(axisUnit(liftAndSwing(), "v1")).toBe("mm");
-    // 虚轴 2 只有四点摆有，升降灯架不参与
+    // 虚轴 2 只有多点倾斜有，升降灯架不参与
     expect(axisUnit(liftAndSwing(), "v2")).toBe("°");
     const mixed = buildDimensionParticipants(
       [snapshot(1, [HEIGHT]), snapshot(2, [ANGLE])],
@@ -119,7 +119,7 @@ describe("显示", () => {
   it("绝对值：没有位置数据的物体让显示变成 --", () => {
     const participants = liftAndSwing({ lift: null, swing: { h: 100, p: 5, y: -3 } });
     expect(sharedAxisValue(participants, "v1", {})).toBe(undefined);
-    // 虚轴 2 只有四点摆有，升降灯架没数据不影响
+    // 虚轴 2 只有多点倾斜有，升降灯架没数据不影响
     expect(sharedAxisValue(participants, "v2", {})).toBe(5);
   });
 

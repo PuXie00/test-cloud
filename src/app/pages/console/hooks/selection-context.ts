@@ -19,6 +19,8 @@ export type SelectionContextValue = {
   touchObjectSelection: () => void;
   treeFocus: ProjectSelection;
   setTreeFocus: (selection: ProjectSelection) => void;
+  /** 这些物体选不中（如控制页、动作页的占位物体）；设置时已选中的也去掉 */
+  setUnselectableObjectIds: (ids: ReadonlySet<ControlledObjectId>) => void;
 };
 
 export const SelectionContext = createContext<SelectionContextValue | null>(null);

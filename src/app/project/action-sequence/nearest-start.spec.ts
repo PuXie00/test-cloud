@@ -40,7 +40,7 @@ describe("planNearestStart", () => {
     expect(moveOf(result, 1, "v1")).toMatchObject({ from: 120, to: 0 });
     expect(moveOf(result, 1, "v1")!.velocity).toBeCloseTo(50, 9);
     expect(moveOf(result, 1, "v1")!.acceleration).toBeCloseTo(500, 9);
-    expect(moveOf(result, 2, "v2")!.velocity).toBeCloseTo(1.3333333333333333, 12);
+    expect(moveOf(result, 3, "v2")!.velocity).toBeCloseTo(0.8, 12);
     expect(moveOf(result, 4, "v3")!.acceleration).toBeCloseTo(0.64, 12);
     for (const member of result.members) {
       expect(member.arrivalSec).toBeCloseTo(result.transitionSec, 12);
@@ -65,10 +65,11 @@ describe("planNearestStart", () => {
     const result = plan({ forced: true, nearest: true, reverse: false });
     expect(result.startMode).toBe("nearest");
     expect(result.targetFrameMs).toBe(1040);
-    expect(result.transitionSec).toBeCloseTo(1.189459883650901, 12);
+    // 夹具去掉两点摆后由剩下的物体决定过渡时间
+    expect(result.transitionSec).toBeCloseTo(0.884022962733127, 12);
     expect(memberOf(result, 1).target.v1).toBeCloseTo(100, 9);
     expect(memberOf(result, 4).target.v3).toBeCloseTo(-0.689795918367347, 9);
-    expect(moveOf(result, 3, "v1")!.acceleration).toBeCloseTo(128.16928446771354, 9);
+    expect(moveOf(result, 3, "v1")!.acceleration).toBeCloseTo(232.0365856803875, 9);
   });
 
   it("takes the nearest shared keyframe in the running direction when not forced", () => {
@@ -76,7 +77,7 @@ describe("planNearestStart", () => {
     expect(result.targetFrameMs).toBe(4000);
     expect(result.transitionSec).toBeCloseTo(10.43333333333333, 11);
     expect(result.motorLimitScale).toBe(1);
-    expect(memberOf(result, 2).target.v1).toBeCloseTo(1566.6666666666665, 9);
+    expect(memberOf(result, 3).target.v1).toBeCloseTo(1566.6666666666665, 9);
     expect(moveOf(result, 3, "v2")!.velocity).toBeCloseTo(0.575079872204473, 12);
     expect(plan({ forced: false, nearest: true, reverse: true }).targetFrameMs).toBe(0);
   });

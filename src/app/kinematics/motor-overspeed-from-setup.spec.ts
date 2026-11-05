@@ -48,7 +48,7 @@ describe("buildMotorOverspeedObjects", () => {
 
   it("ignores objects that are not multi-point swing", () => {
     const hoist = buildMotorOverspeedObjects(
-      [{ ...object, controlType: encodeControlType("twoPointSwing") }],
+      [{ ...object, controlType: encodeControlType("dualTiltFourPointSwing") }],
       [motor(1, "0", 200)],
     );
     expect(hoist).toEqual([]);

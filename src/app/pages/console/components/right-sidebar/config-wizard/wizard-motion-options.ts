@@ -35,17 +35,15 @@ export const WIZARD_MOTION_GROUPS: readonly WizardMotionGroup[] = [
   },
   {
     label: "摆动",
-    span: 4,
+    span: 2,
     options: [
-      { controlType: "twoPointSwing", title: "两点摆", detail: "移动并单向摆动" },
-      { controlType: "fourPointSwing", title: "四点摆", detail: "移动并双向摆动" },
       { controlType: "dualTiltFourPointSwing", title: "多点倾斜", detail: "移动并双向倾斜" },
       { controlType: "multiPointSwing", title: "多点摆", detail: "移动、摆动并偏转" },
     ],
   },
   {
     label: "其他",
-    span: 4,
+    span: 2,
     compact: true,
     options: [
       { controlType: "staticProp", title: "无控制", detail: "只在 3D 中占位，不运动" },

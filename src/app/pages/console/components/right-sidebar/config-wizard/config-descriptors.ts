@@ -55,16 +55,6 @@ export const CONTROL_TYPE_DEFINITION_BY_ID = {
     ...CONTROL_TYPE_RULES.railCar,
   },
  
-  twoPointSwing: {
-    id: "twoPointSwing",
-    label: "两点摆模型（移动和摆动）",
-    ...CONTROL_TYPE_RULES.twoPointSwing,
-  },
-  fourPointSwing: {
-    id: "fourPointSwing",
-    label: "四点摆模型（移动、摆动X、摆动Y）",
-    ...CONTROL_TYPE_RULES.fourPointSwing,
-  },
   dualTiltFourPointSwing: {
     id: "dualTiltFourPointSwing",
     label: "多点倾斜模型（移动、摆动X、摆动Y）",
@@ -81,7 +71,7 @@ export const CONTROL_TYPE_DEFINITIONS = Object.values(CONTROL_TYPE_DEFINITION_BY
 
 export const LEGACY_CONTROL_TYPE_MAP = {
   syncLift: "singlePointMove",
-  swing: "twoPointSwing",
+  swing: "multiPointSwing",
   floatSwing: "dualTiltFourPointSwing",
 } as const satisfies Record<LegacyControlType, ControlType>;
 

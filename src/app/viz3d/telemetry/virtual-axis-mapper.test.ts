@@ -131,10 +131,6 @@ const expectLengths = (actual: number[], expected: number[]) => {
   actual.forEach((value, index) => expect(value).toBeCloseTo(expected[index]!, 6));
 };
 
-const TWO_POINT: Mount[] = [
-  { x: -700, z: 0 },
-  { x: 700, z: 0 },
-];
 const FOUR_POINT: Mount[] = [
   { x: -600, z: -300 },
   { x: 600, z: -300 },
@@ -176,36 +172,7 @@ describe("resolveVirtualAxisTransform", () => {
     expect(rotateByQuat(reverse.rotationQuaternion!, { x: 1, y: 0, z: 0 }).z).toBeCloseTo(1, 9);
   });
 
-  it("two-point swing: v2 > 0 raises the −x end, rotating about the hoist plane", () => {
-    const config = configOf("twoPointSwing", TWO_POINT);
-    const t = resolveVirtualAxisTransform(config, { v1: 0, v2: 10 });
-    const [a, b] = config.hoistAxes!;
-    expect(toWorld(config, t, hoistLocal(config, a!.mount)).y).toBeGreaterThan(4.3);
-    expect(toWorld(config, t, hoistLocal(config, b!.mount)).y).toBeLessThan(4.3);
-  });
-
-  it.each([1, 2] as const)("two-point swing matches PLC rope lengths (direction %i)", (direction) => {
-    for (const [v1, v2] of [
-      [0, 0],
-      [800, 0],
-      [800, 15],
-      [1200, -20],
-    ] as const) {
-      const config = configOf("twoPointSwing", TWO_POINT, direction);
-      expectLengths(ropeLengthsFrom3D(config, { v1, v2 }), liangdianForward(v2, v1, direction, 1400));
-    }
-  });
-
-  it("two-point swing follows the actual mount direction", () => {
-    const diagonal: Mount[] = [
-      { x: -300, z: -400 },
-      { x: 300, z: 400 },
-    ];
-    const config = configOf("twoPointSwing", diagonal);
-    expectLengths(ropeLengthsFrom3D(config, { v1: 500, v2: 12 }), liangdianForward(12, 500, 1, 1000));
-  });
-
-  it.each(["fourPointSwing", "dualTiltFourPointSwing"] as const)(
+  it.each(["dualTiltFourPointSwing"] as const)(
     "%s matches PLC rope lengths for swing X and swing Y",
     (controlType) => {
       for (const direction of [1, 2] as const) {
@@ -225,8 +192,8 @@ describe("resolveVirtualAxisTransform", () => {
     },
   );
 
-  it("four-point swing Y > 0 lowers the z < 0 side (hoists 0/1)", () => {
-    const config = configOf("fourPointSwing", FOUR_POINT);
+  it("dual-tilt swing Y > 0 lowers the z < 0 side (hoists 0/1)", () => {
+    const config = configOf("dualTiltFourPointSwing", FOUR_POINT);
     const t = resolveVirtualAxisTransform(config, { v1: 0, v3: 10 });
     const ys = config.hoistAxes!.map((axis) => toWorld(config, t, hoistLocal(config, axis.mount)).y);
     expect(ys[0]).toBeLessThan(4.3);
