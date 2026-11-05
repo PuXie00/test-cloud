@@ -20,6 +20,7 @@ import {
   type AxisInfoPollingItem,
   type ModelInfoPollingItem,
 } from "./monitor-polling";
+import { useTelemetryListening } from "./plc-runtime-provider";
 import { useProjectStore } from "./use-project-store";
 
 type ControlledObjectsContextValue = {
@@ -38,12 +39,22 @@ export const ControlledObjectsProvider = ({ children }: ControlledObjectsProvide
   const modelLiveRef = useRef(new Map<number, ModelInfoPollingItem>());
   const axisLiveRef = useRef(new Map<number, AxisInfoPollingItem>());
   const [tick, setTick] = useState(0);
+  const listening = useTelemetryListening();
 
   useEffect(() => {
+    const bump = () => setTick((value) => value + 1);
+    if (!listening) {
+      // 聚合状态不正常时不监听，已收到的值也清掉：物体、电机都按离线显示
+      if (modelLiveRef.current.size > 0 || axisLiveRef.current.size > 0) {
+        modelLiveRef.current = new Map();
+        axisLiveRef.current = new Map();
+        bump();
+      }
+      return;
+    }
     const api = window.csocketApi;
     if (!api?.onReadModelInfoPolling || !api?.onReadAxisInfoPolling) return;
     let cancelled = false;
-    const bump = () => setTick((value) => value + 1);
     const offModel = api.onReadModelInfoPolling((msg) => {
       modelLiveRef.current = ingestPollingFrame(
         modelLiveRef.current,
@@ -84,7 +95,7 @@ export const ControlledObjectsProvider = ({ children }: ControlledObjectsProvide
       offModel();
       offAxis();
     };
-  }, []);
+  }, [listening]);
 
   const snapshots = useMemo(
     () => buildObjectSnapshots(objects, modelLiveRef.current),

@@ -1,7 +1,7 @@
 import { Pencil, X } from "lucide-react";
 import { PanelHeader } from "@/app/components/ics/panel-header";
 import { ReadOnlyScope } from "@/app/components/ics/read-only-scope";
-import { usePermissions } from "@/app/auth/permissions";
+import { useSetupEditState } from "@/app/pages/console/hooks/axis-motion";
 import { formatMotorDisplayName } from "@/app/pages/console/hooks/motor-mid";
 import { formatPlcDisplayName } from "@/app/pages/console/hooks/plc-display-name";
 import { useProjectStore } from "@/app/pages/console/hooks/use-project-store";
@@ -119,9 +119,13 @@ const MotorEditor = ({ id }: { id: number }) => <MotorForm motorId={id} />;
 
 const PropertyContent = () => {
   const { treeFocus, multiSelectedIds, multiSelectedMotorIds } = useSelection();
-  // 没有「编辑工程配置」时属性只读；主控表单自己分范围（连接状态、PLC 复位不算编辑）
-  const readOnly = !usePermissions().can("build.edit");
-  const scoped = (node: React.ReactNode) => <ReadOnlyScope readOnly={readOnly}>{node}</ReadOnlyScope>;
+  // 没有「编辑工程配置」或轴运动中属性只读；主控表单自己分范围（连接状态、PLC 复位不算编辑）
+  const { readOnly } = useSetupEditState();
+  const scoped = (node: React.ReactNode) => (
+    <ReadOnlyScope readOnly={readOnly} keepMounted>
+      {node}
+    </ReadOnlyScope>
+  );
 
   if (multiSelectedMotorIds.length > 1) {
     return scoped(<MultiMotorDriveParamsForm motorIds={multiSelectedMotorIds} />);
@@ -173,7 +177,7 @@ export const PropertySection = ({ className }: PropertySectionProps) => {
     multiSelectedMotorIds,
   );
 
-  const readOnly = !usePermissions().can("build.edit");
+  const { readOnly, reason: readOnlyReason } = useSetupEditState();
 
   const handleClose = () => {
     setTreeFocus(null);
@@ -205,7 +209,7 @@ export const PropertySection = ({ className }: PropertySectionProps) => {
       />
       {readOnly && hasContent ? (
         <p className="shrink-0 bg-muted/60 px-3 py-1.5 text-body-sm text-muted-foreground">
-          只读：没有「编辑工程配置」权限
+          {readOnlyReason}
         </p>
       ) : null}
       <div className="custom-scrollbar h-0 min-h-0 flex-1 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]">

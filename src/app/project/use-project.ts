@@ -3,6 +3,7 @@ import {
   ProjectContext,
   type DocumentMutationOrigin,
   type DocumentRevision,
+  type ProjectEditLockScope,
   type ProjectHistoryResult,
   type ProjectUpdateResult,
 } from "./project-provider";
@@ -10,6 +11,7 @@ import {
 export type {
   DocumentMutationOrigin,
   DocumentRevision,
+  ProjectEditLockScope,
   ProjectHistoryResult,
   ProjectUpdateResult,
 };

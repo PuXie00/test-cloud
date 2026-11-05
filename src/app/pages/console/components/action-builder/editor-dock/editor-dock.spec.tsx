@@ -14,11 +14,22 @@ const sequence: ActionSequenceConfig = {
   segments: [],
 };
 
-const { builderState, capturedEditor, selectionState, replaceSelection } = vi.hoisted(() => ({
-  builderState: { current: {} as Record<string, unknown> },
-  capturedEditor: { current: null as TimelineEditorProps | null },
-  selectionState: { ids: [] as number[] },
-  replaceSelection: vi.fn(),
+const { builderState, capturedEditor, selectionState, replaceSelection, motionLock, toastWarning } =
+  vi.hoisted(() => ({
+    builderState: { current: {} as Record<string, unknown> },
+    capturedEditor: { current: null as TimelineEditorProps | null },
+    selectionState: { ids: [] as number[] },
+    replaceSelection: vi.fn(),
+    motionLock: { action: null as string | null },
+    toastWarning: vi.fn(),
+  }));
+
+vi.mock("../../../hooks/axis-motion", () => ({
+  useAxisMotionLocks: () => ({ setup: null, action: motionLock.action, download: null }),
+}));
+
+vi.mock("sonner", () => ({
+  toast: { warning: toastWarning, success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
 vi.mock("../timeline/timeline-editor", () => ({
@@ -383,6 +394,19 @@ describe("editor dock sequence editor", () => {
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     expect(handleDeleteSequence).not.toHaveBeenCalled();
     expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("toasts instead of asking to delete while axes move", () => {
+    motionLock.action = "1 个轴运动中，动作暂时不能保存";
+    toastWarning.mockClear();
+    mockBuilder();
+    render(<EditorDock />);
+    const deleteButton = screen.getByRole("button", { name: "删除序列" }) as HTMLButtonElement;
+    expect(deleteButton.disabled).toBe(false);
+    fireEvent.click(deleteButton);
+    expect(toastWarning).toHaveBeenCalledWith("1 个轴运动中，动作暂时不能保存");
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    motionLock.action = null;
   });
 
   it("enables 删除序列 without a timeline block selection", () => {

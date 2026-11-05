@@ -86,3 +86,31 @@ export class AxisInfoStore {
     this.staleTimer = timer;
   }
 }
+
+/** Info|axis 的 axisStatus：0 断电 / 1 错误 / 2 静止 / 3 运动 */
+export const AXIS_STATUS_MOVING = 3;
+
+/** 正在运动的轴（按 id 排序）；没收到状态的轴不算 */
+export const movingAxisIds = (
+  axes: Iterable<{ deviceId: number; axisStatus?: number }>,
+): number[] => {
+  const ids: number[] = [];
+  for (const axis of axes) {
+    if (axis.axisStatus === AXIS_STATUS_MOVING) ids.push(axis.deviceId);
+  }
+  return ids.sort((a, b) => a - b);
+};
+
+export const downloadBlockedByMotionMessage = (movingCount: number): string =>
+  `${movingCount} 个轴运动中，全部停止后再下载`;
+
+/**
+ * 下载工程前的检查：主控上报的轴里有在运动的就不下载。
+ * 没有收到 Info|axis（缓存为空）时放行。
+ */
+export const axisMotionDownloadBlock = (
+  axes: Iterable<{ deviceId: number; axisStatus?: number }>,
+): string | null => {
+  const count = movingAxisIds(axes).length;
+  return count > 0 ? downloadBlockedByMotionMessage(count) : null;
+};

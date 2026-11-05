@@ -252,3 +252,13 @@ export const useSystemStatus = (): AggregatedSystemStatus => {
   const { systemStatus } = usePlcRuntime();
   return systemStatus;
 };
+
+/**
+ * 聚合状态「正常」时监控才处理 Info|model / Info|axis / Info|act；
+ * 工程不匹配、挂起、初始化等都不处理，物体和电机按离线显示。
+ * 不在 PlcRuntimeProvider 里（只渲染局部的单元测试）时照常处理。
+ */
+export const useTelemetryListening = (): boolean => {
+  const context = useContext(PlcRuntimeContext);
+  return context ? context.systemStatus.kind === "normal" : true;
+};

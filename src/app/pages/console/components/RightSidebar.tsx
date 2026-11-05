@@ -1,7 +1,9 @@
 import { useMemo } from "react";
 import type { PermissionId } from "@shared/auth/permissions";
 import { usePermissions } from "@/app/auth/permissions";
+import { ReadOnlyScope } from "@/app/components/ics/read-only-scope";
 import { TabBar } from "@/app/components/ics/tab-bar";
+import { useAxisMotionLocks } from "../hooks/axis-motion";
 import { BuildDebugMotorList } from "./build-debug/build-debug-motor-list";
 import { ConfigWizardPanel } from "./right-sidebar/config-wizard/config-wizard-panel";
 import { ProjectStructurePanel } from "./right-sidebar/project-structure-panel";
@@ -32,6 +34,9 @@ type RightSidebarProps = {
 
 export const RightSidebar = ({ activeTab, onTabChange }: RightSidebarProps) => {
   const { can } = usePermissions();
+  // 轴运动中搭建只读；调试页的点动、停止照常
+  const motionLock = useAxisMotionLocks().setup;
+  const showMotionLock = motionLock !== null && activeTab !== "debug";
   const tabs = useMemo(
     () => RIGHT_TABS.filter((tab) => can(tab.permission)).map(({ id, label }) => ({ id, label })),
     [can],
@@ -39,10 +44,23 @@ export const RightSidebar = ({ activeTab, onTabChange }: RightSidebarProps) => {
   return (
     <aside className="flex h-full w-[600px] shrink-0 flex-col overflow-hidden rounded-lg bg-card">
       <TabBar tabs={tabs} active={activeTab} onChange={onTabChange} variant="filled" />
+      {showMotionLock ? (
+        <p role="status" className="shrink-0 bg-warning/15 px-3 py-1.5 text-body-sm text-warning">
+          {motionLock}
+        </p>
+      ) : null}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {activeTab === "structure" && <ProjectStructurePanel />}
         {activeTab === "debug" && can("build.debug") && <BuildDebugMotorList />}
-        {activeTab === "wizard" && can("build.edit") && <ConfigWizardPanel />}
+        {activeTab === "wizard" && can("build.edit") && (
+          <ReadOnlyScope
+            readOnly={motionLock !== null}
+            keepMounted
+            className="flex min-h-0 flex-1 flex-col"
+          >
+            <ConfigWizardPanel />
+          </ReadOnlyScope>
+        )}
         {activeTab === "rules" && <RulesPanel />}
       </div>
     </aside>

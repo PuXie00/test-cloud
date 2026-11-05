@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { CollapsePanel } from "@/app/components/ics/collapse-panel";
 import { ReadOnlyScope } from "@/app/components/ics/read-only-scope";
-import { usePermissions } from "@/app/auth/permissions";
 import { Form } from "@/app/components/ui/forms";
 import { Input } from "@/app/components/ui/input";
 import { Select } from "@/app/components/ui/select";
@@ -9,6 +8,7 @@ import {
   getDefaultPlcRegistryEntry,
   plcModelSelectOptions,
 } from "@/app/pages/console/hooks/motor-config";
+import { useSetupEditState } from "@/app/pages/console/hooks/axis-motion";
 import { useProjectStore } from "@/app/pages/console/hooks/use-project-store";
 import type { Plc } from "../config-wizard/config-wizard-types";
 import { MasterConnectionSummary } from "./master-connection-summary";
@@ -21,8 +21,8 @@ type PlcFormValues = Pick<Plc, "ip" | "masterTypeId">;
 export const PlcForm = ({ plcId }: PlcFormProps) => {
   const { findPlc, updatePlc } = useProjectStore();
   const [reconciliationOpen, setReconciliationOpen] = useState(false);
-  // 没有「编辑工程配置」时配置和对账只读；连接状态、重新扫描照常（PLC 复位看「主控操作」）
-  const readOnly = !usePermissions().can("build.edit");
+  // 没有「编辑工程配置」或轴运动中配置和对账只读；连接状态、重新扫描照常（PLC 复位看「主控操作」）
+  const { readOnly } = useSetupEditState();
   const plc = findPlc(plcId);
 
   const masterTypeOptions = useMemo(() => plcModelSelectOptions(), []);
@@ -45,7 +45,7 @@ export const PlcForm = ({ plcId }: PlcFormProps) => {
   return (
     <div className="min-w-0 space-y-2 p-3">
       <CollapsePanel title="主控配置">
-        <ReadOnlyScope readOnly={readOnly}>
+        <ReadOnlyScope readOnly={readOnly} keepMounted>
         <Form
           key={plcId}
           layout="horizontal"
@@ -69,7 +69,7 @@ export const PlcForm = ({ plcId }: PlcFormProps) => {
         onOpenReconciliation={() => setReconciliationOpen(true)}
       />
 
-      <ReadOnlyScope readOnly={readOnly}>
+      <ReadOnlyScope readOnly={readOnly} keepMounted>
         <MotorReconciliationPanel
           key={reconciliationOpen ? `${plcId}-open` : `${plcId}-closed`}
           plcId={plcId}

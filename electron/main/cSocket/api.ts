@@ -22,7 +22,7 @@ import {
   shouldClearPlcMasterStatus,
   type PlcMasterStatus,
 } from '../../../shared/csocket/plc-master-status'
-import { AxisInfoStore, type AxisInfo } from '../../../shared/csocket/axis-info'
+import { AxisInfoStore, axisMotionDownloadBlock, type AxisInfo } from '../../../shared/csocket/axis-info'
 import { ModelInfoStore, type ModelInfo } from '../../../shared/csocket/model-info'
 import {
   isLicenseNoReply,
@@ -471,8 +471,12 @@ export class CsocketApiService {
     return {success: false,code: 'SCAN_FAILED',message: 'SCAN_FAILED'}
     // return {success: false,data:[{ ip: '192.168.1.30', plcModel: 4, axis: [{ busNo: 0, slaveNo: 0, gourdNo: 253 },{ busNo: 0, slaveNo: 1, gourdNo: 253 },{ busNo: 1, slaveNo: 2, gourdNo: 253 },{ busNo: 1, slaveNo: 3, gourdNo: 253 }] }]}
   }
-  // plc下载工程
-  downloadPlcProject(items: unknown[], opts?: CsocketSendOpts) {
+  // plc下载工程：主控里有轴在运动就不下发（按 Info|axis 缓存判断）
+  downloadPlcProject(items: unknown[], opts?: CsocketSendOpts): Promise<SendData> {
+    const blocked = axisMotionDownloadBlock(this.axisInfo.snapshot())
+    if (blocked) {
+      return Promise.resolve({ success: false, code: 'AXIS_MOVING', message: blocked })
+    }
     return this.sendBuilt('CONFIG|Pro|download', '', items, opts)
   }
 

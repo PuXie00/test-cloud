@@ -19,6 +19,7 @@ import {
 } from "@/app/project/capture-pose-sequence";
 import { useProject } from "@/app/project/use-project";
 import { usePermissions } from "@/app/auth/permissions";
+import { useAxisMotionLocks } from "@/app/pages/console/hooks/axis-motion";
 import { evaluateResolvedSequence } from "@/app/project/action-sequence/evaluate-sequence";
 import { createDefaultAxisProfiles } from "@/app/project/action-sequence/motion-profile";
 import {
@@ -233,6 +234,10 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   canEditRef.current = can("action.edit");
   const canEditProgramRef = useRef(can("program.edit"));
   canEditProgramRef.current = can("program.edit");
+  // 轴运动中：保存、增删改名序列、改节目列表都不写进工程（工程数据层也会拦），草稿照常编辑
+  const motionLock = useAxisMotionLocks().action;
+  const motionLockRef = useRef(motionLock);
+  motionLockRef.current = motionLock;
 
   /** 工程里已保存的序列：节目列表、执行、预览用这一份 */
   const [appliedSequences, setAppliedSequences] = useState<ActionSequenceConfig[]>([]);
@@ -1211,7 +1216,9 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       );
       const programs = renameSequenceInProgramTree(motionRef.current.programs, current.id, name);
       return recordEditorStep(() => {
-        if (!commitMotionProjection({ sequences, programs })) return "重命名失败";
+        if (!commitMotionProjection({ sequences, programs })) {
+          return motionLockRef.current ?? "重命名失败";
+        }
         // 重命名立即生效，草稿跟着改名
         const draft = draftsRef.current.get(current.id);
         if (draft) setDraft(current.id, { ...draft, name });
@@ -1650,6 +1657,10 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       toast.info("没有未保存的修改");
       return;
     }
+    if (motionLockRef.current) {
+      toast.warning(motionLockRef.current);
+      return;
+    }
     if (getSequenceContentRepairIssue(document, draft)) {
       toast.warning(draft.blocks.length === 0 ? EMPTY_SAVE_MESSAGE : UNREPAIRED_SAVE_MESSAGE);
       return;
@@ -1668,6 +1679,10 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     const document = currentProject?.document;
     const drafted = draftsRef.current;
     if (!document || drafted.size === 0) return { saved: 0, blocked: [] };
+    if (motionLockRef.current) {
+      toast.warning(motionLockRef.current);
+      return { saved: 0, blocked: [] };
+    }
     const savable = new Map<number, ActionSequenceConfig>();
     const blocked: string[] = [];
     for (const [id, draft] of drafted) {
