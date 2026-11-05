@@ -1,13 +1,15 @@
+import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Quaternion } from "@babylonjs/core/Maths/math.vector";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
+import "@babylonjs/core/Rendering/outlineRenderer";
 import type { Disposable } from "../types";
 import type { HoistTravel } from "../telemetry/hoist-travel";
-import { setNodeMetadata } from "../babylon/utils";
-import { createUnlitHexMaterial, setUnlitHexMaterialColor } from "../materials/pbr-material";
+import { hexToColor3, setNodeMetadata } from "../babylon/utils";
+import { createMarkerMaterial, setMarkerMaterialColor } from "../materials/pbr-material";
 import {
   DEFAULT_HOIST_LABEL_MODE,
   resolveHoistLabelText,
@@ -15,19 +17,50 @@ import {
 } from "../hoist-label-mode";
 import { HoistPointLabel } from "./HoistPointLabel";
 
-const UNBOUND_COLOR = 0x869398;
+/** 吊环：已绑定用主色，未绑定用浅灰（和默认灰色物体拉开）；底座深色，在浅色物体上也看得清 */
 const BOUND_COLOR = 0x4cd6fb;
+const UNBOUND_COLOR = 0xc4ccd0;
+const BASE_COLOR = 0x262d30;
+const BOUND_GLOW = 0.35;
+const UNBOUND_GLOW = 0.2;
+const BASE_GLOW = 0.1;
+/** 调试的电机实时位置用「实时」绿色，和吊点本身的青色分开；深色描边让它在绿色物体上也看得出 */
+const LIVE_COLOR = 0x4ade80;
+const LIVE_GLOW = 0.45;
+const LIVE_OUTLINE = hexToColor3(0x0e1416);
 /** 表盘 0° 刻度，与指针区分 */
 const DIAL_ZERO_COLOR = 0xdee3e6;
+const DIAL_ZERO_GLOW = 0.5;
 
-/** 调试显示时整颗吊点置顶：粗线穿进物体也可见，吊点各部件之间仍按深度遮挡 */
+/** 调试显示时整颗吊点置顶：细线穿进物体也可见，吊点各部件之间仍按深度遮挡 */
 const TRAVEL_RENDERING_GROUP = 1;
-/** 粗线直径（相对 scale），略细于杆，向上时藏在杆和圆盘内不闪烁 */
-const TRAVEL_LINE_DIAMETER = 0.22;
 const MIN_TRAVEL_M = 1e-4;
 
 /**
- * 表盘几何以 scale = 1 建模，整体按 scale 缩放：圆环半径 1.5，在编号标签俯视范围（半对角线约 0.71）之外；
+ * 吊点几何以 scale = 1 建模，整体按 scale 缩放：深色底座贴在物体顶面，上面短杆 + 竖直吊环（环面朝 +Z）。
+ */
+const BASE_DIAMETER = 0.85;
+const BASE_HEIGHT = 0.12;
+const STEM_DIAMETER = 0.17;
+const STEM_HEIGHT = 0.26;
+const EYE_DIAMETER = 0.62;
+const EYE_THICKNESS = 0.15;
+const EYE_CENTER_Y = BASE_HEIGHT + STEM_HEIGHT + EYE_DIAMETER / 2;
+const GEOMETRY_TOP = EYE_CENTER_Y + EYE_DIAMETER / 2 + EYE_THICKNESS / 2;
+/** 编号标签在吊环之上的间隙 */
+const LABEL_GAP = 0.62;
+/** 实时位置往上走时，标签停在圆环之上这么高 */
+const LABEL_ABOVE_LIVE = 0.75;
+
+/** 实时位置：细线（直径）+ 端头圆环和中心点，scale = 1 时的尺寸 */
+const LIVE_LINE_DIAMETER = 0.09;
+const LIVE_RING_DIAMETER = 1.05;
+const LIVE_RING_THICKNESS = 0.12;
+const LIVE_DOT_DIAMETER = 0.34;
+const LIVE_OUTLINE_WIDTH = 0.035;
+
+/**
+ * 无极旋转表盘（scale = 1）：圆环半径 1.5，在编号标签俯视范围（半对角线约 0.71）之外；
  * 指针从半径 0.8 起，0° 刻度朝物体正前方 +Z。
  */
 const DIAL_RING_RADIUS = 1.5;
@@ -35,22 +68,27 @@ const DIAL_NEEDLE_START = 0.8;
 const DIAL_ARROW_BASE = 1.3;
 const DIAL_ARROW_LENGTH = 0.42;
 
+const outlined = (mesh: Mesh, color: Color3, width: number): void => {
+  mesh.renderOutline = true;
+  mesh.outlineColor = color;
+  mesh.outlineWidth = width;
+};
+
 export class HoistPointVisual implements Disposable {
   readonly root: TransformNode;
-  /** 仅几何体（圆盘+杆）根节点，供选中框包围，排除随相机缩放的 billboard 标签 */
+  /** 仅几何体（底座 + 杆 + 吊环）根节点，供选中框包围，排除随相机缩放的 billboard 标签 */
   readonly geometryRoot: TransformNode;
-  private readonly disk: Mesh;
-  private readonly rod: Mesh;
-  private readonly diskMaterial: StandardMaterial;
-  private readonly rodMaterial: StandardMaterial;
+  private readonly baseMaterial: StandardMaterial;
+  private readonly eyeMaterial: StandardMaterial;
   private readonly hoistLabel: HoistPointLabel;
-  /** 线性：原位到当前位置的竖直粗线 */
-  private readonly travelLine: Mesh;
-  private readonly travelLineMaterial: StandardMaterial;
+  /** 线性：原位到实时位置的竖直细线，端头圆环标出实时位置 */
+  private readonly liveRoot: TransformNode;
+  private readonly liveLine: Mesh;
+  private readonly liveMarker: TransformNode;
+  private readonly liveMaterial: StandardMaterial;
   /** 无极旋转：外圈表盘 + 固定 0° 刻度 + 随位置旋转的指针 */
   private readonly dialRoot: TransformNode;
   private readonly dialPointer: TransformNode;
-  private readonly dialMaterial: StandardMaterial;
   private readonly dialZeroMaterial: StandardMaterial;
   private travel: HoistTravel | null = null;
   private scale = 0.18;
@@ -64,46 +102,36 @@ export class HoistPointVisual implements Disposable {
     this.geometryRoot = new TransformNode("viz3d-hoist-point-geometry", scene);
     this.geometryRoot.parent = this.root;
 
-    this.diskMaterial = createUnlitHexMaterial(scene, "viz3d-hoist-disk-mat", UNBOUND_COLOR);
-    this.rodMaterial = createUnlitHexMaterial(scene, "viz3d-hoist-rod-mat", UNBOUND_COLOR);
-
-    this.disk = MeshBuilder.CreateCylinder(
-      "viz3d-hoist-disk",
-      { diameter: 1, height: 1, tessellation: 20 },
-      scene,
-    );
-    this.rod = MeshBuilder.CreateCylinder(
-      "viz3d-hoist-rod",
-      { diameter: 1, height: 1, tessellation: 16 },
-      scene,
-    );
-
-    for (const mesh of [this.disk, this.rod]) {
-      mesh.receiveShadows = false;
-      mesh.isPickable = true;
-      mesh.parent = this.geometryRoot;
-    }
-
-    this.disk.material = this.diskMaterial;
-    this.rod.material = this.rodMaterial;
+    this.baseMaterial = createMarkerMaterial(scene, "viz3d-hoist-base-mat", BASE_COLOR, BASE_GLOW);
+    this.eyeMaterial = createMarkerMaterial(scene, "viz3d-hoist-eye-mat", UNBOUND_COLOR, UNBOUND_GLOW);
+    this.buildGeometry(scene);
 
     this.hoistLabel = new HoistPointLabel(scene);
     this.hoistLabel.plane.parent = this.root;
 
-    // 粗线与表盘挂在 root 而非 geometryRoot：不进选中框
-    this.travelLineMaterial = createUnlitHexMaterial(scene, "viz3d-hoist-travel-mat", BOUND_COLOR);
-    // 不写深度：编号标签（透明队列，晚于不透明绘制）始终盖在粗线上
-    this.travelLineMaterial.disableDepthWrite = true;
-    this.travelLine = MeshBuilder.CreateCylinder(
-      "viz3d-hoist-travel-line",
-      { diameter: 1, height: 1, tessellation: 16 },
+    // 实时位置与表盘挂在 root 而非 geometryRoot：不进选中框
+    this.liveMaterial = createMarkerMaterial(scene, "viz3d-hoist-live-mat", LIVE_COLOR, LIVE_GLOW);
+    // 不写深度：编号标签（透明队列，晚于不透明绘制）始终盖在细线上
+    this.liveMaterial.disableDepthWrite = true;
+    this.liveRoot = new TransformNode("viz3d-hoist-live", scene);
+    this.liveRoot.parent = this.root;
+    this.liveLine = MeshBuilder.CreateCylinder(
+      "viz3d-hoist-live-line",
+      { diameter: 1, height: 1, tessellation: 12 },
       scene,
     );
-    this.travelLine.material = this.travelLineMaterial;
-    this.travelLine.parent = this.root;
+    this.liveLine.material = this.liveMaterial;
+    this.liveLine.parent = this.liveRoot;
+    this.liveMarker = new TransformNode("viz3d-hoist-live-marker", scene);
+    this.liveMarker.parent = this.liveRoot;
+    this.buildLiveMarker(scene);
 
-    this.dialMaterial = createUnlitHexMaterial(scene, "viz3d-hoist-dial-mat", BOUND_COLOR);
-    this.dialZeroMaterial = createUnlitHexMaterial(scene, "viz3d-hoist-dial-zero-mat", DIAL_ZERO_COLOR);
+    this.dialZeroMaterial = createMarkerMaterial(
+      scene,
+      "viz3d-hoist-dial-zero-mat",
+      DIAL_ZERO_COLOR,
+      DIAL_ZERO_GLOW,
+    );
     this.dialRoot = new TransformNode("viz3d-hoist-dial", scene);
     this.dialRoot.parent = this.root;
     this.dialPointer = new TransformNode("viz3d-hoist-dial-pointer", scene);
@@ -111,7 +139,7 @@ export class HoistPointVisual implements Disposable {
     this.dialPointer.rotationQuaternion = Quaternion.Identity();
     this.buildDial(scene);
 
-    for (const mesh of [this.travelLine, ...this.dialRoot.getChildMeshes(false)]) {
+    for (const mesh of [...this.liveRoot.getChildMeshes(false), ...this.dialRoot.getChildMeshes(false)]) {
       mesh.receiveShadows = false;
       mesh.isPickable = false;
     }
@@ -149,7 +177,7 @@ export class HoistPointVisual implements Disposable {
     );
   }
 
-  /** 搭建调试：null 隐藏粗线与表盘并恢复正常渲染层 */
+  /** 搭建调试：null 隐藏实时位置与表盘并恢复正常渲染层 */
   setTravel(travel: HoistTravel | null): void {
     if (travel === null && this.travel === null) return;
     this.travel = travel;
@@ -171,35 +199,79 @@ export class HoistPointVisual implements Disposable {
 
   dispose(): void {
     this.hoistLabel.dispose();
-    this.disk.dispose(false, true);
-    this.rod.dispose(false, true);
-    this.diskMaterial.dispose();
-    this.rodMaterial.dispose();
-    this.travelLine.dispose(false, true);
-    this.travelLineMaterial.dispose();
-    this.dialRoot.dispose(false, true);
-    this.dialMaterial.dispose();
+    // 材质多个网格共用，单独各释放一次
+    this.geometryRoot.dispose(false, false);
+    this.liveRoot.dispose(false, false);
+    this.dialRoot.dispose(false, false);
+    this.baseMaterial.dispose();
+    this.eyeMaterial.dispose();
+    this.liveMaterial.dispose();
     this.dialZeroMaterial.dispose();
     this.root.dispose();
   }
 
+  /** 底座、杆、吊环都以 scale = 1 建模，挂在 geometryRoot 下一起缩放 */
+  private buildGeometry(scene: Scene): void {
+    const base = MeshBuilder.CreateCylinder(
+      "viz3d-hoist-base",
+      { diameter: BASE_DIAMETER, height: BASE_HEIGHT, tessellation: 24 },
+      scene,
+    );
+    base.material = this.baseMaterial;
+    base.position.y = BASE_HEIGHT / 2;
+
+    const stem = MeshBuilder.CreateCylinder(
+      "viz3d-hoist-stem",
+      { diameter: STEM_DIAMETER, height: STEM_HEIGHT, tessellation: 16 },
+      scene,
+    );
+    stem.material = this.eyeMaterial;
+    stem.position.y = BASE_HEIGHT + STEM_HEIGHT / 2;
+
+    const eye = MeshBuilder.CreateTorus(
+      "viz3d-hoist-eye",
+      { diameter: EYE_DIAMETER, thickness: EYE_THICKNESS, tessellation: 24 },
+      scene,
+    );
+    eye.material = this.eyeMaterial;
+    // 环面竖起来，朝物体正前方 +Z
+    eye.rotation.x = Math.PI / 2;
+    eye.position.y = EYE_CENTER_Y;
+
+    for (const mesh of [base, stem, eye]) {
+      mesh.receiveShadows = false;
+      mesh.isPickable = true;
+      mesh.parent = this.geometryRoot;
+    }
+  }
+
+  /** 实时位置端头：水平圆环 + 中心点（scale = 1，随 liveMarker 缩放） */
+  private buildLiveMarker(scene: Scene): void {
+    const ring = MeshBuilder.CreateTorus(
+      "viz3d-hoist-live-ring",
+      { diameter: LIVE_RING_DIAMETER, thickness: LIVE_RING_THICKNESS, tessellation: 32 },
+      scene,
+    );
+    const dot = MeshBuilder.CreateSphere(
+      "viz3d-hoist-live-dot",
+      { diameter: LIVE_DOT_DIAMETER, segments: 12 },
+      scene,
+    );
+    for (const mesh of [ring, dot]) {
+      mesh.material = this.liveMaterial;
+      mesh.parent = this.liveMarker;
+      outlined(mesh, LIVE_OUTLINE, LIVE_OUTLINE_WIDTH);
+    }
+  }
+
   private rebuildGeometry(): void {
-    const diskRadius = this.scale * 0.55;
-    const diskHeight = this.scale * 0.34;
-    const rodRadius = this.scale * 0.14;
-    const rodLength = this.scale * 0.75;
+    const s = this.scale;
+    this.geometryRoot.scaling.set(s, s, s);
 
-    this.rod.scaling.set(rodRadius * 2, rodLength, rodRadius * 2);
-    this.rod.position.set(0, rodLength / 2, 0);
-
-    this.disk.scaling.set(diskRadius * 2, diskHeight, diskRadius * 2);
-    this.disk.position.set(0, rodLength + diskHeight / 2, 0);
-
-    this.hoistLabel.setOffsetY(rodLength + diskHeight + this.scale * 0.6);
-    this.hoistLabel.setSpriteSize(this.scale * 1, this.scale * 1);
-
-    this.dialRoot.position.set(0, rodLength + diskHeight / 2, 0);
-    this.dialRoot.scaling.set(this.scale, this.scale, this.scale);
+    this.hoistLabel.setSpriteSize(s, s);
+    this.liveMarker.scaling.set(s, s, s);
+    this.dialRoot.position.set(0, BASE_HEIGHT * s, 0);
+    this.dialRoot.scaling.set(s, s, s);
     this.applyBoundColors();
     this.applyTravel();
   }
@@ -207,15 +279,15 @@ export class HoistPointVisual implements Disposable {
   private buildDial(scene: Scene): void {
     const ring = MeshBuilder.CreateTorus(
       "viz3d-hoist-dial-ring",
-      { diameter: DIAL_RING_RADIUS * 2, thickness: 0.07, tessellation: 48 },
+      { diameter: DIAL_RING_RADIUS * 2, thickness: 0.1, tessellation: 48 },
       scene,
     );
-    ring.material = this.dialMaterial;
+    ring.material = this.liveMaterial;
     ring.parent = this.dialRoot;
 
     const zeroTick = MeshBuilder.CreateBox(
       "viz3d-hoist-dial-zero",
-      { width: 0.08, height: 0.12, depth: 0.36 },
+      { width: 0.1, height: 0.14, depth: 0.42 },
       scene,
     );
     zeroTick.material = this.dialZeroMaterial;
@@ -225,36 +297,45 @@ export class HoistPointVisual implements Disposable {
     const needleLength = DIAL_ARROW_BASE - DIAL_NEEDLE_START;
     const needle = MeshBuilder.CreateBox(
       "viz3d-hoist-dial-needle",
-      { width: 0.1, height: 0.1, depth: needleLength },
+      { width: 0.12, height: 0.12, depth: needleLength },
       scene,
     );
-    needle.material = this.dialMaterial;
+    needle.material = this.liveMaterial;
     needle.position.set(0, 0, DIAL_NEEDLE_START + needleLength / 2);
     needle.parent = this.dialPointer;
 
     const arrow = MeshBuilder.CreateCylinder(
       "viz3d-hoist-dial-arrow",
-      { diameterTop: 0, diameterBottom: 0.32, height: DIAL_ARROW_LENGTH, tessellation: 16 },
+      { diameterTop: 0, diameterBottom: 0.36, height: DIAL_ARROW_LENGTH, tessellation: 16 },
       scene,
     );
-    arrow.material = this.dialMaterial;
+    arrow.material = this.liveMaterial;
     // 圆锥尖从 +Y 转到 +Z（径向朝外）
     arrow.rotation.x = Math.PI / 2;
     arrow.position.set(0, 0, DIAL_ARROW_BASE + DIAL_ARROW_LENGTH / 2);
     arrow.parent = this.dialPointer;
+
+    for (const mesh of [ring, zeroTick, needle, arrow]) {
+      outlined(mesh, LIVE_OUTLINE, LIVE_OUTLINE_WIDTH);
+    }
   }
 
   private applyTravel(): void {
+    const s = this.scale;
     const travel = this.travel;
 
     const lift = travel?.kind === "linear" ? travel.lift : 0;
-    const showLine = Math.abs(lift) > MIN_TRAVEL_M;
-    this.travelLine.setEnabled(showLine);
-    if (showLine) {
-      const diameter = this.scale * TRAVEL_LINE_DIAMETER;
-      this.travelLine.scaling.set(diameter, Math.abs(lift), diameter);
-      this.travelLine.position.set(0, lift / 2, 0);
+    const showLive = Math.abs(lift) > MIN_TRAVEL_M;
+    this.liveRoot.setEnabled(showLive);
+    if (showLive) {
+      const diameter = s * LIVE_LINE_DIAMETER;
+      this.liveLine.scaling.set(diameter, Math.abs(lift), diameter);
+      this.liveLine.position.set(0, lift / 2, 0);
+      this.liveMarker.position.set(0, lift, 0);
     }
+    // 实时位置在吊点上方时，标签升到圆环之上，不挡也不被挡
+    const labelY = (GEOMETRY_TOP + LABEL_GAP) * s;
+    this.hoistLabel.setOffsetY(showLive ? Math.max(labelY, lift + LABEL_ABOVE_LIVE * s) : labelY);
 
     const rotation = travel?.kind === "rotary" ? travel.rotation : null;
     this.dialRoot.setEnabled(rotation !== null);
@@ -269,8 +350,10 @@ export class HoistPointVisual implements Disposable {
   }
 
   private applyBoundColors(): void {
-    const color = this.bound ? BOUND_COLOR : UNBOUND_COLOR;
-    setUnlitHexMaterialColor(this.diskMaterial, color);
-    setUnlitHexMaterialColor(this.rodMaterial, color);
+    setMarkerMaterialColor(
+      this.eyeMaterial,
+      this.bound ? BOUND_COLOR : UNBOUND_COLOR,
+      this.bound ? BOUND_GLOW : UNBOUND_GLOW,
+    );
   }
 }
