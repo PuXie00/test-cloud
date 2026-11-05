@@ -1,4 +1,3 @@
-import { usePermissions } from "@/app/auth/permissions";
 import { useEffect, useState } from "react";
 import {
   Clapperboard,
@@ -14,6 +13,7 @@ import {
 import { cn } from "@/app/components/ui/utils";
 import { useProject } from "@/app/project/use-project";
 import type { ToolMode } from "@/app/viz3d";
+import { useSetupEditState } from "../../hooks/axis-motion";
 import { pendingGoEntries } from "../../hooks/go-ready";
 import { useGoReady } from "../../hooks/go-ready-provider";
 import { useSequencePreview } from "../../hooks/use-sequence-preview";
@@ -192,8 +192,8 @@ export const ViewportOverlay = () => {
   const engine = useViz3DContext();
   const { activeNav } = useConsoleNav();
   const preview = useSequencePreview();
-  // 移动 / 旋转工具要「编辑工程配置」
-  const canEdit = usePermissions().can("build.edit");
+  // 移动 / 旋转工具要「编辑工程配置」，轴运动中也不给
+  const canEdit = !useSetupEditState().readOnly;
   const showToolMode = activeNav === "devices" && canEdit;
   const isControl = activeNav === "control";
   const isSequences = activeNav === "sequences";

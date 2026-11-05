@@ -117,6 +117,8 @@ type ExecCardsProviderProps = {
   children: ReactNode;
   /** PLC 上报了没有任务卡的动作时，从序列 / 执行槽取补建任务卡的信息 */
   resolveActionSeed?: (actionId: number) => ActionCardSeed;
+  /** false 时不处理 Info|act（聚合状态不正常） */
+  listenActionReports?: boolean;
 };
 
 const RUN_SETTLE_CHECK_MS = 100;
@@ -130,6 +132,7 @@ const hasActiveRunningCard = (cards: ExecCard[]) =>
 export const ExecCardsProvider = ({
   children,
   resolveActionSeed = fallbackActionCardSeed,
+  listenActionReports = true,
 }: ExecCardsProviderProps) => {
   const [cards, setCards] = useState<ExecCard[]>([]);
   const cardsRef = useRef(cards);
@@ -141,7 +144,7 @@ export const ExecCardsProvider = ({
 
   useEffect(() => {
     const api = typeof window !== "undefined" ? window.csocketApi : undefined;
-    if (!api?.onReadActionRun) return;
+    if (!listenActionReports || !api?.onReadActionRun) return;
     return api.onReadActionRun((msg) => {
       const reports = parseActionRunReports(msg);
       if (reports.length === 0) return;
@@ -153,7 +156,7 @@ export const ExecCardsProvider = ({
           ) ?? current,
       );
     });
-  }, []);
+  }, [listenActionReports]);
 
   const hasUnsettledCard = cards.some((card) => card.plcActive || card.status === "stopping");
   useEffect(() => {

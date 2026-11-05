@@ -1,4 +1,3 @@
-import { usePermissions } from "@/app/auth/permissions";
 import {
   DndContext,
   DragOverlay,
@@ -36,6 +35,7 @@ import {
   type MotorOrderReconciliation,
 } from "@/app/pages/console/hooks/plc-reconciliation";
 import { usePlcRuntime } from "@/app/pages/console/hooks/plc-runtime-provider";
+import { useSetupEditState } from "@/app/pages/console/hooks/axis-motion";
 import { formatMotorDisplayName } from "@/app/pages/console/hooks/motor-mid";
 import { formatPlcDisplayName } from "@/app/pages/console/hooks/plc-display-name";
 import type { InsertMotorsPosition } from "@/app/pages/console/hooks/setup-operations";
@@ -168,8 +168,8 @@ export const ProjectStructurePanel = () => {
     mountObjects,
   } = useProjectStore();
   const objectDeletion = useObjectDeletion();
-  // 没有「编辑工程配置」只能浏览：不显示增删、右键菜单，Delete 键和拖动挂载 / 绑定都不生效
-  const canEdit = usePermissions().can("build.edit");
+  // 没有「编辑工程配置」或轴运动中只能浏览：不显示增删、右键菜单，Delete 键和拖动挂载 / 绑定都不生效
+  const canEdit = !useSetupEditState().readOnly;
   const { getPlcRuntime } = usePlcRuntime();
   const {
     multiSelectedIds,

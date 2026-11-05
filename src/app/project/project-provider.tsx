@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { toast } from "sonner";
 import {
   createProjectConfigurationState,
   pushProjectHistory,
@@ -59,6 +60,12 @@ export type DocumentRevision = {
   value: number;
   origin: DocumentMutationOrigin;
 };
+
+/**
+ * 外部条件（如轴运动中）暂时不许改工程，reason 为 null 表示不锁：
+ * setup = 搭建（跟踪修改、拖拽事务、撤销重做）；motion = 动作编辑和 AI 写入的动作序列（不含控制页节目）
+ */
+export type ProjectEditLockScope = "setup" | "motion";
 
 export type ProjectUpdateResult =
   | { ok: true; changed: boolean }
@@ -118,6 +125,7 @@ type ProjectContextValue = {
     updater: (document: ProjectDocument) => ProjectDocument,
     origin?: Extract<DocumentMutationOrigin, "motion" | "program" | "ai">,
   ) => ProjectUpdateResult;
+  setEditLock: (scope: ProjectEditLockScope, reason: string | null) => void;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   filteredProjects: ProjectRecord[];
@@ -167,6 +175,14 @@ const failHistory = (reason: string): ProjectHistoryResult => ({
   reason,
 });
 
+const EDIT_LOCK_TOAST_ID = "project-edit-lock";
+
+/** 被锁挡下时提示一次（同一个 toast 覆盖，不刷屏） */
+const notifyEditLock = (reason: string): string => {
+  toast.warning(reason, { id: EDIT_LOCK_TOAST_ID });
+  return reason;
+};
+
 const resolveFolderName = (
   projects: ProjectRecord[],
   idOrFolderName: string,
@@ -209,6 +225,14 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
   const activeTransactionOriginRef = useRef<
     Extract<DocumentMutationOrigin, "setup" | "project-command">
   >("setup");
+  const editLockRef = useRef<Record<ProjectEditLockScope, string | null>>({
+    setup: null,
+    motion: null,
+  });
+
+  const setEditLock = useCallback((scope: ProjectEditLockScope, reason: string | null) => {
+    editLockRef.current = { ...editLockRef.current, [scope]: reason };
+  }, []);
 
   const isDirty =
     currentConfigurationState != null &&
@@ -736,10 +760,12 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       }
 
       const active = historyRef.current.activeTransaction;
+      const setupLock = editLockRef.current.setup;
       if (active) {
         if (origin === "project-command") {
           return failUpdate("活动事务进行中，无法执行 project-command");
         }
+        if (setupLock) return failUpdate(notifyEditLock(setupLock));
         activeTransactionOriginRef.current = origin;
         const previewState = createProjectConfigurationState(
           createConfigurationStateId(),
@@ -757,6 +783,8 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       ) {
         return okUpdate(false);
       }
+      // 没有实际改动的（如只改本地选中）照常放行，有改动才拦
+      if (setupLock) return failUpdate(notifyEditLock(setupLock));
 
       const validation = validateProjectDocument(nextDoc);
       if (!validation.ok) {
@@ -789,6 +817,11 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       return false;
     }
     if (historyRef.current.activeTransaction) {
+      return false;
+    }
+    const setupLock = editLockRef.current.setup;
+    if (setupLock) {
+      notifyEditLock(setupLock);
       return false;
     }
     activeTransactionOriginRef.current = "setup";
@@ -839,8 +872,15 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
         return okUpdate(false);
       }
 
+      // 拖拽途中被锁（如轴开始运动）也按校验失败撤回这次修改
+      const setupLock = editLockRef.current.setup;
       const validation = validateProjectDocument(current.document);
-      if (!validation.ok) {
+      const rejection = setupLock
+        ? notifyEditLock(setupLock)
+        : validation.ok
+          ? null
+          : (validation.errors[0] ?? "文档校验失败");
+      if (rejection !== null) {
         const restored = restoreProjectConfiguration(
           current.document,
           active.before.snapshot,
@@ -852,7 +892,7 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
         activeTransactionOriginRef.current = "setup";
         setHistory(historyRef.current);
         replaceCurrentDocument(restored, "history", active.before, false);
-        return failUpdate(validation.errors[0] ?? "文档校验失败");
+        return failUpdate(rejection);
       }
 
       const commitOrigin = activeTransactionOriginRef.current;
@@ -917,6 +957,9 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
     if (isSavingRef.current || isRestoringVersionRef.current) {
       return failHistory("正在保存或恢复版本，无法撤销");
     }
+    if (editLockRef.current.setup) {
+      return failHistory(notifyEditLock(editLockRef.current.setup));
+    }
     const current = currentProjectRef.current;
     const configState = currentConfigurationStateRef.current;
     if (!current?.document || !configState) {
@@ -946,6 +989,9 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
     }
     if (isSavingRef.current || isRestoringVersionRef.current) {
       return failHistory("正在保存或恢复版本，无法重做");
+    }
+    if (editLockRef.current.setup) {
+      return failHistory(notifyEditLock(editLockRef.current.setup));
     }
     const current = currentProjectRef.current;
     const configState = currentConfigurationStateRef.current;
@@ -980,6 +1026,11 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       }
       if (historyRef.current.activeTransaction) {
         return failUpdate("活动事务进行中，无法执行非跟踪更新");
+      }
+      // 控制页的节目操作（program）不受动作锁影响
+      const motionLock = origin === "program" ? null : editLockRef.current.motion;
+      if (motionLock) {
+        return failUpdate(notifyEditLock(motionLock));
       }
       const current = currentProjectRef.current;
       const configState = currentConfigurationStateRef.current;
@@ -1115,6 +1166,7 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       undoProjectConfiguration,
       redoProjectConfiguration,
       updateCurrentDocument,
+      setEditLock,
       searchQuery,
       setSearchQuery,
       filteredProjects,
@@ -1154,6 +1206,7 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       undoProjectConfiguration,
       redoProjectConfiguration,
       updateCurrentDocument,
+      setEditLock,
       searchQuery,
       filteredProjects,
     ],

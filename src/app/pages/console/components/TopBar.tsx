@@ -17,6 +17,7 @@ import { useProject } from "@/app/project/use-project";
 import { createDefaultSavedView } from "@/app/project/saved-view";
 import { getViz3DEngine } from "@/app/viz3d";
 import { isCppAckFailed } from "@shared/csocket/ack";
+import { useAxisMotionLocks } from "../hooks/axis-motion";
 import { useConsoleMode } from "../hooks/use-console-mode";
 import { useConsoleNav } from "../hooks/use-console-nav";
 import { useActionBuilder } from "./action-builder/use-action-builder";
@@ -85,6 +86,8 @@ export const TopBar = ({
   const { shouldShowMismatchDialog, markMismatchDialogConsumed, systemStatus } =
     usePlcRuntime();
   const downloadPlcInFlightRef = useRef(false);
+  // 轴运动中：搭建不能撤销重做；下载按下时提示（主进程发送前还会再查一次 Info|axis）
+  const motionLocks = useAxisMotionLocks();
 
   useEffect(() => {
     if (!alignmentDialogOpen) setAlignmentGateMessage(null);
@@ -100,7 +103,7 @@ export const TopBar = ({
   // 撤销 / 重做跟着页面的编辑权限：动作页看动作编辑，其他页面的记录只有工程配置和规则
   const undoPermitted = isActionEditor
     ? can("action.edit")
-    : canAny("build.edit", "build.rules");
+    : canAny("build.edit", "build.rules") && motionLocks.setup === null;
   const undoEnabled = undoPermitted && (isActionEditor ? canUndoEdit : !isShow && canUndo);
   const redoEnabled = undoPermitted && (isActionEditor ? canRedoEdit : !isShow && canRedo);
   const undoShortcutHint = formatProjectHistoryShortcutHint("undo");
@@ -192,6 +195,10 @@ export const TopBar = ({
 
   const handleDownloadPlcProject = async () => {
     if (downloadPlcInFlightRef.current || !can("build.plc")) return;
+    if (motionLocks.download) {
+      toast.warning(motionLocks.download);
+      return;
+    }
     downloadPlcInFlightRef.current = true;
     markMismatchDialogConsumed();
     try {

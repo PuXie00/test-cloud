@@ -1,13 +1,13 @@
 import { useEffect } from "react";
-import { usePermissions } from "@/app/auth/permissions";
+import { useSetupEditState } from "../hooks/axis-motion";
 import { useConsoleNav } from "../hooks/use-console-nav";
 import { useViz3DContext } from "./Viz3DProvider";
 
 export const Viz3DConsoleNavSync = () => {
   const engine = useViz3DContext();
   const { activeNav } = useConsoleNav();
-  // 3D 里移动 / 旋转物体要「编辑工程配置」；只读时搭建页也只能选中查看
-  const canEdit = usePermissions().can("build.edit");
+  // 3D 里移动 / 旋转物体要「编辑工程配置」且没有轴在运动；只读时搭建页也只能选中查看
+  const canEdit = !useSetupEditState().readOnly;
 
   useEffect(() => {
     const sceneEditEnabled = activeNav === "devices" && canEdit;

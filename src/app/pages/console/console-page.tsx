@@ -55,15 +55,28 @@ import { LockScreen } from "./components/lock-screen/lock-screen";
 import { ConsoleLoginProvider } from "./components/login-overlay/console-login-context";
 import { LoginOverlay } from "./components/login-overlay/login-overlay";
 import { ProjectStoreProvider } from "./hooks/use-project-store";
-import { PlcRuntimeProvider, usePlcRuntime } from "./hooks/plc-runtime-provider";
+import {
+  PlcRuntimeProvider,
+  usePlcRuntime,
+  useTelemetryListening,
+} from "./hooks/plc-runtime-provider";
+import { AxisMotionEditLockSync, AxisMotionProvider } from "./hooks/axis-motion";
 import { RulesProvider } from "./hooks/use-rules";
 import { ControlLayoutProvider, useControlLayout } from "./hooks/use-control-layout";
 import { useEmptyProjectWizardEntry } from "./hooks/use-empty-project-wizard-entry";
 
-/** 任务卡里 PLC 没上报的信息（名称、时长、方向等）从当前工程的序列和执行槽取 */
+/**
+ * 任务卡里 PLC 没上报的信息（名称、时长、方向等）从当前工程的序列和执行槽取；
+ * 聚合状态不正常时不处理 Info|act
+ */
 const ProjectExecCardsProvider = ({ children }: { children: ReactNode }) => {
   const resolveActionSeed = useActionCardSeed();
-  return <ExecCardsProvider resolveActionSeed={resolveActionSeed}>{children}</ExecCardsProvider>;
+  const listening = useTelemetryListening();
+  return (
+    <ExecCardsProvider resolveActionSeed={resolveActionSeed} listenActionReports={listening}>
+      {children}
+    </ExecCardsProvider>
+  );
 };
 
 const ProgramScopedProviders = ({ children }: { children: ReactNode }) => {
@@ -276,31 +289,34 @@ const ConsoleInner = () => {
 };
 
 export const ConsolePage = () => (
-  <ConsoleModeProvider>
-    <SelectionProvider>
-      <ProgramProvider>
-        <ProgramScopedProviders>
-          <ProjectExecCardsProvider>
+  <AxisMotionProvider>
+    <AxisMotionEditLockSync />
+    <ConsoleModeProvider>
+      <SelectionProvider>
+        <ProgramProvider>
+          <ProgramScopedProviders>
             <ProjectStoreProvider>
               <PlcRuntimeProvider>
-                <ControlledObjectsProvider>
-                  <LogStreamProvider>
-                    <ActionBuilderProvider>
-                      <AlignmentChecklistProvider>
-                        <BuildDebugProvider>
-                          <ConsoleLoginProvider>
-                            <ConsoleInner />
-                          </ConsoleLoginProvider>
-                        </BuildDebugProvider>
-                      </AlignmentChecklistProvider>
-                    </ActionBuilderProvider>
-                  </LogStreamProvider>
-                </ControlledObjectsProvider>
+                <ProjectExecCardsProvider>
+                  <ControlledObjectsProvider>
+                    <LogStreamProvider>
+                      <ActionBuilderProvider>
+                        <AlignmentChecklistProvider>
+                          <BuildDebugProvider>
+                            <ConsoleLoginProvider>
+                              <ConsoleInner />
+                            </ConsoleLoginProvider>
+                          </BuildDebugProvider>
+                        </AlignmentChecklistProvider>
+                      </ActionBuilderProvider>
+                    </LogStreamProvider>
+                  </ControlledObjectsProvider>
+                </ProjectExecCardsProvider>
               </PlcRuntimeProvider>
             </ProjectStoreProvider>
-          </ProjectExecCardsProvider>
-        </ProgramScopedProviders>
-      </ProgramProvider>
-    </SelectionProvider>
-  </ConsoleModeProvider>
+          </ProgramScopedProviders>
+        </ProgramProvider>
+      </SelectionProvider>
+    </ConsoleModeProvider>
+  </AxisMotionProvider>
 );
