@@ -11,7 +11,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/app/components/ui/alert-dialog";
-import { useAxisMotionLocks } from "../../hooks/axis-motion";
 import { useActionBuilder } from "./use-action-builder";
 
 /** 要离开动作页时调用：有未保存的序列就弹窗、返回 true（之后由弹窗决定要不要继续）；没有返回 false */
@@ -30,8 +29,6 @@ export const UnsavedLeaveGuard = ({
 }) => {
   const { sequences, draftSequenceIds, handleSaveAll } = useActionBuilder();
   const document = useProject().currentProject?.document;
-  // 轴运动中保存不了：按下「全部保存」时提示（handleSaveAll），弹窗留着选暂不保存或取消
-  const motionLocked = useAxisMotionLocks().action !== null;
   const [proceed, setProceed] = useState<(() => void) | null>(null);
 
   useEffect(() => {
@@ -81,8 +78,8 @@ export const UnsavedLeaveGuard = ({
           <AlertDialogAction
             disabled={savable === 0}
             onClick={(event) => {
-              handleSaveAll();
-              if (motionLocked) event.preventDefault();
+              // 有动作正在运行、没保存上的（handleSaveAll 已提示）就留在弹窗，选暂不保存或取消
+              if (handleSaveAll().running.length > 0) event.preventDefault();
               else leave();
             }}
           >

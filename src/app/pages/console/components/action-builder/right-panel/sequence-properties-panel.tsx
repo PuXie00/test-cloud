@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft } from "lucide-react";
+import { CollapsePanel } from "@/app/components/ics/collapse-panel";
 import { clampNumeric } from "@/app/components/ics/numeric-input-utils";
 import { TabBar } from "@/app/components/ics/tab-bar";
 import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-input";
@@ -469,18 +470,26 @@ const SegmentEndpointSection = ({
   resolved: ResolvedActionSequence;
   onReplaceBlock: (block: TimelineBlock) => void;
 }) => (
-  <section className="mb-2 rounded-md bg-muted p-3" aria-label={label}>
-    <h3 className="mb-2 flex items-center justify-between text-label-caps text-muted-foreground">
-      <span>{label}</span>
-      <span className="font-mono text-mono-sm tabular-nums">{formatTime(atMs)} s</span>
-    </h3>
-    {block?.kind === "pose" ? (
-      <PoseBlockFields block={block} resolved={resolved} onReplaceBlock={onReplaceBlock} />
-    ) : block?.kind === "static-preset" || block?.kind === "dynamic-preset" ? (
-      <p className="text-body-sm text-muted-foreground">
-        是预设「{presetBlockTitle(block)}」的关键点，单独点选预设修改
-      </p>
-    ) : null}
+  // 默认折叠，先看下面的运动曲线；要改两端位姿再展开
+  <section className="mb-2" aria-label={label}>
+    <CollapsePanel
+      title={label}
+      defaultOpen={false}
+      extra={
+        <span className="font-mono text-mono-sm tabular-nums text-muted-foreground">
+          {formatTime(atMs)} s
+        </span>
+      }
+      contentClassName="bg-muted pt-0"
+    >
+      {block?.kind === "pose" ? (
+        <PoseBlockFields block={block} resolved={resolved} onReplaceBlock={onReplaceBlock} />
+      ) : block?.kind === "static-preset" || block?.kind === "dynamic-preset" ? (
+        <p className="text-body-sm text-muted-foreground">
+          是预设「{presetBlockTitle(block)}」的关键点，单独点选预设修改
+        </p>
+      ) : null}
+    </CollapsePanel>
   </section>
 );
 

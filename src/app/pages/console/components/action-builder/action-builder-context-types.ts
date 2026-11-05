@@ -24,6 +24,9 @@ export type EditorDockMode = "sequence" | "empty";
 
 export type ProgramItemInput = { kind: "sequence"; refId: number };
 
+/** 全部保存的结果：blocked = 待修复、running = 对应动作正在运行，这些都留着草稿 */
+export type SaveAllResult = { saved: number; blocked: string[]; running: string[] };
+
 export type ActionBuilderContextValue = {
   /** 编辑器里看到的序列：有草稿的用草稿 */
   sequences: ActionSequenceConfig[];
@@ -136,8 +139,8 @@ export type ActionBuilderContextValue = {
   handleProgramItemMove: (chapterId: string, fromIndex: number, toIndex: number) => void;
   /** 把选中序列的草稿保存到节目列表（不是保存工程）；待修复时提示先修复 */
   handleSave: () => void;
-  /** 保存所有能保存的草稿（离开动作页时）；待修复的不保存、留着草稿，返回它们的名字 */
-  handleSaveAll: () => { saved: number; blocked: string[] };
+  /** 保存所有能保存的草稿（离开动作页时）；待修复的、动作正在运行的不保存、留着草稿 */
+  handleSaveAll: () => SaveAllResult;
   /** 动作编辑页自己的撤销 / 重做（和搭建的工程历史分开），含序列内容和重命名、新建、删除、改节目 */
   canUndoEdit: boolean;
   canRedoEdit: boolean;

@@ -13,7 +13,8 @@ import { invalidTimelineTargets } from "@/app/project/action-sequence/validate-s
 import { useActionBuilder } from "../use-action-builder";
 import { idsInRange, resolveSelectionMode } from "../../../hooks/selection-range";
 import { useSelection } from "../../../hooks/use-selection";
-import { useAxisMotionLocks } from "../../../hooks/axis-motion";
+import { useRunningActionIds } from "../../../hooks/action-run";
+import { runningSequenceMessage } from "@/app/project/running-sequence-lock";
 import {
   ClipboardContextMenu,
   clipboardShortcutOf,
@@ -111,8 +112,8 @@ const SequenceEditor = () => {
     handleLoopChange,
     sequenceIssues,
   } = useActionBuilder();
-  // 轴运动中删不了序列：按下时提示，不弹确认（保存由 handleSave 提示）
-  const motionLock = useAxisMotionLocks().action;
+  // 这条序列的动作正在运行时删不了：按下时提示，不弹确认（保存由 handleSave 提示）
+  const runningActionIds = useRunningActionIds();
   const { selectedId, multiSelectedIds, select, toggleMulti, replaceSelection } = useSelection();
   // 没有「编辑动作序列」：时间轴只读，能播放、跳转、看曲线，不能拖、删、加标记、粘贴
   const canEdit = usePermissions().can("action.edit");
@@ -360,7 +361,11 @@ const SequenceEditor = () => {
         onRedo={canEdit ? handleRedoEdit : undefined}
         canUndo={canUndoEdit}
         canRedo={canRedoEdit}
-        onDelete={() => (motionLock ? toast.warning(motionLock) : setDeleteOpen(true))}
+        onDelete={() =>
+          sequence && runningActionIds.has(sequence.id)
+            ? toast.warning(runningSequenceMessage([sequence.name], "删除"))
+            : setDeleteOpen(true)
+        }
         onZoomIn={handleTimelineZoomIn}
         onZoomOut={handleTimelineZoomOut}
         onZoomFit={handleZoomFit}

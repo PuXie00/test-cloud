@@ -14,18 +14,18 @@ const sequence: ActionSequenceConfig = {
   segments: [],
 };
 
-const { builderState, capturedEditor, selectionState, replaceSelection, motionLock, toastWarning } =
+const { builderState, capturedEditor, selectionState, replaceSelection, runningActions, toastWarning } =
   vi.hoisted(() => ({
     builderState: { current: {} as Record<string, unknown> },
     capturedEditor: { current: null as TimelineEditorProps | null },
     selectionState: { ids: [] as number[] },
     replaceSelection: vi.fn(),
-    motionLock: { action: null as string | null },
+    runningActions: { ids: new Set<number>() },
     toastWarning: vi.fn(),
   }));
 
-vi.mock("../../../hooks/axis-motion", () => ({
-  useAxisMotionLocks: () => ({ setup: null, action: motionLock.action, download: null }),
+vi.mock("../../../hooks/action-run", () => ({
+  useRunningActionIds: () => runningActions.ids,
 }));
 
 vi.mock("sonner", () => ({
@@ -396,17 +396,26 @@ describe("editor dock sequence editor", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
-  it("toasts instead of asking to delete while axes move", () => {
-    motionLock.action = "1 个轴运动中，动作暂时不能保存";
+  it("toasts instead of asking to delete while the sequence's action is running", () => {
+    runningActions.ids = new Set([sequence.id]);
     toastWarning.mockClear();
     mockBuilder();
     render(<EditorDock />);
     const deleteButton = screen.getByRole("button", { name: "删除序列" }) as HTMLButtonElement;
     expect(deleteButton.disabled).toBe(false);
     fireEvent.click(deleteButton);
-    expect(toastWarning).toHaveBeenCalledWith("1 个轴运动中，动作暂时不能保存");
+    expect(toastWarning).toHaveBeenCalledWith(`「${sequence.name}」正在运行，停下后再删除`);
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    motionLock.action = null;
+    runningActions.ids = new Set();
+  });
+
+  it("still asks to delete while another action is running", () => {
+    runningActions.ids = new Set([sequence.id + 1]);
+    mockBuilder();
+    render(<EditorDock />);
+    fireEvent.click(screen.getByRole("button", { name: "删除序列" }));
+    expect(screen.getByRole("alertdialog")).not.toBeNull();
+    runningActions.ids = new Set();
   });
 
   it("enables 删除序列 without a timeline block selection", () => {

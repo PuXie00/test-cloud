@@ -120,6 +120,11 @@ describe("one selected segment", () => {
     const end = within(screen.getByRole("region", { name: "终点位姿" }));
     expect(start.getByText("0.0 s")).not.toBeNull();
     expect(end.getByText("5.0 s")).not.toBeNull();
+    // 两端默认折叠，展开才能改
+    expect(start.queryByLabelText("虚轴1")).toBeNull();
+    expect(end.queryByLabelText("虚轴1")).toBeNull();
+    fireEvent.click(end.getByRole("button", { name: "终点位姿" }));
+    expect(start.queryByLabelText("虚轴1")).toBeNull();
     // 终点的虚轴1 加一档
     const endV1 = end.getByLabelText("虚轴1").closest("[data-history-interaction='numeric']");
     fireEvent.mouseDown(within(endV1 as HTMLElement).getByRole("button", { name: "增加" }));

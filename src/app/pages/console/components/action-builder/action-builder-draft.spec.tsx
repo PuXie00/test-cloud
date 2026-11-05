@@ -148,12 +148,12 @@ describe("action builder drafts", () => {
     act(() => result.current.builder.handleInsertTimelineBlock(pose("c", 7, 13_000, 10_000_000)));
     expect([...result.current.builder.draftSequenceIds].sort()).toEqual([good, bad].sort());
 
-    let outcome: { saved: number; blocked: string[] } | undefined;
+    let outcome: ReturnType<typeof result.current.builder.handleSaveAll> | undefined;
     act(() => {
       outcome = result.current.builder.handleSaveAll();
     });
 
-    expect(outcome).toEqual({ saved: 1, blocked: ["待修复的"] });
+    expect(outcome).toEqual({ saved: 1, blocked: ["待修复的"], running: [] });
     expect(saved(result, good).blocks.map((block) => block.id)).toEqual(["a", "b"]);
     expect(saved(result, bad).blocks).toEqual([]);
     expect([...result.current.builder.draftSequenceIds]).toEqual([bad]);

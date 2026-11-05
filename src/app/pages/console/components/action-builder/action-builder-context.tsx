@@ -19,7 +19,8 @@ import {
 } from "@/app/project/capture-pose-sequence";
 import { useProject } from "@/app/project/use-project";
 import { usePermissions } from "@/app/auth/permissions";
-import { useAxisMotionLocks } from "@/app/pages/console/hooks/axis-motion";
+import { useRunningActionIds } from "@/app/pages/console/hooks/action-run";
+import { runningSequenceMessage } from "@/app/project/running-sequence-lock";
 import { evaluateResolvedSequence } from "@/app/project/action-sequence/evaluate-sequence";
 import { createDefaultAxisProfiles } from "@/app/project/action-sequence/motion-profile";
 import {
@@ -138,6 +139,7 @@ import type {
   ActionBuilderContextValue,
   EditorDockMode,
   ProgramItemInput,
+  SaveAllResult,
 } from "./action-builder-context-types";
 import { ActionBuilderContext } from "./action-builder-react-context";
 import type { ContextSelection } from "./context-bar/selection-context-bar";
@@ -234,10 +236,10 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   canEditRef.current = can("action.edit");
   const canEditProgramRef = useRef(can("program.edit"));
   canEditProgramRef.current = can("program.edit");
-  // 轴运动中：保存、增删改名序列、改节目列表都不写进工程（工程数据层也会拦），草稿照常编辑
-  const motionLock = useAxisMotionLocks().action;
-  const motionLockRef = useRef(motionLock);
-  motionLockRef.current = motionLock;
+  // 对应的动作正在运行（Info|act）时不保存、不改名、不删除这条序列（工程数据层也会拦），草稿照常编辑
+  const runningActionIds = useRunningActionIds();
+  const runningActionIdsRef = useRef(runningActionIds);
+  runningActionIdsRef.current = runningActionIds;
 
   /** 工程里已保存的序列：节目列表、执行、预览用这一份 */
   const [appliedSequences, setAppliedSequences] = useState<ActionSequenceConfig[]>([]);
@@ -1211,14 +1213,15 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       if (error) return error;
       const name = normalizeSequenceName(raw);
       if (name === current.name) return null;
+      if (runningActionIdsRef.current.has(current.id)) {
+        return runningSequenceMessage([current.name], "改名");
+      }
       const sequences = motionRef.current.sequences.map((item) =>
         item.id === current.id ? { ...item, name } : item,
       );
       const programs = renameSequenceInProgramTree(motionRef.current.programs, current.id, name);
       return recordEditorStep(() => {
-        if (!commitMotionProjection({ sequences, programs })) {
-          return motionLockRef.current ?? "重命名失败";
-        }
+        if (!commitMotionProjection({ sequences, programs })) return "重命名失败";
         // 重命名立即生效，草稿跟着改名
         const draft = draftsRef.current.get(current.id);
         if (draft) setDraft(current.id, { ...draft, name });
@@ -1231,8 +1234,13 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   const handleDeleteSequence = useCallback(() => {
     const id = selectedSequenceId;
     if (id === null) return;
+    const target = motionRef.current.sequences.find((seq) => seq.id === id);
+    if (!target) return;
+    if (runningActionIdsRef.current.has(id)) {
+      toast.warning(runningSequenceMessage([target.name], "删除"));
+      return;
+    }
     const remaining = motionRef.current.sequences.filter((seq) => seq.id !== id);
-    if (remaining.length === motionRef.current.sequences.length) return;
     const nextPrograms = stripSequenceFromProgramTree(motionRef.current.programs, id);
     const deleted = recordEditorStep(() => {
       if (!commitMotionProjection({ sequences: remaining, programs: nextPrograms })) return false;
@@ -1657,8 +1665,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       toast.info("没有未保存的修改");
       return;
     }
-    if (motionLockRef.current) {
-      toast.warning(motionLockRef.current);
+    if (runningActionIdsRef.current.has(id)) {
+      toast.warning(runningSequenceMessage([draft.name], "保存"));
       return;
     }
     if (getSequenceContentRepairIssue(document, draft)) {
@@ -1674,26 +1682,27 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     toast.success(`已保存「${draft.name}」，节目列表已更新`);
   }, [selectedSequenceId, currentProject?.document, commitSequences, setDraft]);
 
-  /** 保存所有能保存的草稿（离开动作页时用）；待修复的留着草稿，返回它们的名字 */
-  const handleSaveAll = useCallback((): { saved: number; blocked: string[] } => {
+  /**
+   * 保存所有能保存的草稿（离开动作页时用）；待修复的、对应动作正在运行的留着草稿，
+   * 分别返回它们的名字
+   */
+  const handleSaveAll = useCallback((): SaveAllResult => {
     const document = currentProject?.document;
     const drafted = draftsRef.current;
-    if (!document || drafted.size === 0) return { saved: 0, blocked: [] };
-    if (motionLockRef.current) {
-      toast.warning(motionLockRef.current);
-      return { saved: 0, blocked: [] };
-    }
+    if (!document || drafted.size === 0) return { saved: 0, blocked: [], running: [] };
     const savable = new Map<number, ActionSequenceConfig>();
     const blocked: string[] = [];
+    const running: string[] = [];
     for (const [id, draft] of drafted) {
-      if (getSequenceContentRepairIssue(document, draft)) blocked.push(draft.name);
+      if (runningActionIdsRef.current.has(id)) running.push(draft.name);
+      else if (getSequenceContentRepairIssue(document, draft)) blocked.push(draft.name);
       else savable.set(id, draft);
     }
     if (savable.size > 0) {
       const nextSequences = motionRef.current.sequences.map((item) => savable.get(item.id) ?? item);
       if (!commitSequences(nextSequences)) {
         toast.error("保存失败");
-        return { saved: 0, blocked };
+        return { saved: 0, blocked, running };
       }
       replaceDrafts(new Map([...drafted].filter(([id]) => !savable.has(id))));
       toast.success(`已保存 ${savable.size} 个动作序列，节目列表已更新`);
@@ -1701,7 +1710,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     if (blocked.length > 0) {
       toast.warning(`${blocked.map((name) => `「${name}」`).join("")}待修复，没有保存`);
     }
-    return { saved: savable.size, blocked };
+    if (running.length > 0) toast.warning(runningSequenceMessage(running, "保存"));
+    return { saved: savable.size, blocked, running };
   }, [currentProject?.document, commitSequences, replaceDrafts]);
 
   /**
