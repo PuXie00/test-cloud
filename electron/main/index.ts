@@ -28,8 +28,6 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
   ? path.join(process.env.APP_ROOT, 'public')
   : RENDERER_DIST
 // process.env.YZ_CPP_WS_URL = process.env.YZ_CPP_WS_URL || 'ws://127.0.0.1:9000'
-// process.env.YZ_CPP_RUNTIME_PATH = process.env.YZ_CPP_RUNTIME_PATH || path.join(process.env.APP_ROOT, 'YzRuntime.exe')
-// process.env.YZ_CPP_RUNTIME_EXE = process.env.YZ_CPP_RUNTIME_EXE || 'YzRuntime.exe'
 
 // Disable GPU Acceleration for Windows 7
 if (os.release().startsWith('6.1')) app.disableHardwareAcceleration()

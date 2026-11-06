@@ -3,7 +3,6 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { app } from 'electron'
 
-/** 可被环境变量覆盖：YZ_CPP_RUNTIME_EXE / YZ_CPP_RUNTIME_PATH */
 export const DEFAULT_CPP_RUNTIME_EXE = 'YzRuntime.exe'
 
 const CONSOLE_TITLE = 'YzRuntime'
@@ -11,30 +10,19 @@ const CONSOLE_TITLE = 'YzRuntime'
 let child: ChildProcess | null = null
 let stopping = false
 
+/** IS_DEV 用项目目录 Runtime/YzRuntime.exe，否则用安装目录 Runtime/YzRuntime.exe。 */
 export const resolveCppRuntimePath = (): string => {
-  const override = process.env.YZ_CPP_RUNTIME_PATH?.trim()
-  if (override) return path.resolve(override)
-
-  const exeName = process.env.YZ_CPP_RUNTIME_EXE?.trim() || DEFAULT_CPP_RUNTIME_EXE
-  const appDir = path.dirname(app.getPath('exe'))
-  const appRoot = process.env.APP_ROOT ?? ''
-  const candidates = [
-    path.join(appDir, exeName),
-    appRoot ? path.join(appRoot, exeName) : '',
-    appRoot ? path.join(appRoot, 'Runtime', exeName) : '',
-    path.join(appDir, 'Runtime', exeName),
-  ].filter(Boolean)
-
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate
-  }
-  return candidates[0] ?? path.join(appDir, exeName)
+  const installDir = path.dirname(app.getPath('exe'))
+  const base = process.env.IS_DEV === 'true'
+    ? process.env.APP_ROOT?.trim() || installDir
+    : installDir
+  return path.join(base, 'Runtime', DEFAULT_CPP_RUNTIME_EXE)
 }
 
 export const isCppRuntimeRunning = (): boolean =>
   Boolean(child?.pid && !child.killed)
 
-const isDebugBuild = process.env.BUILD_MODE === 'debug'
+const isDebugBuild = process.env.IS_DEBUG === 'true'
 
 const spawnCppRuntime = (exePath: string, cwd: string): ChildProcess => {
   if (process.platform !== 'win32') {

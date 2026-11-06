@@ -13,11 +13,10 @@ export const resolveKinematicsCwd = (): string => path.dirname(resolveKinematics
 
 export const resolveKinematicsExePath = (): string =>
   resolveKinematicsExePathFrom({
-    exeName: process.env.YZ_KINEMATICS_EXE?.trim() || DEFAULT_KINEMATICS_EXE,
-    appDir: path.dirname(app.getPath('exe')),
-    appRoot: process.env.APP_ROOT?.trim(),
-    override: process.env.YZ_KINEMATICS_PATH?.trim(),
-    exists: (filePath) => fs.existsSync(filePath),
+    exeName: DEFAULT_KINEMATICS_EXE,
+    installDir: path.dirname(app.getPath('exe')),
+    projectDir: process.env.APP_ROOT?.trim(),
+    dev: process.env.IS_DEV === 'true',
   })
 
 export const isKinematicsRunning = (): boolean =>

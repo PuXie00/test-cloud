@@ -2,28 +2,20 @@ import path from "node:path";
 
 export type ResolveKinematicsExeInput = {
   exeName: string;
-  appDir: string;
-  appRoot?: string;
-  override?: string;
-  exists: (filePath: string) => boolean;
+  /** 安装目录：Electron 可执行文件所在目录 */
+  installDir: string;
+  /** 项目目录：开发态 APP_ROOT */
+  projectDir?: string;
+  dev: boolean;
 };
 
+/** IS_DEV 用项目目录下的程序，否则用安装目录下的同名程序。 */
 export const resolveKinematicsExePathFrom = (
   input: ResolveKinematicsExeInput,
 ): string => {
-  const override = input.override?.trim();
-  if (override) return path.resolve(override);
-
-  const appRoot = input.appRoot?.trim() ?? "";
-  const candidates = [
-    appRoot ? path.join(appRoot, input.exeName) : "",
-    appRoot ? path.join(appRoot, "Runtime", input.exeName) : "",
-    path.join(input.appDir, input.exeName),
-    path.join(input.appDir, "Runtime", input.exeName),
-  ].filter(Boolean);
-
-  for (const candidate of candidates) {
-    if (input.exists(candidate)) return candidate;
+  if (input.dev) {
+    const projectDir = input.projectDir?.trim();
+    if (projectDir) return path.join(path.resolve(projectDir), input.exeName);
   }
-  return candidates[0] ?? path.join(input.appDir, input.exeName);
+  return path.join(input.installDir, input.exeName);
 };

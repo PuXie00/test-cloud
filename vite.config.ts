@@ -15,10 +15,10 @@ export default defineConfig(({ command, mode }) => {
 
   // 环境 = mode：开发 development（pnpm dev）/ 测试 staging / 正式 production（vite build 默认）
   // 读 .env、.env.local、.env.[mode]、.env.[mode].local，打包机 shell 里的同名变量优先
-  const fileEnv = loadEnv(mode, __dirname, ['YZ_', 'BUILD_MODE'])
+  const fileEnv = loadEnv(mode, __dirname, ['YZ_', 'IS_DEBUG', 'IS_DEV'])
   const yzEnv = Object.fromEntries(Object.entries(fileEnv).filter(([key]) => key.startsWith('YZ_')))
-  const buildMode = fileEnv.BUILD_MODE ?? ''
-  const isDebugBuild = buildMode === 'debug'
+  const isDebugBuild = fileEnv.IS_DEBUG === 'true'
+  const isDev = fileEnv.IS_DEV === 'true'
   const sourcemap = isServe || !!process.env.VSCODE_DEBUG
 
   // 正式构建：完全移除 console + debugger；调试构建：保留所有 console
@@ -64,7 +64,8 @@ export default defineConfig(({ command, mode }) => {
             define: {
               __BUILD_DEBUG__: JSON.stringify(isDebugBuild),
               __YZ_ENV__: JSON.stringify(yzEnv),
-              'process.env.BUILD_MODE': JSON.stringify(buildMode),
+              'process.env.IS_DEBUG': JSON.stringify(isDebugBuild ? 'true' : 'false'),
+              'process.env.IS_DEV': JSON.stringify(isDev ? 'true' : 'false'),
             },
           },
         },

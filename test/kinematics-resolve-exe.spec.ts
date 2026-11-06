@@ -3,58 +3,39 @@ import { describe, expect, it } from "vitest";
 import { resolveKinematicsExePathFrom } from "../shared/kinematics/resolve-exe";
 
 const exeName = "YXZ.exe";
+const projectDir = path.join("F:", "yuezhong", "main", "console-txt");
+const installDir = path.join("C:", "Program Files", "console-txt");
 
 describe("resolveKinematicsExePathFrom", () => {
-  it("prefers an explicit override path", () => {
-    const override = path.resolve("/custom/solver.exe");
+  it("uses the project directory when IS_DEV", () => {
     expect(
       resolveKinematicsExePathFrom({
         exeName,
-        appDir: path.join("/electron", "dist"),
-        appRoot: path.join("/project"),
-        override,
-        exists: () => false,
+        installDir,
+        projectDir,
+        dev: true,
       }),
-    ).toBe(override);
+    ).toBe(path.join(projectDir, exeName));
   });
 
-  it("uses APP_ROOT when the electron dist directory has no exe", () => {
-    const appRoot = path.join("F:", "yuezhong", "main", "console-txt");
-    const appDir = path.join(appRoot, "node_modules", "electron", "dist");
-    const atRoot = path.join(appRoot, exeName);
+  it("uses the install directory when not IS_DEV", () => {
     expect(
       resolveKinematicsExePathFrom({
         exeName,
-        appDir,
-        appRoot,
-        exists: (filePath) => filePath === atRoot,
+        installDir,
+        projectDir,
+        dev: false,
       }),
-    ).toBe(atRoot);
+    ).toBe(path.join(installDir, exeName));
   });
 
-  it("uses the packaged app directory when the exe sits next to it", () => {
-    const appDir = path.join("C:", "Program Files", "console-txt");
-    const atApp = path.join(appDir, exeName);
+  it("uses the install directory when development has no project directory", () => {
     expect(
       resolveKinematicsExePathFrom({
         exeName,
-        appDir,
-        appRoot: appDir,
-        exists: (filePath) => filePath === atApp,
+        installDir,
+        dev: true,
       }),
-    ).toBe(atApp);
-  });
-
-  it("names the project-root path when the exe is missing", () => {
-    const appRoot = path.join("F:", "yuezhong", "main", "console-txt");
-    const appDir = path.join(appRoot, "node_modules", "electron", "dist");
-    expect(
-      resolveKinematicsExePathFrom({
-        exeName,
-        appDir,
-        appRoot,
-        exists: () => false,
-      }),
-    ).toBe(path.join(appRoot, exeName));
+    ).toBe(path.join(installDir, exeName));
   });
 });

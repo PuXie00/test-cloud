@@ -6,7 +6,7 @@ import type { AiChildMessage, AiMainMessage } from '../../../shared/ai-bridge/ty
 /** 跑满这么久再退出，下次重启从最短退避开始 */
 const HEALTHY_RUN_MS = 30000
 
-const verbose = Boolean(process.env.VITE_DEV_SERVER_URL) || process.env.BUILD_MODE === 'debug'
+const verbose = Boolean(process.env.VITE_DEV_SERVER_URL) || process.env.IS_DEBUG === 'true'
 
 /** 管理 ai-server utilityProcess：拉起、意外退出后指数退避重启、退出时关闭 */
 export class AiServerProcess {
