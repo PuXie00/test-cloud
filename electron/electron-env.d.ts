@@ -16,3 +16,6 @@ declare namespace NodeJS {
     YZ_USERS_FILE?: string
   }
 }
+
+/** 打包时从 .env.[mode] 读到的 YZ_*，见 vite.config.ts、main/app-env.ts */
+declare const __YZ_ENV__: Record<string, string>

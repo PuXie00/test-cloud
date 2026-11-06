@@ -15,6 +15,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && electron-builder",
+    "build:staging": "vite build --mode staging && electron-builder",
     "build:win:dev": "set BUILD_MODE=debug&& vite build && electron-builder --config electron-builder.dev.json",
     "build:linux:appimage": "vite build && electron-builder --linux AppImage",
     "build:linux:deb": "vite build && electron-builder --linux deb",
