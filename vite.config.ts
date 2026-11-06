@@ -1,18 +1,24 @@
 import { rmSync } from 'node:fs'
 import path from 'node:path'
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react-swc'
 import electron from 'vite-plugin-electron/simple'
 import pkg from './package.json'
 import tailwindcss from '@tailwindcss/vite'
 
 // https://vitejs.dev/config/
-export default defineConfig(({ command }) => {
+export default defineConfig(({ command, mode }) => {
   rmSync('dist-electron', { recursive: true, force: true })
 
   const isServe = command === 'serve'
   const isBuild = command === 'build'
-  const isDebugBuild = process.env.BUILD_MODE === 'debug'
+
+  // 环境 = mode：开发 development（pnpm dev）/ 测试 staging / 正式 production（vite build 默认）
+  // 读 .env、.env.local、.env.[mode]、.env.[mode].local，打包机 shell 里的同名变量优先
+  const fileEnv = loadEnv(mode, __dirname, ['YZ_', 'BUILD_MODE'])
+  const yzEnv = Object.fromEntries(Object.entries(fileEnv).filter(([key]) => key.startsWith('YZ_')))
+  const buildMode = fileEnv.BUILD_MODE ?? ''
+  const isDebugBuild = buildMode === 'debug'
   const sourcemap = isServe || !!process.env.VSCODE_DEBUG
 
   // 正式构建：完全移除 console + debugger；调试构建：保留所有 console
@@ -57,7 +63,8 @@ export default defineConfig(({ command }) => {
             },
             define: {
               __BUILD_DEBUG__: JSON.stringify(isDebugBuild),
-              'process.env.BUILD_MODE': JSON.stringify(process.env.BUILD_MODE ?? ''),
+              __YZ_ENV__: JSON.stringify(yzEnv),
+              'process.env.BUILD_MODE': JSON.stringify(buildMode),
             },
           },
         },

@@ -1,3 +1,4 @@
+import './app-env'
 import { app, BrowserWindow, Menu, shell } from 'electron'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
