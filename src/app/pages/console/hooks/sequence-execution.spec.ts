@@ -205,7 +205,7 @@ describe("downloadSequence", () => {
     expect(transport.saveAction).toHaveBeenCalled();
   });
 
-  it("writes interval kinematics on the start block when runDirection is reverse", async () => {
+  it("builds the move table for the run direction", async () => {
     const moving: ActionSequenceConfig = {
       ...validSequence,
       blocks: [
@@ -224,23 +224,15 @@ describe("downloadSequence", () => {
     await downloadSequence(moving, context, reverse, null, 1, false);
     const blocksOf = (transport: InstrumentedTransport) =>
       transport.saveAction.mock.calls[0]?.[0][0].modelList[0].timeBlockList as Array<{
+        time: number;
         virtualAxis: Array<{ pos: number; vel: number; accVel: number; decVel: number; passVel: number }>;
       }>;
-    const forwardBlocks = blocksOf(forward);
-    const reverseBlocks = blocksOf(reverse);
-    expect(forwardBlocks[0]?.virtualAxis[0]?.vel).toBe(0);
-    expect(forwardBlocks[1]?.virtualAxis[0]?.vel).not.toBe(0);
-    expect(reverseBlocks[0]?.virtualAxis[0]).toEqual({
-      ...forwardBlocks[1]?.virtualAxis[0],
-      pos: 0,
-    });
-    expect(reverseBlocks[1]?.virtualAxis[0]).toEqual({
-      pos: 100,
-      vel: 0,
-      accVel: 0,
-      decVel: 0,
-      passVel: 0,
-    });
+    // 正向 0 时刻起步去 100；反向在原曲线 1000 处起步回 0，速度相同
+    const [forwardBlock] = blocksOf(forward);
+    const [reverseBlock] = blocksOf(reverse);
+    expect(forwardBlock).toMatchObject({ time: 0, virtualAxis: [{ pos: 100, passVel: 0 }] });
+    expect(reverseBlock).toMatchObject({ time: 1000, virtualAxis: [{ pos: 0, passVel: 0 }] });
+    expect(reverseBlock?.virtualAxis[0]?.vel).toBe(forwardBlock?.virtualAxis[0]?.vel);
   });
 });
 
