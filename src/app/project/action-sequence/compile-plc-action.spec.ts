@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { axisKinematics } from "./axis-kinematics";
 import { compilePlcAction } from "./compile-plc-action";
 import { createDefaultAxisProfiles } from "./motion-profile";
 import type { ActionSequenceConfig, AxisMotionProfiles, DynamicPresetBlock, ModelPose, MotionProfile, TimelineBlock } from "./types";
@@ -344,7 +343,7 @@ describe("compilePlcAction", () => {
     ).toThrow(/100/);
   });
 
-  it("emits one C++ time block per pose with arriving-segment absolute kinematics", () => {
+  it("emits one move to the end pose at the start of a single span", () => {
     const sequence = sequenceOf(
       [
         { id: "start", kind: "pose", objectId: 7, atMs: 1000, pose: origin },
@@ -362,17 +361,19 @@ describe("compilePlcAction", () => {
       sequence,
       compileContext([{ id: 7, enabledVirtualAxes: ["v1"] as const }]),
     );
-    const expected = axisKinematics(trap(150, 250), 1000, 1000);
+    // 匀速 1000 / (1 - 0.075 - 0.125) = 1250，加速 1250 / 0.15，减速 1250 / 0.25
     expect(compiled.models).toEqual([{
       deviceId: 7,
       timeBlockList: [
-        { time: 1000, virtualAxis: [{ pos: 0, vel: 0, accVel: 0, decVel: 0, passVel: 0 }] },
-        { time: 2000, virtualAxis: [{ pos: 1000, ...expected, passVel: 0 }] },
+        {
+          time: 1000,
+          virtualAxis: [{ pos: 1000, vel: 1250, accVel: 8333.334, decVel: 5000, passVel: 0 }],
+        },
       ],
     }]);
   });
 
-  it("writes the same kinematics on the interval start when requested", () => {
+  it("runs the moves backwards from the end when reversed", () => {
     const sequence = sequenceOf(
       [
         { id: "start", kind: "pose", objectId: 7, atMs: 1000, pose: origin },
@@ -391,12 +392,14 @@ describe("compilePlcAction", () => {
       compileContext([{ id: 7, enabledVirtualAxes: ["v1"] as const }]),
       true,
     );
-    const expected = axisKinematics(trap(150, 250), 1000, 1000);
+    // 倒走：原曲线 2000 处起步回到 0，原来的减速段变成加速段
     expect(compiled.models).toEqual([{
       deviceId: 7,
       timeBlockList: [
-        { time: 1000, virtualAxis: [{ pos: 0, ...expected, passVel: 0 }] },
-        { time: 2000, virtualAxis: [{ pos: 1000, vel: 0, accVel: 0, decVel: 0, passVel: 0 }] },
+        {
+          time: 2000,
+          virtualAxis: [{ pos: 0, vel: 1250, accVel: 5000, decVel: 8333.334, passVel: 0 }],
+        },
       ],
     }]);
   });
@@ -409,7 +412,25 @@ describe("compilePlcAction", () => {
     expect(compiled.models[0]?.timeBlockList[0]?.virtualAxis).toHaveLength(1);
   });
 
-  it("includes invisible wave hold poses as zero-kinematics blocks", () => {
+  it("leaves axes without a new move at that time null", () => {
+    const sequence = sequenceOf([
+      { id: "a", kind: "pose", objectId: 7, atMs: 0, pose: origin },
+      { id: "b", kind: "pose", objectId: 7, atMs: 1000, pose: { v1: 100, v2: 0, v3: 0 } },
+      { id: "c", kind: "pose", objectId: 7, atMs: 2000, pose: { v1: 100, v2: 10, v3: 0 } },
+    ]);
+    const compiled = compilePlcAction(
+      sequence,
+      compileContext([{ id: 7, enabledVirtualAxes: ["v1", "v2"] as const }]),
+    );
+    const blocks = compiled.models[0]!.timeBlockList;
+    expect(blocks.map((block) => block.time)).toEqual([0, 1000]);
+    expect(blocks[0]?.virtualAxis[0]).toMatchObject({ pos: 100, passVel: 0 });
+    expect(blocks[0]?.virtualAxis[1]).toBeNull();
+    expect(blocks[1]?.virtualAxis[0]).toBeNull();
+    expect(blocks[1]?.virtualAxis[1]).toMatchObject({ pos: 10, passVel: 0 });
+  });
+
+  it("sends one move per wave stroke and nothing for the invisible holds", () => {
     const wave: DynamicPresetBlock = {
       id: "wave-1",
       kind: "dynamic-preset",
@@ -435,19 +456,12 @@ describe("compilePlcAction", () => {
         { id: 8, enabledVirtualAxes: ["v1"] as const },
       ]),
     );
-    const model7 = compiled.models.find((model) => model.deviceId === 7);
-    expect(model7?.timeBlockList.map((block) => block.time)).toEqual([1000, 1750, 2500, 3000]);
-    expect(model7?.timeBlockList[0]?.virtualAxis).toEqual([
-      { pos: 1000, vel: 0, accVel: 0, decVel: 0, passVel: 0 },
-    ]);
-    expect(model7?.timeBlockList[3]?.virtualAxis).toEqual([
-      { pos: 1000, vel: 0, accVel: 0, decVel: 0, passVel: 0 },
-    ]);
-    const model8 = compiled.models.find((model) => model.deviceId === 8);
-    expect(model8?.timeBlockList[0]).toEqual({
-      time: 1000,
-      virtualAxis: [{ pos: 1000, vel: 0, accVel: 0, decVel: 0, passVel: 0 }],
-    });
+    const strokes = (deviceId: number) =>
+      compiled.models
+        .find((model) => model.deviceId === deviceId)
+        ?.timeBlockList.map((block) => [block.time, block.virtualAxis[0]?.pos]);
+    expect(strokes(7)).toEqual([[1000, 1500], [1750, 1000]]);
+    expect(strokes(8)).toEqual([[1500, 1500], [2250, 1000]]);
   });
 
   it("throws when compiling an unsupported C++ motion profile", () => {

@@ -4,17 +4,13 @@ import type {
   PlcCompiledAction,
   PlcCompiledTimeline,
 } from "@shared/csocket/action-data-save";
-import { roundProjectCoordinate } from "../project-quantity";
-import { ZERO_AXIS_KINEMATICS } from "./axis-kinematics";
-import { axisMotionKinematics } from "./axis-motion";
 import { finalizePlcTimeline, trapezoidToCurveSegments } from "./curve-segments";
 import { instructionToCompiledEvent } from "./instruction-registry";
+import { axisMoveCommands, type AxisMoveCommand } from "./move-commands";
 import {
   objectAxisMotions,
   resolveActionSequence,
-  segmentAxisMotion,
   type ResolvedActionSequence,
-  type ResolvedPosePoint,
   uncontrolledAxesOf,
 } from "./resolve-sequence";
 import type { ActionSequenceConfig } from "./types";
@@ -66,10 +62,15 @@ const sortIoBlocks = (blocks: cCompiledEvent[]): cCompiledEvent[] =>
 
 const AXES: VirtualAxisId[] = ["v1", "v2", "v3"];
 
+/**
+ * 非强制（C++ 按 move 下发）的时间块：每个时间块是这一刻要下发的 move，
+ * 各轴给目标位置、速度、加减速度；这一刻不用重发的轴为 null。中途不停的位姿不出时间块，
+ * 只在要变速的时刻重发同一目标。序列不控制、一直不动的轴始终为 null。
+ */
 const compileModels = (
   resolved: ResolvedActionSequence,
   objectById: Map<number, PlcCompileObject>,
-  kinematicsAtStart: boolean,
+  options: { reverse: boolean; loop: boolean },
 ): cCompiledModel[] =>
   [...resolved.posesByObject.entries()]
     .sort((left, right) => compareNumber(left[0], right[0]))
@@ -78,36 +79,45 @@ const compileModels = (
       if (!object || poses.length === 0) return [];
       const enabledAxes = AXES.filter((axis) => object.enabledVirtualAxes.includes(axis));
       const objectSegments = resolved.segments.filter((segment) => segment.objectId === deviceId);
-      const timeBlockList = poses.map((pose: ResolvedPosePoint, index) => {
-        const neighbor = kinematicsAtStart ? poses[index + 1] : poses[index - 1];
-        const segment = neighbor
-          ? objectSegments.find((item) =>
-              kinematicsAtStart
-                ? item.fromRef === pose.sourceRef && item.toRef === neighbor.sourceRef
-                : item.fromRef === neighbor.sourceRef && item.toRef === pose.sourceRef,
-            )
-          : undefined;
-        return {
-          time: pose.atMs,
-          // 位置按启用的轴排；这一帧不设定的轴放 null，C++ 按前后设定值之间的曲线继续运动
-          // passVel：经过这一帧的速度，连续衔接的中间位姿不为 0
-          virtualAxis: enabledAxes.map((axis) => {
-            if (pose.unsetAxes?.includes(axis)) return null;
-            const pos = roundProjectCoordinate(pose.pose[axis]);
-            const passVel = roundProjectCoordinate(pose.junctions?.[axis]?.speed ?? 0);
-            if (!segment) return { pos, ...ZERO_AXIS_KINEMATICS, passVel };
-            return { pos, ...axisMotionKinematics(segmentAxisMotion(segment, axis)), passVel };
-          }),
-        };
-      });
+      const uncontrolled = uncontrolledAxesOf(resolved, deviceId);
+      const commandsByAxis = new Map(
+        enabledAxes.map((axis) => [
+          axis,
+          uncontrolled.includes(axis)
+            ? new Map<number, AxisMoveCommand>()
+            : new Map(
+                axisMoveCommands(objectAxisMotions(objectSegments, axis), options).map((command) => [
+                  command.atMs,
+                  command,
+                ]),
+              ),
+        ]),
+      );
+      const times = [...new Set([...commandsByAxis.values()].flatMap((commands) => [...commands.keys()]))].sort(
+        compareNumber,
+      );
+      const timeBlockList = times.map((time) => ({
+        time,
+        virtualAxis: enabledAxes.map((axis) => {
+          const command = commandsByAxis.get(axis)?.get(time);
+          if (!command) return null;
+          return {
+            pos: command.target,
+            vel: command.velocity,
+            accVel: command.acceleration,
+            decVel: command.deceleration,
+            passVel: command.passSpeed,
+          };
+        }),
+      }));
       return [{ deviceId, timeBlockList }];
     });
 
 export const compilePlcAction = (
   sequence: ActionSequenceConfig,
   context: PlcCompileContext,
-  /** true：速度和加减速写在区间起点；false：写在终点。 */
-  kinematicsAtStart = false,
+  /** 反向运行：非强制的 move 时间块按倒走的曲线生成（强制轨迹的曲线行不受影响） */
+  reverse = false,
 ): PlcCompiledAction => {
   const issues = validateActionSequence(sequence, {
     objects: context.objects.map((object) => ({
@@ -176,7 +186,7 @@ export const compilePlcAction = (
   return {
     totalDuration: resolved.totalMs,
     timelines,
-    models: compileModels(resolved, objectById, kinematicsAtStart),
+    models: compileModels(resolved, objectById, { reverse, loop: sequence.loop === true }),
     ioBlocks: sortIoBlocks(resolved.commands.map(instructionToCompiledEvent)),
   };
 };
