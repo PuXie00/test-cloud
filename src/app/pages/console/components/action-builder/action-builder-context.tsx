@@ -104,7 +104,11 @@ import {
   updateSegmentSettings,
   writeSegmentProfiles,
   retimeSegmentCurves,
+  alignMotionSegments,
+  alignPoseBlocks,
+  type AlignSegmentsResult,
   type EditResult,
+  type SegmentAlignEdge,
   type SegmentProfileWrite,
   type SegmentRetimeWrite,
 } from "./sequence-ops";
@@ -169,6 +173,13 @@ const RETIME_ERROR_MESSAGE: Partial<Record<SequenceEditError, string>> = {
   "motion-overlap": "按这个速度挪动后会和已有的动作重叠，没有修改",
   "time-conflict": "按这个速度挪动后同一时刻会有两个动作块，没有修改",
   "invalid-time-range": "按这个速度时长太短，终点会越过中间的位姿，没有修改",
+};
+
+/** 位姿对齐被拒时的提示（往前碰到前一个动作块的单独带物体名） */
+const ALIGN_ERROR_MESSAGE: Partial<Record<SequenceEditError | "shared-block", string>> = {
+  "motion-overlap": "对齐后会和已有的动作重叠，没有对齐",
+  "time-conflict": "对齐后同一时刻会有两个动作块，没有对齐",
+  "shared-block": "几个物体共用的预设要挪的时间不一样，没有对齐",
 };
 
 /** 在播放头位置给多个物体新建或更新动作块的结果 */
@@ -881,6 +892,65 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       return ok;
     },
     [applySequenceEdit, sequenceEditOptions],
+  );
+
+  /** 跑一次对齐编辑：改不了时提示原因，没东西要挪时提示 alreadyText */
+  const runAlignEdit = useCallback(
+    (align: (current: ActionSequenceConfig) => AlignSegmentsResult, alreadyText: string): boolean => {
+      let failure: Extract<AlignSegmentsResult, { ok: false }> | null = null;
+      let moved = 0;
+      const ok = updateSelectedSequence((current) => {
+        const result = align(current);
+        if (!result.ok) {
+          failure = result;
+          return null;
+        }
+        moved = result.movedObjectIds.length;
+        return moved > 0 ? result.sequence : null;
+      });
+      const refused = failure as Extract<AlignSegmentsResult, { ok: false }> | null;
+      if (refused?.reason === "crosses-previous") {
+        const name = getTimelineObject(refused.objectId ?? -1)?.name ?? `模型 ${refused.objectId}`;
+        toast.warning(`「${name}」往前会碰到它前一个动作，没有对齐`);
+      } else if (refused) {
+        toast.warning(ALIGN_ERROR_MESSAGE[refused.reason] ?? "无法对齐");
+      } else if (moved === 0) {
+        toast.info(alreadyText);
+      }
+      return ok;
+    },
+    [updateSelectedSequence, getTimelineObject],
+  );
+
+  const handleAlignSegments = useCallback(
+    (segmentKeys: readonly string[], edge: SegmentAlignEdge, target: "cursor" | "extreme"): boolean =>
+      runAlignEdit(
+        (current) =>
+          alignMotionSegments(
+            current,
+            segmentKeys,
+            edge,
+            target === "cursor" ? { kind: "time", atMs: cursorMs } : { kind: "extreme" },
+            sequenceEditOptions,
+          ),
+        edge === "start" ? "已经是同时启动" : "已经是同时到达",
+      ),
+    [runAlignEdit, cursorMs, sequenceEditOptions],
+  );
+
+  const handleAlignPoses = useCallback(
+    (blockIds: readonly string[], target: "cursor" | "earliest" | "latest"): boolean =>
+      runAlignEdit(
+        (current) =>
+          alignPoseBlocks(
+            current,
+            blockIds,
+            target === "cursor" ? { kind: "time", atMs: cursorMs } : { kind: target },
+            sequenceEditOptions,
+          ),
+        "选中的位姿已经在同一时刻",
+      ),
+    [runAlignEdit, cursorMs, sequenceEditOptions],
   );
 
   const [phaseInputMode, setPhaseInputMode] = useState<PhaseInputMode>("time");
@@ -1837,6 +1907,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleUpdateSegmentSettings,
       handleWriteSegmentProfiles,
       handleRetimeSegmentCurves,
+      handleAlignSegments,
+      handleAlignPoses,
       handleBlockDelete,
       handleExplodePresets,
       handleRelayoutPreset,
@@ -1923,6 +1995,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleUpdateSegmentSettings,
       handleWriteSegmentProfiles,
       handleRetimeSegmentCurves,
+      handleAlignSegments,
+      handleAlignPoses,
       handleBlockDelete,
       handleExplodePresets,
       handleRelayoutPreset,

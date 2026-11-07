@@ -830,6 +830,170 @@ export const retimeSegmentCurves = (
   return commitBlocks(sequence, next, options);
 };
 
+/** 位姿对齐：同时启动对齐起点，同时到达对齐终点 */
+export type SegmentAlignEdge = "start" | "end";
+
+/** 对齐到哪：某个时刻（播放游标），或选中里最早的起点 / 最晚的终点 */
+export type SegmentAlignTarget = { kind: "time"; atMs: number } | { kind: "extreme" };
+
+export type AlignSegmentsResult =
+  | { ok: true; sequence: ActionSequenceConfig; movedObjectIds: number[] }
+  | {
+      ok: false;
+      /** crosses-previous：往前会碰到这个物体前一个动作块；shared-block：共用的预设要挪的量不一样 */
+      reason: SequenceEditError | "crosses-previous" | "shared-block";
+      objectId?: number;
+    };
+
+const blockEndMs = (block: TimelineBlock): number =>
+  block.kind === "dynamic-preset" ? block.endMs : block.atMs;
+
+type ObjectShift = { fromMs: number; deltaMs: number };
+
+/**
+ * 对齐用的平移：每个物体从 fromMs 起的块一起挪 deltaMs。往前移不能碰到（或越过）这个物体前一个动作块，
+ * 几个物体共用的块（预设）要挪的量不一样时不改。
+ */
+const shiftObjectsFrom = (
+  sequence: ActionSequenceConfig,
+  shifts: ReadonlyMap<number, ObjectShift>,
+  options?: SequenceEditOptions,
+): AlignSegmentsResult => {
+  for (const [objectId, { fromMs, deltaMs }] of shifts) {
+    if (deltaMs >= 0) continue;
+    const previousEndMs = sequence.blocks
+      .filter((block) => blockObjectIds(block).includes(objectId) && blockTimeMs(block) < fromMs)
+      .reduce((latest, block) => Math.max(latest, blockEndMs(block)), -1);
+    if (fromMs + deltaMs <= previousEndMs || fromMs + deltaMs < 0) {
+      return { ok: false, reason: "crosses-previous", objectId };
+    }
+  }
+
+  const movedObjectIds = [...shifts].filter(([, shift]) => shift.deltaMs !== 0).map(([id]) => id);
+  if (movedObjectIds.length === 0) return { ok: true, sequence, movedObjectIds };
+
+  const next = cloneSequence(sequence);
+  let sharedConflict = false;
+  next.blocks = next.blocks.map((block) => {
+    const atMs = blockTimeMs(block);
+    const deltas = new Set(
+      blockObjectIds(block).flatMap((objectId) => {
+        const shift = shifts.get(objectId);
+        return shift && atMs >= shift.fromMs ? [shift.deltaMs] : [];
+      }),
+    );
+    if (deltas.size > 1) sharedConflict = true;
+    const [deltaMs = 0] = deltas;
+    return deltaMs === 0 ? block : snapBlockTimes(shiftBlock(block, deltaMs));
+  });
+  if (sharedConflict) return { ok: false, reason: "shared-block" };
+  if (next.blocks.some((block) => timeRangeError(block))) {
+    return { ok: false, reason: "invalid-time-range" };
+  }
+  const committed = commitBlocks(sequence, next, options);
+  if (!committed.ok) return committed;
+  return { ok: true, sequence: committed.sequence, movedObjectIds };
+};
+
+/**
+ * 位姿对齐：每个物体选中的运动区间（几段时从最早起点到最晚终点）整段平移，起点（或终点）落到同一时刻，
+ * 时长不变；这个物体从这段开始往后的块一起平移。往前移不能碰到这个物体前一个动作块，
+ * 几个物体共用的块（预设）要挪的量不一样时不改。
+ */
+export const alignMotionSegments = (
+  sequence: ActionSequenceConfig,
+  segmentKeys: readonly string[],
+  edge: SegmentAlignEdge,
+  target: SegmentAlignTarget,
+  options?: SequenceEditOptions,
+): AlignSegmentsResult => {
+  let resolved: ReturnType<typeof resolveActionSequence>;
+  try {
+    resolved = resolveActionSequence(sequence);
+  } catch {
+    return { ok: false, reason: "invalid-preset" };
+  }
+  const keys = new Set(segmentKeys);
+  const spans = new Map<number, { startMs: number; endMs: number; fromRef: string }>();
+  for (const segment of resolved.segments) {
+    if (!keys.has(segment.key)) continue;
+    const span = spans.get(segment.objectId);
+    if (!span) {
+      spans.set(segment.objectId, {
+        startMs: segment.startMs,
+        endMs: segment.endMs,
+        fromRef: segment.fromRef,
+      });
+      continue;
+    }
+    if (segment.startMs < span.startMs) {
+      span.startMs = segment.startMs;
+      span.fromRef = segment.fromRef;
+    }
+    span.endMs = Math.max(span.endMs, segment.endMs);
+  }
+  if (spans.size === 0) return { ok: false, reason: "missing-block" };
+
+  const edgeMs = (span: { startMs: number; endMs: number }) =>
+    edge === "start" ? span.startMs : span.endMs;
+  const targetMs = snapTimeMs(
+    target.kind === "time"
+      ? target.atMs
+      : edge === "start"
+        ? Math.min(...[...spans.values()].map(edgeMs))
+        : Math.max(...[...spans.values()].map(edgeMs)),
+  );
+
+  // 起点在预设里时整个预设一起挪：从产生起点的那个块的时刻开始平移
+  const shifts = new Map<number, ObjectShift>();
+  for (const [objectId, span] of spans) {
+    const sourceBlockId = resolved.poses.find((point) => point.sourceRef === span.fromRef)?.sourceBlockId;
+    const source = sequence.blocks.find((block) => block.id === sourceBlockId);
+    const fromMs = Math.min(span.startMs, source ? blockTimeMs(source) : span.startMs);
+    shifts.set(objectId, { fromMs, deltaMs: targetMs - edgeMs(span) });
+  }
+  return shiftObjectsFrom(sequence, shifts, options);
+};
+
+/** 单个位姿对齐到哪：播放游标的时刻，或选中位姿里最早 / 最晚的 */
+export type PoseAlignTarget =
+  | { kind: "time"; atMs: number }
+  | { kind: "earliest" }
+  | { kind: "latest" };
+
+/**
+ * 位姿对齐（只选了位姿、每个物体一个）：选中的位姿挪到同一时刻，这个物体后面的块一起平移，
+ * 到达这个位姿的那段时长跟着变。往前移不能碰到这个物体前一个动作块。
+ */
+export const alignPoseBlocks = (
+  sequence: ActionSequenceConfig,
+  blockIds: readonly string[],
+  target: PoseAlignTarget,
+  options?: SequenceEditOptions,
+): AlignSegmentsResult => {
+  const ids = new Set(blockIds);
+  const poses = sequence.blocks.filter(
+    (block): block is PoseBlock => block.kind === "pose" && ids.has(block.id),
+  );
+  if (poses.length === 0) return { ok: false, reason: "missing-block" };
+  if (new Set(poses.map((pose) => pose.objectId)).size !== poses.length) {
+    return { ok: false, reason: "time-conflict" };
+  }
+  const times = poses.map((pose) => pose.atMs);
+  const targetMs = snapTimeMs(
+    target.kind === "time"
+      ? target.atMs
+      : target.kind === "earliest"
+        ? Math.min(...times)
+        : Math.max(...times),
+  );
+  return shiftObjectsFrom(
+    sequence,
+    new Map(poses.map((pose) => [pose.objectId, { fromMs: pose.atMs, deltaMs: targetMs - pose.atMs }])),
+    options,
+  );
+};
+
 export type ExplodeResult =
   | { ok: true; sequence: ActionSequenceConfig; createdIds: string[] }
   | { ok: false; reason: SequenceEditError };

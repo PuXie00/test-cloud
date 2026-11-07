@@ -15,6 +15,8 @@ const { builderState, toastWarning } = vi.hoisted(() => ({
       handleApplyPoseAxisWrite: vi.fn(),
       handleWriteSegmentProfiles: vi.fn(),
       handleRetimeSegmentCurves: vi.fn(),
+      handleAlignSegments: vi.fn(),
+      handleAlignPoses: vi.fn(),
       handlePhaseInputModeChange: vi.fn(),
       phaseInputMode: "time" as "time" | "speed",
       sequenceIssues: [] as unknown[],
@@ -304,6 +306,42 @@ describe("batch editing several segments", () => {
     const accel = phases().getByRole("spinbutton", { name: "加速时间" }) as HTMLInputElement;
     expect(accel.value).toBe("");
     expect(accel.placeholder).toBe("--");
+  });
+
+  it("aligns the selected segments to start or arrive together", () => {
+    renderPanel(twoSpans, both);
+    const align = within(screen.getByRole("region", { name: "位姿对齐" }));
+    const keys = resolveActionSequence(twoSpans).segments.map((segment) => segment.key);
+    fireEvent.click(align.getByRole("button", { name: "同时启动，对齐到游标" }));
+    expect(builderState.current.handleAlignSegments).toHaveBeenLastCalledWith(keys, "start", "cursor");
+    fireEvent.click(align.getByRole("button", { name: "同时到达，对齐到最晚" }));
+    expect(builderState.current.handleAlignSegments).toHaveBeenLastCalledWith(keys, "end", "extreme");
+  });
+
+  it("moves single poses of different objects to one time from the pose list", () => {
+    renderPanel(twoSpans, { kind: "multi-block", blockIds: ["b1", "b2"] });
+    expect(screen.getByRole("heading", { name: "多选位姿" })).not.toBeNull();
+    const align = within(screen.getByRole("region", { name: "位姿对齐" }));
+    expect(align.queryByRole("button", { name: /同时启动/ })).toBeNull();
+    fireEvent.click(align.getByRole("button", { name: "位姿对齐到最晚" }));
+    expect(builderState.current.handleAlignPoses).toHaveBeenLastCalledWith(["b1", "b2"], "latest");
+    fireEvent.click(align.getByRole("button", { name: "位姿对齐到游标" }));
+    expect(builderState.current.handleAlignPoses).toHaveBeenLastCalledWith(["b1", "b2"], "cursor");
+  });
+
+  it("keeps the segment alignment on the pose list when an object has both ends selected", () => {
+    renderPanel(twoSpans, { kind: "multi-block", blockIds: ["a1", "b1", "a2", "b2"] });
+    const align = within(screen.getByRole("region", { name: "位姿对齐" }));
+    expect(align.getByRole("button", { name: "同时启动，对齐到最早" })).not.toBeNull();
+    expect(align.queryByRole("button", { name: "位姿对齐到最早" })).toBeNull();
+  });
+
+  it("only offers the earliest / latest alignment across two or more objects", () => {
+    renderPanel(twoSpans, { kind: "multi-block", blockIds: ["a1", "b1", "a2"], focus: "segments" });
+    const align = within(screen.getByRole("region", { name: "位姿对齐" }));
+    expect(align.getByRole("button", { name: "同时启动，对齐到最早" }).hasAttribute("disabled")).toBe(true);
+    expect(align.getByRole("button", { name: "同时启动，对齐到游标" }).hasAttribute("disabled")).toBe(false);
+    expect(align.getByText("选中两个以上物体的区间才能对齐到最早 / 最晚")).not.toBeNull();
   });
 
   it("writes a phase time to every selected segment", () => {
