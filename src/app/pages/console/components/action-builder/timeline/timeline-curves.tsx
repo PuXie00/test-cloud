@@ -30,7 +30,7 @@ import {
 } from "./curve-data";
 import { DRAG_CLICK_THRESHOLD_PX, isAdditiveClick } from "./suppress-click";
 import { formatTime, TIMELINE_PAD_LEFT, type ControlledObject } from "./timeline-data";
-import { MARQUEE_THRESHOLD_PX, viewPxFromMs } from "./timeline-view-extent";
+import { MARQUEE_THRESHOLD_PX, PLAYHEAD_GRAB_HALF_PX, viewPxFromMs } from "./timeline-view-extent";
 
 export type CurvePlotRect = { top: number; height: number };
 
@@ -518,6 +518,7 @@ export type TimelineCurvesProps = {
   viewEndMs: number;
   pxPerSecond: number;
   occupiedEndMs: number;
+  cursorMs: number;
   /** 竖网格线（主刻度） */
   gridTimesMs: readonly number[];
   markers: readonly TimelineMarker[];
@@ -534,6 +535,8 @@ export type TimelineCurvesProps = {
   onCurveSelect: (curve: AxisCurve, atMs: number, additive: boolean) => void;
   /** 点空白：clientX 换算成指针时刻 */
   onBackgroundClick: (clientX: number) => void;
+  /** 在游标附近按下（没按在关键帧上）：交给编辑区拖游标 */
+  onPlayheadPress?: (event: PointerEvent<SVGSVGElement>) => void;
   onMarquee: (blockIds: string[]) => void;
   /** 上下拖位姿的值（只在位置图）：value 是被拖的关键帧现在要去的值 */
   onKeyDrag?: (curve: AxisCurve, key: CurveKey, value: number) => void;
@@ -554,6 +557,7 @@ export const TimelineCurves = ({
   viewEndMs,
   pxPerSecond,
   occupiedEndMs,
+  cursorMs,
   gridTimesMs,
   markers,
   selectedMarkerIds,
@@ -565,6 +569,7 @@ export const TimelineCurves = ({
   onBlockSelect,
   onCurveSelect,
   onBackgroundClick,
+  onPlayheadPress,
   onMarquee,
   onKeyDrag,
   onKeyDragEnd,
@@ -683,6 +688,11 @@ export const TimelineCurves = ({
     if (event.button !== 0) return;
     event.preventDefault();
     const start = localPoint(event.clientX, event.clientY);
+    // 关键帧自己接按下，到这里说明没按在关键帧上；游标比曲线、框选优先
+    if (onPlayheadPress && Math.abs(start.x - x(cursorMs)) <= PLAYHEAD_GRAB_HALF_PX) {
+      onPlayheadPress(event);
+      return;
+    }
     const hit = curveAt(start.x, start.y);
     const additive = isAdditiveClick(event);
     let boxing = false;

@@ -247,6 +247,24 @@ describe("curve view", () => {
     expect(onSelectionChange).toHaveBeenCalledWith(null);
   });
 
+  it("drags the playhead from an empty spot next to it, but a key under the playhead is picked first", () => {
+    const empty = renderCurves({ cursorMs: 5000 });
+    const y = layout.plot.top + layout.plot.height / 2;
+    fireEvent.pointerDown(plot(), { clientX: xAt(5000) + 4, clientY: y, button: 0 });
+    fireEvent.pointerMove(window, { clientX: xAt(6000), clientY: y + 40 });
+    fireEvent.pointerUp(window, { clientX: xAt(6000), clientY: y + 40 });
+    expect(empty.onCursorChange).toHaveBeenLastCalledWith(6000);
+    expect(empty.onSelectionChange).not.toHaveBeenCalled();
+    cleanup();
+
+    const onKey = renderCurves({ cursorMs: 2000 });
+    const { x, y: keyY } = keyCenter("a2");
+    fireEvent.pointerDown(keyOf("a2"), { clientX: x, clientY: keyY, button: 0 });
+    fireEvent.pointerUp(window, { clientX: x, clientY: keyY });
+    expect(onKey.onSelectionChange).toHaveBeenCalledWith({ kind: "block", blockId: "a2" });
+    expect(onKey.onCursorChange).not.toHaveBeenCalled();
+  });
+
   it("selects the motion segment under a click on the curve", () => {
     const { onSelectionChange, onCursorChange } = renderCurves({ selectedObjectIds: [7] });
     const [curve] = buildAxisCurves({

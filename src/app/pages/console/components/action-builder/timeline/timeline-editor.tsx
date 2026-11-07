@@ -71,6 +71,7 @@ import {
   MARQUEE_THRESHOLD_PX,
   panViewStartMs,
   type PanAxis,
+  PLAYHEAD_GRAB_HALF_PX,
   TIMELINE_H_SCROLL_HEIGHT_PX,
   totEndMs,
   usedBandScreenRect,
@@ -474,7 +475,7 @@ export const TimelineEditor = ({
       ),
     });
 
-  const handlePlayheadDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+  const handlePlayheadDrag = (event: React.PointerEvent<Element>) => {
     if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
@@ -923,10 +924,11 @@ export const TimelineEditor = ({
             />
 
             {curveMode ? (
+              // 压在游标拖动区上面：关键帧先被点中，游标附近的空白由曲线交回来拖游标
               <div
                 ref={curvesRef}
                 data-testid="timeline-curves"
-                className="relative min-h-0 flex-1 touch-none overflow-hidden"
+                className="relative z-10 min-h-0 flex-1 touch-none overflow-hidden"
                 style={{ width: canvasWidth }}
               >
                 <TimelineCurves
@@ -939,6 +941,7 @@ export const TimelineEditor = ({
                   viewEndMs={viewEndMs}
                   pxPerSecond={pxPerSecond}
                   occupiedEndMs={occupiedEndMs}
+                  cursorMs={cursorMs}
                   gridTimesMs={majorTicks.map((tick) => tick.ms)}
                   markers={markers}
                   selectedMarkerIds={selectedMarkerIds}
@@ -950,6 +953,7 @@ export const TimelineEditor = ({
                   onBlockSelect={(blockId, additive) => handleBlockSelect(blockId, additive, false)}
                   onCurveSelect={handleCurveSelect}
                   onBackgroundClick={handleCurveBackgroundClick}
+                  onPlayheadPress={handlePlayheadDrag}
                   onMarquee={(blockIds) => onSelectionChange(selectionFromBlockIds(blockIds))}
                   onKeyDrag={onPoseAxisDrag ? handleCurveKeyDrag : undefined}
                   onKeyDragEnd={handleCurveKeyDragEnd}
@@ -1070,6 +1074,7 @@ export const TimelineEditor = ({
               aria-hidden
             />
 
+            {/* 拖动区压在运动区间上、位姿 / 预设 / 指令下面（z-10 起）：游标停在位姿上时先点中位姿 */}
             <div
               role="slider"
               aria-label="播放游标"
@@ -1078,8 +1083,8 @@ export const TimelineEditor = ({
               aria-valuenow={cursorMs}
               tabIndex={0}
               onPointerDown={handlePlayheadDrag}
-              className="absolute top-0 bottom-0 z-30 w-3 -translate-x-1/2 cursor-ew-resize"
-              style={{ left: playheadLeft }}
+              className="absolute top-0 bottom-0 z-[5] -translate-x-1/2 cursor-ew-resize"
+              style={{ left: playheadLeft, width: PLAYHEAD_GRAB_HALF_PX * 2 }}
             />
           </div>
         </div>
