@@ -68,10 +68,12 @@ const sortIoBlocks = (blocks: cCompiledEvent[]): cCompiledEvent[] =>
 const AXES: VirtualAxisId[] = ["v1", "v2", "v3"];
 
 /**
- * 非强制（C++ 按 move 下发）的时间块：每个时间块是这一刻要下发的 move，
- * 各轴给目标位置、速度、加减速度。中途不停的位姿不出时间块，只在要变速的时刻重发同一目标。
- * 这一刻不用重发的轴也给值：pos 是这一刻的虚轴值（曲线上本该到的值；序列不控制的轴是准备时的
- * 实时值），速度、加减速度、经过速度都为 0。
+ * 非强制（C++ 按 move 下发）的帧表。帧 = 该物体的全部关键帧，加上中途要变速的时刻。
+ * 正向时 C++ 在每一帧取下一帧的 pos / vel / accVel / decVel 下发 move，反向时取上一帧，
+ * 所以一条在 t 时刻下发的 move 写在 t 的下一帧（反向写在上一帧）。
+ * move 的 pos 是这段连续运动停下的位置：中途不停的位姿不当目标，只在变速时刻重发同一目标。
+ * 没有 move 落在的帧：pos 是这一帧的虚轴值（曲线上本该到的值；序列不控制的轴是准备时的实时值），
+ * 速度、加减速度、经过速度都为 0，C++ 不下发。
  */
 const compileModels = (
   resolved: ResolvedActionSequence,
@@ -99,15 +101,20 @@ const compileModels = (
               ),
         ]),
       );
-      const times = [...new Set([...commandsByAxis.values()].flatMap((commands) => [...commands.keys()]))].sort(
-        compareNumber,
-      );
-      const timeBlockList = times.map((time) => {
+      const frames = [
+        ...new Set([
+          ...poses.map((pose) => roundProjectCoordinate(pose.atMs)),
+          ...[...commandsByAxis.values()].flatMap((commands) => [...commands.keys()]),
+        ]),
+      ].sort(compareNumber);
+      const timeBlockList = frames.map((time, index) => {
+        // 正向：上一帧下发的 move 写在这一帧；反向：下一帧下发的写在这一帧
+        const issuedAt = options.reverse ? frames[index + 1] : frames[index - 1];
         let poseAt: ModelPose | undefined;
         return {
           time,
           virtualAxis: enabledAxes.map((axis) => {
-            const command = commandsByAxis.get(axis)?.get(time);
+            const command = issuedAt === undefined ? undefined : commandsByAxis.get(axis)?.get(issuedAt);
             if (!command) {
               poseAt ??= evaluateResolvedSequence(resolved, time).get(deviceId);
               return { pos: roundProjectCoordinate(poseAt?.[axis] ?? 0), vel: 0, accVel: 0, decVel: 0, passVel: 0 };

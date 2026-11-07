@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { compilePlcAction } from "./compile-plc-action";
+import { axisMoveCommands } from "./move-commands";
+import { objectAxisMotions, resolveActionSequence } from "./resolve-sequence";
 import { createDefaultAxisProfiles } from "./motion-profile";
 import type { ActionSequenceConfig, AxisMotionProfiles, DynamicPresetBlock, ModelPose, MotionProfile, TimelineBlock } from "./types";
 import type { AxisLimit, VirtualAxisId } from "./validate-sequence";
@@ -343,37 +345,39 @@ describe("compilePlcAction", () => {
     ).toThrow(/100/);
   });
 
-  it("emits one move to the end pose at the start of a single span", () => {
+  it("writes each move on the frame after it is sent: 0 → 1000 (10s) → 0 (20s)", () => {
     const sequence = sequenceOf(
       [
-        { id: "start", kind: "pose", objectId: 7, atMs: 1000, pose: origin },
-        { id: "end", kind: "pose", objectId: 7, atMs: 2000, pose: { v1: 1000, v2: 0, v3: 0 } },
+        { id: "a", kind: "pose", objectId: 7, atMs: 0, pose: origin },
+        { id: "b", kind: "pose", objectId: 7, atMs: 10_000, pose: { v1: 1000, v2: 0, v3: 0 } },
+        { id: "c", kind: "pose", objectId: 7, atMs: 20_000, pose: origin },
       ],
       {
-        segments: [{
-          fromRef: "start",
-          toRef: "end",
-          settings: { profiles: axisProfiles(150, 250) },
-        }],
+        segments: [
+          { fromRef: "a", toRef: "b", settings: { profiles: axisProfiles(1000, 1000) } },
+          { fromRef: "b", toRef: "c", settings: { profiles: axisProfiles(1000, 1000) } },
+        ],
       },
     );
-    const compiled = compilePlcAction(
-      sequence,
-      compileContext([{ id: 7, enabledVirtualAxes: ["v1"] as const }]),
-    );
-    // 匀速 1000 / (1 - 0.075 - 0.125) = 1250，加速 1250 / 0.15，减速 1250 / 0.25
-    expect(compiled.models).toEqual([{
-      deviceId: 7,
-      timeBlockList: [
-        {
-          time: 1000,
-          virtualAxis: [{ pos: 1000, vel: 1250, accVel: 8333.334, decVel: 5000, passVel: 0 }],
-        },
-      ],
-    }]);
+    const objects = compileContext([{ id: 7, enabledVirtualAxes: ["v1", "v2", "v3"] as const }]);
+    const idle = { vel: 0, accVel: 0, decVel: 0, passVel: 0 };
+    // 匀速 1000 / (10 - 1) = 111.111，加减速 111.111 / 1（向上取整）
+    const move = (pos: number) => ({ pos, vel: 111.111, accVel: 111.112, decVel: 111.112, passVel: 0 });
+    // 正向：C++ 在每一帧取下一帧下发
+    expect(compilePlcAction(sequence, objects).models[0]!.timeBlockList).toEqual([
+      { time: 0, virtualAxis: [{ pos: 0, ...idle }, { pos: 0, ...idle }, { pos: 0, ...idle }] },
+      { time: 10_000, virtualAxis: [move(1000), { pos: 0, ...idle }, { pos: 0, ...idle }] },
+      { time: 20_000, virtualAxis: [move(0), { pos: 0, ...idle }, { pos: 0, ...idle }] },
+    ]);
+    // 反向：C++ 从 20s 往回，每一帧取上一帧下发
+    expect(compilePlcAction(sequence, objects, true).models[0]!.timeBlockList).toEqual([
+      { time: 0, virtualAxis: [move(0), { pos: 0, ...idle }, { pos: 0, ...idle }] },
+      { time: 10_000, virtualAxis: [move(1000), { pos: 0, ...idle }, { pos: 0, ...idle }] },
+      { time: 20_000, virtualAxis: [{ pos: 0, ...idle }, { pos: 0, ...idle }, { pos: 0, ...idle }] },
+    ]);
   });
 
-  it("runs the moves backwards from the end when reversed", () => {
+  it("puts a single span's move on its end frame, and on its start frame when reversed", () => {
     const sequence = sequenceOf(
       [
         { id: "start", kind: "pose", objectId: 7, atMs: 1000, pose: origin },
@@ -387,19 +391,22 @@ describe("compilePlcAction", () => {
         }],
       },
     );
-    const compiled = compilePlcAction(
-      sequence,
-      compileContext([{ id: 7, enabledVirtualAxes: ["v1"] as const }]),
-      true,
-    );
-    // 倒走：原曲线 2000 处起步回到 0，原来的减速段变成加速段
-    expect(compiled.models).toEqual([{
+    const objects = compileContext([{ id: 7, enabledVirtualAxes: ["v1"] as const }]);
+    const idle = { vel: 0, accVel: 0, decVel: 0, passVel: 0 };
+    // 匀速 1000 / (1 - 0.075 - 0.125) = 1250，加速 1250 / 0.15，减速 1250 / 0.25
+    expect(compilePlcAction(sequence, objects).models).toEqual([{
       deviceId: 7,
       timeBlockList: [
-        {
-          time: 2000,
-          virtualAxis: [{ pos: 0, vel: 1250, accVel: 5000, decVel: 8333.334, passVel: 0 }],
-        },
+        { time: 1000, virtualAxis: [{ pos: 0, ...idle }] },
+        { time: 2000, virtualAxis: [{ pos: 1000, vel: 1250, accVel: 8333.334, decVel: 5000, passVel: 0 }] },
+      ],
+    }]);
+    // 倒走：原来的减速段变成加速段
+    expect(compilePlcAction(sequence, objects, true).models).toEqual([{
+      deviceId: 7,
+      timeBlockList: [
+        { time: 1000, virtualAxis: [{ pos: 0, vel: 1250, accVel: 5000, decVel: 8333.334, passVel: 0 }] },
+        { time: 2000, virtualAxis: [{ pos: 1000, ...idle }] },
       ],
     }]);
   });
@@ -412,7 +419,7 @@ describe("compilePlcAction", () => {
     expect(compiled.models[0]?.timeBlockList[0]?.virtualAxis).toHaveLength(1);
   });
 
-  it("fills axes without a new move with their programmed value and zero speed", () => {
+  it("fills frames without a move with the axis value and zero speed", () => {
     const sequence = sequenceOf([
       { id: "a", kind: "pose", objectId: 7, atMs: 0, pose: origin },
       { id: "b", kind: "pose", objectId: 7, atMs: 1000, pose: { v1: 100, v2: 0, v3: 0 } },
@@ -422,15 +429,17 @@ describe("compilePlcAction", () => {
       sequence,
       compileContext([{ id: 7, enabledVirtualAxes: ["v1", "v2"] as const }]),
     );
+    const idle = { vel: 0, accVel: 0, decVel: 0, passVel: 0 };
     const blocks = compiled.models[0]!.timeBlockList;
-    expect(blocks.map((block) => block.time)).toEqual([0, 1000]);
-    expect(blocks[0]?.virtualAxis[0]).toMatchObject({ pos: 100, passVel: 0 });
-    expect(blocks[0]?.virtualAxis[1]).toEqual({ pos: 0, vel: 0, accVel: 0, decVel: 0, passVel: 0 });
-    expect(blocks[1]?.virtualAxis[0]).toEqual({ pos: 100, vel: 0, accVel: 0, decVel: 0, passVel: 0 });
-    expect(blocks[1]?.virtualAxis[1]).toMatchObject({ pos: 10, passVel: 0 });
+    expect(blocks.map((block) => block.time)).toEqual([0, 1000, 2000]);
+    expect(blocks[0]?.virtualAxis).toEqual([{ pos: 0, ...idle }, { pos: 0, ...idle }]);
+    expect(blocks[1]?.virtualAxis[0]).toMatchObject({ pos: 100, passVel: 0 });
+    expect(blocks[1]?.virtualAxis[1]).toEqual({ pos: 0, ...idle });
+    expect(blocks[2]?.virtualAxis[0]).toEqual({ pos: 100, ...idle });
+    expect(blocks[2]?.virtualAxis[1]).toMatchObject({ pos: 10, passVel: 0 });
   });
 
-  it("gives a pass-through axis its curve value and an uncontrolled axis its live value", () => {
+  it("keeps the pass-through frame, and fills an uncontrolled axis with its live value", () => {
     const sequence = sequenceOf([
       { id: "a", kind: "pose", objectId: 7, atMs: 0, pose: { v1: 0, v2: 0 } },
       { id: "b", kind: "pose", objectId: 7, atMs: 1000, pose: { v2: 10 } },
@@ -441,14 +450,18 @@ describe("compilePlcAction", () => {
       livePoseByObjectId: new Map([[7, { v1: 5, v2: 6, v3: 7.25 }]]),
     });
     const blocks = compiled.models[0]!.timeBlockList;
-    expect(blocks.map((block) => block.time)).toEqual([0]);
-    // v1 在 1000 处经过不停：一条 move 到 200；v3 序列不控制，填实时值
-    expect(blocks[0]?.virtualAxis[0]).toMatchObject({ pos: 200, passVel: 0 });
-    expect(blocks[0]?.virtualAxis[1]).toMatchObject({ pos: 10, passVel: 0 });
-    expect(blocks[0]?.virtualAxis[2]).toEqual({ pos: 7.3, vel: 0, accVel: 0, decVel: 0, passVel: 0 });
+    expect(blocks.map((block) => block.time)).toEqual([0, 1000, 2000]);
+    // v1 在 1000 处经过不停：0s 下发一条到 200 的 move，写在 1000 帧；2000 帧不再下发
+    expect(blocks[1]?.virtualAxis[0]).toMatchObject({ pos: 200, passVel: 0 });
+    expect(blocks[1]?.virtualAxis[1]).toMatchObject({ pos: 10, passVel: 0 });
+    expect(blocks[2]?.virtualAxis[0]).toEqual({ pos: 200, vel: 0, accVel: 0, decVel: 0, passVel: 0 });
+    // v3 序列不控制：每一帧都是实时值
+    expect(blocks.map((block) => block.virtualAxis[2])).toEqual(
+      blocks.map(() => ({ pos: 7.3, vel: 0, accVel: 0, decVel: 0, passVel: 0 })),
+    );
   });
 
-  it("sends one move per wave stroke and nothing for the invisible holds", () => {
+  it("keeps every wave keyframe, with one move per stroke", () => {
     const wave: DynamicPresetBlock = {
       id: "wave-1",
       kind: "dynamic-preset",
@@ -474,12 +487,58 @@ describe("compilePlcAction", () => {
         { id: 8, enabledVirtualAxes: ["v1"] as const },
       ]),
     );
-    const strokes = (deviceId: number) =>
+    const frames = (deviceId: number) =>
       compiled.models
         .find((model) => model.deviceId === deviceId)
-        ?.timeBlockList.map((block) => [block.time, block.virtualAxis[0]?.pos]);
-    expect(strokes(7)).toEqual([[1000, 1500], [1750, 1000]]);
-    expect(strokes(8)).toEqual([[1500, 1500], [2250, 1000]]);
+        ?.timeBlockList.map((block) => [block.time, block.virtualAxis[0]?.pos, block.virtualAxis[0]?.vel === 0]);
+    expect(frames(7)).toEqual([
+      [1000, 1000, true],
+      [1750, 1500, false],
+      [2500, 1000, false],
+      [3000, 1000, true],
+    ]);
+    expect(frames(8)?.filter(([, , idle]) => !idle).map(([, pos]) => pos)).toEqual([1500, 1000]);
+  });
+
+  it("decodes back to the verified move commands with C++'s frame rule", () => {
+    const pose = (id: string, atMs: number, v1: number, passSpeed?: number) => ({
+      id,
+      kind: "pose" as const,
+      objectId: 7,
+      atMs,
+      pose: { v1 },
+      ...(passSpeed !== undefined ? { passSpeeds: { v1: passSpeed } } : {}),
+    });
+    const sequences = [
+      sequenceOf([pose("p0", 0, 0), pose("p1", 4000, 400), pose("p2", 6000, 1000), pose("p3", 8000, 1700), pose("p4", 10000, 1900)]),
+      sequenceOf([pose("p0", 0, 0), pose("p1", 1100, 1000), pose("p2", 1800, 1500), pose("p3", 3000, 1500), pose("p4", 5000, -300, 0)]),
+      sequenceOf([pose("p0", 0, 0), pose("p1", 2000, 500), pose("p2", 6000, -500), pose("p3", 8000, 0)], { loop: true }),
+    ];
+    const objects = compileContext([{ id: 7, enabledVirtualAxes: ["v1"] as const }]);
+    for (const sequence of sequences) {
+      for (const reverse of [false, true]) {
+        const frames = compilePlcAction(sequence, objects, reverse).models[0]!.timeBlockList;
+        // 正向：在第 i 帧下发第 i + 1 帧；反向：在第 i 帧下发第 i - 1 帧；vel 为 0 不下发
+        const decoded = frames.flatMap((frame, index) => {
+          const source = frames[reverse ? index - 1 : index + 1]?.virtualAxis[0];
+          if (!source || source.vel === 0) return [];
+          return [{
+            atMs: frame.time,
+            target: source.pos,
+            velocity: source.vel,
+            acceleration: source.accVel,
+            deceleration: source.decVel,
+            passSpeed: source.passVel,
+          }];
+        });
+        const resolved = resolveActionSequence(sequence);
+        const expected = axisMoveCommands(objectAxisMotions(resolved.segments, "v1"), {
+          reverse,
+          loop: sequence.loop === true,
+        }).map(({ adjusted: _adjusted, ...command }) => command);
+        expect(decoded).toEqual(expected);
+      }
+    }
   });
 
   it("throws when compiling an unsupported C++ motion profile", () => {
