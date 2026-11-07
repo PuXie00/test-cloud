@@ -958,6 +958,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   const [timelineViewMode, setTimelineViewMode] = useState<TimelineViewMode>("tracks");
   const [curveAxis, setCurveAxis] = useState<VirtualAxisId>("v1");
   const [curveGraph, setCurveGraph] = useState<CurveGraph>("position");
+  // 轨道视图只选一个物体时铺它的曲线做底图，默认开
+  const [curveUnderlay, setCurveUnderlay] = useState(true);
 
   const handleTrajectoryModeChange = useCallback(
     (trajectoryMode: TrajectoryMode) => {
@@ -1886,6 +1888,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleCurveAxisChange: setCurveAxis,
       curveGraph,
       handleCurveGraphChange: setCurveGraph,
+      curveUnderlay,
+      handleCurveUnderlayChange: setCurveUnderlay,
       setActiveRightTab,
       handleSequenceSelect,
       handleSelectionChange,
@@ -1972,6 +1976,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       timelineViewMode,
       curveAxis,
       curveGraph,
+      curveUnderlay,
       lastPersistError,
       sequenceIssues,
       getTimelineObject,

@@ -89,6 +89,8 @@ const SequenceEditor = () => {
     handleCurveAxisChange: setCurveAxis,
     curveGraph,
     handleCurveGraphChange,
+    curveUnderlay,
+    handleCurveUnderlayChange,
     handleResizeDynamicPreset,
     handleBlockDelete,
     handleExplodePresets,
@@ -382,6 +384,8 @@ const SequenceEditor = () => {
         onViewModeChange={setViewMode}
         curveGraph={curveGraph}
         onCurveGraphChange={handleCurveGraphChange}
+        curveUnderlay={curveUnderlay}
+        onCurveUnderlayChange={handleCurveUnderlayChange}
         curveAxis={shownCurveAxis}
         curveAxes={curveAxes}
         onCurveAxisChange={setCurveAxis}
@@ -432,6 +436,7 @@ const SequenceEditor = () => {
             viewMode={viewMode}
             curveAxis={shownCurveAxis}
             curveGraph={curveGraph}
+            curveUnderlay={curveUnderlay}
             onPoseAxisDrag={canEdit ? handleDragPoseAxis : undefined}
             onPoseAxisDragEnd={canEdit ? handleDragPoseAxisEnd : undefined}
           />

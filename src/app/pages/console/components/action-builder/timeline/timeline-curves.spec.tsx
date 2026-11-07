@@ -437,4 +437,55 @@ describe("timeline toolbar view menu", () => {
     fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "显示曲线" }));
     expect(onViewModeChange).toHaveBeenCalledWith("curves");
   });
+
+  it("lets the curve underlay use the graph and axis options while the tracks are shown", async () => {
+    const onCurveUnderlayChange = vi.fn();
+    const { onCurveGraphChange } = renderToolbar({
+      viewMode: "tracks",
+      curveUnderlay: true,
+      onCurveUnderlayChange,
+    });
+    await openViewMenu();
+    const underlay = screen.getByRole("menuitemcheckbox", { name: /曲线底图/ });
+    expect(underlay.getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("menuitemradio", { name: "速度" }).getAttribute("aria-disabled")).toBeNull();
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "速度" }));
+    expect(onCurveGraphChange).toHaveBeenCalledWith("velocity");
+    fireEvent.click(underlay);
+    expect(onCurveUnderlayChange).toHaveBeenCalledWith(false);
+  });
+});
+
+describe("curve underlay on the tracks", () => {
+  const underlay = () => screen.queryByTestId("track-curve-underlay");
+
+  it("draws the one selected object's curve behind the tracks", () => {
+    renderCurves({ viewMode: "tracks", curveUnderlay: true, selectedObjectIds: [8] });
+    expect(screen.getByTestId("timeline-tracks")).not.toBeNull();
+    expect(underlay()?.getAttribute("data-object-id")).toBe("8");
+    expect(underlay()?.getAttribute("data-graph")).toBe("position");
+    expect(underlay()?.className).toContain("pointer-events-none");
+    expect(screen.getByTestId("track-curve-underlay-line").getAttribute("d")).toMatch(/^M/);
+    // 只铺曲线，不写文字
+    expect(underlay()?.textContent).toBe("");
+  });
+
+  it("follows the speed graph", () => {
+    renderCurves({ viewMode: "tracks", curveUnderlay: true, curveGraph: "velocity", selectedObjectIds: [7] });
+    expect(underlay()?.getAttribute("data-graph")).toBe("velocity");
+  });
+
+  it("stays off with no object, several objects, the switch off, or in the curve view", () => {
+    renderCurves({ viewMode: "tracks", curveUnderlay: true, selectedObjectIds: [] });
+    expect(underlay()).toBeNull();
+    cleanup();
+    renderCurves({ viewMode: "tracks", curveUnderlay: true, selectedObjectIds: [7, 8] });
+    expect(underlay()).toBeNull();
+    cleanup();
+    renderCurves({ viewMode: "tracks", curveUnderlay: false, selectedObjectIds: [7] });
+    expect(underlay()).toBeNull();
+    cleanup();
+    renderCurves({ viewMode: "curves", curveUnderlay: true, selectedObjectIds: [7] });
+    expect(underlay()).toBeNull();
+  });
 });

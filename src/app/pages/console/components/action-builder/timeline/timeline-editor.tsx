@@ -64,6 +64,7 @@ import {
   curvePlotLayout,
   TimelineCurves,
 } from "./timeline-curves";
+import { TrackCurveUnderlay } from "./track-curve-underlay";
 import {
   canvasWidthPx,
   clampCursorMs,
@@ -127,6 +128,8 @@ export type TimelineEditorProps = {
   curveAxis?: VirtualAxisId;
   /** 曲线视图看位置还是速度 */
   curveGraph?: CurveGraph;
+  /** 轨道视图只选了一个物体时，把它的曲线（curveAxis、curveGraph）铺在轨道区背后 */
+  curveUnderlay?: boolean;
   /** 曲线上拖位姿的值：这些位姿的这根轴加 deltaValue（相对拖动开始） */
   onPoseAxisDrag?: (blockIds: string[], axis: VirtualAxisId, deltaValue: number) => void;
   onPoseAxisDragEnd?: () => void;
@@ -208,6 +211,7 @@ export const TimelineEditor = ({
   viewMode = "tracks",
   curveAxis = "v1",
   curveGraph = "position",
+  curveUnderlay = false,
   onPoseAxisDrag,
   onPoseAxisDragEnd,
 }: TimelineEditorProps) => {
@@ -353,6 +357,21 @@ export const TimelineEditor = ({
     [curveMode, resolved, visibleCurveIds, curveAxis, objects],
   );
   const fittedCurveScales = useMemo(() => fitCurveScales(curves), [curves]);
+  const underlayObjectId =
+    !curveMode &&
+    curveUnderlay &&
+    selectedObjectIds.length === 1 &&
+    objectIdsInRowOrder.includes(selectedObjectIds[0]!)
+      ? selectedObjectIds[0]!
+      : null;
+  const underlayCurve = useMemo(
+    () =>
+      underlayObjectId === null
+        ? null
+        : (buildAxisCurves({ resolved, objectIds: [underlayObjectId], axis: curveAxis, objects })[0] ??
+          null),
+    [underlayObjectId, resolved, curveAxis, objects],
+  );
   // 选中的块所属的物体：曲线加粗，靠选中区分是哪条（不靠悬停，触屏也能用）
   const emphasizedObjectIds = useMemo(() => {
     const ids = new Set(selectionBlockIds(selection));
@@ -1001,6 +1020,17 @@ export const TimelineEditor = ({
                     />
                   ))}
                 </div>
+
+                {underlayCurve ? (
+                  <TrackCurveUnderlay
+                    curve={underlayCurve}
+                    graph={curveGraph}
+                    canvasWidth={canvasWidth}
+                    viewStartMs={viewStartMs}
+                    viewEndMs={viewEndMs}
+                    pxPerSecond={pxPerSecond}
+                  />
+                ) : null}
 
                 <div className="relative" style={{ marginLeft: TIMELINE_PAD_LEFT, width: contentWidth }}>
                   {rows.map((row) => (

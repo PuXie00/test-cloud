@@ -68,6 +68,9 @@ export type ActionBuilderContextValue = {
   handleCurveAxisChange: (axis: VirtualAxisId) => void;
   curveGraph: CurveGraph;
   handleCurveGraphChange: (graph: CurveGraph) => void;
+  /** 轨道视图的曲线底图：只选了一个物体时铺它的曲线（虚轴、位置 / 速度同曲线视图） */
+  curveUnderlay: boolean;
+  handleCurveUnderlayChange: (on: boolean) => void;
   setActiveRightTab: (tab: ActionRightTab) => void;
   handleSequenceSelect: (sequenceId: number | null) => void;
   handleSelectionChange: (selection: SequenceSelection) => void;

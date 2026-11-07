@@ -40,7 +40,7 @@ export type CurvePlotLayout = { height: number; plot: CurvePlotRect };
 const PLOT_PAD_PX = 4;
 const MIN_AREA_HEIGHT_PX = 120;
 /** 采样间隔（像素） */
-const SAMPLE_PX = 2;
+export const SAMPLE_PX = 2;
 /** 刻度标签之间至少留这么高 */
 const TICK_SPACING_PX = 24;
 export const CURVE_GUTTER_WIDTH = 52;
@@ -380,7 +380,7 @@ const pathBuilder = (): PathBuilder => {
   };
 };
 
-type CurvePaths = {
+export type CurvePaths = {
   objectId: number;
   line: string;
   /** 有问题的段（标红）及原因；dashed：算不出形状，位置按直线虚线画 */
@@ -393,7 +393,7 @@ type CurvePaths = {
   }[];
 };
 
-type CurveGeometry = {
+export type CurveGeometry = {
   graph: CurveGraph;
   x: (atMs: number) => number;
   y: (value: number) => number;
@@ -405,7 +405,7 @@ type CurveGeometry = {
 /** 段在屏幕上至少这么宽才写简短标注 */
 const ISSUE_LABEL_MIN_PX = 40;
 
-const buildCurvePaths = (
+export const buildCurvePaths = (
   curve: AxisCurve,
   geometry: CurveGeometry,
   issueText: (curve: AxisCurve, span: AxisCurve["spans"][number]) => string,
