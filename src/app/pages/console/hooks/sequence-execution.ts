@@ -45,9 +45,12 @@ export type SequenceRuntimeHandle = {
   loopCount?: number;
 };
 
-/** 运行中调速（强制轨迹走 actionSpeedScale） */
+/** 运行中调速（强制轨迹走 1006，非强制走 syncAdjustSpeed） */
 export type SequenceSpeedInput = {
   actionId: number;
+  trajectoryMode: boolean;
+  /** 上次已生效的速度倍率，1 = 100% */
+  prvSpeedScale: number;
   /** 速度倍率，1 = 100% */
   speedScale: number;
   runDirection: 1 | 2;
@@ -538,16 +541,30 @@ export const goSequence = async (args: {
   const transport = args.transport ?? getSequenceTransport();
   const plan = args.startPlan ?? null;
   const loopCount = plan?.loopCount ?? toActionGoLoopCount(isSequenceLooping(found.sequence));
+  const speedScale = mapFaderPercentToSpeedScale(speedPercent);
+  const runDirection = toPlcRunDirection(args.reverse === true);
 
   try {
+    // 非强制的 GO（syncMovebegin）不带速度，PLC 按 100% 起步，先调到推子速度
+    if (!found.sequence.trajectoryMode) {
+      await transport.setSpeed?.({
+        actionId: found.sequence.id,
+        trajectoryMode: false,
+        prvSpeedScale: 1,
+        speedScale,
+        runDirection,
+        loopCount,
+        deviceId,
+      });
+    }
     await transport.syncCall({
       actionId: found.sequence.id,
       startTimestamp: Date.now(),
-      speedScale: mapFaderPercentToSpeedScale(speedPercent),
+      speedScale,
       trajectoryMode: found.sequence.trajectoryMode,
       loopCount,
       deviceId,
-      runDirection: toPlcRunDirection(args.reverse === true),
+      runDirection,
       ...(plan
         ? {
             selectedCurveTimeMs: plan.targetFrameMs,

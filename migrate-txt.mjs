@@ -104,3 +104,4 @@ if (command === "re") {
   node ./${SCRIPT_NAME} re    将当前目录下 *.js.txt / *.ts.txt / *.tsx.txt 去掉 .txt`);
   process.exit(1);
 }
+

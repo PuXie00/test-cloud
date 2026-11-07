@@ -15,6 +15,7 @@ import {
   getSequenceTransport,
   goSequence,
   mapFaderPercentToSpeedScale,
+  PlcCommandError,
   readySequence,
   releaseSequence,
   resolveSequenceSpeedCap,
@@ -643,6 +644,56 @@ describe("goSequence", () => {
       expect.objectContaining({ loopCount: 0, deviceId: [7] }),
     );
   });
+
+  it("scales a non-forced action from 100% to the fader speed before GO", async () => {
+    const base = createTransport();
+    const setSpeed = vi.fn(async () => {
+      base.calls.push("speed");
+    });
+    const transport = { ...base, setSpeed };
+    await goSequence({
+      document: documentWithSequence({ ...validSequence, trajectoryMode: false }),
+      sequenceId: validSequence.id,
+      faderPercent: 80,
+      reverse: true,
+      transport,
+    });
+    expect(base.calls).toEqual(["speed", "sync"]);
+    expect(setSpeed).toHaveBeenCalledWith({
+      actionId: validSequence.id,
+      trajectoryMode: false,
+      prvSpeedScale: 1,
+      speedScale: 0.8,
+      runDirection: 2,
+      loopCount: 1,
+      deviceId: [7],
+    });
+  });
+
+  it("does not scale a forced trajectory before GO", async () => {
+    const setSpeed = vi.fn().mockResolvedValue(undefined);
+    await goSequence({
+      document: documentWithSequence(validSequence),
+      sequenceId: validSequence.id,
+      faderPercent: 80,
+      transport: { ...createTransport(), setSpeed },
+    });
+    expect(setSpeed).not.toHaveBeenCalled();
+  });
+
+  it("reports a pre-GO speed change the PLC rejects without sending GO", async () => {
+    const transport = {
+      ...createTransport(),
+      setSpeed: vi.fn().mockRejectedValue(new PlcCommandError("调速失败", "3")),
+    };
+    const started = await goSequence({
+      document: documentWithSequence({ ...validSequence, trajectoryMode: false }),
+      sequenceId: validSequence.id,
+      transport,
+    });
+    expect(started).toEqual({ ok: false, toast: "error", message: "动作启动失败：调速失败" });
+    expect(transport.syncCall).not.toHaveBeenCalled();
+  });
 });
 
 describe("startLocalAuthoredSequence", () => {
@@ -877,20 +928,31 @@ describe("adjustSequenceSpeed", () => {
     sequenceHandle: { actionId: 9, deviceId: [7, 8], loopCount: 0 },
     trajectoryMode: true,
     reverse: true,
+    speedPercent: 100,
   };
 
   it("sends the new speed of a forced trajectory through actionSpeedScale", async () => {
     const api = { ...createMockCsocketApi({ success: true, data: [] }), actionSpeedScale: vi.fn().mockResolvedValue([{ success: true }]) };
     await adjustSequenceSpeed(card, 80, createCsocketSequenceTransport(api));
     expect(api.actionSpeedScale).toHaveBeenCalledWith([
-      { actionId: 9, speedScale: 0.8, runDirection: 2, loopCount: 0, deviceId: [7, 8] },
+      {
+        actionId: 9,
+        trajectoryMode: true,
+        prvSpeedScale: 1,
+        speedScale: 0.8,
+        runDirection: 2,
+        loopCount: 0,
+        deviceId: [7, 8],
+      },
     ]);
   });
 
-  it("only changes the local speed of a non-forced action", async () => {
-    const api = { ...createMockCsocketApi({ success: true, data: [] }), actionSpeedScale: vi.fn() };
-    await adjustSequenceSpeed({ ...card, trajectoryMode: false }, 80, createCsocketSequenceTransport(api));
-    expect(api.actionSpeedScale).not.toHaveBeenCalled();
+  it("sends the previous and new speed of a non-forced action", async () => {
+    const api = { ...createMockCsocketApi({ success: true, data: [] }), actionSpeedScale: vi.fn().mockResolvedValue([{ success: true }]) };
+    await adjustSequenceSpeed({ ...card, trajectoryMode: false, speedPercent: 60 }, 80, createCsocketSequenceTransport(api));
+    expect(api.actionSpeedScale).toHaveBeenCalledWith([
+      expect.objectContaining({ trajectoryMode: false, prvSpeedScale: 0.6, speedScale: 0.8 }),
+    ]);
   });
 
   it("reports a speed change the PLC rejects", async () => {
@@ -906,7 +968,15 @@ describe("createSpeedSender", () => {
   const card = {
     sequenceHandle: { actionId: 9, deviceId: [7], loopCount: 1 },
     trajectoryMode: true,
+    speedPercent: 100,
   };
+
+  type SentSpeed = { prvSpeedScale: number; speedScale: number };
+  const sentSpeeds = (setSpeed: { mock: { calls: unknown[][] } }) =>
+    setSpeed.mock.calls.map((call) => {
+      const { prvSpeedScale, speedScale } = call[0] as SentSpeed;
+      return { prvSpeedScale, speedScale };
+    });
 
   it("sends one speed at a time per action and only the latest change after the reply", async () => {
     const replies: Array<() => void> = [];
@@ -916,13 +986,14 @@ describe("createSpeedSender", () => {
     const transport = { ...createTransport(), setSpeed };
     const send = createSpeedSender(vi.fn(), () => transport);
     send(card, 90);
-    send(card, 80);
-    send(card, 70);
+    send({ ...card, speedPercent: 90 }, 80);
+    send({ ...card, speedPercent: 80 }, 70);
     expect(setSpeed).toHaveBeenCalledTimes(1);
     replies.shift()!();
     await vi.waitFor(() => expect(setSpeed).toHaveBeenCalledTimes(2));
-    expect(setSpeed.mock.calls.map((call) => (call as unknown as [{ speedScale: number }])[0].speedScale)).toEqual([
-      0.9, 0.7,
+    expect(sentSpeeds(setSpeed)).toEqual([
+      { prvSpeedScale: 1, speedScale: 0.9 },
+      { prvSpeedScale: 0.9, speedScale: 0.7 },
     ]);
     replies.shift()!();
   });

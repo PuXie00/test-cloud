@@ -86,20 +86,20 @@ const ackFailed = (r: SendData): SendData => ({
 })
 
 /** C++ CONFIG|Pro|open 只认 .\Project\<工程名>，不发本机绝对路径 */
-// const toCppRelativeProjectPath = (projectPath: string): string => {
-//   const normalized = projectPath.trim().replace(/\//g, '\\').replace(/\\+$/, '')
-//   const match = normalized.match(/(?:^|\\)Project\\([^\\]+)$/i)
-//   if (match?.[1]) return `.\\Project\\${match[1]}`
-//   const name = normalized.split('\\').filter(Boolean).pop() ?? ''
-//   return `.\\Project\\${name}`
-// }
 const toCppRelativeProjectPath = (projectPath: string): string => {
   const normalized = projectPath.trim().replace(/\//g, '\\').replace(/\\+$/, '')
   const match = normalized.match(/(?:^|\\)Project\\([^\\]+)$/i)
-  if (match?.[1]) return `..\\Project\\${match[1]}`
+  if (match?.[1]) return `.\\Project\\${match[1]}`
   const name = normalized.split('\\').filter(Boolean).pop() ?? ''
-  return `..\\Project\\${name}`
+  return `.\\Project\\${name}`
 }
+// const toCppRelativeProjectPath = (projectPath: string): string => {
+//   const normalized = projectPath.trim().replace(/\//g, '\\').replace(/\\+$/, '')
+//   const match = normalized.match(/(?:^|\\)Project\\([^\\]+)$/i)
+//   if (match?.[1]) return `..\\Project\\${match[1]}`
+//   const name = normalized.split('\\').filter(Boolean).pop() ?? ''
+//   return `..\\Project\\${name}`
+// }
 
 type ModelParamCount = {
   modelType: number
@@ -578,7 +578,9 @@ export class CsocketApiService {
   // 调速
   actionSpeedScale(items: {
     actionId: number,
-    speedScale: number,
+    trajectoryMode: boolean,
+    prvSpeedScale: number,//上次调速值，1 = 100%
+    speedScale: number,//本次调速值，1 = 100%
     runDirection: number,
     loopCount: number,
     deviceId: number[],
@@ -601,36 +603,62 @@ export class CsocketApiService {
       velocityY: number,
       accelerationY: number,
     }[] = []
-    items.forEach(item => {
-      isTMapedHeadRelease.push({
-        actionId: item.actionId,
-        runDirection: item.runDirection === 2 ? 2 : 1,
-        // 取整，避免 0.57*100=56.999… 被截成 56
-        speedScale: Math.round(item.speedScale * 100),
-        loopCount: item.loopCount,
-        selectedCurveTimeMs: 0,
-        prepareTimeMs: 0,
-        deviceCount: item.deviceId.length,
-      })
 
-      item.deviceId.forEach(deviceId => {
-        isTMaped.push({
-          deviceId: deviceId,
-          velocityH: 0,
-          accelerationH: 0,
-          velocityP: 0,
-          accelerationP: 0,
-          velocityY: 0,
-          accelerationY: 0,
+    const isNotTMaped: {
+      actionId: number,
+      command:{
+        appliedFactor: number,
+        requestedFactor: number,
+        reverse: boolean
+      }
+    }[] = []
+    items.forEach(item => {
+      if(item.trajectoryMode) {
+        isTMapedHeadRelease.push({
+          actionId: item.actionId,
+          runDirection: item.runDirection === 2 ? 2 : 1,
+          // 取整，避免 0.57*100=56.999… 被截成 56
+          speedScale: Math.round(item.speedScale * 100),
+          loopCount: item.loopCount,
+          selectedCurveTimeMs: 0,
+          prepareTimeMs: 0,
+          deviceCount: item.deviceId.length,
         })
-      })
+  
+        item.deviceId.forEach(deviceId => {
+          isTMaped.push({
+            deviceId: deviceId,
+            velocityH: 0,
+            accelerationH: 0,
+            velocityP: 0,
+            accelerationP: 0,
+            velocityY: 0,
+            accelerationY: 0,
+          })
+        })
+      } else {
+        isNotTMaped.push({
+          actionId: item.actionId,
+          command: {
+            appliedFactor: item.prvSpeedScale,
+            requestedFactor: item.speedScale,
+            reverse: item.runDirection === 2,
+          },
+        })
+      }
     })
-    const localOpts = {
-      ...opts,
-      paramHeard: isTMapedHeadRelease,
+    const result: Promise<SendData>[] = []
+    if(isTMaped.length > 0) {
+      const localOpts = {
+        ...opts,
+        paramHeard: isTMapedHeadRelease,
+      }
+      result.push(this.sendBuilt('Opera|actionSyncPrepare', '0x1006', isTMaped, localOpts))
     }
-    console.log("isTMaped", isTMaped);
-    return this.sendBuilt('Opera|actionSyncPrepare', '0x1006', isTMaped, localOpts)
+    if(isNotTMaped.length > 0) {
+      result.push(this.sendBuilt('Opera|syncAdjustSpeed', '', isNotTMaped, opts))
+    }
+    return Promise.all(result)
   }
 
   // 动作停止 Stop
