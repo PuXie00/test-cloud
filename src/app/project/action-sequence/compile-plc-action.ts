@@ -4,16 +4,19 @@ import type {
   PlcCompiledAction,
   PlcCompiledTimeline,
 } from "@shared/csocket/action-data-save";
+import { roundProjectCoordinate } from "../project-quantity";
 import { finalizePlcTimeline, trapezoidToCurveSegments } from "./curve-segments";
+import { evaluateResolvedSequence } from "./evaluate-sequence";
 import { instructionToCompiledEvent } from "./instruction-registry";
 import { axisMoveCommands, type AxisMoveCommand } from "./move-commands";
 import {
   objectAxisMotions,
+  pinUncontrolledAxes,
   resolveActionSequence,
   type ResolvedActionSequence,
   uncontrolledAxesOf,
 } from "./resolve-sequence";
-import type { ActionSequenceConfig } from "./types";
+import type { ActionSequenceConfig, ModelPose } from "./types";
 import {
   hasBlockingSequenceIssues,
   validateActionSequence,
@@ -31,6 +34,8 @@ export type PlcCompileObject = {
 export type PlcCompileContext = {
   objects: readonly PlcCompileObject[];
   hoistObjects?: SequenceValidationContext["hoistObjects"];
+  /** 准备时各物体的实时虚轴值：序列不控制的轴在 move 表里填它 */
+  livePoseByObjectId?: ReadonlyMap<number, Partial<Record<VirtualAxisId, number>>>;
 };
 
 export const MAX_PLC_CURVE_SEGMENTS = 100;
@@ -64,8 +69,9 @@ const AXES: VirtualAxisId[] = ["v1", "v2", "v3"];
 
 /**
  * 非强制（C++ 按 move 下发）的时间块：每个时间块是这一刻要下发的 move，
- * 各轴给目标位置、速度、加减速度；这一刻不用重发的轴为 null。中途不停的位姿不出时间块，
- * 只在要变速的时刻重发同一目标。序列不控制、一直不动的轴始终为 null。
+ * 各轴给目标位置、速度、加减速度。中途不停的位姿不出时间块，只在要变速的时刻重发同一目标。
+ * 这一刻不用重发的轴也给值：pos 是这一刻的虚轴值（曲线上本该到的值；序列不控制的轴是准备时的
+ * 实时值），速度、加减速度、经过速度都为 0。
  */
 const compileModels = (
   resolved: ResolvedActionSequence,
@@ -96,20 +102,26 @@ const compileModels = (
       const times = [...new Set([...commandsByAxis.values()].flatMap((commands) => [...commands.keys()]))].sort(
         compareNumber,
       );
-      const timeBlockList = times.map((time) => ({
-        time,
-        virtualAxis: enabledAxes.map((axis) => {
-          const command = commandsByAxis.get(axis)?.get(time);
-          if (!command) return null;
-          return {
-            pos: command.target,
-            vel: command.velocity,
-            accVel: command.acceleration,
-            decVel: command.deceleration,
-            passVel: command.passSpeed,
-          };
-        }),
-      }));
+      const timeBlockList = times.map((time) => {
+        let poseAt: ModelPose | undefined;
+        return {
+          time,
+          virtualAxis: enabledAxes.map((axis) => {
+            const command = commandsByAxis.get(axis)?.get(time);
+            if (!command) {
+              poseAt ??= evaluateResolvedSequence(resolved, time).get(deviceId);
+              return { pos: roundProjectCoordinate(poseAt?.[axis] ?? 0), vel: 0, accVel: 0, decVel: 0, passVel: 0 };
+            }
+            return {
+              pos: command.target,
+              vel: command.velocity,
+              accVel: command.acceleration,
+              decVel: command.deceleration,
+              passVel: command.passSpeed,
+            };
+          }),
+        };
+      });
       return [{ deviceId, timeBlockList }];
     });
 
@@ -186,7 +198,13 @@ export const compilePlcAction = (
   return {
     totalDuration: resolved.totalMs,
     timelines,
-    models: compileModels(resolved, objectById, { reverse, loop: sequence.loop === true }),
+    models: compileModels(
+      context.livePoseByObjectId
+        ? pinUncontrolledAxes(resolved, (objectId, axis) => context.livePoseByObjectId?.get(objectId)?.[axis])
+        : resolved,
+      objectById,
+      { reverse, loop: sequence.loop === true },
+    ),
     ioBlocks: sortIoBlocks(resolved.commands.map(instructionToCompiledEvent)),
   };
 };

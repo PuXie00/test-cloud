@@ -234,6 +234,30 @@ describe("downloadSequence", () => {
     expect(reverseBlock).toMatchObject({ time: 1000, virtualAxis: [{ pos: 0, passVel: 0 }] });
     expect(reverseBlock?.virtualAxis[0]?.vel).toBe(forwardBlock?.virtualAxis[0]?.vel);
   });
+  it("fills an axis the sequence does not control with the live value", async () => {
+    const transport = createTransport();
+    const moving: ActionSequenceConfig = {
+      ...validSequence,
+      trajectoryMode: false,
+      blocks: [
+        { id: "start", kind: "pose", objectId: 7, atMs: 0, pose: { v1: 0 } },
+        { id: "end", kind: "pose", objectId: 7, atMs: 1000, pose: { v1: 100 } },
+      ],
+    };
+    await downloadSequence(
+      moving,
+      {
+        objects: [
+          { id: 7, enabledVirtualAxes: ["v1", "v2"] as const, limits: { v1: completeLimits.v1, v2: completeLimits.v1 } },
+        ],
+        livePoseByObjectId: new Map([[7, { v1: 3, v2: 12.5, v3: 0 }]]),
+      },
+      transport,
+    );
+    const [block] = transport.saveAction.mock.calls[0]?.[0][0].modelList[0].timeBlockList ?? [];
+    expect(block?.virtualAxis[0]).toMatchObject({ pos: 100, passVel: 0 });
+    expect(block?.virtualAxis[1]).toEqual({ pos: 12.5, vel: 0, accVel: 0, decVel: 0, passVel: 0 });
+  });
 });
 
 describe("readySequence", () => {

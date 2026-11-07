@@ -37,12 +37,14 @@ export type PlcCompiledAction = {
  * 只在要变速的时刻重发同一个 pos、改速度（提速按加速度，降速按减速度），
  * 最后一条的减速度就是停到 pos 的减速度，驱动器到点自己减速。
  *
+ * - 这一刻不用重发的轴也给值：pos 是这一刻的虚轴值（曲线上本该到的值；序列不控制的轴是准备时的
+ *   实时值），vel、accVel、decVel、passVel 都为 0。vel 为 0 的项不下发 move。
  * - 反向运行时表按倒走的曲线生成，time 仍是原曲线时刻（升序）：从末尾往前，曲线时钟走到 time 时下发。
  * - 中途接入（就近帧）：各轴取运行方向上最近一条已过的指令立即下发。
  * - 调速倍率 k（GO 时）：time / k 下发，vel × k，accVel、decVel × k²，走出的就是按时间缩放的同一条曲线。
  * - 运行中改倍率 k1 → k2：剩余指令按 k2 重新排时间；当前这条立刻按 k2 重发，但当前这段运动
  *   （到下一条 passVel = 0 之前）的减速度用 max(k1, k2)² 缩放，否则降倍率时可能来不及停在 pos；
- *   passVel = 0 的指令要等轴停在上一个 pos 后再发（提倍率时轴会落后于新时间表）。
+ *   vel > 0 且 passVel = 0 的指令要等轴停在上一个 pos 后再发（提倍率时轴会落后于新时间表）。
  */
 export type cCompiledModel = {
   deviceId:number, // 物体id
@@ -53,8 +55,8 @@ export type cCompiledModel = {
       vel:number, // 速度（绝对值）
       accVel:number, // 加速度
       decVel:number, // 减速度
-      passVel:number, // 下发时轴应有的速度（绝对值）；0 表示从静止起步（新的一段运动）
-    } | null)[] // 虚轴列表，按启用的轴排【v1，v2，v3】；这一刻不用重发的轴为 null
+      passVel:number, // 下发时轴应有的速度（绝对值）；vel > 0 时 0 表示从静止起步（新的一段运动）
+    })[] // 虚轴列表，按启用的轴排【v1，v2，v3】；这一刻不用重发的轴 vel 等为 0，pos 为这一刻的虚轴值
   }[] // 时间块列表，按 time 升序；整条序列都不动的物体为空
 }
 
