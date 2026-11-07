@@ -14,8 +14,6 @@ import {
   resolveProjectHistoryShortcut,
 } from "@/app/project/project-history-shortcuts";
 import { useProject } from "@/app/project/use-project";
-import { createDefaultSavedView } from "@/app/project/saved-view";
-import { getViz3DEngine } from "@/app/viz3d";
 import { isCppAckFailed } from "@shared/csocket/ack";
 import { useAxisMotionLocks } from "../hooks/axis-motion";
 import { useConsoleMode } from "../hooks/use-console-mode";
@@ -23,7 +21,9 @@ import { useConsoleNav } from "../hooks/use-console-nav";
 import { useActionBuilder } from "./action-builder/use-action-builder";
 import { usePlcRuntime } from "../hooks/plc-runtime-provider";
 import { useProgram } from "../hooks/use-program";
+import { useConfirmProjectLeave } from "../hooks/project-leave-guard-provider";
 import { useProjectStore } from "../hooks/use-project-store";
+import { useSaveProject } from "../hooks/use-save-project";
 import { writeConfigOperationLog } from "../hooks/write-operation-log";
 import { ShowModeConfirmDialog } from "./show-mode-confirm/show-mode-confirm-dialog";
 import { ProjectMismatchDialog } from "./system-status/project-mismatch-dialog";
@@ -72,7 +72,6 @@ export const TopBar = ({
     currentProject,
     isDirty,
     isSaving,
-    saveCurrentProject,
     saveProjectAs,
     closeProject,
     importProject,
@@ -147,24 +146,14 @@ export const TopBar = ({
     void logoutInPlace();
   };
 
-  const handleProjectManage = () => {
-    setMenuOpen(false);
-    setProjectCenterOpen(true);
-  };
+  const handleSaveProject = useSaveProject();
+  const confirmProjectLeave = useConfirmProjectLeave();
 
-  const handleSaveProject = async () => {
-    if (isSaving || !can("project.save")) return;
-    try {
-      const engine = getViz3DEngine();
-      const view = engine.getSavedView() ?? createDefaultSavedView();
-      const coverPngBase64 = engine.captureCoverPngBase64();
-      await saveCurrentProject({ view, coverPngBase64 });
-      writeConfigOperationLog("saveProject", `保存工程「${projectName}」`);
-      toast.success("工程已保存");
-    } catch (err) {
-      writeConfigOperationLog("saveProject", `保存工程「${projectName}」`, err);
-      toast.error(err instanceof Error ? err.message : "保存失败");
-    }
+  // 进了工程管理就能换工程：有没保存的修改先在这里问，进去后不再问
+  const handleProjectManage = async () => {
+    setMenuOpen(false);
+    if (!(await confirmProjectLeave("manage"))) return;
+    setProjectCenterOpen(true);
   };
 
   const handleSaveProjectAs = () => {
@@ -185,6 +174,7 @@ export const TopBar = ({
   };
 
   const handleCloseProject = async () => {
+    if (!(await confirmProjectLeave("close"))) return;
     try {
       await closeProject();
       navigate("/project-center", { replace: true });
@@ -390,7 +380,7 @@ export const TopBar = ({
         onUndo={handleUndo}
         onRedo={handleRedo}
         onLogout={handleLogout}
-        onProjectManage={handleProjectManage}
+        onProjectManage={() => void handleProjectManage()}
         onSaveProject={() => void handleSaveProject()}
         onSaveProjectAs={() => void handleSaveProjectAs()}
         onCloseProject={() => void handleCloseProject()}

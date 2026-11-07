@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import { getCsocketApiService, registerCppSocketHandlers, shutdownCppSocket } from './cSocket'
 import { registerAuthHandlers } from './auth'
 import { registerKinematicsHandlers, shutdownKinematics } from './kinematics'
-import { registerToolHandlers } from './tool'
+import { attachCloseGuard, registerToolHandlers } from './tool'
 import { registerConfigHandlers } from './getConfig'
 import { registerProjectHandlers } from './project'
 import { attachAiBridgeWindow, registerAiBridgeHandlers, shutdownAiBridge } from './ai-bridge'
@@ -79,6 +79,7 @@ async function createWindow() {
   })
   win.setMenuBarVisibility(false)
   attachAiBridgeWindow(win)
+  attachCloseGuard(win)
 
   // ── 渲染进程崩溃 / 白屏自动恢复 ──
   // const reloadPage = () => {

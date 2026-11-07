@@ -238,6 +238,12 @@ export type AiBridgeAPI = {
 /** 工具域门面：window.toolAPI */
 export type ToolAPI = {
   confirm: (params: ConfirmToolParams) => Promise<boolean>
+  /** 有没保存的修改：有时点窗口 ✕ 先发关闭请求，不直接关（测试 / 纯浏览器环境下没有） */
+  setCloseGuard?: (guarded: boolean) => void
+  /** 点了窗口 ✕（setCloseGuard 报过有修改时），返回注销函数 */
+  onCloseRequest?: (listener: () => void) => () => void
+  /** 可以关了：真正关闭窗口 */
+  confirmClose?: () => void
 }
 
 declare global {

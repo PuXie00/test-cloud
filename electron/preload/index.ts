@@ -56,6 +56,18 @@ contextBridge.exposeInMainWorld('projectAPI', {
 
 contextBridge.exposeInMainWorld('toolAPI', {
   confirm: (params: unknown) => ipcRenderer.invoke('tool:confirm', params) as Promise<boolean>,
+  setCloseGuard: (guarded: boolean) => ipcRenderer.send('tool:close-guard', guarded),
+  onCloseRequest: (listener: () => void) => {
+    const subscription = () => {
+      ipcRenderer.send('tool:close-ack')
+      listener()
+    }
+    ipcRenderer.on('tool:close-request', subscription)
+    return () => {
+      ipcRenderer.removeListener('tool:close-request', subscription)
+    }
+  },
+  confirmClose: () => ipcRenderer.send('tool:close-confirm'),
 })
 
 contextBridge.exposeInMainWorld('csocketApi', createCsocketApi())
