@@ -154,7 +154,7 @@ describe("continuous motion between poses", () => {
     const compiled = compilePlcAction(loop, context);
     // PLC 时间单位 0.1 s：首行带 25 每 0.1 s 的初速度
     expect(compiled.timelines[0]!.segments[0]!.b).toBeCloseTo(25);
-    // move 指令：末段 -500→0 越过首尾继续向上，目标是下一圈的 500；首帧补发一条带初速度的
+    // 帧表：末段 -500→0 越过首尾继续向上，目标是下一圈的 500；0s 补发的一条带初速度，写在 2000 帧
     expect(
       compiled.models[0]!.timeBlockList.map((block) => [
         block.time,
@@ -162,10 +162,11 @@ describe("continuous motion between poses", () => {
         block.virtualAxis[0]?.passVel,
       ]),
     ).toEqual([
-      [0, 500, 250],
-      [2000, -500, 0],
-      [6000, 500, 0],
-      [7600, 500, 281.25],
+      [0, 0, 0],
+      [2000, 500, 250],
+      [6000, -500, 0],
+      [7600, 500, 0],
+      [8000, 500, 281.25],
     ]);
   });
 
@@ -174,12 +175,12 @@ describe("continuous motion between poses", () => {
     const rows = compiled.timelines[0]!.segments;
     expect(rows.map((row) => row.startTime)).toEqual([0, 800, 3200, 4000, 4400, 5600, 6000]);
     expect(rows[3]?.b).toBeCloseTo(15);
-    // 400 处不停：始终以 1000 为目标，到 400 前提到经过速度 150，过 400 后提到快段匀速
+    // 400 处不停：始终以 1000 为目标；0s 起步、3200 提到经过速度 150、4000 提到快段匀速，各写在下一帧
     const blocks = compiled.models[0]!.timeBlockList;
-    expect(blocks.map((block) => block.time)).toEqual([0, 3200, 4000]);
-    expect(blocks.map((block) => block.virtualAxis[0]?.pos)).toEqual([1000, 1000, 1000]);
-    expect(blocks.map((block) => block.virtualAxis[0]?.passVel)).toEqual([0, 106.25, 150]);
-    expect(blocks[2]?.virtualAxis[0]).toMatchObject({ vel: 356.25 });
+    expect(blocks.map((block) => block.time)).toEqual([0, 3200, 4000, 6000]);
+    expect(blocks.map((block) => block.virtualAxis[0]?.pos)).toEqual([0, 1000, 1000, 1000]);
+    expect(blocks.map((block) => block.virtualAxis[0]?.passVel)).toEqual([0, 0, 106.25, 150]);
+    expect(blocks.map((block) => block.virtualAxis[0]?.vel)).toEqual([0, 106.25, 150, 356.25]);
   });
 
   it("checks acceleration against max speed / min accel time instead of phase length", () => {

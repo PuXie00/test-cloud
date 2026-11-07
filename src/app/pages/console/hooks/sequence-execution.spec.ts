@@ -227,12 +227,15 @@ describe("downloadSequence", () => {
         time: number;
         virtualAxis: Array<{ pos: number; vel: number; accVel: number; decVel: number; passVel: number }>;
       }>;
-    // 正向 0 时刻起步去 100；反向在原曲线 1000 处起步回 0，速度相同
-    const [forwardBlock] = blocksOf(forward);
-    const [reverseBlock] = blocksOf(reverse);
-    expect(forwardBlock).toMatchObject({ time: 0, virtualAxis: [{ pos: 100, passVel: 0 }] });
-    expect(reverseBlock).toMatchObject({ time: 1000, virtualAxis: [{ pos: 0, passVel: 0 }] });
-    expect(reverseBlock?.virtualAxis[0]?.vel).toBe(forwardBlock?.virtualAxis[0]?.vel);
+    // 正向 C++ 在 0 帧取 1000 帧去 100；反向在 1000 帧取 0 帧回 0，速度相同
+    const forwardBlocks = blocksOf(forward);
+    const reverseBlocks = blocksOf(reverse);
+    expect(forwardBlocks.map((block) => block.time)).toEqual([0, 1000]);
+    expect(forwardBlocks[0]?.virtualAxis[0]).toMatchObject({ pos: 0, vel: 0 });
+    expect(forwardBlocks[1]?.virtualAxis[0]).toMatchObject({ pos: 100, passVel: 0 });
+    expect(reverseBlocks[0]?.virtualAxis[0]).toMatchObject({ pos: 0, passVel: 0 });
+    expect(reverseBlocks[1]?.virtualAxis[0]).toMatchObject({ pos: 100, vel: 0 });
+    expect(reverseBlocks[0]?.virtualAxis[0]?.vel).toBe(forwardBlocks[1]?.virtualAxis[0]?.vel);
   });
   it("fills an axis the sequence does not control with the live value", async () => {
     const transport = createTransport();
@@ -254,7 +257,7 @@ describe("downloadSequence", () => {
       },
       transport,
     );
-    const [block] = transport.saveAction.mock.calls[0]?.[0][0].modelList[0].timeBlockList ?? [];
+    const [, block] = transport.saveAction.mock.calls[0]?.[0][0].modelList[0].timeBlockList ?? [];
     expect(block?.virtualAxis[0]).toMatchObject({ pos: 100, passVel: 0 });
     expect(block?.virtualAxis[1]).toEqual({ pos: 12.5, vel: 0, accVel: 0, decVel: 0, passVel: 0 });
   });
