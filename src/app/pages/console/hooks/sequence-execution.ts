@@ -35,6 +35,8 @@ export type SequenceExecutionObject = {
 export type SequenceExecutionContext = {
   objects: readonly SequenceExecutionObject[];
   hoistObjects?: SequenceValidationContext["hoistObjects"];
+  /** 准备时各物体的实时虚轴值：非强制 move 表里序列不控制的轴填它 */
+  livePoseByObjectId?: PlcCompileContext["livePoseByObjectId"];
 };
 
 export type SequenceRuntimeHandle = {
@@ -135,7 +137,16 @@ const toCompileContext = (context: SequenceExecutionContext): PlcCompileContext 
     ...(object.safetyRadius !== undefined ? { safetyRadius: object.safetyRadius } : {}),
   })),
   ...(context.hoistObjects ? { hoistObjects: context.hoistObjects } : {}),
+  ...(context.livePoseByObjectId ? { livePoseByObjectId: context.livePoseByObjectId } : {}),
 });
+
+/** 实时 H/P/Y → 虚轴 v1/v2/v3 */
+const livePosesOf = (
+  telemetryByObjectId: ReadonlyMap<number, HpyPose>,
+): NonNullable<PlcCompileContext["livePoseByObjectId"]> =>
+  new Map(
+    [...telemetryByObjectId].map(([objectId, live]) => [objectId, { v1: live.h, v2: live.p, v3: live.y }]),
+  );
 
 const uniqueSortedModelIds = (
   compiled: ReturnType<typeof compilePlcAction>,
@@ -480,6 +491,8 @@ export const readySequence = async (args: {
   startPlan?: NearestStartPlan | null;
   safeGroup?: number;
   runDirection?: boolean;
+  /** 准备时的实时位置：非强制 move 表里序列不控制的轴填它 */
+  telemetryByObjectId?: ReadonlyMap<number, HpyPose>;
   transport?: SequenceExecutionTransport;
 }): Promise<LocalSequenceReadyResult> => {
   const found = lookupAuthoredSequence(args.document, args.sequenceId);
@@ -489,7 +502,10 @@ export const readySequence = async (args: {
   try {
     const downloaded = await downloadSequence(
       found.sequence,
-      sequenceExecutionContextFromDocument(args.document),
+      {
+        ...sequenceExecutionContextFromDocument(args.document),
+        ...(args.telemetryByObjectId ? { livePoseByObjectId: livePosesOf(args.telemetryByObjectId) } : {}),
+      },
       transport,
       args.startPlan,
       args.safeGroup ?? 1,

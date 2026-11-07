@@ -174,7 +174,13 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
   ): Promise<{ maxSpeedPercent: number | null } | false> => {
     const document = currentProject?.document;
     if (!document) return false;
-    const readied = await readySequence({ document, sequenceId, startPlan, ...options });
+    const readied = await readySequence({
+      document,
+      sequenceId,
+      startPlan,
+      telemetryByObjectId: telemetryRef.current,
+      ...options,
+    });
     if (!readied.ok) {
       clearSlotReady(slotIndex);
       reportSequenceResult(readied);

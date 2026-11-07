@@ -412,7 +412,7 @@ describe("compilePlcAction", () => {
     expect(compiled.models[0]?.timeBlockList[0]?.virtualAxis).toHaveLength(1);
   });
 
-  it("leaves axes without a new move at that time null", () => {
+  it("fills axes without a new move with their programmed value and zero speed", () => {
     const sequence = sequenceOf([
       { id: "a", kind: "pose", objectId: 7, atMs: 0, pose: origin },
       { id: "b", kind: "pose", objectId: 7, atMs: 1000, pose: { v1: 100, v2: 0, v3: 0 } },
@@ -425,9 +425,27 @@ describe("compilePlcAction", () => {
     const blocks = compiled.models[0]!.timeBlockList;
     expect(blocks.map((block) => block.time)).toEqual([0, 1000]);
     expect(blocks[0]?.virtualAxis[0]).toMatchObject({ pos: 100, passVel: 0 });
-    expect(blocks[0]?.virtualAxis[1]).toBeNull();
-    expect(blocks[1]?.virtualAxis[0]).toBeNull();
+    expect(blocks[0]?.virtualAxis[1]).toEqual({ pos: 0, vel: 0, accVel: 0, decVel: 0, passVel: 0 });
+    expect(blocks[1]?.virtualAxis[0]).toEqual({ pos: 100, vel: 0, accVel: 0, decVel: 0, passVel: 0 });
     expect(blocks[1]?.virtualAxis[1]).toMatchObject({ pos: 10, passVel: 0 });
+  });
+
+  it("gives a pass-through axis its curve value and an uncontrolled axis its live value", () => {
+    const sequence = sequenceOf([
+      { id: "a", kind: "pose", objectId: 7, atMs: 0, pose: { v1: 0, v2: 0 } },
+      { id: "b", kind: "pose", objectId: 7, atMs: 1000, pose: { v2: 10 } },
+      { id: "c", kind: "pose", objectId: 7, atMs: 2000, pose: { v1: 200, v2: 10 } },
+    ]);
+    const compiled = compilePlcAction(sequence, {
+      ...compileContext([{ id: 7, enabledVirtualAxes: ["v1", "v2", "v3"] as const }]),
+      livePoseByObjectId: new Map([[7, { v1: 5, v2: 6, v3: 7.25 }]]),
+    });
+    const blocks = compiled.models[0]!.timeBlockList;
+    expect(blocks.map((block) => block.time)).toEqual([0]);
+    // v1 在 1000 处经过不停：一条 move 到 200；v3 序列不控制，填实时值
+    expect(blocks[0]?.virtualAxis[0]).toMatchObject({ pos: 200, passVel: 0 });
+    expect(blocks[0]?.virtualAxis[1]).toMatchObject({ pos: 10, passVel: 0 });
+    expect(blocks[0]?.virtualAxis[2]).toEqual({ pos: 7.3, vel: 0, accVel: 0, decVel: 0, passVel: 0 });
   });
 
   it("sends one move per wave stroke and nothing for the invisible holds", () => {
