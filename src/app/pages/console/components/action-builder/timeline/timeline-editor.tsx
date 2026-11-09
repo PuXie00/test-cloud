@@ -64,6 +64,7 @@ import {
   curvePlotLayout,
   TimelineCurves,
 } from "./timeline-curves";
+import { TrackCurveUnderlay } from "./track-curve-underlay";
 import {
   canvasWidthPx,
   clampCursorMs,
@@ -71,6 +72,7 @@ import {
   MARQUEE_THRESHOLD_PX,
   panViewStartMs,
   type PanAxis,
+  PLAYHEAD_GRAB_HALF_PX,
   TIMELINE_H_SCROLL_HEIGHT_PX,
   totEndMs,
   usedBandScreenRect,
@@ -126,6 +128,8 @@ export type TimelineEditorProps = {
   curveAxis?: VirtualAxisId;
   /** 曲线视图看位置还是速度 */
   curveGraph?: CurveGraph;
+  /** 轨道视图只选了一个物体时，把它的曲线（curveAxis、curveGraph）铺在轨道区背后 */
+  curveUnderlay?: boolean;
   /** 曲线上拖位姿的值：这些位姿的这根轴加 deltaValue（相对拖动开始） */
   onPoseAxisDrag?: (blockIds: string[], axis: VirtualAxisId, deltaValue: number) => void;
   onPoseAxisDragEnd?: () => void;
@@ -207,6 +211,7 @@ export const TimelineEditor = ({
   viewMode = "tracks",
   curveAxis = "v1",
   curveGraph = "position",
+  curveUnderlay = false,
   onPoseAxisDrag,
   onPoseAxisDragEnd,
 }: TimelineEditorProps) => {
@@ -352,6 +357,21 @@ export const TimelineEditor = ({
     [curveMode, resolved, visibleCurveIds, curveAxis, objects],
   );
   const fittedCurveScales = useMemo(() => fitCurveScales(curves), [curves]);
+  const underlayObjectId =
+    !curveMode &&
+    curveUnderlay &&
+    selectedObjectIds.length === 1 &&
+    objectIdsInRowOrder.includes(selectedObjectIds[0]!)
+      ? selectedObjectIds[0]!
+      : null;
+  const underlayCurve = useMemo(
+    () =>
+      underlayObjectId === null
+        ? null
+        : (buildAxisCurves({ resolved, objectIds: [underlayObjectId], axis: curveAxis, objects })[0] ??
+          null),
+    [underlayObjectId, resolved, curveAxis, objects],
+  );
   // 选中的块所属的物体：曲线加粗，靠选中区分是哪条（不靠悬停，触屏也能用）
   const emphasizedObjectIds = useMemo(() => {
     const ids = new Set(selectionBlockIds(selection));
@@ -474,7 +494,7 @@ export const TimelineEditor = ({
       ),
     });
 
-  const handlePlayheadDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+  const handlePlayheadDrag = (event: React.PointerEvent<Element>) => {
     if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
@@ -923,10 +943,11 @@ export const TimelineEditor = ({
             />
 
             {curveMode ? (
+              // 压在游标拖动区上面：关键帧先被点中，游标附近的空白由曲线交回来拖游标
               <div
                 ref={curvesRef}
                 data-testid="timeline-curves"
-                className="relative min-h-0 flex-1 touch-none overflow-hidden"
+                className="relative z-10 min-h-0 flex-1 touch-none overflow-hidden"
                 style={{ width: canvasWidth }}
               >
                 <TimelineCurves
@@ -939,6 +960,7 @@ export const TimelineEditor = ({
                   viewEndMs={viewEndMs}
                   pxPerSecond={pxPerSecond}
                   occupiedEndMs={occupiedEndMs}
+                  cursorMs={cursorMs}
                   gridTimesMs={majorTicks.map((tick) => tick.ms)}
                   markers={markers}
                   selectedMarkerIds={selectedMarkerIds}
@@ -950,6 +972,7 @@ export const TimelineEditor = ({
                   onBlockSelect={(blockId, additive) => handleBlockSelect(blockId, additive, false)}
                   onCurveSelect={handleCurveSelect}
                   onBackgroundClick={handleCurveBackgroundClick}
+                  onPlayheadPress={handlePlayheadDrag}
                   onMarquee={(blockIds) => onSelectionChange(selectionFromBlockIds(blockIds))}
                   onKeyDrag={onPoseAxisDrag ? handleCurveKeyDrag : undefined}
                   onKeyDragEnd={handleCurveKeyDragEnd}
@@ -997,6 +1020,17 @@ export const TimelineEditor = ({
                     />
                   ))}
                 </div>
+
+                {underlayCurve ? (
+                  <TrackCurveUnderlay
+                    curve={underlayCurve}
+                    graph={curveGraph}
+                    canvasWidth={canvasWidth}
+                    viewStartMs={viewStartMs}
+                    viewEndMs={viewEndMs}
+                    pxPerSecond={pxPerSecond}
+                  />
+                ) : null}
 
                 <div className="relative" style={{ marginLeft: TIMELINE_PAD_LEFT, width: contentWidth }}>
                   {rows.map((row) => (
@@ -1070,6 +1104,7 @@ export const TimelineEditor = ({
               aria-hidden
             />
 
+            {/* 拖动区压在运动区间上、位姿 / 预设 / 指令下面（z-10 起）：游标停在位姿上时先点中位姿 */}
             <div
               role="slider"
               aria-label="播放游标"
@@ -1078,8 +1113,8 @@ export const TimelineEditor = ({
               aria-valuenow={cursorMs}
               tabIndex={0}
               onPointerDown={handlePlayheadDrag}
-              className="absolute top-0 bottom-0 z-30 w-3 -translate-x-1/2 cursor-ew-resize"
-              style={{ left: playheadLeft }}
+              className="absolute top-0 bottom-0 z-[5] -translate-x-1/2 cursor-ew-resize"
+              style={{ left: playheadLeft, width: PLAYHEAD_GRAB_HALF_PX * 2 }}
             />
           </div>
         </div>

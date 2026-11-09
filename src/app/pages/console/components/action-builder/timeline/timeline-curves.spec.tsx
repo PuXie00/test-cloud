@@ -247,6 +247,24 @@ describe("curve view", () => {
     expect(onSelectionChange).toHaveBeenCalledWith(null);
   });
 
+  it("drags the playhead from an empty spot next to it, but a key under the playhead is picked first", () => {
+    const empty = renderCurves({ cursorMs: 5000 });
+    const y = layout.plot.top + layout.plot.height / 2;
+    fireEvent.pointerDown(plot(), { clientX: xAt(5000) + 4, clientY: y, button: 0 });
+    fireEvent.pointerMove(window, { clientX: xAt(6000), clientY: y + 40 });
+    fireEvent.pointerUp(window, { clientX: xAt(6000), clientY: y + 40 });
+    expect(empty.onCursorChange).toHaveBeenLastCalledWith(6000);
+    expect(empty.onSelectionChange).not.toHaveBeenCalled();
+    cleanup();
+
+    const onKey = renderCurves({ cursorMs: 2000 });
+    const { x, y: keyY } = keyCenter("a2");
+    fireEvent.pointerDown(keyOf("a2"), { clientX: x, clientY: keyY, button: 0 });
+    fireEvent.pointerUp(window, { clientX: x, clientY: keyY });
+    expect(onKey.onSelectionChange).toHaveBeenCalledWith({ kind: "block", blockId: "a2" });
+    expect(onKey.onCursorChange).not.toHaveBeenCalled();
+  });
+
   it("selects the motion segment under a click on the curve", () => {
     const { onSelectionChange, onCursorChange } = renderCurves({ selectedObjectIds: [7] });
     const [curve] = buildAxisCurves({
@@ -418,5 +436,56 @@ describe("timeline toolbar view menu", () => {
     expect(screen.getByRole("menuitemradio", { name: "V2" }).getAttribute("aria-disabled")).toBe("true");
     fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "显示曲线" }));
     expect(onViewModeChange).toHaveBeenCalledWith("curves");
+  });
+
+  it("lets the curve underlay use the graph and axis options while the tracks are shown", async () => {
+    const onCurveUnderlayChange = vi.fn();
+    const { onCurveGraphChange } = renderToolbar({
+      viewMode: "tracks",
+      curveUnderlay: true,
+      onCurveUnderlayChange,
+    });
+    await openViewMenu();
+    const underlay = screen.getByRole("menuitemcheckbox", { name: /曲线底图/ });
+    expect(underlay.getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("menuitemradio", { name: "速度" }).getAttribute("aria-disabled")).toBeNull();
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "速度" }));
+    expect(onCurveGraphChange).toHaveBeenCalledWith("velocity");
+    fireEvent.click(underlay);
+    expect(onCurveUnderlayChange).toHaveBeenCalledWith(false);
+  });
+});
+
+describe("curve underlay on the tracks", () => {
+  const underlay = () => screen.queryByTestId("track-curve-underlay");
+
+  it("draws the one selected object's curve behind the tracks", () => {
+    renderCurves({ viewMode: "tracks", curveUnderlay: true, selectedObjectIds: [8] });
+    expect(screen.getByTestId("timeline-tracks")).not.toBeNull();
+    expect(underlay()?.getAttribute("data-object-id")).toBe("8");
+    expect(underlay()?.getAttribute("data-graph")).toBe("position");
+    expect(underlay()?.className).toContain("pointer-events-none");
+    expect(screen.getByTestId("track-curve-underlay-line").getAttribute("d")).toMatch(/^M/);
+    // 只铺曲线，不写文字
+    expect(underlay()?.textContent).toBe("");
+  });
+
+  it("follows the speed graph", () => {
+    renderCurves({ viewMode: "tracks", curveUnderlay: true, curveGraph: "velocity", selectedObjectIds: [7] });
+    expect(underlay()?.getAttribute("data-graph")).toBe("velocity");
+  });
+
+  it("stays off with no object, several objects, the switch off, or in the curve view", () => {
+    renderCurves({ viewMode: "tracks", curveUnderlay: true, selectedObjectIds: [] });
+    expect(underlay()).toBeNull();
+    cleanup();
+    renderCurves({ viewMode: "tracks", curveUnderlay: true, selectedObjectIds: [7, 8] });
+    expect(underlay()).toBeNull();
+    cleanup();
+    renderCurves({ viewMode: "tracks", curveUnderlay: false, selectedObjectIds: [7] });
+    expect(underlay()).toBeNull();
+    cleanup();
+    renderCurves({ viewMode: "curves", curveUnderlay: true, selectedObjectIds: [7] });
+    expect(underlay()).toBeNull();
   });
 });

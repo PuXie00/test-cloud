@@ -87,6 +87,9 @@ type TimelineToolbarProps = {
   onViewModeChange?: (mode: TimelineViewMode) => void;
   curveGraph?: CurveGraph;
   onCurveGraphChange?: (graph: CurveGraph) => void;
+  /** 轨道视图的曲线底图（只选一个物体时）；开着时也能选位置 / 速度和虚轴 */
+  curveUnderlay?: boolean;
+  onCurveUnderlayChange?: (on: boolean) => void;
   /** available 为 false：显示的物体都没有这根轴，或序列不控制它 */
   curveAxis?: VirtualAxisId;
   curveAxes?: readonly { axis: VirtualAxisId; available: boolean }[];
@@ -164,10 +167,14 @@ export const TimelineToolbar = ({
   onViewModeChange,
   curveGraph,
   onCurveGraphChange,
+  curveUnderlay = false,
+  onCurveUnderlayChange,
   curveAxis,
   curveAxes,
   onCurveAxisChange,
 }: TimelineToolbarProps) => {
+  // 曲线视图或曲线底图开着时，曲线看什么才有用
+  const curveOptionsOn = viewMode === "curves" || (onCurveUnderlayChange !== undefined && curveUnderlay);
   const playLabel = isPlaying ? "暂停" : atEnd ? "重新播放" : "播放";
   const PlayIcon = isPlaying ? Pause : atEnd ? RotateCcw : Play;
 
@@ -226,6 +233,18 @@ export const TimelineToolbar = ({
           >
             显示曲线
           </DropdownMenuCheckboxItem>
+          {onCurveUnderlayChange ? (
+            <DropdownMenuCheckboxItem
+              checked={curveUnderlay}
+              disabled={viewMode === "curves"}
+              onCheckedChange={(checked) => onCurveUnderlayChange(checked === true)}
+              onSelect={keepMenuOpen}
+              className={viewMenuItemClass}
+            >
+              曲线底图
+              <DropdownMenuShortcut>选一个物体时</DropdownMenuShortcut>
+            </DropdownMenuCheckboxItem>
+          ) : null}
           {curveGraph !== undefined && onCurveGraphChange ? (
             <>
               <DropdownMenuSeparator />
@@ -238,7 +257,7 @@ export const TimelineToolbar = ({
                   <DropdownMenuRadioItem
                     key={graph.id}
                     value={graph.id}
-                    disabled={viewMode !== "curves"}
+                    disabled={!curveOptionsOn}
                     onSelect={keepMenuOpen}
                     className={viewMenuItemClass}
                   >
@@ -260,7 +279,7 @@ export const TimelineToolbar = ({
                   <DropdownMenuRadioItem
                     key={axis}
                     value={axis}
-                    disabled={viewMode !== "curves" || !available}
+                    disabled={!curveOptionsOn || !available}
                     onSelect={keepMenuOpen}
                     className={viewMenuItemClass}
                   >

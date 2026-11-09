@@ -27,6 +27,7 @@ import { AiConsoleViewSync } from "@/app/ai-bridge/ai-console-view-sync";
 import { SelectionProvider } from "./hooks/selection-provider";
 import { AlignmentChecklistProvider } from "./components/drive-debug/alignment-checklist/alignment-checklist-provider";
 import { LeftSidebar, type LeftNavId } from "./components/LeftSidebar";
+import { ProjectLeaveGuardProvider } from "./hooks/project-leave-guard-provider";
 import { RightSidebar, isRightPanelTabAllowed, type RightPanelTab } from "./components/RightSidebar";
 import { TopBar } from "./components/TopBar";
 import { Viz3DActionPreviewSync } from "./3d/Viz3DActionPreviewSync";
@@ -309,7 +310,9 @@ export const ConsolePage = () => (
                           <AlignmentChecklistProvider>
                             <BuildDebugProvider>
                               <ConsoleLoginProvider>
-                                <ConsoleInner />
+                                <ProjectLeaveGuardProvider>
+                                  <ConsoleInner />
+                                </ProjectLeaveGuardProvider>
                               </ConsoleLoginProvider>
                             </BuildDebugProvider>
                           </AlignmentChecklistProvider>

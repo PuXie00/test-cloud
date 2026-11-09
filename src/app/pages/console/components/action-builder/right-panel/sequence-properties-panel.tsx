@@ -28,6 +28,7 @@ import { roundProjectCoordinate } from "@/app/project/project-quantity";
 import { resolveEnabledAxes } from "../motion-profile/motion-profile-status";
 import { EmptySelectionState } from "./empty-selection-state";
 import { MultiSegmentEditor } from "./multi-segment-editor";
+import { PoseAlignTools, SegmentAlignTools } from "./segment-align-tools";
 import { PresetBlockFields, presetBlockTitle } from "./preset-block-panel";
 import { RepairBand } from "./repair-band";
 import { SegmentEditor, SegmentStatusBadge, segmentStatusOf } from "./segment-editor";
@@ -652,6 +653,9 @@ const MultiSelectionProperties = ({
 }) => {
   const { getTimelineObject, handleExplodePresets } = useActionBuilder();
   const poseBlocks = blocks.filter((block): block is PoseBlock => block.kind === "pose");
+  const onePosePerObject =
+    poseBlocks.length > 0 &&
+    new Set(poseBlocks.map((block) => block.objectId)).size === poseBlocks.length;
   const presetIds = blocks
     .filter((block) => block.kind === "static-preset" || block.kind === "dynamic-preset")
     .map((block) => block.id);
@@ -764,6 +768,7 @@ const MultiSelectionProperties = ({
         actions={explodeAction}
       >
         {tabBar}
+        <SegmentAlignTools segments={segments} />
         {single ? (
           <SegmentEditor sequence={sequence} segment={single} onUpdateSegment={onUpdateSegment} />
         ) : (
@@ -782,6 +787,12 @@ const MultiSelectionProperties = ({
       actions={explodeAction}
     >
       {tabBar}
+      {/* 每个物体只选了一个位姿：挪位姿到同一时刻；否则有区间时按区间同时启动 / 到达 */}
+      {onePosePerObject ? (
+        <PoseAlignTools poses={poseBlocks} />
+      ) : segments.length > 0 ? (
+        <SegmentAlignTools segments={segments} />
+      ) : null}
       <div className="rounded-md bg-muted p-4">
         <p className="mb-3 text-body-sm text-muted-foreground">已选 {blocks.length} 项</p>
         <MultiPoseAxesEditor poses={poseBlocks} />

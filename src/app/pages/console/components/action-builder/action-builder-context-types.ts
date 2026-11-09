@@ -12,7 +12,12 @@ import type { ContextSelection } from "./context-bar/selection-context-bar";
 import type { PhaseInputMode } from "./motion-profile/phase-rates";
 import type { CurveGraph, TimelineViewMode } from "./timeline/curve-data";
 import type { ActionRightTab } from "./right-panel/action-right-panel";
-import type { PoseAxisWrite, SegmentProfileWrite, SegmentRetimeWrite } from "./sequence-ops";
+import type {
+  PoseAxisWrite,
+  SegmentAlignEdge,
+  SegmentProfileWrite,
+  SegmentRetimeWrite,
+} from "./sequence-ops";
 import type { SequenceSelection } from "./sequence-selection";
 import type {
   ControlledObject as TimelineControlledObject,
@@ -63,6 +68,9 @@ export type ActionBuilderContextValue = {
   handleCurveAxisChange: (axis: VirtualAxisId) => void;
   curveGraph: CurveGraph;
   handleCurveGraphChange: (graph: CurveGraph) => void;
+  /** 轨道视图的曲线底图：只选了一个物体时铺它的曲线（虚轴、位置 / 速度同曲线视图） */
+  curveUnderlay: boolean;
+  handleCurveUnderlayChange: (on: boolean) => void;
   setActiveRightTab: (tab: ActionRightTab) => void;
   handleSequenceSelect: (sequenceId: number | null) => void;
   handleSelectionChange: (selection: SequenceSelection) => void;
@@ -96,6 +104,14 @@ export type ActionBuilderContextValue = {
   handleWriteSegmentProfiles: (writes: readonly SegmentProfileWrite[]) => boolean;
   /** 按速度改阶段：曲线时长跟着变，终点和这个物体后面的块一起平移；改不了时提示 */
   handleRetimeSegmentCurves: (writes: readonly SegmentRetimeWrite[]) => boolean;
+  /** 位姿对齐：选中的运动区间整段平移到同时启动（start）或同时到达（end），对齐到游标或选中里最早 / 最晚 */
+  handleAlignSegments: (
+    segmentKeys: readonly string[],
+    edge: SegmentAlignEdge,
+    target: "cursor" | "extreme",
+  ) => boolean;
+  /** 位姿对齐（每个物体一个位姿）：选中的位姿挪到同一时刻（游标或其中最早 / 最晚），后面的块跟着移 */
+  handleAlignPoses: (blockIds: readonly string[], target: "cursor" | "earliest" | "latest") => boolean;
   handleBlockDelete: (blockIds?: string | string[]) => void;
   /** 拆解预设：换成各物体的关键点位姿；不传时拆选中的预设 */
   handleExplodePresets: (blockIds?: readonly string[]) => void;

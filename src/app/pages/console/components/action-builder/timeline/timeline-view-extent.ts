@@ -9,6 +9,8 @@ import {
 
 export const MARQUEE_THRESHOLD_PX = 6;
 export const POINT_BLOCK_HIT_MIN_PX = 12;
+/** 播放游标左右各多宽能按住拖 */
+export const PLAYHEAD_GRAB_HALF_PX = 6;
 
 export const viewportDurationMs = (viewportWidthPx: number, pxPerSecond: number): number => {
   const timedPx = Math.max(viewportWidthPx - TIMELINE_PAD_LEFT, 1);

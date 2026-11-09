@@ -7,6 +7,8 @@ import type {
   ModelPose,
 } from "@/app/project/action-sequence/types";
 import {
+  alignMotionSegments,
+  alignPoseBlocks,
   applyPoseAxisWrite,
   copyTimelineBlocks,
   deleteTimelineBlocks,
@@ -1196,5 +1198,95 @@ describe("explodePresetBlocks", () => {
 
   it("refuses when nothing selected is a preset", () => {
     expect(explodePresetBlocks(withFlat, ["p0"])).toEqual({ ok: false, reason: "missing-block" });
+  });
+});
+
+describe("alignMotionSegments", () => {
+  // 物体 1：a1@0 停到 a2@2000 → a3@5000（动），之后 a4@7000；物体 2：b1@0 → b2@3000 → b3@6000
+  const twoObjects: ActionSequenceConfig = {
+    id: 1,
+    name: "align",
+    trajectoryMode: false,
+    blocks: [
+      { id: "a1", kind: "pose", objectId: 1, atMs: 0, pose: { v1: 0 } },
+      { id: "a2", kind: "pose", objectId: 1, atMs: 2000, pose: { v1: 0 } },
+      { id: "a3", kind: "pose", objectId: 1, atMs: 5000, pose: { v1: 500 } },
+      { id: "a4", kind: "pose", objectId: 1, atMs: 7000, pose: { v1: 0 } },
+      { id: "b1", kind: "pose", objectId: 2, atMs: 0, pose: { v1: 0 } },
+      { id: "b2", kind: "pose", objectId: 2, atMs: 3000, pose: { v1: 0 } },
+      { id: "b3", kind: "pose", objectId: 2, atMs: 6000, pose: { v1: 300 } },
+    ],
+    segments: [],
+  };
+  const keyOf = (sequence: ActionSequenceConfig, fromRef: string, toRef: string) => {
+    const segment = resolveActionSequence(sequence).segments.find(
+      (item) => item.fromRef === fromRef && item.toRef === toRef,
+    );
+    if (!segment) throw new Error(`missing ${fromRef}→${toRef}`);
+    return segment.key;
+  };
+  const keys = [keyOf(twoObjects, "a2", "a3"), keyOf(twoObjects, "b2", "b3")];
+  const timesOf = (sequence: ActionSequenceConfig) =>
+    Object.fromEntries(
+      sequence.blocks.map((block) => [block.id, block.kind === "dynamic-preset" ? block.startMs : block.atMs]),
+    );
+
+  it("starts the segments together at the earliest start, keeping durations and moving later blocks", () => {
+    const result = alignMotionSegments(twoObjects, keys, "start", { kind: "extreme" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.movedObjectIds).toEqual([2]);
+    expect(timesOf(result.sequence)).toMatchObject({
+      a2: 2000, a3: 5000, a4: 7000, b1: 0, b2: 2000, b3: 5000,
+    });
+  });
+
+  it("makes the segments arrive together at the latest end or at the playhead", () => {
+    const latest = alignMotionSegments(twoObjects, keys, "end", { kind: "extreme" });
+    expect(latest.ok && timesOf(latest.sequence)).toMatchObject({
+      a2: 3000, a3: 6000, a4: 8000, b2: 3000, b3: 6000,
+    });
+
+    const atCursor = alignMotionSegments(twoObjects, keys, "end", { kind: "time", atMs: 6540 });
+    expect(atCursor.ok && timesOf(atCursor.sequence)).toMatchObject({
+      a1: 0, a2: 3500, a3: 6500, a4: 8500, b1: 0, b2: 3500, b3: 6500,
+    });
+  });
+
+  it("refuses to move a segment back onto the object's previous block", () => {
+    const result = alignMotionSegments(twoObjects, keys, "start", { kind: "time", atMs: 0 });
+    expect(result).toEqual({ ok: false, reason: "crosses-previous", objectId: 1 });
+  });
+
+  it("aligns single poses to the same time, moving later blocks and changing the move into them", () => {
+    const earliest = alignPoseBlocks(twoObjects, ["a3", "b3"], { kind: "earliest" });
+    expect(earliest.ok && timesOf(earliest.sequence)).toMatchObject({
+      a2: 2000, a3: 5000, a4: 7000, b2: 3000, b3: 5000,
+    });
+
+    const latest = alignPoseBlocks(twoObjects, ["a3", "b3"], { kind: "latest" });
+    expect(latest.ok && timesOf(latest.sequence)).toMatchObject({ a3: 6000, a4: 8000, b3: 6000 });
+
+    const atCursor = alignPoseBlocks(twoObjects, ["a2", "b3"], { kind: "time", atMs: 4000 });
+    expect(atCursor.ok && timesOf(atCursor.sequence)).toMatchObject({
+      a2: 4000, a3: 7000, a4: 9000, b2: 3000, b3: 4000,
+    });
+  });
+
+  it("refuses a pose moved onto the object's previous block or two poses of one object", () => {
+    expect(alignPoseBlocks(twoObjects, ["a3", "b3"], { kind: "time", atMs: 2000 })).toEqual({
+      ok: false,
+      reason: "crosses-previous",
+      objectId: 1,
+    });
+    expect(alignPoseBlocks(twoObjects, ["a2", "a3"], { kind: "latest" }).ok).toBe(false);
+  });
+
+  it("treats several selected segments of one object as one span", () => {
+    const withBoth = [...keys, keyOf(twoObjects, "a3", "a4")];
+    const result = alignMotionSegments(twoObjects, withBoth, "end", { kind: "time", atMs: 9000 });
+    expect(result.ok && timesOf(result.sequence)).toMatchObject({
+      a2: 4000, a3: 7000, a4: 9000, b2: 6000, b3: 9000,
+    });
   });
 });
