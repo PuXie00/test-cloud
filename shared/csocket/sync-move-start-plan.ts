@@ -20,7 +20,7 @@ export type SyncMoveVirtualAxis = {
  *
  * C++ 执行约定
  * 1. GO 时每台设备三轴的准备 Move 同时下发（一条三轴 move）。vel > 0 的都要发，包括不动的轴：
- *    它的 pos 就是当前位置，原地保持；设备没有的轴 pos 为实时值、vel 为 0.1。vel 为 0 才表示这一轴不发。
+ *    它的 pos 就是当前位置，原地保持。设备没有的轴 pos 为实时值、vel / accVel / decVel 为 0，不下发。
  * 2. pos 是这条 Move 的停车目标，不是接入点；轴到接入帧时可能还在运动。算法保证 GO 后 transitionSec 毫秒时，
  *    各轴的位置和速度都与帧表回放在 targetFrameMs 处一致（位置差 ≤ 0.05，速度差 ≤ 0.05/秒），之后整段也一致。
  * 3. 帧表在 GO 后 transitionSec 毫秒按计时开始，不能等“到位 / 停稳”：带速接入的轴不会在 pos 停下等待。
@@ -32,7 +32,7 @@ export type SyncMoveVirtualAxis = {
  *    都推迟到接入帧，再按帧表“运行中改倍率”的规则生效。准备 Move 不按倍率缩放：缩放后接入速度对不上，
  *    倍率 > 1 时还会超出设备能力。
  * 6. 准备 Move 按设备真实最大速度、加减速度计算（不是默认速度），可能用到满能力。
- * 7. transitionSec 为 0：已在接入点（at-start），三轴原地保持的 Move 照发，GO 后直接从 targetFrameMs 开始。
+ * 7. transitionSec 为 0：已在接入点（at-start），原地保持的 Move 照发，GO 后直接从 targetFrameMs 开始。
  */
 export type SyncMoveStartPlan = {
   direction: boolean
@@ -60,8 +60,8 @@ const round1 = (value: number) => Math.round(value * 10) / 10
 
 /**
  * 非强制准备：把上位机 startPlan 转成 [v1, v2, v3]。
- * 算法给了准备 Move（entryMove）的轴原样下发，三轴都有（不动的轴 pos 为当前位置、vel > 0）；
- * 没有的轴补 0（vel 为 0 不下发）。接入帧、准备时间取整到毫秒。
+ * 算法给了准备 Move（entryMove）的轴原样下发：不动的轴 pos 为当前位置、vel > 0；
+ * 设备没有的轴 pos 为实时值、速度为 0（不下发）。计划里没有的轴补 0。接入帧、准备时间取整到毫秒。
  */
 export const toSyncMoveStartPlan = (plan: ActionStartPlan): SyncMoveStartPlan => ({
   direction: plan.direction === 1,

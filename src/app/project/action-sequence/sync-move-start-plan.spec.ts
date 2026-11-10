@@ -78,7 +78,8 @@ describe("toSyncMoveStartPlan", () => {
             { axis: "v1", to: 2052.3, velocity: 79.1, acceleration: 500, deceleration: 390.6, entryMove: entry(2200, 79.1, 500, 390.6) },
             // 原地保持的轴也下发：pos 为当前位置、vel > 0
             { axis: "v2", to: 8, velocity: 3, acceleration: 3, deceleration: 3, entryMove: entry(8, 3, 3, 3) },
-            { axis: "v3", to: 0, velocity: 0.1, acceleration: 0.1, deceleration: 0.1, entryMove: entry(0, 0.1, 0.1, 0.1) },
+            // 设备没有的轴：pos 为实时值、速度 0，不下发
+            { axis: "v3", to: 0.4, velocity: 0, acceleration: 0, deceleration: 0, entryMove: entry(0.4, 0, 0, 0) },
           ],
         },
       ],
@@ -91,7 +92,7 @@ describe("toSyncMoveStartPlan", () => {
       modelList: [
         {
           deviceId: 3,
-          virtualAxis: [entry(2200, 79.1, 500, 390.6), entry(8, 3, 3, 3), entry(0, 0.1, 0.1, 0.1)],
+          virtualAxis: [entry(2200, 79.1, 500, 390.6), entry(8, 3, 3, 3), entry(0.4, 0, 0, 0)],
         },
       ],
     });

@@ -282,9 +282,9 @@ export const moveProfile = (
 
 const profileDuration = (phases: readonly ProfilePhase[]): number => pythonSum(phases.map((phase) => phase[0]));
 
-/** 从静止的 from 起步、GO 时下发准备 Move 后 tSec 秒的位置（预览过渡段用） */
+/** 从静止的 from 起步、GO 时下发准备 Move 后 tSec 秒的位置（预览过渡段用）；速度为 0 的不下发，原地不动 */
 export const entryMovePositionAt = (from: number, move: EntryMove, tSec: number): number => {
-  if (tSec <= 0) return from;
+  if (tSec <= 0 || Math.min(move.vel, move.accVel, move.decVel) <= 0) return from;
   return profileAt(moveProfile(from, 0, move.pos, move.vel, move.accVel, move.decVel), move.pos, tSec)[0];
 };
 

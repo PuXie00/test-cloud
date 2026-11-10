@@ -60,7 +60,7 @@ export type NearestStartAxisMove = AxisVad & {
   durationSec: number;
   /** 非强制：接入帧时这一轴的速度（有符号，单位/秒）；不为 0 时要助跑，位置没差也算要动 */
   joinVelocity?: number;
-  /** 非强制：GO 时下发的准备 Move，原样给 C++；pos 是停车目标，不是接入点 */
+  /** 非强制：GO 时下发的准备 Move，原样给 C++；pos 是停车目标，不是接入点；设备没有的轴速度为 0（不下发） */
   entryMove?: EntryMove;
 };
 
@@ -224,26 +224,31 @@ const nonforcedFailure = (result: NonforcedEntryResult): Error => {
 
 const toNonforcedStartPlan = (
   result: NonforcedPlannedResult,
-  options: { nearest: boolean; loopCount: number },
+  options: { nearest: boolean; loopCount: number; objects: readonly ControlledObjectConfig[] },
 ): NearestStartPlan => {
   const transitionSec = result.entry_lead_ms / 1000;
   const members = result.devices.map((row): NearestStartMemberPlan => {
     const from = poseOf(row.current_HPY as Hpy);
     const target = { ...from };
+    const object = options.objects.find((item) => item.id === row.model_id);
     const axes = AXES.flatMap((axis, index): NearestStartAxisMove[] => {
       const move = result.entry_moves.find((item) => item.model_id === row.model_id && item.axisIndex === index);
       if (!move) return [];
       const to = row.join_HPY[index] ?? from[axis];
       target[axis] = to;
-      const entryMove = { pos: move.pos, vel: move.vel, accVel: move.accVel, decVel: move.decVel };
+      // 设备没有的轴：pos 填实时值，速度、加减速度填 0，C++ 不下发（算法内部为了核对给的是 0.1）
+      const exists = object === undefined || object.enabledVirtualAxes.includes(axis);
+      const entryMove = exists
+        ? { pos: move.pos, vel: move.vel, accVel: move.accVel, decVel: move.decVel }
+        : { pos: move.pos, vel: 0, accVel: 0, decVel: 0 };
       return [
         {
           axis,
           from: from[axis],
           to,
-          velocity: move.vel,
-          acceleration: move.accVel,
-          deceleration: move.decVel,
+          velocity: entryMove.vel,
+          acceleration: entryMove.accVel,
+          deceleration: entryMove.decVel,
           durationSec: transitionSec,
           joinVelocity: row.join_velocity_HPY[index] ?? 0,
           entryMove,

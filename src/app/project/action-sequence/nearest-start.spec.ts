@@ -156,11 +156,21 @@ describe("planNearestStart（非强制）", () => {
     expect(result.prepareTimeMs).toBe(Math.ceil(result.transitionSec * 1000));
     for (const member of result.members) {
       expect(member.axes.map((move) => move.axis)).toEqual(["v1", "v2", "v3"]);
+      const object = fixtureObjects().find((item) => item.id === member.objectId)!;
       for (const move of member.axes) {
-        expect(move.entryMove!.vel).toBeGreaterThan(0);
         expect(move.joinVelocity).toBe(0);
+        if (object.enabledVirtualAxes.includes(move.axis)) {
+          expect(move.entryMove!.vel).toBeGreaterThan(0);
+        } else {
+          // 设备没有的轴（单点物体的 P/Y）：pos 为实时值、速度 0，不下发
+          expect(move.entryMove).toEqual({ pos: move.from, vel: 0, accVel: 0, decVel: 0 });
+        }
       }
     }
+    expect(memberOf(result, 1).axes.filter((move) => move.entryMove!.vel === 0).map((move) => move.axis)).toEqual([
+      "v2",
+      "v3",
+    ]);
     expect(memberOf(result, 1).target.v1).toBe(0);
     expect(memberOf(result, 3).target.v1).toBe(1000);
     expectJoined(result);

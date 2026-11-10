@@ -144,11 +144,11 @@ describe("evaluateStartGate", () => {
     });
     if (result.status !== "at-start") return;
     expect(result.plan.members).toHaveLength(1);
-    // 非强制每台设备三轴都有准备 Move，一起下发；单点物体没有 P/Y，按实时值原地保持
+    // 非强制每台设备三轴都有准备 Move，一起下发；单点物体没有 P/Y：pos 为实时值、速度 0（不下发）
     expect(result.plan.members[0]!.axes).toEqual([
       expect.objectContaining({ axis: "v1", from: 10.5, to: 10, joinVelocity: 0 }),
-      expect.objectContaining({ axis: "v2", from: 40, to: 40, entryMove: expect.objectContaining({ pos: 40 }) }),
-      expect.objectContaining({ axis: "v3", from: 50, to: 50, entryMove: expect.objectContaining({ pos: 50 }) }),
+      expect.objectContaining({ axis: "v2", from: 40, to: 40, entryMove: { pos: 40, vel: 0, accVel: 0, decVel: 0 } }),
+      expect.objectContaining({ axis: "v3", from: 50, to: 50, entryMove: { pos: 50, vel: 0, accVel: 0, decVel: 0 } }),
     ]);
     expect(result.plan.prepareTimeMs).toBe(Math.ceil(result.plan.transitionSec * 1000));
   });
