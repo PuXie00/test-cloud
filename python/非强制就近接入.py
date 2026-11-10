@@ -1,16 +1,9 @@
-"""非强制就近接入（同时起步、连续点选帧）。入口calculate_nonforced_entry(parameters)。
-
-输入保持command/settings/models/runtime；输出保持entry_moves/devices和原时钟字段。
-当前已停稳；各轴在同一clock_start_ms立即起步，不靠延时或提前到位等待同步。
-连续曲线候选包含加速、匀速、减速和停点，默认按1ms分辨率比较共同准备时间。
-先搜索stopped_time_ms所在原动作段，全段不可执行才按运行方向搜索其他段。
-各轴重新计算V/A/D，内部可途中换速；公开entry_moves仅使用原版role。
-接入时匹配原Move回放的位置和有符号速度，并恢复当时生效的原Move；对应指令也按原版run_up格式输出。
-非零速度接入点不是Move停车目标；必须完整执行entry_moves，再接续原表。
-所有运动轴首条准备指令同时下发；原本已经在位且目标静止的轴保持不动。
-使用最终0.1编码参数、最终发送时刻回放，检查位置/速度、整段后续、行程、能力。
-距离不足时允许先移到行程内的助跑点，再立即助跑；不安排停等，不生成超限方案。
-没有共同可执行的方案时返回infeasible，不能用延时起步冒充同步。
+"""非强制单Move接入。入口calculate_nonforced_entry(parameters)，输入输出保持原版格式。
+每模型完整H/P/Y三行entry_moves共用同一发送时刻，组装为一条三轴准备Move。
+无中间换速、无退回助跑、无额外交接指令；后面只有原表本来存在的Move。
+搜索连续曲线候选，验证共同时间的位置/有符号速度以及其后整段自然续跑。
+使用真实最大V/A/D，不用默认值覆盖；最终参数0.1精度，未参与轴保留实际位置。
+并非每个指定帧都能用单Move自然接续，无方案时返回infeasible，不输出多Move补救。
 """
 
 import bisect
@@ -19,7 +12,7 @@ import math
 import sys
 from pathlib import Path
 
-ALGORITHM_VERSION = "nonforced_simultaneous_join_20261109_original_format"
+ALGORITHM_VERSION = "nonforced_single_move_join_20261110"
 AXIS_NAMES = ("H", "P", "Y")
 COEFFICIENT_NAMES = ("a", "b", "c", "d", "e", "f")
 _EPS = 1e-9
@@ -42,7 +35,7 @@ DEFAULT_SETTINGS = {
     "entry_send_time_decimals": 3,
     # 接上曲线所需时间相差不超过这么多（毫秒）算同分，取运行方向先遇到的 t0
     "entry_lead_tie_ms": 1,
-    # 助跑加速度取 max_acceleration_HPY（max）或 default_acceleration_HPY（default）
+    # 兼容原设置字段；本版准备能力始终取真实max，不用default覆盖
     "entry_acceleration_source": "max",
     # 结果里附上从曲线还原出的 Move 帧表（便于与上位机下发的对照）
     "include_move_table": False,
@@ -687,7 +680,7 @@ class _Device:
         if not isinstance(axes, list) or any(name not in AXIS_NAMES for name in axes):
             raise ValueError(f"{label}的prepare_axes只能是H/P/Y")
         self.active = [name in axes for name in AXIS_NAMES]
-        source = "max_acceleration_HPY" if settings["entry_acceleration_source"] == "max" else "default_acceleration_HPY"
+        source = "max_acceleration_HPY"  # 准备统一按真实最大能力；兼容旧设置字段但不以default覆盖
         self.entry_acceleration = _triple(model.get(source), f"{label} {source}", True)
         self.reposition_velocity = _triple(model.get("max_velocity_HPY"), f"{label} max_velocity_HPY", True)
         self.reposition_acceleration = _triple(model.get("max_acceleration_HPY"), f"{label} max_acceleration_HPY", True)
@@ -715,6 +708,11 @@ class _Device:
             ordered = list(reversed(commands)) if direction < 0 else commands
             sends = [(direction * (command["atMs"] - run_origin), _wire_move(command, settings)) for command in ordered]
             anchor = end_positions[axis] if direction < 0 else start_positions[axis]
+            if not self.active[axis] or (not commands and self.reposition_velocity[axis] == 0):
+                if commands:
+                    raise ValueError(f"模型{self.model_id} {AXIS_NAMES[axis]}有运动曲线却未列入准备轴")
+                self.active[axis] = False
+                anchor = self.current[axis]  # 未参与轴保持真实位置，不能被曲线空轴的0覆盖。
             self.tracks.append(AxisTrack(anchor, sends))
         self.moves = any(self.active[axis] and self.tracks[axis].sends for axis in range(3))
 
@@ -731,355 +729,316 @@ def _wire_move(command, settings):
 
 
 ###############################################################################
-# 六、连续点接入：共同起步，按共同时间重新求各轴的 Move
+# 六、单Move准备：只有共同起点一条指令，接入后自然沿原表运行
 ###############################################################################
 
 
+_RATE_LIMIT = 6553.5
+_ARRIVAL_TOLERANCE_MS = 1.0
+
+
 def _floor_rate(value, quantized):
-    # 能力上限不能四舍五入向上突破。
+    value = min(value, _RATE_LIMIT)
     return math.floor(value * 10 + 1e-8) / 10 if quantized else value
 
 
-def _axis_request(device, index, u0, settings, _current=None, _target=None, _allow_retreat=True, _strict=False):
+def _rates_near(value, limit, settings, radius=1):
+    if not math.isfinite(value) or value <= 0 or limit <= 0:
+        return []
+    if not settings["entry_quantize_protocol"]:
+        return [min(value, limit)]
+    center = quantize(value)
+    return sorted({round(center + k / 10, 1) for k in range(-radius, radius + 1)
+                   if .1 - 1e-9 <= center + k / 10 <= limit + 1e-8}, key=lambda x: abs(x-value))
+
+
+def _target_on_wire(value, device, index, settings):
+    if not settings["entry_quantize_protocol"]:
+        return value
+    target = quantize(value)
+    lower, upper = device.lower[index], device.upper[index]
+    if target < lower:
+        target = math.ceil(lower * 10 - 1e-8) / 10
+    if target > upper:
+        target = math.floor(upper * 10 + 1e-8) / 10
+    return target
+
+
+def _profile_at(phases, target, seconds):
+    for duration, position, velocity, acceleration in phases:
+        if seconds <= duration:
+            return (position+velocity*seconds+.5*acceleration*seconds*seconds,
+                    velocity+acceleration*seconds)
+        seconds -= duration
+    return target, 0.
+
+
+def _axis_request(device, index, u0, settings):
     track = device.tracks[index]
-    q, v = track.state(u0) if _target is None else _target
-    current = device.current[index] if _current is None else _current
+    q, v = track.state(u0)
+    current = device.current[index]
     label = f"模型{device.model_id} {AXIS_NAMES[index]}"
-    tol = settings["entry_position_tolerance"]
     if not device.lower[index] - _EPS <= current <= device.upper[index] + _EPS:
         raise EntryInfeasible([f"{label}当前位置超出行程"])
     if not device.lower[index] - _EPS <= q <= device.upper[index] + _EPS:
-        raise EntryInfeasible([f"{label}接入点超出行程"])
-    command = track.segment_containing(u0).command
+        raise EntryInfeasible([f"{label}接入位置超出行程"])
     quantized = settings["entry_quantize_protocol"]
-    cap = _floor_rate(device.reposition_velocity[index], quantized)
-    acc = _floor_rate(min(device.entry_acceleration[index], device.reposition_acceleration[index]), quantized)
-    dec = _floor_rate(device.reposition_deceleration[index], quantized)
-    if abs(v) <= settings["entry_velocity_tolerance"]:
-        v = 0.
-    if v == 0 and abs(current - q) <= (1e-9 if _strict else tol):
-        return {"device": device, "index": index, "q": q, "v": v, "command": command,
-                "current": current, "idle": True, "minimum": 0., "coded_minimum": 0., "u0": u0}
-    if min(cap, acc, dec) <= 0:
-        raise EntryInfeasible([f"{label}需要运动，但可编码最大速度/加减速度为0"])
-    direction = (1 if v > 0 else -1) if v else (1 if q > current else -1)
-    distance = direction * (q - current)
-    speed = abs(v)
-    if speed > cap + 1e-8:
-        raise EntryInfeasible([f"{label}接入速度超过最大速度"])
-    if distance < speed * speed / (2 * acc) - 1e-9:
-        if not _allow_retreat:
-            raise EntryInfeasible([f"{label}助跑距离不足"])
-        return _retreat_request(device, index, u0, settings, current, q, v)
-    if command is not None:
-        if any(command[key] > limit + 1e-8 for key, limit in
-               (("vel", cap), ("accVel", device.reposition_acceleration[index]), ("decVel", dec))):
-            raise EntryInfeasible([f"{label}原Move参数超过能力上限"])
-        if not device.lower[index] - _EPS <= command["pos"] <= device.upper[index] + _EPS:
-            raise EntryInfeasible([f"{label}原Move停车目标超出行程"])
-    peak = min(cap, math.sqrt(max(0., (2 * acc * dec * distance + acc * speed * speed) / (acc + dec))))
-    if peak < speed - 1e-8 or peak <= 0:
-        raise EntryInfeasible([f"{label}目标状态不可单向接入"])
-    minimum = (distance + peak * peak / (2 * acc) + (peak - speed) ** 2 / (2 * dec)) / peak
-    coded_peak = _floor_rate(peak, quantized)
-    coded_minimum = minimum
-    if coded_peak >= max(speed, .1 if quantized else 1e-9) - 1e-9:
-        coded_minimum = (distance + coded_peak * coded_peak / (2 * acc)
-                         + (coded_peak - speed) ** 2 / (2 * dec)) / coded_peak
-    return {"device": device, "index": index, "current": current, "q": q, "v": v,
-            "command": command, "idle": False, "s": direction, "L": distance, "w": speed,
-            "V": cap, "A": acc, "D": dec, "minimum": minimum, "coded_minimum": coded_minimum,
-            "u0": u0, "can_retreat": _allow_retreat}
-
-
-def _retreat_request(device, index, u0, settings, current, q, v, extra=0.):
+    V = _floor_rate(device.reposition_velocity[index], quantized)
+    A = _floor_rate(device.reposition_acceleration[index], quantized)
+    D = _floor_rate(device.reposition_deceleration[index], quantized)
+    segment = track.segment_containing(u0)
+    command = segment.command
+    w = abs(v)
+    request = {"device": device, "index": index, "u0": u0, "current": current,
+               "q": q, "v": v, "w": w, "V": V, "A": A, "D": D, "command": command}
+    if w <= settings["entry_velocity_tolerance"]:
+        request.update(v=0., w=0.)
+        if abs(current-q) <= settings["entry_position_tolerance"] and abs(segment.a) <= 1e-10:
+            request.update(family="hold", minimum=0., maximum=math.inf)
+            return request
+    if min(V, A, D) <= 0:
+        raise EntryInfeasible([f"{label}需要运动，但可编码最大V/A/D为0"])
+    if command is not None and any(command[key] > limit + 1e-8 for key, limit in
+                                  (("vel", V), ("accVel", A), ("decVel", D))):
+        raise EntryInfeasible([f"{label}原Move超过真实最大V/A/D，不能用默认值代替最大能力"])
+    at_original_send = any(abs(u-u0) <= 1e-8 for u, _ in track.sends)
+    if not request["w"]:
+        if abs(segment.a) > 1e-10 and not at_original_send:
+            raise EntryInfeasible([f"{label}零速转折点不能由一条准备Move自然接续"])
+        target = _target_on_wire(q, device, index, settings)
+        distance = abs(target-current)
+        if distance <= 1e-12:
+            request.update(family="hold", minimum=0., maximum=math.inf)
+            return request
+        minimum = profile_duration(move_profile(current, 0., target, V, A, D))
+        smallest = .1 if quantized else 1e-9
+        maximum = profile_duration(move_profile(current, 0., target, smallest, smallest, smallest))
+        request.update(family="rest", L=distance, target=target, minimum=minimum, maximum=maximum,
+                       s=1 if target > current else -1)
+        return request
     direction = 1 if v > 0 else -1
-    acc = min(device.entry_acceleration[index], device.reposition_acceleration[index])
-    rear = q - direction * (v * v / (2 * acc) + extra)
-    if settings["entry_quantize_protocol"]:
-        rear = _quantize_behind(rear, direction)
-    if abs(rear - current) < 1e-8:
-        rear -= direction * (.1 if settings["entry_quantize_protocol"] else .001)
-    first = _axis_request(device, index, u0, settings, current, (rear, 0.), False, True)
-    second = _axis_request(device, index, u0, settings, rear, (q, v), False, True)
-    return {**second, "current": current, "L": abs(rear - current) + abs(q - rear),
-            "retreat": (first, second), "minimum": first["minimum"] + second["minimum"],
-            "coded_minimum": first["coded_minimum"] + second["coded_minimum"], "can_retreat": False}
-
-
-def _move_at(offset, move, role="run_up"):
-    return {"role": role, "start_ms": offset * 1000, "move": move}
-
-
-def _fits(request, moves, seconds, settings):
-    """用最终编码参数回放；候选公式不能替代真实 Move 校验。"""
-    if not moves or abs(moves[0]["start_ms"]) > 1e-7:
-        return False
-    device, index = request["device"], request["index"]
-    for item in moves:
-        move = item["move"]
-        if (min(move["vel"], move["accVel"], move["decVel"]) <= 0
-                or move["vel"] > request["V"] + 1e-8
-                or move["accVel"] > device.reposition_acceleration[index] + 1e-8
-                or move["decVel"] > request["D"] + 1e-8
-                or not device.lower[index] - _EPS <= move["pos"] <= device.upper[index] + _EPS):
-            return False
-    actual = AxisTrack(request["current"], [(item["start_ms"], item["move"]) for item in moves])
-    q, v = actual.state(seconds * 1000)
-    return (abs(q - request["q"]) <= settings["entry_position_tolerance"] + 1e-9
-            and abs(v - request["v"]) <= _ENTRY_MATCH_VELOCITY_TOLERANCE + 1e-9)
-
-
-def _single_move(request, seconds, settings):
-    """优先一条 Move：计算降低后的 A 或峰值 V，让轴立即起步、在 T 接入。"""
-    L, w, A, D, V = (request[key] for key in ("L", "w", "A", "D", "V"))
-    if seconds <= 0:
-        return None
-    if w == 0:
-        ratio = seconds / request["minimum"]
-        peak = min(V, math.sqrt(2 * A * D * L / (A + D)))
-        cap, acc, dec = peak / ratio, A / (ratio * ratio), D / (ratio * ratio)
-    elif seconds <= 2 * L / w + 1e-9:
-        if L <= w * seconds - w * w / (2 * A) + 1e-9:
-            denominator = 2 * (w * seconds - L)
-            if denominator <= 0:
-                return None
-            cap, acc, dec = w, w * w / denominator, D
-        else:
-            B, C, K = seconds + w / D, (1 / A + 1 / D) / 2, L + w * w / (2 * D)
-            discriminant = B * B - 4 * C * K
-            if discriminant < -1e-8:
-                return None
-            cap = 2 * K / (B + math.sqrt(max(0., discriminant)))
-            acc, dec = A, D
+    L = direction * (q-current)
+    request.update(s=direction, L=L)
+    if w > V + 1e-8 or L < w*w/(2*A) - 1e-9:
+        raise EntryInfeasible([f"{label}单Move距离或速度能力不足；不输出退回/途中覆盖"])
+    alpha = direction * segment.a
+    if at_original_send:
+        family, dec = "endpoint", D
+    elif alpha > 1e-10:
+        if abs(L-w*w/(2*alpha)) > settings["entry_position_tolerance"] + 1e-9:
+            raise EntryInfeasible([f"{label}加速段单Move无法自然贴合后续原加速度"])
+        request.update(family="acceleration", minimum=w/alpha, maximum=w/alpha,
+                       dec=command["decVel"], target=command["pos"])
+        return request
+    elif abs(alpha) <= 1e-10:
+        if command is None or abs(w-command["vel"]) > 1e-6:
+            raise EntryInfeasible([f"{label}当前状态不能按单Move匀速接续"])
+        request.update(family="cruise", minimum=L/w+w/(2*A), maximum=2*L/w,
+                       dec=command["decVel"], target=command["pos"])
+        return request
     else:
-        return None
-    target = request["q"] + request["s"] * w * w / (2 * dec)
-    move = {"pos": target, "vel": min(cap, V), "accVel": min(acc, A), "decVel": min(dec, D)}
-    if settings["entry_quantize_protocol"]:
-        move = {key: quantize(value) for key, value in move.items()}
-    targets = [move["pos"]]
-    if request["command"] is not None and w:
-        targets.append(request["command"]["pos"])
-    for target in targets:
-        candidate = {**move, "pos": target}
-        moves = [_move_at(0., candidate)]
-        if _fits(request, moves, seconds, settings):
-            return moves
+        dec = abs(segment.a)
+        natural = command is not None and abs(direction*(command["pos"]-q)-w*w/(2*dec)) <= 1e-5
+        if natural:
+            family = "deceleration"
+            request["target"] = command["pos"]
+        else:
+            next_send = next((u for u, _ in track.sends if u > u0+1e-8), math.inf)
+            if next_send > segment.u1 + 1e-8:
+                raise EntryInfeasible([f"{label}降到非零速度的减速段没有单Move自然接续方案"])
+            family = "transient_deceleration"
+            request["target"] = _target_on_wire(q+direction*w*w/(2*dec), device, index, settings)
+    peak = min(V, math.sqrt(max(0., (2*A*dec*L+A*w*w)/(A+dec))))
+    if peak < w - 1e-8:
+        raise EntryInfeasible([f"{label}单Move峰值速度不足"])
+    minimum = (L+peak*peak/(2*A)+(peak-w)**2/(2*dec))/peak
+    request.update(family=family, dec=dec, minimum=minimum, maximum=2*L/w)
+    return request
+
+
+def _candidate_moves(request, seconds, settings):
+    family = request["family"]
+    device, index = request["device"], request["index"]
+    V, A, D = (request[key] for key in ("V", "A", "D"))
+    q, current, w = (request[key] for key in ("q", "current", "w"))
+    if family == "hold":
+        # 无运动/不存在的虚轴也填真实位置，不能用pos=0当跳过标志。
+        yield {"pos": _target_on_wire(current, device, index, settings),
+               "vel": V or .1, "accVel": A or .1, "decVel": D or .1}
+        return
+    if family == "acceleration":
+        yield dict(request["command"])
+        return
+    if seconds <= 0:
+        return
+    if family == "cruise":
+        denominator = 2*(w*seconds-request["L"])
+        if denominator > 0:
+            for acc in _rates_near(w*w/denominator, A, settings, 2):
+                yield {"pos": request["target"], "vel": w, "accVel": acc, "decVel": request["dec"]}
+        return
+    if family == "rest":
+        distance, target = request["L"], request["target"]
+        ratio = seconds/request["minimum"]
+        fastest = min(V, math.sqrt(2*A*D*distance/(A+D)))
+        for cap in _rates_near(fastest/ratio, V, settings, 1):
+            for acc in _rates_near(A/(ratio*ratio), A, settings, 1):
+                for dec in _rates_near(D/(ratio*ratio), D, settings, 1):
+                    yield {"pos": target, "vel": cap, "accVel": acc, "decVel": dec}
+        harmonic = seconds*seconds/(2*distance)
+        triangle_acc = {A, min(A, 4*distance/(seconds*seconds)), min(A, A/(ratio*ratio))}
+        low = max(.1 if settings["entry_quantize_protocol"] else 1e-9,
+                  1/max(1e-15, harmonic-1/D))
+        if low <= A:
+            triangle_acc.update(low+(A-low)*k/32 for k in range(33))
+        for ideal_acc in sorted(triangle_acc):
+            for acc in _rates_near(ideal_acc, A, settings, 1):
+                remain = harmonic-1/acc
+                if remain <= 0:
+                    continue
+                for dec in _rates_near(1/remain, D, settings, 1):
+                    yield {"pos": target, "vel": V, "accVel": acc, "decVel": dec}
+        # 有匀速段的单Move：取编码A/D反求峰速。无中途发送。
+        accelerations = {A, min(A, max(.1, A/(ratio*ratio))), min(A, max(.1, 8*distance/(seconds*seconds)))}
+        decelerations = {D, min(D, max(.1, D/(ratio*ratio))), min(D, max(.1, 8*distance/(seconds*seconds)))}
+        for a in sorted(accelerations):
+            for acc in _rates_near(a, A, settings, 1):
+                for d in sorted(decelerations):
+                    for dec in _rates_near(d, D, settings, 1):
+                        discriminant = seconds*seconds-2*distance*(1/acc+1/dec)
+                        if discriminant < -1e-10:
+                            continue
+                        peak = 2*distance/(seconds+math.sqrt(max(0., discriminant)))
+                        for cap in _rates_near(peak, V, settings, 1):
+                            yield {"pos": target, "vel": cap, "accVel": acc, "decVel": dec}
+        return
+    L = request["L"]
+    decelerations = [request["dec"]]
+    if family == "endpoint":
+        decelerations += [D/2, D/4, D/10]
+        command = request["command"]
+        if command is not None:
+            yield dict(command)
+    for ideal_dec in decelerations:
+        for dec in _rates_near(ideal_dec, D, settings, 0):
+            if family != "endpoint" and abs(dec-request["dec"]) > 1e-8:
+                continue
+            target = request.get("target", _target_on_wire(q+request["s"]*w*w/(2*dec), device, index, settings))
+            B, C, K = seconds+w/dec, (1/A+1/dec)/2, L+w*w/(2*dec)
+            discriminant = B*B-4*C*K
+            if discriminant < -1e-8:
+                continue
+            peak = 2*K/(B+math.sqrt(max(0., discriminant)))
+            caps = set(_rates_near(max(w, peak), V, settings, 2))
+            caps.update(_rates_near(w, V, settings, 1))
+            effective = request["s"]*(target-current)-w*w/(2*dec)
+            for cap in sorted(caps):
+                if cap < w-1e-9:
+                    continue
+                denominator = 2*(cap*seconds-(cap-w)**2/(2*dec)-effective)
+                if denominator <= 0:
+                    continue
+                for acc in _rates_near(cap*cap/denominator, A, settings, 2):
+                    yield {"pos": target, "vel": cap, "accVel": acc, "decVel": dec}
+            # 接入时仍在加速：瞬时速度允许小于协议最小指令速度0.1。
+            for cap in _rates_near(max(w, .1), V, settings, 1):
+                if cap < w-1e-9:
+                    continue
+                for acc in _rates_near(w/seconds, A, settings, 1):
+                    yield {"pos": target, "vel": cap, "accVel": acc, "decVel": dec}
+
+
+def _entry_for_time(request, seconds, u0, settings):
+    device, index = request["device"], request["index"]
+    family = request["family"]
+    kind = "in_place" if family == "hold" else ("run_up" if request["v"] else "reposition")
+    seen = set()
+    for move in _candidate_moves(request, seconds, settings):
+        key = tuple(move[name] for name in ("pos", "vel", "accVel", "decVel"))
+        if key in seen:
+            continue
+        seen.add(key)
+        if min(key[1:]) <= 0 or max(key[1:]) > _RATE_LIMIT+1e-8:
+            continue
+        if not device.lower[index]-_EPS <= move["pos"] <= device.upper[index]+_EPS:
+            continue
+        if family != "hold" and any(move[name] > request[cap]+1e-8 for name, cap in
+                                    (("vel", "V"), ("accVel", "A"), ("decVel", "D"))):
+            continue
+        phases = move_profile(request["current"], 0., *key)
+        q, v = _profile_at(phases, move["pos"], seconds)
+        if (abs(q-request["q"]) > settings["entry_position_tolerance"]+1e-9
+                or abs(v-request["v"]) > _ENTRY_MATCH_VELOCITY_TOLERANCE+1e-9):
+            continue
+        if family == "rest" and seconds-profile_duration(phases) > _ARRIVAL_TOLERANCE_MS/1000+1e-9:
+            continue
+        entry = {"axis": AXIS_NAMES[index], "index": index, "kind": kind,
+                 "lead_ms": 0. if kind == "in_place" else seconds*1000,
+                 "join": (request["q"], request["v"]),
+                 "moves": [{"role": "run_up" if request["v"] else "reposition", "at": "clock_start", "move": move}]}
+        if kind != "in_place":
+            entry["distance"] = request["L"]
+        if kind == "run_up":
+            entry["run_up_distance"] = request["w"]**2/(2*move["accVel"])
+        plan = _materialize({"u0": u0, "lead_ms": seconds*1000, "entries": [(device, entry)]}, settings)
+        if _verify(plan, settings)["passed"]:
+            return entry
     return None
 
 
-def _tuned_single_move(request, seconds, settings):
-    """停车位置、V/A/D都以编码值反求，尽量用一条Move完成同步。
-
-    对非零末速，选择合法编码停车点P及D，再由固定T解峰速和A。
-    这是参数求解，不通过改变接入点或延迟起步弥补量化。
-    """
-    if not settings["entry_quantize_protocol"] or not request["w"]:
-        return None
-    q, w, s, A, D, V = (request[key] for key in ("q", "w", "s", "A", "D", "V"))
-    seed = q + s * w * w / (2 * D)
-    first = (math.ceil(seed * 10 - 1e-8) if s > 0 else math.floor(seed * 10 + 1e-8)) / 10
-    targets = [first + s * step / 10 for step in (0, 1, 2, 3, 5, 10, 20)]
-    if request["command"] is not None:
-        targets.append(request["command"]["pos"])
-    best, error = None, math.inf
-    for target in targets:
-        remaining = s * (target - q)
-        if remaining <= 0:
-            continue
-        ideal_dec = w * w / (2 * remaining)
-        for dec in {quantize(ideal_dec), _floor_rate(ideal_dec, True)}:
-            if dec <= 0 or dec > D + 1e-9:
-                continue
-            effective = s * (target - request["current"]) - w * w / (2 * dec)
-            B, C, K = seconds + w / dec, (1 / A + 1 / dec) / 2, effective + w * w / (2 * dec)
-            discriminant = B * B - 4 * C * K
-            if discriminant < -1e-9:
-                continue
-            needed = max(w, 2 * K / (B + math.sqrt(max(0., discriminant))))
-            base = math.ceil(needed * 10 - 1e-8) / 10
-            for step in (0, 1, 2, 4, 10):
-                peak = base + step / 10
-                denominator = 2 * (peak * seconds - (peak - w) ** 2 / (2 * dec) - effective)
-                if peak > V + 1e-9 or denominator <= 0:
-                    continue
-                acc = quantize(peak * peak / denominator)
-                if acc <= 0 or acc > A + 1e-9 or peak / acc + (peak - w) / dec > seconds + 1e-7:
-                    continue
-                move = {"pos": quantize(target), "vel": quantize(peak), "accVel": acc, "decVel": dec}
-                moves = [_move_at(0., move)]
-                if not _fits(request, moves, seconds, settings):
-                    continue
-                actual = AxisTrack(request["current"], [(0., move)])
-                aq, av = actual.state(seconds * 1000)
-                score = abs(aq - q) + abs(av - request["v"])
-                if score < error:
-                    best, error = moves, score
-                if score < 1e-6:
-                    return best
-    return best
-
-
-def _steering_moves(request, seconds, settings):
-    """编码精度下的同步：立即低速起步，途中换速，末段达到目标有符号速度。
-
-    c→p→w，A/D固定为能力上限，换速时刻解位移方程。所有准备指令仍使用原entry_moves。
-    非零速度时保留安全的原停车目标，必要时在T前主动减速；T时由handoff恢复原Move。
-    """
-    L, w, A, D, V = (request[key] for key in ("L", "w", "A", "D", "V"))
-    quantized = settings["entry_quantize_protocol"]
-    c = .1 if quantized else min(.001, max(1e-10, L / max(1., seconds) / 100))
-    if w and w < c - 1e-9:
-        return None
-    B, C, K = seconds + w / D, (1 / A + 1 / D) / 2, L + w * w / (2 * D)
-    discriminant = B * B - 4 * C * K
-    if discriminant < -1e-8:
-        return None
-    required = max(c, w, 2 * K / (B + math.sqrt(max(0., discriminant))))
-    peak = math.ceil(required * 10 - 1e-8) / 10 if quantized else required
-    if peak > V + 1e-8 or peak / A + (peak - w) / D > seconds + 1e-8:
-        return None
-    if w == 0:
-        target = quantize(request["q"]) if quantized else request["q"]
-        # 停点按最终可编码pos求解，不能发送时才取整。
-        L = request["s"] * (target - request["current"])
-    else:
-        command = request["command"]
-        if command is None:
-            return None
-        target = command["pos"]
-        if request["s"] * (target - request["q"]) < w * w / (2 * D) - 1e-7:
-            return None
-    maximum_distance = peak * seconds - peak * peak / (2 * A) - (peak - w) ** 2 / (2 * D)
-    if abs(peak - c) < 1e-10:
-        moves = [_move_at(0., {"pos": target, "vel": peak, "accVel": A, "decVel": D})]
-        return moves if _fits(request, moves, seconds, settings) else None
-    switch = c / A + (maximum_distance - L) / (peak - c)
-    slow = seconds - (peak - w) / D
-    if switch < c / A - 1e-8 or switch + (peak - c) / A > slow + 1e-8:
-        return None
-    def move(cap):
-        return {"pos": target, "vel": cap, "accVel": A, "decVel": D}
-    # 无低速匀速阶段时直接用峰速起步，避免生成无意义的切换。
-    if switch <= c / A + 1e-8:
-        moves = [_move_at(0., move(peak))]
-    else:
-        moves = [_move_at(0., move(c)), _move_at(switch, move(peak), "prepare_switch")]
-    if w and peak > w + 1e-8:
-        moves.append(_move_at(slow, move(c), "prepare_switch"))
-    return moves if _fits(request, moves, seconds, settings) else None
-
-
-def _preparation_moves(request, seconds, settings, prefer_steering):
-    if request["idle"]:
-        return [] if seconds <= 1e-9 else None
-    if "retreat" in request:
-        first, second = request["retreat"]
-        # 共同时间的余量用于计算第一步的V/A/D，而非在助跑点等待。
-        runup_seconds = second["coded_minimum"]
-        first_seconds = seconds - runup_seconds
-        if first_seconds < first["minimum"] - 1e-8:
-            return None
-        before = _preparation_moves(first, first_seconds, settings, prefer_steering)
-        after = _preparation_moves(second, runup_seconds, settings, prefer_steering)
-        if before is None or after is None:
-            return None
-        before[0]["role"] = "reposition"
-        return before + [{**item, "role": "prepare_switch", "start_ms": item["start_ms"] + first_seconds * 1000}
-                         for item in after]
-    moves = None if prefer_steering else _single_move(request, seconds, settings)
-    if moves is None and not prefer_steering:
-        moves = _tuned_single_move(request, seconds, settings)
-    moves = moves or _steering_moves(request, seconds, settings)
-    if moves is None and prefer_steering:
-        moves = _single_move(request, seconds, settings)
-    if moves is None and request.get("can_retreat") and request["v"]:
-        for extra in (0., .1, 1., 10.):
-            try:
-                alternative = _retreat_request(request["device"], request["index"], request["u0"], settings,
-                                               request["current"], request["q"], request["v"], extra)
-            except EntryInfeasible:
-                continue
-            if alternative["minimum"] <= seconds + 1e-8:
-                moves = _preparation_moves(alternative, seconds, settings, prefer_steering)
-                if moves is not None:
-                    break
-    return moves
-
-
-def _entry_for_time(request, seconds, u0, settings, prefer_steering=False):
-    device, index = request["device"], request["index"]
-    entry = {"axis": AXIS_NAMES[index], "index": index,
-             "kind": "in_place" if request["idle"] else ("reposition_then_run_up" if "retreat" in request else "synchronized"),
-             "lead_ms": seconds * 1000, "join": (request["q"], request["v"]), "moves": []}
-    if not request["idle"]:
-        moves = _preparation_moves(request, seconds, settings, prefer_steering)
-        if moves is None:
-            return None
-        if any(item["role"] == "reposition" for item in moves):
-            entry["kind"] = "reposition_then_run_up"
-        for item in moves:
-            item["at"] = "clock_start" if item["start_ms"] == 0 else "before_join"
-            item["offset_ms"] = seconds * 1000 - item["start_ms"]
-        entry["moves"] = moves
-        entry["distance"] = request["L"]
-    # 原表恰在t0下发时直接沿用；其它情况补发生效Move，恢复原轨迹的加/减速过程。
-    track = device.tracks[index]
-    if request["v"] and request["command"] is not None and not any(abs(u - u0) <= 1e-8 for u, _ in track.sends):
-        entry["moves"].append({"role": "handoff", "at": "before_join", "offset_ms": 0.,
-                               "move": dict(request["command"])})
-    return entry
-
-
 def _materialize(plan, settings):
-    decimals = settings["entry_send_time_decimals"]
-    plan["clock_start_u"] = round(plan["u0"] - plan["lead_ms"], decimals)
+    plan["clock_start_u"] = round(plan["u0"]-plan["lead_ms"], settings["entry_send_time_decimals"])
     for _, entry in plan["entries"]:
         for move in entry["moves"]:
-            value = plan["clock_start_u"] if move["at"] == "clock_start" else plan["u0"] - move["offset_ms"]
-            move["send_u"] = round(value, decimals)
+            move["send_u"] = plan["clock_start_u"]
     return plan
 
 
 def _plan_at(devices, u0, settings, allow_two_step=False, requests=None):
-    # allow_two_step参数保留调用兼容；各轴共用T，助跑不足可先回到合法助跑点，但不允许停等。
-    requests = requests if requests is not None else [
-        _axis_request(device, index, u0, settings) for device in devices
-        for index in range(3) if device.active[index]]
-    initial = max((request["minimum"] for request in requests), default=0.)
-    coded = max((request["coded_minimum"] for request in requests), default=0.)
-    # 先尝试理论最短值；最终协议峰速无法编码时再使用可编码的最短峰速方案。
-    trials = sorted({initial, max(initial, coded), max(initial, coded) + .000001,
-                     max(initial, coded) + .00001, max(initial, coded) + .0001})
-    alternatives = []
+    # 兼容旧私有调用签名；allow_two_step不再启用多Move。
+    requests = requests if requests is not None else [_axis_request(device, index, u0, settings)
+                                                    for device in devices for index in range(3)]
+    lower = max((request["minimum"] for request in requests), default=0.)
+    upper = min((request["maximum"] for request in requests), default=math.inf)
+    if lower > upper+1e-9:
+        raise EntryInfeasible(["所有虚轴的单Move准备时间无公共可行区间"])
+    times = {lower}
     for request in requests:
-        if request.get("can_retreat") and request["v"]:
-            try:
-                alternative = _retreat_request(request["device"], request["index"], u0, settings,
-                                               request["current"], request["q"], request["v"])
-                alternatives.append(max(initial, coded, alternative["coded_minimum"]))
-            except EntryInfeasible:
-                pass
-    trials = sorted(set(trials + alternatives))
-    for seconds in trials:
-        for prefer_steering in (False, True):
-            entries = []
-            for request in requests:
-                entry = _entry_for_time(request, seconds, u0, settings, prefer_steering)
-                if entry is None:
-                    break
-                entries.append((request["device"], entry))
-            else:
-                plan = _materialize({"u0": u0, "lead_ms": seconds * 1000, "entries": entries}, settings)
-                verification = _verify(plan, settings)
-                if verification["passed"]:
-                    return plan
-    raise EntryInfeasible(["各轴无法在同一准备时间按最终编码参数同时起步、接上位置和速度"])
+        if request["family"] == "cruise":
+            w, L = request["w"], request["L"]
+            denominator = 2*(w*lower-L)
+            if denominator > 0:
+                for acc in _rates_near(w*w/denominator, request["A"], settings, 3):
+                    times.add(L/w+w/(2*acc))
+        if request["family"] in ("endpoint", "deceleration", "transient_deceleration"):
+            L, w, A, D = (request[key] for key in ("L", "w", "A", "dec"))
+            peak = min(request["V"], math.sqrt((2*A*D*L+A*w*w)/(A+D)))
+            for cap in _rates_near(peak, request["V"], settings, 2):
+                if cap >= w:
+                    times.add((L+cap*cap/(2*A)+(cap-w)**2/(2*D))/cap)
+    # 编码邻点时间，不以停等或额外指令填补。
+    times.update(lower+k/10000 for k in range(1, 11))
+    if math.isfinite(upper):
+        times.add(upper)
+        times.update(lower+(upper-lower)*k/16 for k in range(1, 16))
+    else:
+        times.update(lower+k/1000 for k in (2, 5, 10, 20, 50, 100))
+    for seconds in sorted(t for t in times if lower-1e-9 <= t <= upper+1e-9):
+        entries = []
+        for request in requests:
+            entry = _entry_for_time(request, seconds, u0, settings)
+            if entry is None:
+                break
+            entries.append((request["device"], entry))
+        else:
+            plan = _materialize({"u0": u0, "lead_ms": seconds*1000, "entries": entries}, settings)
+            if _verify(plan, settings)["passed"]:
+                return plan
+    raise EntryInfeasible(["该帧无可编码的同时起步单Move自然接续方案"])
 
 
 ###############################################################################
-# 七、连续选点：每个候选原曲线时刻均可参与，不要求已有公共关键帧
+# 七、连续选点，当前原动作段优先，比较单Move的共同准备时间
 ###############################################################################
 
 
@@ -1090,32 +1049,29 @@ def _search_window(devices, lower, upper, to_curve, to_run, settings):
         except EntryInfeasible:
             return None, 1
     resolution = settings["frame_resolution_ms"]
-    low_curve, high_curve = sorted((to_curve(lower), to_curve(upper)))
-    frames = {low_curve, high_curve}
-    frames.update(range(math.ceil(low_curve / resolution) * resolution,
-                        math.floor(high_curve / resolution) * resolution + 1, resolution))
+    first, last = sorted((to_curve(lower), to_curve(upper)))
+    frames = {first, last}
+    frames.update(range(math.ceil(first/resolution)*resolution,
+                        math.floor(last/resolution)*resolution+1, resolution))
     for device in devices:
-        for index in range(3):
-            if device.active[index]:
-                frames.update(to_curve(u) for u in device.tracks[index].boundaries(lower, upper))
-    # 先算所有连续候选的解析下界，再用编码回放核对可能胜出的点。
-    # 下界大于已知最佳的候选无需反复构造Move，不牺牲帧网格内的比较范围。
+        for track in device.tracks:
+            frames.update(to_curve(u) for u in track.boundaries(lower, upper))
     candidates = []
     for frame in frames:
         u = to_run(frame)
         try:
-            requests = [_axis_request(device, index, u, settings) for device in devices
-                        for index in range(3) if device.active[index]]
+            requests = [_axis_request(device, index, u, settings) for device in devices for index in range(3)]
         except EntryInfeasible:
             continue
-        bound = max((request["minimum"] for request in requests), default=0.) * 1000
-        candidates.append((bound, u))
+        low = max((request["minimum"] for request in requests), default=0.)
+        high = min((request["maximum"] for request in requests), default=math.inf)
+        if low <= high+1e-9:
+            candidates.append((low*1000, u))
     candidates.sort()
-    evaluated, best, shortest = 0, None, math.inf
-    plans = []
+    plans, evaluated, shortest = [], 0, math.inf
     tie = settings["entry_lead_tie_ms"]
     for bound, u in candidates:
-        if bound > shortest + tie + 1e-8:
+        if bound > shortest+tie+1e-8:
             break
         evaluated += 1
         try:
@@ -1124,13 +1080,12 @@ def _search_window(devices, lower, upper, to_curve, to_run, settings):
             continue
         plans.append(plan)
         shortest = min(shortest, plan["lead_ms"])
-    if plans:
-        best = min((plan for plan in plans if plan["lead_ms"] <= shortest + tie + 1e-8), key=lambda plan: plan["u0"])
+    best = min((plan for plan in plans if plan["lead_ms"] <= shortest+tie+1e-8),
+               key=lambda plan: plan["u0"], default=None)
     return best, evaluated
 
 
 def _windows(devices, first, last, reverse, reference):
-    """保留当前原动作段优先，整段不可执行才沿方向查后续段，不跨首末回绕。"""
     boundaries = {first, last}
     for device in devices:
         if device.moves:
@@ -1140,13 +1095,18 @@ def _windows(devices, first, last, reverse, reference):
     if reference is None:
         return [(first, last, "whole_action")]
     if not reverse:
-        index = next((i for i, (low, high) in enumerate(windows) if low <= reference < high), len(windows) - 1)
+        index = next((i for i,(low,high) in enumerate(windows) if low <= reference < high), len(windows)-1)
         ordered = windows[index:]
     else:
-        index = next((i for i, (low, high) in enumerate(windows) if low < reference <= high), 0)
-        ordered = list(reversed(windows[:index + 1]))
-    return [(low, high, "current_segment" if position == 0 else "directional_fallback")
-            for position, (low, high) in enumerate(ordered)]
+        index = next((i for i,(low,high) in enumerate(windows) if low < reference <= high), 0)
+        ordered = list(reversed(windows[:index+1]))
+    result = [(low,high,"current_segment" if i == 0 else "directional_fallback")
+              for i,(low,high) in enumerate(ordered)]
+    # 当前段优先仍保留；沿方向找不到时，余下整条轨迹也必须搜索，包含零速首末点。
+    visited = set(ordered)
+    remainder = list(reversed(windows)) if reverse else windows
+    result.extend((low,high,"directional_fallback") for low,high in remainder if (low,high) not in visited)
+    return result
 
 
 ###############################################################################
@@ -1165,7 +1125,8 @@ def _verify(plan, settings):
         sends += [(u, command) for u, command in track.sends if u >= u0 - 1e-9]
         sends.sort(key=lambda item: item[0])
         actual = AxisTrack(device.current[index], sends)
-        preparation = [move for move in entry["moves"] if move["role"] != "handoff"]
+        preparation = entry["moves"]
+        simultaneous &= len(preparation) == 1 and abs(preparation[0]["send_u"] - plan["clock_start_u"]) <= 1e-8
         if entry["kind"] != "in_place":
             simultaneous &= bool(preparation) and abs(preparation[0]["send_u"] - plan["clock_start_u"]) <= 1e-8
         checkpoints = {u0}
@@ -1210,14 +1171,18 @@ def _verify(plan, settings):
                 end = min(right, u0)
                 if entry["kind"] != "reposition_then_run_up":
                     monotonic &= min(segment.state(left)[1] * direction, segment.state(end)[1] * direction) >= -1e-7
-                # 运动轴不能提前停稳并等待，或以延后发送伪装同时起步。
-                rounding_ms = 10 ** (-settings["entry_send_time_decimals"])
+                # 不规划停等或延迟起步；静止目标只允许1ms以内的编码停稳时差。
+                rounding_ms = max(_ARRIVAL_TOLERANCE_MS, 10 ** (-settings["entry_send_time_decimals"]))
                 simultaneous &= not (end > left + rounding_ms + 1e-7 and abs(segment.a) < 1e-10 and abs(segment.state(left)[1]) < 1e-10)
         for _, command in sends:
-            limits_ok &= (device.lower[index] - 1e-8 <= command["pos"] <= device.upper[index] + 1e-8
-                          and command["vel"] <= device.reposition_velocity[index] + 1e-8
-                          and command["accVel"] <= device.reposition_acceleration[index] + 1e-8
-                          and command["decVel"] <= device.reposition_deceleration[index] + 1e-8)
+            limits_ok &= device.lower[index] - 1e-8 <= command["pos"] <= device.upper[index] + 1e-8
+            limits_ok &= -214748364.8 <= command["pos"] <= 214748364.7
+            limits_ok &= max(command[key] for key in ("vel", "accVel", "decVel")) <= _RATE_LIMIT + 1e-8
+            for key, maximum in (("vel", device.reposition_velocity[index]),
+                                 ("accVel", device.reposition_acceleration[index]),
+                                 ("decVel", device.reposition_deceleration[index])):
+                # 不存在的虚轴max=0仅允许当前位置保持；真实运动仍在上面按0能力验证。
+                limits_ok &= command[key] <= maximum + 1e-8 or (entry["kind"] == "in_place" and maximum == 0)
     return {"max_position_error": worst_position, "max_velocity_error": worst_velocity,
             "entry_monotonic": bool(monotonic), "simultaneous_start": bool(simultaneous),
             "limits_passed": bool(limits_ok),
@@ -1322,24 +1287,15 @@ def _planned(devices, plan, command, settings, mode, reference, clamped, referen
     clock_start = plan["clock_start_u"]
     for _, entry in plan["entries"]:
         for move in entry["moves"]:
-            run_time = clock_start if move["at"] == "clock_start" else u0 - move["offset_ms"]
-            # 核对的必须是最终输出sendTime所代表的时刻，而非舍入前的内部值。
-            curve_time = round(to_curve(run_time), decimals)
-            move["send_u"] = u0 + (curve_time - to_curve(u0)) * (-1 if command["reverse"] else 1)
+            curve_time = round(to_curve(clock_start), decimals)
+            move["send_u"] = u0 + (curve_time-to_curve(u0)) * (-1 if command["reverse"] else 1)
     verification = _verify(plan, settings)
     entry_moves, by_device = [], {}
     for device, entry in plan["entries"]:
         by_device.setdefault(id(device), (device, []))[1].append(entry)
         for move in entry["moves"]:
-            # 沿用原版角色含义：静止摆位/退回助跑点用reposition，带速接入用run_up。
-            role = "run_up"
-            if not entry["join"][1] or move["role"] == "reposition":
-                role = "reposition"
-            elif entry["kind"] == "reposition_then_run_up" and abs(
-                    move["move"]["pos"] - entry["moves"][0]["move"]["pos"]) <= _EPS:
-                role = "reposition"
             entry_moves.append({
-                **_route(device), "axis": entry["axis"], "axisIndex": entry["index"], "role": role,
+                **_route(device), "axis": entry["axis"], "axisIndex": entry["index"], "role": move["role"],
                 "sendTime": round(to_curve(move["send_u"]), decimals),
                 "beforeJoinMs": round(u0 - move["send_u"], decimals),
                 **move["move"],
@@ -1352,24 +1308,8 @@ def _planned(devices, plan, command, settings, mode, reference, clamped, referen
         for entry in entries:
             join[entry["index"]] = round(entry["join"][0], 6)
             join_velocity[entry["index"]] = round(entry["join"][1], 6)
-            # 按原版kind恢复原有可选字段组合，内部类别不进入JSON。
-            kind = entry["kind"]
-            q, v = entry["join"]
-            if kind == "synchronized":
-                kind = "run_up" if v else "reposition"
-            axis = {"axis": entry["axis"], "kind": kind,
-                    "lead_ms": 0. if kind == "in_place" else entry["lead_ms"]}
-            if kind != "in_place":
-                axis["distance"] = ((1 if v > 0 else -1) * (q - device.current[entry["index"]])
-                                    if v else abs(q - device.current[entry["index"]]))
-            if kind in ("run_up", "reposition_then_run_up"):
-                if kind == "reposition_then_run_up":
-                    axis["run_up_distance"] = abs(q - entry["moves"][0]["move"]["pos"])
-                else:
-                    axis["run_up_distance"] = v * v / (2 * min(device.entry_acceleration[entry["index"]],
-                                                              device.reposition_acceleration[entry["index"]]))
-            axes.append({key: round(value, 6) if isinstance(value, float) else value
-                         for key, value in axis.items()})
+            axes.append({key: (round(value, 6) if isinstance(value, float) else value)
+                         for key, value in entry.items() if key in ("axis", "kind", "lead_ms", "distance", "run_up_distance")})
         device_rows.append({**_route(device), "current_HPY": device.current, "join_HPY": join,
                             "join_velocity_HPY": join_velocity, "axes": axes})
     selected = round(to_curve(u0), 6)
@@ -1400,7 +1340,7 @@ def _planned(devices, plan, command, settings, mode, reference, clamped, referen
                         "每条接入Move在到达前beforeJoinMs下发（clock_start_ms可能早于动作首帧，甚至为负）",
             "reverse_clock": "反向时原曲线时钟从clock_start_ms往小走，sendTime都不小于selected_curve_time_ms",
             "run_up_moves": sum(1 for move in entry_moves if move["role"] == "run_up"),
-            "speed_factor": "结果已按输入曲线和能力核对，直接下发；若外部再次改变倍率或取整，必须重新核对能力和整段运动，不能沿用verification",
+            "speed_factor": "按输入执行曲线和真实最大能力计算，结果直接发送；外部再变倍率须重新校验",
             "mid_run_speed_change": "selected_curve_time_ms之前不做运行中调速",
         },
         "verification": {key: (round(value, 9) if isinstance(value, float) else value)
