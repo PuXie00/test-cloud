@@ -59,6 +59,44 @@ describe("toSyncMoveStartPlan", () => {
     });
   });
 
+  it("sends the algorithm's entry moves as they are and rounds the join frame to a millisecond", () => {
+    const entry = (pos: number, vel: number, accVel: number, decVel: number) => ({ pos, vel, accVel, decVel });
+    const plan = toSyncMoveStartPlan({
+      nearest: true,
+      direction: 1,
+      startMode: "nearest",
+      targetFrameMs: 10384.4,
+      transitionSec: 0.7672,
+      prepareTimeMs: 768,
+      loopCount: 1,
+      motorLimitScale: null,
+      members: [
+        {
+          objectId: 3,
+          axes: [
+            // 带速接入：pos 是停车目标（不是接入点 to），V/A/D 原样
+            { axis: "v1", to: 2052.3, velocity: 79.1, acceleration: 500, deceleration: 390.6, entryMove: entry(2200, 79.1, 500, 390.6) },
+            // 原地保持的轴也下发：pos 为当前位置、vel > 0
+            { axis: "v2", to: 8, velocity: 3, acceleration: 3, deceleration: 3, entryMove: entry(8, 3, 3, 3) },
+            { axis: "v3", to: 0, velocity: 0.1, acceleration: 0.1, deceleration: 0.1, entryMove: entry(0, 0.1, 0.1, 0.1) },
+          ],
+        },
+      ],
+    });
+    expect(plan).toEqual({
+      direction: true,
+      nearest: true,
+      targetFrameMs: 10384,
+      transitionSec: 767,
+      modelList: [
+        {
+          deviceId: 3,
+          virtualAxis: [entry(2200, 79.1, 500, 390.6), entry(8, 3, 3, 3), entry(0, 0.1, 0.1, 0.1)],
+        },
+      ],
+    });
+  });
+
   it("encodes reverse as direction false and keeps every member", () => {
     const plan = toSyncMoveStartPlan({
       nearest: true,

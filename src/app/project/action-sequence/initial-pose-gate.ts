@@ -70,9 +70,18 @@ export const enabledAxesMatchStart = (
   );
 };
 
-/** 位移超过 1mm / 0.1° 的准备 Move 才算真的要动 */
-export const isSignificantMove = (move: { axis: VirtualAxisId; from: number; to: number }): boolean =>
-  Math.abs(move.to - move.from) > AXIS_EPSILON[move.axis] + CLOSED_POSE_SLACK;
+/**
+ * 位移超过 1mm / 0.1° 的准备 Move 才算真的要动；非强制带速接入（接入时速度不为 0）
+ * 要先助跑，位置差再小也算要动。
+ */
+export const isSignificantMove = (move: {
+  axis: VirtualAxisId;
+  from: number;
+  to: number;
+  joinVelocity?: number;
+}): boolean =>
+  Math.abs(move.to - move.from) > AXIS_EPSILON[move.axis] + CLOSED_POSE_SLACK ||
+  Math.abs(move.joinVelocity ?? 0) > 0;
 
 /** 就近算法算出的每个准备 Move 都在 1mm / 0.1° 以内：已在接入点，不用确认过渡 */
 export const planIsAtStart = (plan: NearestStartPlan): boolean =>
@@ -83,7 +92,7 @@ export type StartGateOptions = {
   reverse: boolean;
   /** 开启就近时从这一帧起按方向找位置最近的接入帧（任务卡继续 / 反向回传入停下时的 runTime） */
   referenceFrameMs?: number;
-  /** 操作者指定的接入帧，优先于就近和参考帧；非强制会落到沿方向最近的原关键帧 */
+  /** 操作者指定的接入帧，优先于就近和参考帧；强制、非强制都正好从这一帧接入（接不上就报错） */
   specifiedFrameMs?: number;
 };
 
@@ -120,8 +129,9 @@ export const sequenceLoopCount = (sequence: ActionSequenceConfig): 0 | 1 =>
 
 /**
  * 不论在不在起点都跑就近算法：它给出接入帧、准备 V/A 与共同准备时间。
- * 先按回起点算，所有准备 Move 都在容差内就是已在起点（非强制就近即使停在起点也会跳到下一关键帧，
- * 所以不能先就近）；不在起点且开了就近，再按就近算。在容差内的计划标为 at-start，仍保留算法的 V/A 供下发。
+ * 先按回起点算，所有准备 Move 都在容差内就是已在起点；不在起点且开了就近，再按就近算
+ * （就近会在整条动作里挑准备最快的帧，曲线中途回到起点位姿时可能选中中途）。
+ * 在容差内的计划标为 at-start，仍保留算法的准备 Move 供下发。
  * 给了参考帧时直接从参考帧就近：曲线中途回到起点位姿时，先按回起点算会被当成从头开始。
  */
 export const planStartTransition = (input: {

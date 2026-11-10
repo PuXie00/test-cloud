@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { evaluateResolvedSequence } from "./evaluate-sequence";
 import { nearestStartPosesAt, planNearestStart, type NearestStartPlan } from "./nearest-start";
 import { resolveActionSequence } from "./resolve-sequence";
-import { fixtureCurrent, fixtureObjects, fixtureSequence } from "./nearest-start.fixture";
+import {
+  fixtureCurrent,
+  fixtureNonforcedSequence,
+  fixtureObjects,
+  fixtureSequence,
+} from "./nearest-start.fixture";
+import type { HpyPose } from "./nearest-start-motion";
 
 const telemetry = new Map(
   Object.entries(fixtureCurrent).map(([id, pose]) => [Number(id), { h: pose.v1, p: pose.v2, y: pose.v3 }]),
@@ -30,7 +37,8 @@ const moveOf = (result: NearestStartPlan, objectId: number, axis: "v1" | "v2" | 
   memberOf(result, objectId).axes.find((move) => move.axis === axis);
 
 describe("planNearestStart", () => {
-  it.each([true, false])("brings every member to the first frame together (forced=%s)", (forced) => {
+  it("brings every member to the first frame together (forced)", () => {
+    const forced = true;
     const result = plan({ forced, nearest: false, reverse: false });
     expect(result).toMatchObject({ forced, nearest: false, direction: 1, startMode: "boundary", targetFrameMs: 0 });
     expect(result.transitionSec).toBeCloseTo(2.5, 12);
@@ -72,16 +80,6 @@ describe("planNearestStart", () => {
     expect(moveOf(result, 3, "v1")!.acceleration).toBeCloseTo(232.0365856803875, 9);
   });
 
-  it("takes the nearest shared keyframe in the running direction when not forced", () => {
-    const result = plan({ forced: false, nearest: true, reverse: false });
-    expect(result.targetFrameMs).toBe(4000);
-    expect(result.transitionSec).toBeCloseTo(10.43333333333333, 11);
-    expect(result.motorLimitScale).toBe(1);
-    expect(memberOf(result, 3).target.v1).toBeCloseTo(1566.6666666666665, 9);
-    expect(moveOf(result, 3, "v2")!.velocity).toBeCloseTo(0.575079872204473, 12);
-    expect(plan({ forced: false, nearest: true, reverse: true }).targetFrameMs).toBe(0);
-  });
-
   it("runs once when a looping curve does not close", () => {
     expect(plan({ forced: true, nearest: false, reverse: false, loop: true }).loopCount).toBe(1);
   });
@@ -113,5 +111,94 @@ describe("nearestStartPosesAt", () => {
     const mid = nearestStartPosesAt(result, end / 2).get(1)!.v1;
     expect(mid).toBeGreaterThan(0);
     expect(mid).toBeLessThan(120);
+  });
+});
+
+describe("planNearestStart（非强制）", () => {
+  const nonforced = (options: {
+    nearest: boolean;
+    reverse: boolean;
+    referenceFrameMs?: number;
+    telemetry?: ReadonlyMap<number, HpyPose>;
+  }) =>
+    planNearestStart({
+      resolved: resolveActionSequence(fixtureNonforcedSequence()),
+      objects: fixtureObjects(),
+      motors: [],
+      telemetryByObjectId: options.telemetry ?? telemetry,
+      forced: false,
+      nearest: options.nearest,
+      reverse: options.reverse,
+      loopCount: 1,
+      ...(options.referenceFrameMs !== undefined ? { referenceFrameMs: options.referenceFrameMs } : {}),
+    });
+
+  /** 过渡结束时（按实际准备 Move 回放）各轴离接入点不超过算法的核对容差 */
+  const expectJoined = (result: NearestStartPlan) => {
+    const end = nearestStartPosesAt(result, result.transitionSec * 1000);
+    for (const member of result.members) {
+      for (const axis of ["v1", "v2", "v3"] as const) {
+        expect(Math.abs(end.get(member.objectId)![axis] - member.target[axis])).toBeLessThanOrEqual(0.05);
+      }
+    }
+  };
+
+  it("sends one move per axis for every member at GO and reaches the start together", () => {
+    const result = nonforced({ nearest: false, reverse: false });
+    expect(result).toMatchObject({
+      forced: false,
+      startMode: "boundary",
+      direction: 1,
+      targetFrameMs: 0,
+      motorLimitScale: null,
+      loopCount: 1,
+    });
+    expect(result.prepareTimeMs).toBe(Math.ceil(result.transitionSec * 1000));
+    for (const member of result.members) {
+      expect(member.axes.map((move) => move.axis)).toEqual(["v1", "v2", "v3"]);
+      for (const move of member.axes) {
+        expect(move.entryMove!.vel).toBeGreaterThan(0);
+        expect(move.joinVelocity).toBe(0);
+      }
+    }
+    expect(memberOf(result, 1).target.v1).toBe(0);
+    expect(memberOf(result, 3).target.v1).toBe(1000);
+    expectJoined(result);
+  });
+
+  it("continues from where the members stopped by joining the curve at speed", () => {
+    const resolved = resolveActionSequence(fixtureNonforcedSequence());
+    const stopped = new Map(
+      [...evaluateResolvedSequence(resolved, 10000)].map(([id, pose]) => [id, { h: pose.v1, p: pose.v2, y: pose.v3 }]),
+    );
+    const result = nonforced({ nearest: true, reverse: false, referenceFrameMs: 10000, telemetry: stopped });
+    expect(result.startMode).toBe("nearest");
+    expect(result.targetFrameMs).toBeGreaterThan(10000);
+    expect(result.targetFrameMs).toBeLessThanOrEqual(13000);
+    expect(result.members.some((member) => member.axes.some((move) => move.joinVelocity !== 0))).toBe(true);
+    expectJoined(result);
+  });
+
+  it("names the original move that is beyond the device capability", () => {
+    // 原夹具物体 4 的 Y 速度 3.9°/s 超出最大 3°/s
+    expect(() =>
+      planNearestStart({
+        resolved: resolveActionSequence(fixtureSequence(false)),
+        objects: fixtureObjects(),
+        motors: [],
+        telemetryByObjectId: telemetry,
+        forced: false,
+        nearest: false,
+        reverse: false,
+        loopCount: 1,
+      }),
+    ).toThrow(/^起点无法接入：模型4 Y原帧表.*vel=3\.9超过最大能力3/);
+  });
+
+  it("does not refuse a member that sits slightly outside its stroke", () => {
+    const below = new Map(telemetry);
+    below.set(1, { h: -0.5, p: 0, y: 0 });
+    const result = nonforced({ nearest: false, reverse: false, telemetry: below });
+    expect(moveOf(result, 1, "v1")).toMatchObject({ from: -0.5, to: 0 });
   });
 });

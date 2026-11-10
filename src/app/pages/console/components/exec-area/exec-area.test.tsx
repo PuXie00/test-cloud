@@ -1500,9 +1500,13 @@ describe("ExecArea launch guard", () => {
         targetFrameMs: 2000,
         transitionSec: 0,
         prepareTimeMs: 0,
-        members: [expect.objectContaining({ objectId: 1, axes: [] })],
+        members: [expect.objectContaining({ objectId: 1 })],
       },
     });
+    // 非强制三轴都随准备 Move 下发，已在位的轴原地保持
+    const { axes } = readySequenceMock.mock.calls[0]![0].startPlan.members[0];
+    expect(axes.map((move: { axis: string }) => move.axis)).toEqual(["v1", "v2", "v3"]);
+    for (const move of axes) expect(move).toMatchObject({ from: move.to, joinVelocity: 0 });
     // 先释放上一条，再准备下一条；卡片在准备成功后移除，不再重复下发停止
     expect(releaseSequenceMock).toHaveBeenCalledWith({
       actionId: 14,
@@ -1855,27 +1859,27 @@ describe("ExecArea start entry choices", () => {
     expect(preparedPlan()).toMatchObject({ forced: true, targetFrameMs: 1200, nearest: true, startMode: "nearest" });
   });
 
-  it("shows the keyframe a non-forced action actually joins at", async () => {
+  it("starts a non-forced action exactly at the specified time", async () => {
     at(50);
     await openDialog();
-    // 非强制就近不接停着的关键帧，推荐下一关键帧 2000ms
-    expect(screen.getByRole("button", { name: "确认，从 2.0 秒开始" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("radio", { name: /^指定位置/ }));
-    expect(screen.getByTestId("entry-specified-frame").textContent).toBe("2.0 秒");
-    fireEvent.click(screen.getByRole("button", { name: "上一关键帧" }));
+    // 成员正停在 1000ms 的折返点：非强制就近也从这里原地接入
     expect(screen.getByRole("button", { name: "确认，从 1.0 秒开始" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "上一关键帧" }));
-    expect(screen.getByTestId("entry-specified-frame").textContent).toBe("0.0 秒");
-    // 非强制只把指定帧当搜索起点：沿方向位置最近的是 1000ms 的关键帧
-    expect(screen.getByText("选的是 0.0 秒，非强制轨迹实际从 1.0 秒的关键帧接入")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "下一关键帧" }));
-    fireEvent.click(screen.getByRole("button", { name: "下一关键帧" }));
-    expect(screen.getByTestId("entry-specified-frame").textContent).toBe("2.0 秒");
-    fireEvent.click(screen.getByRole("button", { name: "确认，从 2.0 秒开始" }));
+    fireEvent.click(screen.getByRole("radio", { name: /^指定位置/ }));
+    expect(screen.getByTestId("entry-specified-frame").textContent).toBe("1.0 秒");
+    // 往前一点：曲线还在往上，设备已经在前面，一条准备 Move 追不上
+    fireEvent.click(screen.getByRole("button", { name: "提前 0.1 秒" }));
+    expect(screen.getByTestId("entry-specified-frame").textContent).toBe("0.9 秒");
+    expect(screen.getByText("这个接入点用不了：这个位置接不上，可换一个位置或改选从头开始")).toBeTruthy();
+    // 往后一点：从折返点按原 Move 起步，正好在 1.1 秒带速接上
+    fireEvent.click(screen.getByRole("button", { name: "推后 0.1 秒" }));
+    fireEvent.click(screen.getByRole("button", { name: "推后 0.1 秒" }));
+    expect(screen.getByTestId("entry-specified-frame").textContent).toBe("1.1 秒");
+    fireEvent.click(screen.getByRole("button", { name: "确认，从 1.1 秒开始" }));
     await waitFor(() => {
       expect(markSlotReadyMock).toHaveBeenCalledTimes(1);
     });
-    expect(preparedPlan()).toMatchObject({ forced: false, targetFrameMs: 2000 });
+    expect(preparedPlan()).toMatchObject({ forced: false, targetFrameMs: 1100, nearest: true, startMode: "nearest" });
+    expect(preparedPlan().members[0].axes[0].joinVelocity).not.toBe(0);
   });
 
   it("recomputes from the live position when the members moved while the dialog was open", async () => {

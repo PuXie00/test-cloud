@@ -99,6 +99,16 @@ describe("describeEntryError", () => {
     ["沿当前方向没有可执行的共同关键帧：[]", "沿运行方向没有能接入的关键帧"],
     ["模型1当前位置已超出H行程", "有设备当前位置超出行程"],
     ["模型1的候选准备目标超出虚轴行程", "接入点超出设备行程"],
+    ["运行方向上没有可接入的帧（接入帧最多比参考帧靠后3000ms）", "停下处附近接不上，可改选从头开始或指定位置"],
+    ["运行方向上没有可接入的帧", "沿运行方向找不到能接入的位置"],
+    [
+      "运行方向上没有可接入的帧：模型6 H原帧表7600ms处Move的accVel=703.1超过最大能力500",
+      "动作里有超出设备能力或行程的运动，在它之前接不上",
+    ],
+    ["指定帧无法接入：模型1 H单Move距离或速度能力不足；不输出退回/途中覆盖", "这个位置接不上，可换一个位置或改选从头开始"],
+    ["起点无法接入：模型1 H当前位置超出行程", "有设备当前位置超出行程"],
+    ["模型1还在运动，须停稳后再计算接入", "有设备还在运动，停稳后再准备"],
+    ["计算超时（超过5秒），本次未生成可执行接入方案", "计算超时，可改选从头开始或指定位置"],
     ["缺少受控物体 3", "动作里有设备不在当前工程中"],
     ["something else", "无法计算接入方案"],
   ])("%s → %s", (message, expected) => {
@@ -113,24 +123,17 @@ describe("entry frames", () => {
     expect(frames).toEqual({ firstMs: 0, lastMs: 4000, keyframesMs: [0, 2000, 4000], totalMs: 4000 });
   });
 
-  it("steps a forced frame by 0.1 s inside the action", () => {
-    expect(stepEntryFrame(frames, 1000, 1, true)).toBe(1100);
-    expect(stepEntryFrame(frames, 1049, -1, true)).toBe(900);
-    expect(stepEntryFrame(frames, 3950, 1, true)).toBe(4000);
-    expect(stepEntryFrame(frames, 0, -1, true)).toBe(0);
+  it("steps the frame by 0.1 s inside the action (forced and non-forced alike)", () => {
+    expect(stepEntryFrame(frames, 1000, 1)).toBe(1100);
+    expect(stepEntryFrame(frames, 1049, -1)).toBe(900);
+    expect(stepEntryFrame(frames, 3950, 1)).toBe(4000);
+    expect(stepEntryFrame(frames, 0, -1)).toBe(0);
   });
 
-  it("steps a non-forced frame between keyframes", () => {
-    expect(stepEntryFrame(frames, 0, 1, false)).toBe(2000);
-    expect(stepEntryFrame(frames, 2500, -1, false)).toBe(2000);
-    expect(stepEntryFrame(frames, 4000, 1, false)).toBe(4000);
-    expect(stepEntryFrame(frames, 0, -1, false)).toBe(0);
-  });
-
-  it("snaps a tap on the timeline", () => {
-    expect(pickEntryFrame(frames, 1300, false)).toBe(2000);
-    expect(pickEntryFrame(frames, 1960, true)).toBe(2000);
-    expect(pickEntryFrame(frames, 1234, true)).toBe(1200);
-    expect(pickEntryFrame(frames, -50, true)).toBe(0);
+  it("snaps a tap on the timeline to a nearby keyframe, otherwise to 0.1 s", () => {
+    expect(pickEntryFrame(frames, 1300)).toBe(1300);
+    expect(pickEntryFrame(frames, 1960)).toBe(2000);
+    expect(pickEntryFrame(frames, 1234)).toBe(1200);
+    expect(pickEntryFrame(frames, -50)).toBe(0);
   });
 });

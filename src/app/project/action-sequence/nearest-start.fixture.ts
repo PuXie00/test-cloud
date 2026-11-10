@@ -111,3 +111,19 @@ export const fixtureCurrent: Record<number, ModelPose> = {
   3: pose(1050, 1),
   4: pose(1080, 1, -1),
 };
+
+/**
+ * 非强制夹具：非强制就近会核对接入后整段原帧表是否超出设备能力。原夹具物体 4 的 Y 速度 3.9°/s
+ * 超出最大 3°/s（动作校验也会拦下），这里把它的摆角缩到 0.6 倍，其余不变。
+ */
+export const fixtureNonforcedSequence = (loop = false): ActionSequenceConfig => {
+  const sequence = fixtureSequence(false, loop);
+  return {
+    ...sequence,
+    blocks: sequence.blocks.map((block) =>
+      block.kind === "pose" && block.objectId === 4
+        ? { ...block, pose: { ...block.pose, ...(block.pose.v3 !== undefined ? { v3: block.pose.v3 * 0.6 } : {}) } }
+        : block,
+    ),
+  };
+};

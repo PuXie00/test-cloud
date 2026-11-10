@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { planNearestStart } from "@/app/project/action-sequence/nearest-start";
 import {
   fixtureCurrent,
+  fixtureNonforcedSequence,
   fixtureObjects,
-  fixtureSequence,
 } from "@/app/project/action-sequence/nearest-start.fixture";
 import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
 import {
@@ -14,7 +14,7 @@ import {
   transitionPathSamples,
 } from "./sequence-preview-timeline";
 
-const resolved = resolveActionSequence(fixtureSequence(false));
+const resolved = resolveActionSequence(fixtureNonforcedSequence());
 const telemetry = new Map(
   Object.entries(fixtureCurrent).map(([id, pose]) => [Number(id), { h: pose.v1, p: pose.v2, y: pose.v3 }]),
 );
@@ -51,14 +51,18 @@ describe("buildPreviewTimeline", () => {
     const plan = planFor(true, false);
     const timeline = buildPreviewTimeline(resolved.totalMs, plan, false);
     const transitionMs = plan.transitionSec * 1000;
+    expect(transitionMs).toBeGreaterThan(0);
     expect(timeline.transitionMs).toBeCloseTo(transitionMs, 6);
-    expect(timeline.programStartMs).toBe(4000);
-    expect(timeline.totalMs).toBeCloseTo(transitionMs + resolved.totalMs - 4000, 6);
+    expect(timeline.programStartMs).toBe(plan.targetFrameMs);
+    expect(timeline.totalMs).toBeCloseTo(transitionMs + resolved.totalMs - plan.targetFrameMs, 6);
     expect(previewPhaseAt(timeline, transitionMs / 2)).toEqual({
       phase: "transition",
       elapsedMs: transitionMs / 2,
     });
-    expect(previewPhaseAt(timeline, transitionMs + 500)).toEqual({ phase: "program", programMs: 4500 });
+    expect(previewPhaseAt(timeline, transitionMs + 500)).toEqual({
+      phase: "program",
+      programMs: plan.targetFrameMs + 500,
+    });
   });
 
   it("plays backwards from the target frame when reversed", () => {
@@ -82,6 +86,13 @@ describe("previewPosesAtCursor", () => {
     const target = plan.members.find((member) => member.objectId === 3)!.target;
     expect(joined.get(3)!.v1).toBeCloseTo(target.v1, 6);
     expect(joined.get(3)!.v2).toBeCloseTo(target.v2, 6);
+    // 过渡段按实际准备 Move 回放，到接入帧时与接入点的差不超过算法的核对容差 0.05
+    const arriving = previewPosesAtCursor(resolved, timeline, timeline.transitionMs - 1e-6);
+    for (const member of plan.members) {
+      for (const axis of ["v1", "v2", "v3"] as const) {
+        expect(Math.abs(arriving.get(member.objectId)![axis] - member.target[axis])).toBeLessThanOrEqual(0.05);
+      }
+    }
   });
 });
 
@@ -91,7 +102,8 @@ describe("transitionPathSamples", () => {
     const paths = transitionPathSamples(plan);
     const first = paths.get(1)!;
     expect(first[0]).toEqual(fixtureCurrent[1]);
-    expect(first[first.length - 1]!.v1).toBeCloseTo(0, 6);
+    // 回起点：准备 Move 在共同时间（1ms 以内）停到起点
+    expect(Math.abs(first[first.length - 1]!.v1)).toBeLessThanOrEqual(0.05);
   });
 });
 

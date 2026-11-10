@@ -92,6 +92,8 @@ export type ActionStartPlan = {
       velocity: number
       acceleration: number
       deceleration: number
+      /** 非强制：GO 时原样下发的准备 Move（pos 为停车目标，不一定是接入点） */
+      entryMove?: { pos: number; vel: number; accVel: number; decVel: number }
     }[]
   }[]
 }
