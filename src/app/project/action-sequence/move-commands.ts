@@ -418,3 +418,71 @@ export const axisMoveCommands = (
   });
   return commands.sort((left, right) => left.atMs - right.atMs);
 };
+
+/**
+ * 一段连续运动（中途不停）：恒加速度阶段的原曲线起止时刻、起止速度（绝对值），
+ * 以及起点、终点位置和进入、离开的速度。
+ */
+export type AxisMoveRun = {
+  phases: readonly { startMs: number; endMs: number; fromSpeed: number; toSpeed: number }[];
+  startPos: number;
+  endPos: number;
+  startSpeed: number;
+  endSpeed: number;
+};
+
+/**
+ * 与 axisMoveCommands 同一规则，输入换成已经分好的连续运动。
+ * 非强制就近接入从下发 PLC 的曲线系数还原帧表时用，对应 python/非强制就近接入.py 的 axis_move_commands。
+ */
+export const runMoveCommands = (
+  runs: readonly AxisMoveRun[],
+  options: AxisMoveCommandOptions = {},
+): AxisMoveCommand[] => {
+  const tail = runs[runs.length - 1];
+  const head = runs[0];
+  const seamJoined =
+    options.loop === true && runs.length > 1 && tail!.endSpeed > 0 && head!.startSpeed > 0;
+  const joined: { run: Pick<AxisMoveRun, "phases" | "startPos" | "endPos">; seamAt: number }[] = seamJoined
+    ? [
+        {
+          run: { phases: [...tail!.phases, ...head!.phases], startPos: tail!.startPos, endPos: head!.endPos },
+          seamAt: tail!.phases.length,
+        },
+        ...runs.slice(1, -1).map((run) => ({ run, seamAt: -1 })),
+      ]
+    : runs.map((run) => ({ run, seamAt: -1 }));
+  const commands = joined.flatMap(({ run, seamAt }) => {
+    if (options.reverse) {
+      const phases: Phase[] = [];
+      for (let index = run.phases.length - 1; index >= 0; index -= 1) {
+        const { startMs, endMs, fromSpeed, toSpeed } = run.phases[index]!;
+        const durationSec = (endMs - startMs) / 1000;
+        phases.push({
+          atMs: startMs + durationSec * 1000,
+          fromSpeed: toSpeed,
+          toSpeed: fromSpeed,
+          durationSec,
+          distance: (durationSec * (toSpeed + fromSpeed)) / 2,
+          seam: index === seamAt - 1,
+          direction: -1,
+        });
+      }
+      return runCommands(phases, run.startPos);
+    }
+    const phases = run.phases.map(({ startMs, endMs, fromSpeed, toSpeed }, index): Phase => {
+      const durationSec = (endMs - startMs) / 1000;
+      return {
+        atMs: startMs,
+        fromSpeed,
+        toSpeed,
+        durationSec,
+        distance: (durationSec * (fromSpeed + toSpeed)) / 2,
+        seam: index === seamAt,
+        direction: 1,
+      };
+    });
+    return runCommands(phases, run.endPos);
+  });
+  return commands.sort((left, right) => left.atMs - right.atMs);
+};

@@ -277,3 +277,72 @@ export const pythonMod = (value: number, divisor: number): number => {
   const remainder = value % divisor;
   return remainder !== 0 && remainder < 0 !== divisor < 0 ? remainder + divisor : remainder;
 };
+
+/** Python round(x)：取整，正好一半时取偶数 */
+export const pythonRoundInt = (value: number): number => {
+  const floor = Math.floor(value);
+  const fraction = value - floor;
+  if (fraction > 0.5) return floor + 1;
+  if (fraction < 0.5) return floor;
+  return floor % 2 === 0 ? floor : floor + 1;
+};
+
+/** x 的精确值：mantissa × 2^exponent（有限、非零） */
+const exactParts = (value: number): { mantissa: bigint; exponent: number } => {
+  bitsView[0] = value;
+  const bits = bitsWord[0]!;
+  const biased = Number((bits >> 52n) & 0x7ffn);
+  const fraction = bits & 0xfffffffffffffn;
+  return biased === 0
+    ? { mantissa: fraction, exponent: -1074 }
+    : { mantissa: fraction | 0x10000000000000n, exponent: biased - 1075 };
+};
+
+/**
+ * Python round(x, digits)（digits ≥ 0）：按 x 的精确十进制值舍入，正好一半时取偶数，
+ * 再取最接近这个十进制数的浮点数。不是 Math.round(x × 10^digits) / 10^digits。
+ */
+export const pythonRound = (value: number, digits: number): number => {
+  if (!Number.isFinite(value) || value === 0) return value;
+  const power = 10 ** digits;
+  const scaled = value * power;
+  // |scaled| < 2^33 时乘法误差小于 1e-6，离一半足够远就能直接定
+  if (Math.abs(scaled) < 2 ** 33) {
+    const floor = Math.floor(scaled);
+    const fraction = scaled - floor;
+    if (Math.abs(fraction - 0.5) > 1e-5) {
+      const rounded = (fraction > 0.5 ? floor + 1 : floor) / power;
+      return rounded === 0 && value < 0 ? -0 : rounded;
+    }
+  }
+  const { mantissa, exponent } = exactParts(Math.abs(value));
+  let numerator = mantissa * 10n ** BigInt(digits);
+  let denominator = 1n;
+  if (exponent >= 0) numerator <<= BigInt(exponent);
+  else denominator <<= BigInt(-exponent);
+  let quotient = numerator / denominator;
+  const twice = (numerator % denominator) * 2n;
+  if (twice > denominator || (twice === denominator && quotient % 2n === 1n)) quotient += 1n;
+  const rounded = Number(quotient) / power;
+  return value < 0 ? -rounded : rounded;
+};
+
+/** Python 3.12 起 sum() 对浮点用 Neumaier 补偿求和，结果可能和逐个相加差一个末位 */
+export const pythonSum = (values: Iterable<number>): number => {
+  let result = 0;
+  let compensation = 0;
+  let first = true;
+  for (const value of values) {
+    if (first) {
+      result = 0 + value;
+      first = false;
+      continue;
+    }
+    const total = result + value;
+    if (Math.abs(result) >= Math.abs(value)) compensation += result - total + value;
+    else compensation += value - total + result;
+    result = total;
+  }
+  if (compensation !== 0 && Number.isFinite(compensation)) result += compensation;
+  return result;
+};
