@@ -1010,7 +1010,8 @@ def _axis_request(device, index, u0, settings):
     peak = min(V, math.sqrt(max(0., (2*A*dec*L+A*w*w)/(A+dec))))
     if peak < w - 1e-8:
         raise EntryInfeasible([f"{label}单Move峰值速度不足"])
-    minimum = (L+peak*peak/(2*A)+(peak-w)**2/(2*dec))/peak
+    # 平方一律写成乘法：x**2 走C库pow，末位与x*x偶有不同，TS移植无法逐位对上
+    minimum = (L+peak*peak/(2*A)+(peak-w)*(peak-w)/(2*dec))/peak
     request.update(family=family, dec=dec, minimum=minimum, maximum=2*L/w)
     return request
 
@@ -1094,7 +1095,7 @@ def _candidate_moves(request, seconds, settings):
             for cap in sorted(caps):
                 if cap < w-1e-9:
                     continue
-                denominator = 2*(cap*seconds-(cap-w)**2/(2*dec)-effective)
+                denominator = 2*(cap*seconds-(cap-w)*(cap-w)/(2*dec)-effective)
                 if denominator <= 0:
                     continue
                 for acc in _rates_near(cap*cap/denominator, A, settings, 2):
@@ -1145,7 +1146,7 @@ def _entry_for_time(request, seconds, u0, settings):
         if kind != "in_place":
             entry["distance"] = request["L"]
         if kind == "run_up":
-            entry["run_up_distance"] = request["w"]**2/(2*move["accVel"])
+            entry["run_up_distance"] = request["w"]*request["w"]/(2*move["accVel"])
         plan = _materialize({"u0": u0, "lead_ms": seconds*1000, "entries": [(device, entry)]}, settings)
         if _verify(plan, settings, fail_fast=True)["passed"]:
             return entry
@@ -1182,7 +1183,7 @@ def _plan_at(devices, u0, settings, allow_two_step=False, requests=None):
             peak = min(request["V"], math.sqrt((2*A*D*L+A*w*w)/(A+D)))
             for cap in _rates_near(peak, request["V"], settings, 2):
                 if cap >= w:
-                    times.add((L+cap*cap/(2*A)+(cap-w)**2/(2*D))/cap)
+                    times.add((L+cap*cap/(2*A)+(cap-w)*(cap-w)/(2*D))/cap)
     # 编码邻点时间，不以停等或额外指令填补。
     times.update(lower+k/10000 for k in range(1, 11))
     if math.isfinite(upper):
