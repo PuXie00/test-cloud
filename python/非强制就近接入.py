@@ -7,12 +7,16 @@
 """
 
 import bisect
+import heapq
 import json
 import math
 import sys
+from contextvars import ContextVar
+from time import perf_counter as _clock
 from pathlib import Path
+from collections import OrderedDict
 
-ALGORITHM_VERSION = "nonforced_single_move_join_20261110"
+ALGORITHM_VERSION = "nonforced_single_move_join_20261110_fast_5s"
 AXIS_NAMES = ("H", "P", "Y")
 COEFFICIENT_NAMES = ("a", "b", "c", "d", "e", "f")
 _EPS = 1e-9
@@ -42,6 +46,36 @@ DEFAULT_SETTINGS = {
 }
 
 
+# 每次计算独立计时；不增加JSON参数，默认最多计算5秒。
+_CALCULATION_TIMEOUT_SECONDS = 5.0
+_ENTRY_DEADLINE = ContextVar("nonforced_entry_deadline", default=None)
+
+
+class EntryCalculationTimeout(RuntimeError):
+    pass
+
+
+def _check_deadline():
+    deadline = _ENTRY_DEADLINE.get()
+    if deadline is not None and _clock() >= deadline:
+        raise EntryCalculationTimeout
+
+
+def _timeout_result(parameters):
+    raw = parameters.get("command") if isinstance(parameters, dict) else None
+    command = raw if isinstance(raw, dict) else {}
+    reference = command.get("stopped_time_ms")
+    if command.get("use_specified_time") is True:
+        mode = "specified_frame"
+    elif command.get("nearest_start", True) is False:
+        mode = "action_boundary"
+    else:
+        mode = "current_segment_first" if reference is not None else "nearest_whole_action"
+    return _infeasible({"reverse": command.get("reverse") is True}, mode, reference,
+                       "计算超时（超过5秒），本次未生成可执行接入方案",
+                       [], ["本次搜索未完成，不代表轨迹无解；不得下发未完成的准备参数"])
+
+
 class EntryInfeasible(ValueError):
     """这个 t0 接不上；reasons 是每个轴的原因。"""
 
@@ -63,6 +97,13 @@ def _number(value, name):
 def _triple(values, name, nonnegative=False):
     if not isinstance(values, (list, tuple)) or len(values) != 3:
         raise ValueError(f"{name}须为H/P/Y三个数")
+    first, second, third = values
+    native = (int, float)
+    if (type(first) in native and type(second) in native and type(third) in native
+            and math.isfinite(first) and math.isfinite(second) and math.isfinite(third)):
+        if nonnegative and (first < 0 or second < 0 or third < 0):
+            raise ValueError(f"{name}不能为负数")
+        return [float(first), float(second), float(third)]
     result = [_number(value, f"{name}[{AXIS_NAMES[index]}]") for index, value in enumerate(values)]
     if nonnegative and any(value < 0 for value in result):
         raise ValueError(f"{name}不能为负数")
@@ -168,18 +209,21 @@ def _pieces_of(model, unit_ms):
         raise ValueError(f"模型{model.get('model_id')}没有segments")
     pieces = []
     for segment in segments:
+        _check_deadline()
         if not isinstance(segment, dict):
             raise ValueError("segments元素须为对象")
         items = segment.get("coefficient_segments") or [segment]
         for item in items:
+            _check_deadline()
             start = _number(item.get("start_frame"), "start_frame")
             end = _number(item.get("end_frame"), "end_frame")
             if end <= start:
                 raise ValueError(f"模型{model.get('model_id')}的系数阶段时间无效")
             if "a" not in item:
                 raise ValueError(f"模型{model.get('model_id')}的系数阶段缺少a")
-            coefficients = {name: _triple(item.get(name, [0, 0, 0]), name) for name in COEFFICIENT_NAMES}
-            if any(abs(value) > 1e-12 for name in ("d", "e", "f") for value in coefficients[name]):
+            coefficients = {name: _triple(item[name], name) if name in item else (0., 0., 0.)
+                            for name in COEFFICIENT_NAMES}
+            if any(abs(value) > 1e-12 for name in ("d", "e", "f") if name in item for value in coefficients[name]):
                 raise ValueError("非强制曲线须为恒加速度分段（d/e/f须为0）")
             pieces.append((start, end, coefficients))
     pieces.sort(key=lambda piece: piece[0])
@@ -203,6 +247,7 @@ def _axis_phases(pieces, axis, unit_ms):
     scale = 1000 / unit_ms
     phases = []
     for piece in pieces:
+        _check_deadline()
         start, end, coefficients = piece
         velocity = coefficients["b"][axis] * scale
         acceleration = 2 * coefficients["c"][axis] * scale * scale
@@ -225,6 +270,7 @@ def _axis_runs(pieces, axis, unit_ms):
     phases = _axis_phases(pieces, axis, unit_ms)
     runs, current = [], None
     for index, phase in enumerate(phases):
+        _check_deadline()
         moving = abs(phase["velocity"]) > _MOTION_SPEED_EPS or abs(phase["acceleration"]) > _EPS
         if not moving:
             current = None
@@ -446,6 +492,27 @@ def _settle_rates(windows):
 
 
 def _run_commands(phases, target):
+    # 完整静止到静止梯形/三角形：原window合并过程必然得到同一条Move。
+    # 仅严格匹配时走快路；带速多级曲线、接缝及任何疑点继续原算法。
+    if len(phases) in (2,3):
+        first, last = phases[0], phases[-1]
+        peak = first.to_speed
+        if (first.from_speed == 0. and last.to_speed == 0. and peak > _SPEED_EPS
+                and last.from_speed == peak
+                and (len(phases) == 2 or phases[1].from_speed == phases[1].to_speed == peak)
+                and all(not p.seam and p.direction == first.direction and p.duration > 0 for p in phases)):
+            acceleration, deceleration = _rate(first), _rate(last)
+            remaining, needed = 0., 0.
+            for phase in reversed(phases):
+                if phase is not last:
+                    needed = max(needed, _stop_need(phase.to_speed,remaining))
+                remaining += phase.distance
+            if (0 < acceleration < math.inf and 0 < deceleration < math.inf
+                    and deceleration >= needed*(1-_RATE_EPS)):
+                return [{"atMs": _round_coordinate(first.at_ms), "target": _round_coordinate(target),
+                         "velocity": _round_speed(peak), "acceleration": _ceil_rate(acceleration),
+                         "deceleration": _ceil_rate(deceleration), "passSpeed": _round_speed(first.from_speed),
+                         "adjusted": False}]
     windows = _command_windows(_split_gentle_slowdowns(phases))
     _settle_rates(windows)
     commands = []
@@ -481,6 +548,7 @@ def axis_move_commands(runs, reverse=False, loop=False):
         joined = [(run, -1) for run in runs]
     commands = []
     for run, seam_at in joined:
+        _check_deadline()
         if reverse:
             phases = []
             for index in range(len(run["phases"]) - 1, -1, -1):
@@ -521,9 +589,11 @@ class AxisTrack:
     def __init__(self, anchor, sends):
         self.anchor = anchor
         self.sends = list(sends)
+        self.send_times = [u for u, _ in self.sends]
         self.segments = []
         active_u, active_phases, active_target, active_command = -math.inf, [], anchor, None
         for u, command in self.sends:
+            _check_deadline()
             q, v = self._active_state(active_u, active_phases, active_target, u)
             self._emit(active_u, active_phases, active_target, active_command, u)
             active_u, active_target, active_command = u, command["pos"], command
@@ -584,7 +654,9 @@ class AxisTrack:
         return None
 
     def boundaries(self, lower, upper):
-        return [value for segment in self.segments for value in (segment.u0, segment.u1)
+        first = max(0,bisect.bisect_right(self.starts,lower)-1)
+        last = bisect.bisect_left(self.starts,upper)
+        return [value for segment in self.segments[first:last] for value in (segment.u0,segment.u1)
                 if lower < value < upper and math.isfinite(value)]
 
 
@@ -652,6 +724,7 @@ def _runtime_states(parameters):
         raise ValueError("缺少runtime.models（各模型当前位置）")
     states = {}
     for state in runtime["models"]:
+        _check_deadline()
         if not isinstance(state, dict) or type(state.get("model_id")) is not int:
             raise ValueError("runtime.models[].model_id须为整数")
         states[(str(state.get("plc_id", "")), state["model_id"])] = state
@@ -659,10 +732,50 @@ def _runtime_states(parameters):
     return states
 
 
+# 只缓存与反馈/能力/行程无关的原曲线编译结果。内容指纹覆盖原地修改，容量双重受限。
+_COMPILED_CURVES = OrderedDict()
+_COMPILED_CURVE_PIECES = 0
+_COMPILED_CURVE_MAX_ENTRIES = 256
+_COMPILED_CURVE_MAX_PIECES = 100000
+
+
+def _compiled_curve(pieces, unit, direction, run_origin, loop, settings):
+    global _COMPILED_CURVE_PIECES
+    _check_deadline()
+    signature = (unit,direction,run_origin,loop,settings["entry_quantize_protocol"],
+                 tuple((start,end,*(tuple(coefficients[name]) for name in COEFFICIENT_NAMES))
+                       for start,end,coefficients in pieces))
+    _check_deadline()
+    cached = _COMPILED_CURVES.pop(signature,None)
+    if cached is not None:
+        _COMPILED_CURVES[signature] = cached
+        return cached[1],cached[2]
+    start_positions = [_piece_state(pieces[0],axis,pieces[0][0],unit)[0] for axis in range(3)]
+    end_positions = [_piece_state(pieces[-1],axis,pieces[-1][1],unit)[0] for axis in range(3)]
+    all_commands,all_tracks = [],[]
+    for axis in range(3):
+        _check_deadline()
+        commands = axis_move_commands(_axis_runs(pieces,axis,unit),reverse=direction<0,loop=loop)
+        ordered = list(reversed(commands)) if direction<0 else commands
+        sends = [(direction*(command["atMs"]-run_origin),_wire_move(command,settings)) for command in ordered]
+        anchor = end_positions[axis] if direction<0 else start_positions[axis]
+        all_commands.append(commands)
+        all_tracks.append(AxisTrack(anchor,sends))
+    weight = len(pieces)
+    if weight <= _COMPILED_CURVE_MAX_PIECES:
+        _COMPILED_CURVES[signature] = (weight,all_commands,all_tracks)
+        _COMPILED_CURVE_PIECES += weight
+        while (len(_COMPILED_CURVES)>_COMPILED_CURVE_MAX_ENTRIES
+               or _COMPILED_CURVE_PIECES>_COMPILED_CURVE_MAX_PIECES):
+            _,removed = _COMPILED_CURVES.popitem(last=False)
+            _COMPILED_CURVE_PIECES -= removed[0]
+    return all_commands,all_tracks
+
+
 class _Device:
     """一个模型：当前状态、能力参数、原动作段，以及按帧表回放出的各轴轨迹。"""
 
-    def __init__(self, model, states, direction, run_origin, loop, settings):
+    def __init__(self, model, states, direction, run_origin, loop, settings, pieces=None):
         if not isinstance(model, dict) or type(model.get("model_id")) is not int:
             raise ValueError("models[].model_id须为整数")
         self.model_id = model["model_id"]
@@ -693,27 +806,27 @@ class _Device:
                       if "min_position_HPY" in model else [-math.inf] * 3)
         self.upper = (_triple(model["max_position_HPY"], f"{label} max_position_HPY")
                       if "max_position_HPY" in model else [math.inf] * 3)
+        self.prepare_caps = [(_floor_rate(self.reposition_velocity[i], settings["entry_quantize_protocol"]),
+                              _floor_rate(self.reposition_acceleration[i], settings["entry_quantize_protocol"]),
+                              _floor_rate(self.reposition_deceleration[i], settings["entry_quantize_protocol"]))
+                             for i in range(3)]
+        self.axis_labels = [f"模型{self.model_id} {axis}" for axis in AXIS_NAMES]
+        self.current_in_range = [self.lower[i]-_EPS <= self.current[i] <= self.upper[i]+_EPS for i in range(3)]
+        self.rest_tail_failures = set()
         unit = settings["unit_ms"]
-        pieces = _pieces_of(model, unit)
+        pieces = _pieces_of(model, unit) if pieces is None else pieces
         self.first, self.last = pieces[0][0], pieces[-1][1]
         self.keyframes = sorted({_number(segment[name], name) for segment in model["segments"]
                                  for name in ("start_frame", "end_frame")})
-        start_positions = [_piece_state(pieces[0], axis, pieces[0][0], unit)[0] for axis in range(3)]
-        end_positions = [_piece_state(pieces[-1], axis, pieces[-1][1], unit)[0] for axis in range(3)]
-        # 按上位机规则还原 Move 帧表，再按 C++ 的下发时刻回放（反向从末尾往前）
-        self.commands, self.tracks = [], []
-        for axis in range(3):
-            commands = axis_move_commands(_axis_runs(pieces, axis, unit), reverse=direction < 0, loop=loop)
-            self.commands.append(commands)
-            ordered = list(reversed(commands)) if direction < 0 else commands
-            sends = [(direction * (command["atMs"] - run_origin), _wire_move(command, settings)) for command in ordered]
-            anchor = end_positions[axis] if direction < 0 else start_positions[axis]
+        self.commands, compiled_tracks = _compiled_curve(pieces,unit,direction,run_origin,loop,settings)
+        self.tracks = []
+        for axis,(commands,track) in enumerate(zip(self.commands,compiled_tracks)):
             if not self.active[axis] or (not commands and self.reposition_velocity[axis] == 0):
                 if commands:
                     raise ValueError(f"模型{self.model_id} {AXIS_NAMES[axis]}有运动曲线却未列入准备轴")
                 self.active[axis] = False
-                anchor = self.current[axis]  # 未参与轴保持真实位置，不能被曲线空轴的0覆盖。
-            self.tracks.append(AxisTrack(anchor, sends))
+                track = AxisTrack(self.current[axis],[])
+            self.tracks.append(track)
         self.moves = any(self.active[axis] and self.tracks[axis].sends for axis in range(3))
 
 
@@ -775,18 +888,16 @@ def _profile_at(phases, target, seconds):
 
 def _axis_request(device, index, u0, settings):
     track = device.tracks[index]
-    q, v = track.state(u0)
+    segment = track.segment_containing(u0)
+    q, v = segment.state(u0)
     current = device.current[index]
-    label = f"模型{device.model_id} {AXIS_NAMES[index]}"
-    if not device.lower[index] - _EPS <= current <= device.upper[index] + _EPS:
+    label = device.axis_labels[index]
+    if not device.current_in_range[index]:
         raise EntryInfeasible([f"{label}当前位置超出行程"])
     if not device.lower[index] - _EPS <= q <= device.upper[index] + _EPS:
         raise EntryInfeasible([f"{label}接入位置超出行程"])
     quantized = settings["entry_quantize_protocol"]
-    V = _floor_rate(device.reposition_velocity[index], quantized)
-    A = _floor_rate(device.reposition_acceleration[index], quantized)
-    D = _floor_rate(device.reposition_deceleration[index], quantized)
-    segment = track.segment_containing(u0)
+    V, A, D = device.prepare_caps[index]
     command = segment.command
     w = abs(v)
     request = {"device": device, "index": index, "u0": u0, "current": current,
@@ -801,7 +912,9 @@ def _axis_request(device, index, u0, settings):
     if command is not None and any(command[key] > limit + 1e-8 for key, limit in
                                   (("vel", V), ("accVel", A), ("decVel", D))):
         raise EntryInfeasible([f"{label}原Move超过真实最大V/A/D，不能用默认值代替最大能力"])
-    at_original_send = any(abs(u-u0) <= 1e-8 for u, _ in track.sends)
+    send_index = bisect.bisect_left(track.send_times, u0)
+    at_original_send = ((send_index < len(track.send_times) and abs(track.send_times[send_index]-u0) <= 1e-8)
+                        or (send_index > 0 and abs(track.send_times[send_index-1]-u0) <= 1e-8))
     if not request["w"]:
         if abs(segment.a) > 1e-10 and not at_original_send:
             raise EntryInfeasible([f"{label}零速转折点不能由一条准备Move自然接续"])
@@ -843,7 +956,8 @@ def _axis_request(device, index, u0, settings):
             family = "deceleration"
             request["target"] = command["pos"]
         else:
-            next_send = next((u for u, _ in track.sends if u > u0+1e-8), math.inf)
+            next_index = bisect.bisect_right(track.send_times, u0+1e-8)
+            next_send = track.send_times[next_index] if next_index < len(track.send_times) else math.inf
             if next_send > segment.u1 + 1e-8:
                 raise EntryInfeasible([f"{label}降到非零速度的减速段没有单Move自然接续方案"])
             family = "transient_deceleration"
@@ -954,6 +1068,7 @@ def _entry_for_time(request, seconds, u0, settings):
     kind = "in_place" if family == "hold" else ("run_up" if request["v"] else "reposition")
     seen = set()
     for move in _candidate_moves(request, seconds, settings):
+        _check_deadline()
         key = tuple(move[name] for name in ("pos", "vel", "accVel", "decVel"))
         if key in seen:
             continue
@@ -972,6 +1087,12 @@ def _entry_for_time(request, seconds, u0, settings):
             continue
         if family == "rest" and seconds-profile_duration(phases) > _ARRIVAL_TOLERANCE_MS/1000+1e-9:
             continue
+        # 同一接入帧若已停在同一停车点，后续与准备V/A/D无关。
+        # 只复用已由完整回放证实的失败；非零速度或尚未停稳一律不能用这个缓存。
+        actual_seconds = (u0-round(u0-seconds*1000, settings["entry_send_time_decimals"]))/1000
+        actual_q, actual_v = _profile_at(phases, move["pos"], actual_seconds)
+        if actual_v == 0. and actual_q == move["pos"] and (index, u0, actual_q) in device.rest_tail_failures:
+            continue
         entry = {"axis": AXIS_NAMES[index], "index": index, "kind": kind,
                  "lead_ms": 0. if kind == "in_place" else seconds*1000,
                  "join": (request["q"], request["v"]),
@@ -981,7 +1102,7 @@ def _entry_for_time(request, seconds, u0, settings):
         if kind == "run_up":
             entry["run_up_distance"] = request["w"]**2/(2*move["accVel"])
         plan = _materialize({"u0": u0, "lead_ms": seconds*1000, "entries": [(device, entry)]}, settings)
-        if _verify(plan, settings)["passed"]:
+        if _verify(plan, settings, fail_fast=True)["passed"]:
             return entry
     return None
 
@@ -1004,6 +1125,7 @@ def _plan_at(devices, u0, settings, allow_two_step=False, requests=None):
         raise EntryInfeasible(["所有虚轴的单Move准备时间无公共可行区间"])
     times = {lower}
     for request in requests:
+        _check_deadline()
         if request["family"] == "cruise":
             w, L = request["w"], request["L"]
             denominator = 2*(w*lower-L)
@@ -1023,13 +1145,29 @@ def _plan_at(devices, u0, settings, allow_two_step=False, requests=None):
         times.update(lower+(upper-lower)*k/16 for k in range(1, 16))
     else:
         times.update(lower+k/1000 for k in (2, 5, 10, 20, 50, 100))
+    # 固定T的各轴核验互相独立；先试最近失败的轴，成功后仍按原模型/轴顺序输出。
+    order = list(range(len(requests)))
+    priority = getattr(devices[0], "_entry_failure_order", [])
+    slots = {(id(request["device"]),request["index"]):slot for slot,request in enumerate(requests)}
+    preferred = [slots[key] for key in priority if key in slots]
+    order = preferred+[slot for slot in order if slot not in preferred]
     for seconds in sorted(t for t in times if lower-1e-9 <= t <= upper+1e-9):
-        entries = []
-        for request in requests:
+        _check_deadline()
+        entries = [None]*len(requests)
+        for slot in order:
+            request = requests[slot]
             entry = _entry_for_time(request, seconds, u0, settings)
             if entry is None:
+                key = (id(request["device"]),request["index"])
+                if key in priority:
+                    priority.remove(key)
+                priority.insert(0,key)
+                del priority[12:]
+                devices[0]._entry_failure_order = priority
+                order.remove(slot)
+                order.insert(0,slot)
                 break
-            entries.append((request["device"], entry))
+            entries[slot] = (request["device"], entry)
         else:
             plan = _materialize({"u0": u0, "lead_ms": seconds*1000, "entries": entries}, settings)
             if _verify(plan, settings)["passed"]:
@@ -1042,47 +1180,300 @@ def _plan_at(devices, u0, settings, allow_two_step=False, requests=None):
 ###############################################################################
 
 
+def _requests_at(devices, u, settings, stop_on_empty=False, observer=None):
+    requests = []
+    lower, upper = 0., math.inf
+    lower_owner = upper_owner = None
+    try:
+        for device in devices:
+            _check_deadline()
+            for index in range(3):
+                request = _axis_request(device, index, u, settings)
+                requests.append(request)
+                if observer is not None:
+                    if request["minimum"] > lower:
+                        lower_owner = device
+                    if request["maximum"] < upper:
+                        upper_owner = device
+                lower = max(lower, request["minimum"])
+                upper = min(upper, request["maximum"])
+                if stop_on_empty and lower > upper+1e-9:
+                    if observer is not None:
+                        observer(lower_owner, upper_owner, device)
+                    return None
+    except EntryInfeasible:
+        if observer is not None:
+            observer(lower_owner, upper_owner, device)
+        return None
+    if observer is not None:
+        observer(lower_owner, upper_owner)
+    return requests, lower, upper
+
+
+def _phase_is_monotone(devices, first, last, settings):
+    """只对可证明单调的开放phase使用二分；边界/容差疑点保守走原网格。"""
+    middle = (first+last)/2
+    tolerance = settings["entry_velocity_tolerance"]
+    for device in devices:
+        _check_deadline()
+        for index, track in enumerate(device.tracks):
+            segment = track.segment_containing(middle)
+            if first < segment.u0 or last >= segment.u1:
+                return False
+            q1, v1 = segment.state(first)
+            q2, v2 = segment.state(last)
+            if min(q1,q2) < device.lower[index]-_EPS or max(q1,q2) > device.upper[index]+_EPS:
+                return False
+            if segment.a == 0 and v1 == 0. and v2 == 0.:
+                continue
+            if min(abs(v1),abs(v2)) <= tolerance or v1*v2 <= 0:
+                return False
+            V, A, D = device.prepare_caps[index]
+            if max(abs(v1),abs(v2)) > V+1e-8:
+                return False
+            for u in (first,last):
+                at = bisect.bisect_left(track.send_times,u)
+                if ((at < len(track.send_times) and abs(track.send_times[at]-u) <= 1e-8)
+                        or (at and abs(track.send_times[at-1]-u) <= 1e-8)):
+                    return False
+            direction = 1 if v1 > 0 else -1
+            alpha = direction*segment.a
+            vscale = max(1.,abs(segment.v0),abs(segment.a*(first-segment.u0)/1000),
+                         abs(segment.a*(last-segment.u0)/1000))
+            vguard = 64*math.ulp(vscale)
+            if min(abs(v1),abs(v2)) <= tolerance+vguard:
+                return False
+            qscale = max(1.,abs(q1),abs(q2),abs(device.current[index]))
+            qguard = max(1e-14,64*math.ulp(qscale))
+            if A > 0:
+                kinetic1,kinetic2 = v1*v1/(2*A),v2*v2/(2*A)
+                reachguard = max(1e-14,64*math.ulp(max(qscale,abs(kinetic1),abs(kinetic2))))
+                reach2 = direction*(q2-device.current[index])-kinetic2
+                if abs(reach2+1e-9) <= reachguard:
+                    return False
+            rates = [rate for rate in (A,D,abs(alpha)) if rate > 0]
+            noise = qguard/min(abs(v1),abs(v2))+(vguard/min(rates) if rates else 0.)
+            if noise > settings["frame_resolution_ms"]/1000/64:
+                return False
+            if alpha > 0:
+                errors = [abs(direction*(q-device.current[index])-v*v/(2*alpha))
+                          for q,v in ((q1,v1),(q2,v2))]
+                edge = settings["entry_position_tolerance"]
+                guard = max(1e-7,64*math.ulp(max(qscale,v1*v1/(2*alpha),v2*v2/(2*alpha))))
+                if min(errors) <= edge+guard and max(errors) >= edge-guard:
+                    return False
+            elif alpha < 0:
+                if segment.command is None:
+                    return False
+                dec = abs(segment.a)
+                errors = [abs(direction*(segment.command["pos"]-q)-v*v/(2*dec))
+                          for q,v in ((q1,v1),(q2,v2))]
+                guard = max(1e-7,64*math.ulp(max(qscale,v1*v1/(2*dec),v2*v2/(2*dec))))
+                if min(errors) <= 1e-5+guard and max(errors) >= 1e-5-guard:
+                    return False
+    return True
+
+
 def _search_window(devices, lower, upper, to_curve, to_run, settings):
     if not any(device.moves for device in devices):
         try:
-            return _plan_at(devices, lower, settings), 1
+            return _plan_at(devices,lower,settings), 1
         except EntryInfeasible:
-            return None, 1
+            return None,1
     resolution = settings["frame_resolution_ms"]
-    first, last = sorted((to_curve(lower), to_curve(upper)))
-    frames = {first, last}
-    frames.update(range(math.ceil(first/resolution)*resolution,
-                        math.floor(last/resolution)*resolution+1, resolution))
+    forward = to_run(1.) > to_run(0.)
+    points = {lower,upper}
     for device in devices:
+        _check_deadline()
         for track in device.tracks:
-            frames.update(to_curve(u) for u in track.boundaries(lower, upper))
-    candidates = []
-    for frame in frames:
+            points.update(track.boundaries(lower,upper))
+    points = sorted(points)
+    boundary_frames = {to_curve(u) for u in points}
+    # 子集只给保守下界，绝不用子集决定可执行；真正候选仍验证所有模型。
+    base_indices = (list(range(len(devices))) if len(devices) <= 8 else
+                    [round(k*(len(devices)-1)/7) for k in range(8)])
+    priority = getattr(devices[0], "_probe_indices", [])
+    device_indices = {id(device): index for index, device in enumerate(devices)}
+    sample = []
+    sample_key = None
+    def get_sample():
+        nonlocal sample, sample_key
+        key = tuple(dict.fromkeys(priority+base_indices))
+        if key != sample_key:
+            sample = [devices[index] for index in key]
+            sample_key = key
+        return sample
+    def observe(*owners):
+        for owner in owners:
+            if owner is not None:
+                index = device_indices[id(owner)]
+                if index not in priority:
+                    priority.append(index)
+        if len(priority) > 12:
+            del priority[:-12]
+        devices[0]._probe_indices = priority
+    heap,serial,evaluated = [],0,0
+    def push(bound,u,kind,payload):
+        nonlocal serial
+        heapq.heappush(heap,(bound,u,serial,kind,payload))
+        serial += 1
+    def hint_point(frame,cursor=None):
         u = to_run(frame)
-        try:
-            requests = [_axis_request(device, index, u, settings) for device in devices for index in range(3)]
-        except EntryInfeasible:
+        computed = _requests_at(get_sample(),u,settings,True)
+        if computed is not None:
+            push(computed[1]*1000,u,"point_hint",(frame,cursor))
+            return True
+        return False
+    def exact_point(frame,cursor=None):
+        u = to_run(frame)
+        computed = _requests_at(devices,u,settings,True,observe)
+        if computed is not None:
+            requests,lo,hi = computed
+            push(lo*1000,u,"point",(requests,cursor))
+            return True
+        return False
+    def advance(cursor):
+        grid,index,end = cursor
+        while index <= end:
+            _check_deadline()
+            if exact_point(grid[index],(grid,index+1,end)):
+                return
+            index += 1
+    def materialize_interval(grid,lo,hi):
+        first,last = to_run(grid[lo]),to_run(grid[hi])
+        if not _phase_is_monotone(devices,first,last,settings):
+            for index in range(lo,hi+1):
+                if grid[index] not in boundary_frames:
+                    hint_point(grid[index])
+            return
+        computed = _requests_at(devices,last,settings,observer=observe)
+        if computed is None:
+            return
+        requests,_,_ = computed
+        moving = [r for r in requests if r["family"] not in ("hold","rest")]
+        resting = [r for r in requests if r["family"] in ("hold","rest")]
+        moving_min = max((r["minimum"] for r in moving),default=0.)
+        fixed_max = min((r["maximum"] for r in moving if r["family"] == "acceleration"),default=math.inf)
+        joint_guard = max(1e-12,64*math.ulp(max(1.,abs(moving_min),
+                          abs(fixed_max) if math.isfinite(fixed_max) else 1.)))
+        if math.isfinite(fixed_max) and abs((moving_min-fixed_max)-1e-9) <= joint_guard:
+            for index in range(lo,hi+1):
+                hint_point(grid[index])
+            return
+        rest_min = max((r["minimum"] for r in resting),default=0.)
+        rest_max = min((r["maximum"] for r in resting),default=math.inf)
+        if rest_min > rest_max+1e-9:
+            return
+        if moving and math.isfinite(rest_max):
+            C = max(r["minimum"]-last/1000 for r in moving)
+            cut = math.floor(((rest_max-C)*1000-first)/resolution)+lo
+            for index in range(max(lo,cut-2),min(hi,cut+2)+1):
+                hint_point(grid[index])
+            hi = min(hi,cut-3)
+            if hi < lo:
+                return
+        if _requests_at(devices,to_run(grid[hi]),settings,True,observe) is None:
+            return
+        begin,end = lo,hi
+        while lo < hi:
+            middle = (lo+hi)//2
+            if _requests_at(devices,to_run(grid[middle]),settings,True,observe) is None:
+                lo = middle+1
+            else:
+                hi = middle
+        advance((grid,max(begin,lo-1),end))
+    def interval_bound(grid,lo,hi):
+        first,last = to_run(grid[lo]),to_run(grid[hi])
+        subset = get_sample()
+        if not _phase_is_monotone(subset,first,last,settings):
+            return 0.
+        computed = _requests_at(subset,last,settings)
+        if computed is None:
+            return None
+        requests,lower_at_end,_ = computed
+        moving_upper = min((r["maximum"] for r in requests
+                            if r["family"] not in ("hold","rest")),default=math.inf)
+        guard_sec = max(1e-12,64*math.ulp(max(1.,abs(lower_at_end),
+                          abs(moving_upper) if math.isfinite(moving_upper) else 1.)))
+        # 安全phase中，运动轴的共同可行性只能由False变True；右端仍冲突则整段无解。
+        if lower_at_end > moving_upper+1e-9+guard_sec:
+            return None
+        bound = max((r["minimum"] if r["family"] in ("hold","rest")
+                     else r["minimum"]-(last-first)/1000 for r in requests),default=0.)*1000
+        rounding_guard = max([1e-4]+[64*math.ulp(max(1.,abs(r["minimum"])*1000,abs(last-first)))
+                                    for r in requests])
+        bound = max(0.,bound-rounding_guard)
+        rest_max = min((r["maximum"] for r in requests
+                        if r["family"] in ("hold","rest")),default=math.inf)
+        if bound/1000 > rest_max+1e-9+guard_sec:
+            return None
+        return bound
+    for frame in sorted(boundary_frames,key=to_run):
+        _check_deadline()
+        hint_point(frame)
+    for left,right in zip(points,points[1:]):
+        _check_deadline()
+        low_curve,high_curve = sorted((to_curve(left),to_curve(right)))
+        low_grid = math.ceil(low_curve/resolution)*resolution
+        high_grid = math.floor(high_curve/resolution)*resolution
+        grid = (range(low_grid,high_grid+1,resolution) if forward
+                else range(high_grid,low_grid-1,-resolution))
+        if not grid:
             continue
-        low = max((request["minimum"] for request in requests), default=0.)
-        high = min((request["maximum"] for request in requests), default=math.inf)
-        if low <= high+1e-9:
-            candidates.append((low*1000, u))
-    candidates.sort()
-    plans, evaluated, shortest = [], 0, math.inf
+        lo,hi = 0,len(grid)-1
+        while lo <= hi and (grid[lo] in boundary_frames or not left < to_run(grid[lo]) < right):
+            lo += 1
+        while lo <= hi and (grid[hi] in boundary_frames or not left < to_run(grid[hi]) < right):
+            hi -= 1
+        if lo > hi:
+            continue
+        if hi-lo < 3:
+            for index in range(lo,hi+1):
+                hint_point(grid[index])
+            continue
+        bound = interval_bound(grid,lo,hi)
+        if bound is not None:
+            push(bound,to_run(grid[lo]),"interval_hint",(grid,lo,hi))
+    plans,shortest = [],math.inf
     tie = settings["entry_lead_tie_ms"]
-    for bound, u in candidates:
+    while heap:
+        _check_deadline()
+        bound,u,_,kind,payload = heapq.heappop(heap)
         if bound > shortest+tie+1e-8:
             break
+        # 已有方案同时更快且帧更早时，该节点及安全后继都不会成为最终结果。
+        # 预留_plan_at允许低于解析lower 1e-9秒的浮点容差，不能用宽松达界判断。
+        if any(plan["u0"] <= u and plan["lead_ms"]+max(
+                1e-5,64*math.ulp(max(1.,abs(bound),abs(plan["lead_ms"])))) <= bound for plan in plans):
+            continue
+        if kind == "point_hint":
+            frame,cursor = payload
+            if not exact_point(frame,cursor) and cursor is not None:
+                advance(cursor)
+            continue
+        if kind == "interval_hint":
+            strengthened = interval_bound(*payload)
+            if strengthened is None:
+                continue
+            if strengthened > bound+1e-8:
+                push(strengthened,u,kind,payload)
+                continue
+            materialize_interval(*payload)
+            continue
+        requests,cursor = payload
         evaluated += 1
         try:
-            plan = _plan_at(devices, u, settings)
+            plan = _plan_at(devices,u,settings,requests=requests)
         except EntryInfeasible:
-            continue
-        plans.append(plan)
-        shortest = min(shortest, plan["lead_ms"])
-    best = min((plan for plan in plans if plan["lead_ms"] <= shortest+tie+1e-8),
-               key=lambda plan: plan["u0"], default=None)
-    return best, evaluated
+            pass
+        else:
+            plans.append(plan)
+            shortest = min(shortest,plan["lead_ms"])
+        if cursor is not None:
+            advance(cursor)
+    best = min((p for p in plans if p["lead_ms"] <= shortest+tie+1e-8),
+               key=lambda p:p["u0"],default=None)
+    return best,evaluated
 
 
 def _windows(devices, first, last, reverse, reference):
@@ -1114,13 +1505,139 @@ def _windows(devices, first, last, reverse, reference):
 ###############################################################################
 
 
-def _verify(plan, settings):
+def _candidate_witness_cache(device, index, entry, u0, settings):
+    if len(entry["moves"]) != 1:
+        return None, None
+    groups = getattr(device, "_trajectory_error_witnesses", None)
+    if groups is None:
+        groups = [{}, {}, {}]
+        device._trajectory_error_witnesses = groups
+    track = device.tracks[index]
+    item = entry["moves"][0]
+    move = item["move"]
+    next_send = bisect.bisect_left(track.send_times, u0-1e-9)
+    key = (id(track), device.current[index], item["send_u"],
+           move["pos"], move["vel"], move["accVel"], move["decVel"], next_send,
+           settings["entry_position_tolerance"], _ENTRY_MATCH_VELOCITY_TOLERANCE)
+    return groups[index], key
+
+
+
+def _capture_error_witness(sink, u, actual_segment, reference_segment, aq, av, rq, rv, limits):
+    if sink is None or sink:
+        return
+    qscale, vscale = max(1., abs(aq), abs(rq)), max(1., abs(av), abs(rv))
+    for segment in (actual_segment, reference_segment):
+        qscale = max(qscale, abs(segment.q0))
+        vscale = max(vscale, abs(segment.v0))
+        if segment.v0 or segment.a:
+            dt = (u-segment.u0)/1000
+            qscale = max(qscale, abs(segment.v0*dt), abs(.5*segment.a*dt*dt))
+            vscale = max(vscale, abs(segment.a*dt))
+    # 临界浮点点不用于跨帧证书，仍走完整判定；留宽松舍入余量。
+    qguard = max(1e-10, 256*math.ulp(qscale))
+    vguard = max(1e-10, 256*math.ulp(vscale))
+    qe, ve = abs(aq-rq), abs(av-rv)
+    if qe > limits[0]+qguard or ve > limits[1]+vguard:
+        sink.append((u, qe, ve))
+
+
+
+def _trajectory_errors_sweep(actual, track, u0, stop_limits=None, witness_sink=None, witness_limits=None):
+    """完整顺序合并AxisTrack相位，边界取右段，包含位置误差内部极值。"""
+    actual_segments, reference_segments = actual.segments, track.segments
+    ai = max(0, bisect.bisect_right(actual.starts, u0)-1)
+    ri = max(0, bisect.bisect_right(track.starts, u0)-1)
+    last = u0
+    # AxisTrack末段为停稳后的[有限起点,+inf)；保留通用的反向有限边界查找。
+    for segments in (actual_segments, reference_segments):
+        for segment in reversed(segments):
+            values = [value for value in (segment.u0, segment.u1) if math.isfinite(value)]
+            if values:
+                last = max(last, max(values))
+                break
+    horizon = last+1000
+    limits = stop_limits if stop_limits is not None else witness_limits
+    worst_position, worst_velocity = 0., 0.
+    left = u0
+    while True:
+        _check_deadline()
+        # 与AxisTrack.state的bisect_right相同：相位切换时刻用右段。
+        while ai+1 < len(actual_segments) and actual_segments[ai+1].u0 <= left:
+            ai += 1
+        while ri+1 < len(reference_segments) and reference_segments[ri+1].u0 <= left:
+            ri += 1
+        actual_segment, reference_segment = actual_segments[ai], reference_segments[ri]
+        aq, av = actual_segment.state(left)
+        rq, rv = reference_segment.state(left)
+        worst_position = max(worst_position, abs(aq-rq))
+        worst_velocity = max(worst_velocity, abs(av-rv))
+        if limits is not None and (abs(aq-rq) > limits[0] or abs(av-rv) > limits[1]):
+            _capture_error_witness(witness_sink,left,actual_segment,reference_segment,aq,av,rq,rv,limits)
+        if stop_limits is not None and (worst_position > stop_limits[0] or worst_velocity > stop_limits[1]):
+            return worst_position, worst_velocity
+        if left >= horizon:
+            return worst_position, worst_velocity
+        right = min(actual_segment.u1, reference_segment.u1, horizon)
+        acceleration = actual_segment.a-reference_segment.a
+        if abs(acceleration) > 1e-12:
+            extremum = left-(av-rv)/acceleration*1000
+            if left < extremum < right:
+                aq, av = actual_segment.state(extremum)
+                rq, rv = reference_segment.state(extremum)
+                worst_position = max(worst_position, abs(aq-rq))
+                worst_velocity = max(worst_velocity, abs(av-rv))
+                if limits is not None and (abs(aq-rq) > limits[0] or abs(av-rv) > limits[1]):
+                    _capture_error_witness(witness_sink,extremum,actual_segment,reference_segment,aq,av,rq,rv,limits)
+                if stop_limits is not None and (worst_position > stop_limits[0] or worst_velocity > stop_limits[1]):
+                    return worst_position, worst_velocity
+        left = right
+
+
+
+def _verify(plan, settings, fail_fast=False):
+    # 同一候选的单轴已完整验证；聚合/输出只复用相同最终时刻与指令的证书。
+    entries = plan["entries"]
+    if len(entries) != 1:
+        results = [_verify({"u0": plan["u0"], "clock_start_u": plan["clock_start_u"],
+                            "entries": [(device, entry)]}, settings, fail_fast=fail_fast) for device, entry in entries]
+        return {"max_position_error": max((r["max_position_error"] for r in results), default=0.),
+                "max_velocity_error": max((r["max_velocity_error"] for r in results), default=0.),
+                **{key: all(r[key] for r in results) for key in
+                   ("entry_monotonic", "simultaneous_start", "limits_passed", "passed")}}
+    device, entry = entries[0]
+    index = entry["index"]
+    key = (plan["u0"], plan["clock_start_u"], entry["kind"], entry["join"],
+           tuple((m["send_u"], *(m["move"][n] for n in ("pos", "vel", "accVel", "decVel")))
+                 for m in entry["moves"]), settings["entry_position_tolerance"],
+           _ENTRY_MATCH_VELOCITY_TOLERANCE, id(device.tracks[index]), device.current[index],
+           device.lower[index], device.upper[index], *device.prepare_caps[index])
+    cached = entry.get("_verification_certificate")
+    if cached is not None and cached[0] == key:
+        return cached[1]
+    # 失败见证可提前返回，但不能把不完整失败指标放进完整验证证书。
+    result = _verify_uncached(plan, settings, fail_fast=fail_fast)
+    if not fail_fast or result["passed"]:
+        entry["_verification_certificate"] = (key, result)
+    return result
+
+
+
+def _verify_uncached(plan, settings, fail_fast=False):
     u0 = plan["u0"]
     worst_position, worst_velocity = 0., 0.
     monotonic, limits_ok, simultaneous = True, True, True
     for device, entry in plan["entries"]:
+        _check_deadline()
         index = entry["index"]
         track = device.tracks[index]
+        witness_cache, witness_key = _candidate_witness_cache(device,index,entry,u0,settings)
+        cached_witness = witness_cache.get(witness_key) if witness_cache is not None else None
+        if fail_fast and cached_witness is not None and u0 <= cached_witness[0]:
+            # 相同准备指令/时刻/初态/原表后继即相同actual轨迹，区间仍包含已超限点。
+            return {"max_position_error": cached_witness[1], "max_velocity_error": cached_witness[2],
+                    "entry_monotonic": True, "simultaneous_start": True,
+                    "limits_passed": True, "passed": False}
         sends = [(move["send_u"], move["move"]) for move in entry["moves"]]
         sends += [(u, command) for u, command in track.sends if u >= u0 - 1e-9]
         sends.sort(key=lambda item: item[0])
@@ -1129,35 +1646,42 @@ def _verify(plan, settings):
         simultaneous &= len(preparation) == 1 and abs(preparation[0]["send_u"] - plan["clock_start_u"]) <= 1e-8
         if entry["kind"] != "in_place":
             simultaneous &= bool(preparation) and abs(preparation[0]["send_u"] - plan["clock_start_u"]) <= 1e-8
-        checkpoints = {u0}
-        for trajectory in (actual, track):
-            checkpoints.update(value for segment in trajectory.segments for value in (segment.u0, segment.u1)
-                               if math.isfinite(value) and value >= u0)
-        checkpoints.add(max(checkpoints) + 1000)
-        ordered = sorted(checkpoints)
-        for left, right in zip(ordered, ordered[1:]):
-            aq, av = actual.state(left)
-            rq, rv = track.state(left)
-            acceleration = actual.segment_containing(left).a - track.segment_containing(left).a
-            if abs(acceleration) > 1e-12:
-                extremum = left - (av - rv) / acceleration * 1000
-                if left < extremum < right:
-                    checkpoints.add(extremum)
-        for u in checkpoints:
-            aq, av = actual.state(u)
-            rq, rv = track.state(u)
-            worst_position = max(worst_position, abs(aq - rq))
-            worst_velocity = max(worst_velocity, abs(av - rv))
+        stop_limits = ((settings["entry_position_tolerance"]+1e-9,
+                        _ENTRY_MATCH_VELOCITY_TOLERANCE+1e-9) if fail_fast else None)
+        witness = []
+        witness_limits = (settings["entry_position_tolerance"]+1e-9, _ENTRY_MATCH_VELOCITY_TOLERANCE+1e-9)
+        axis_position, axis_velocity = _trajectory_errors_sweep(actual,track,u0,stop_limits=stop_limits,
+                                                              witness_sink=witness,witness_limits=witness_limits)
+        if witness and witness_cache is not None:
+            previous = witness_cache.get(witness_key)
+            if previous is None or witness[0][0] > previous[0]:
+                if previous is None and len(witness_cache) >= 4096:
+                    witness_cache.pop(next(iter(witness_cache)))
+                witness_cache[witness_key] = witness[0]
+        worst_position = max(worst_position,axis_position)
+        worst_velocity = max(worst_velocity,axis_velocity)
+        if fail_fast and (worst_position > stop_limits[0] or worst_velocity > stop_limits[1]):
+            # 误差最大值只增不减：已有超限见证足以拒绝，不再扫描余下限制。
+            # 完全停在同一停车点的接后失败仍是可安全复用的未来失败证据。
+            aq, av = actual.state(u0)
+            if av == 0. and aq == entry["moves"][0]["move"]["pos"]:
+                device.rest_tail_failures.add((index, u0, aq))
+            return {"max_position_error": worst_position, "max_velocity_error": worst_velocity,
+                    "entry_monotonic": bool(monotonic), "simultaneous_start": bool(simultaneous),
+                    "limits_passed": bool(limits_ok), "passed": False}
         direction = (1 if entry["join"][1] > 0 else -1) if entry["join"][1] else (
             1 if entry["join"][0] >= device.current[index] else -1)
         for segment in actual.segments:
+            _check_deadline()
             left, right = max(segment.u0, plan["clock_start_u"]), segment.u1
             if right <= left or not math.isfinite(left):
                 continue
             if not math.isfinite(right):
                 right = left
-            positions = [segment.state(left)[0], segment.state(right)[0]]
-            velocities = [segment.state(left)[1], segment.state(right)[1]]
+            left_q, left_v = segment.state(left)
+            right_q, right_v = segment.state(right)
+            positions = [left_q,right_q]
+            velocities = [left_v,right_v]
             if segment.a:
                 zero = segment.u0 - segment.v0 / segment.a * 1000
                 if left < zero < right:
@@ -1175,6 +1699,7 @@ def _verify(plan, settings):
                 rounding_ms = max(_ARRIVAL_TOLERANCE_MS, 10 ** (-settings["entry_send_time_decimals"]))
                 simultaneous &= not (end > left + rounding_ms + 1e-7 and abs(segment.a) < 1e-10 and abs(segment.state(left)[1]) < 1e-10)
         for _, command in sends:
+            _check_deadline()
             limits_ok &= device.lower[index] - 1e-8 <= command["pos"] <= device.upper[index] + 1e-8
             limits_ok &= -214748364.8 <= command["pos"] <= 214748364.7
             limits_ok &= max(command[key] for key in ("vel", "accVel", "decVel")) <= _RATE_LIMIT + 1e-8
@@ -1183,6 +1708,11 @@ def _verify(plan, settings):
                                  ("decVel", device.reposition_deceleration[index])):
                 # 不存在的虚轴max=0仅允许当前位置保持；真实运动仍在上面按0能力验证。
                 limits_ok &= command[key] <= maximum + 1e-8 or (entry["kind"] == "in_place" and maximum == 0)
+    if (worst_position > settings["entry_position_tolerance"]+1e-9
+            or worst_velocity > _ENTRY_MATCH_VELOCITY_TOLERANCE+1e-9):
+        aq, av = actual.state(u0)
+        if av == 0. and aq == entry["moves"][0]["move"]["pos"]:
+            device.rest_tail_failures.add((index, u0, aq))
     return {"max_position_error": worst_position, "max_velocity_error": worst_velocity,
             "entry_monotonic": bool(monotonic), "simultaneous_start": bool(simultaneous),
             "limits_passed": bool(limits_ok),
@@ -1191,16 +1721,24 @@ def _verify(plan, settings):
                            and monotonic and simultaneous and limits_ok)}
 
 
+
 ###############################################################################
 # 九、对外入口
 ###############################################################################
 
 def calculate_nonforced_entry(parameters):
     """输入公共参数字典，返回接入方案；不修改输入。status：planned / infeasible / invalid_input。"""
+    token = _ENTRY_DEADLINE.set(_clock()+_CALCULATION_TIMEOUT_SECONDS)
     try:
-        return _calculate(parameters)
+        result = _calculate(parameters)
+        _check_deadline()
+        return result
+    except EntryCalculationTimeout:
+        return _timeout_result(parameters)
     except (ValueError, TypeError, KeyError, OverflowError) as error:
         return {"status": "invalid_input", "message": str(error), "algorithm_version": ALGORITHM_VERSION}
+    finally:
+        _ENTRY_DEADLINE.reset(token)
 
 
 def _calculate(parameters):
@@ -1215,7 +1753,8 @@ def _calculate(parameters):
     reverse = command["reverse"]
     direction = -1 if reverse else 1
     unit = settings["unit_ms"]
-    spans = [(piece[0][0], piece[-1][1]) for piece in (_pieces_of(model, unit) for model in models)]
+    parsed_pieces = [_pieces_of(model, unit) for model in models]
+    spans = [(pieces[0][0], pieces[-1][1]) for pieces in parsed_pieces]
     first = min(span[0] for span in spans)
     last = max(span[1] for span in spans)
     run_origin = last if reverse else first
@@ -1226,7 +1765,8 @@ def _calculate(parameters):
     def to_curve(run):
         return run_origin + direction * run
 
-    devices = [_Device(model, states, direction, run_origin, command["loop"], settings) for model in models]
+    devices = [_Device(model, states, direction, run_origin, command["loop"], settings, pieces)
+               for model,pieces in zip(models,parsed_pieces)]
 
     reference = command["stopped_time_ms"]
     clamped = False
@@ -1253,6 +1793,7 @@ def _calculate(parameters):
     else:
         mode = "current_segment_first" if reference is not None else "nearest_whole_action"
         for low, high, phase in _windows(devices, first, last, reverse, reference):
+            _check_deadline()
             if reference_window is None:
                 reference_window = [low, high]
             lower, upper = sorted((to_run(low), to_run(high)))
@@ -1282,6 +1823,7 @@ def _route(device):
 
 def _planned(devices, plan, command, settings, mode, reference, clamped, reference_window,
              selected_window, attempts, evaluated, to_curve):
+    _check_deadline()
     decimals = settings["entry_send_time_decimals"]
     u0 = plan["u0"]
     clock_start = plan["clock_start_u"]
@@ -1292,6 +1834,7 @@ def _planned(devices, plan, command, settings, mode, reference, clamped, referen
     verification = _verify(plan, settings)
     entry_moves, by_device = [], {}
     for device, entry in plan["entries"]:
+        _check_deadline()
         by_device.setdefault(id(device), (device, []))[1].append(entry)
         for move in entry["moves"]:
             entry_moves.append({
