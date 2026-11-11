@@ -27,7 +27,7 @@
     "models[].motor_num": "模型实轴/吊点数量；多点须与point_init_pos数量一致。",
     "models[].active_axes": "本模型参与原曲线的虚轴名称，H/P/Y；保留既有字段，不用于屏蔽非零系数。",
     "models[].max_motor_velocity": "本模型每个实轴允许的最大速度，单位mm/s；范围算法与本模型峰值比较。",
-    "models[].max_velocity_HPY": "虚轴最大速度能力，HPY顺序，单位mm/s、degree/s、degree/s。",
+    "models[].max_velocity_HPY": "虚轴最大速度，按H/P/Y顺序，单位mm/s、degree/s、degree/s。范围计算逐轴比较保存上限与原曲线峰速，再与电机和分类限制取最小倍率。必须提供三个有限非负数，0上限允许静止轴，运动轴上限为0时计算报错。",
     "models[].max_acceleration_HPY": "虚轴最大加速度能力，HPY顺序，单位mm/s²、degree/s²、degree/s²。",
     "models[].max_deceleration_HPY": "虚轴最大减速度能力，单位同加速度；当前PLC D=A，使用两者较小能力。",
     "models[].min_position_HPY": "HPY行程下限，单位mm、degree、degree。",
@@ -63,7 +63,7 @@
     "models[].betainit": "多点初始偏转角，单位degree。"
   },
   "_输出字段说明": {
-    "max_factor": "范围算法保存的原动作最大倍率，null仅与unlimited=true一起表示无有限上限。",
+    "max_factor": "原动作100%对应的最大倍率，取动作分类、各模型实轴和H/P/Y虚轴速度限制的最小值。null与unlimited=true一起表示无有限上限。",
     "unlimited": "范围是否没有有限倍率上限；必须与max_factor一起解释。",
     "action_category": "范围自动分类结果说明。",
     "action_signature": "原始完整models、完整settings、trajectory_run的SHA256；不得手工伪造或复用不匹配签名。",

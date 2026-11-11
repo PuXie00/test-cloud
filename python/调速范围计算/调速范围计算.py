@@ -1044,10 +1044,51 @@ def calculate_multi_piece_max_velocity(piece, geometry, time_unit_ms):
                 sequence += 1
                 heapq.heappush(heap,(-upper,sequence,a,b,child))
     return math.nextafter(max(best,retired,-heap[0][0] if heap else best),math.inf)
+def calculate_virtual_velocity_factor(models, time_unit_ms):
+    """按各模型H/P/Y原曲线峰速与保存的虚轴最大速度，计算共同倍率上限。"""
+    allowed_factor = math.inf
+    for model in models:
+        label = f"模型{model.get('model_id', '?')}"
+        supplied_limits = model.get("max_velocity_HPY")
+        if not isinstance(supplied_limits, (list, tuple)) or len(supplied_limits) != 3:
+            raise ValueError(f"{label}需要max_velocity_HPY，按H/P/Y提供三个虚轴最大速度")
+        limits = [float(value) for value in supplied_limits]
+        if any(isinstance(value, bool) for value in supplied_limits) or any(
+            not math.isfinite(value) or value < 0 for value in limits
+        ):
+            raise ValueError(f"{label}的max_velocity_HPY必须是三个有限非负数")
+        peaks = [0.0, 0.0, 0.0]
+        for segment in model["segments"]:
+            calculate_virtual_state(segment, segment["start_frame"], time_unit_ms)
+            for piece in segment.get("coefficient_segments", [segment]):
+                start_ms = float(piece["start_frame"])
+                end_ms = float(piece["end_frame"])
+                u_end = (end_ms - start_ms) / time_unit_ms
+                _, start_velocity = calculate_virtual_state(piece, start_ms, time_unit_ms)
+                _, end_velocity = calculate_virtual_state(piece, end_ms, time_unit_ms)
+                for axis in range(3):
+                    peak = max(abs(start_velocity[axis]), abs(end_velocity[axis]))
+                    c, d, e, f = (float(piece[name][axis]) for name in "cdef")
+                    acceleration = [2*c, 6*d*u_end, 12*e*u_end**2, 20*f*u_end**3]
+                    for fraction in find_unit_interval_roots(acceleration):
+                        frame_ms = start_ms + fraction * (end_ms - start_ms)
+                        _, velocity = calculate_virtual_state(piece, frame_ms, time_unit_ms)
+                        peak = max(peak, abs(velocity[axis]))
+                    if not math.isfinite(peak):
+                        raise ValueError(f"{label}的{'HPY'[axis]}轴原曲线峰速必须是有限数值")
+                    peaks[axis] = max(peaks[axis], peak)
+        for axis, peak in enumerate(peaks):
+            if peak > 0:
+                if limits[axis] == 0:
+                    raise ValueError(f"{label}的{'HPY'[axis]}轴最大速度为0，但原曲线包含该轴运动")
+                allowed_factor = min(allowed_factor, limits[axis] / peak)
+    return allowed_factor
+
+
 def calculate_velocity_adjust(models, time_unit_ms, classification_max_factor):
     """返回velocity_adjust，不修改模型参数，不输出中间结果。
 
-    models：模型列表，每个模型包含动作段、系数、几何参数和自身电机限速。
+    models：模型列表，每个模型包含动作段、系数、几何参数、实轴和虚轴限速。
     time_unit_ms：abcdef自变量每增加1对应的毫秒数，不是100ms采样间隔。
     classification_max_factor：分类上限，可升速时为math.inf，只能降速时为1.0。
     返回值是原动作100%对应的倍率，例如2.0表示200%；全静止时可能为math.inf。
@@ -1055,7 +1096,7 @@ def calculate_velocity_adjust(models, time_unit_ms, classification_max_factor):
     """
     # 第二步：计算各模型在原动作100%下的最大实轴速度，随后与各自限速比较。
     # 分类允许升速时为inf，只能降速时为1.0。
-    velocity_adjust = classification_max_factor
+    velocity_adjust = min(classification_max_factor, calculate_virtual_velocity_factor(models, time_unit_ms))
     # 只在本次计算中复用相同动作段的峰速，不跨请求保留旧结果。
     segment_velocity_cache = {}
     geometry_fields = {
