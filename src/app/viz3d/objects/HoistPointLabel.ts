@@ -52,9 +52,8 @@ export class HoistPointLabel implements Disposable {
   private style: LabelStyle = { bound: false, selected: false };
   private baseWidth = 1;
   private baseHeight = 1;
-  private boundCamera: Camera | null = null;
-  private activeCameraObserver: Observer<Scene> | null = null;
-  private viewMatrixObserver: Observer<Camera> | null = null;
+  /** 多格视口每格一台相机：每格渲染前按那台相机定大小 */
+  private beforeCameraRenderObserver: Observer<Camera> | null = null;
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -76,8 +75,10 @@ export class HoistPointLabel implements Disposable {
     this.plane.setEnabled(false);
     this.redraw();
 
-    this.activeCameraObserver = scene.onActiveCameraChanged.add(() => this.rebindCamera());
-    this.rebindCamera();
+    this.beforeCameraRenderObserver = scene.onBeforeCameraRenderObservable.add((camera) =>
+      this.syncSize(camera),
+    );
+    this.syncSize(scene.activeCamera);
   }
 
   setText(text: string): void {
@@ -104,39 +105,16 @@ export class HoistPointLabel implements Disposable {
   }
 
   dispose(): void {
-    if (this.viewMatrixObserver && this.boundCamera) {
-      this.boundCamera.onViewMatrixChangedObservable.remove(this.viewMatrixObserver);
-      this.viewMatrixObserver = null;
+    if (this.beforeCameraRenderObserver) {
+      this.scene.onBeforeCameraRenderObservable.remove(this.beforeCameraRenderObserver);
+      this.beforeCameraRenderObserver = null;
     }
-    if (this.activeCameraObserver) {
-      this.scene.onActiveCameraChanged.remove(this.activeCameraObserver);
-      this.activeCameraObserver = null;
-    }
-    this.boundCamera = null;
     this.plane.dispose(false, true);
     this.texture.dispose();
     this.material.dispose();
   }
 
-  private rebindCamera(): void {
-    const camera = this.scene.activeCamera ?? null;
-    if (camera === this.boundCamera) {
-      this.syncSize();
-      return;
-    }
-    if (this.viewMatrixObserver && this.boundCamera) {
-      this.boundCamera.onViewMatrixChangedObservable.remove(this.viewMatrixObserver);
-      this.viewMatrixObserver = null;
-    }
-    this.boundCamera = camera;
-    if (camera) {
-      this.viewMatrixObserver = camera.onViewMatrixChangedObservable.add(() => this.syncSize());
-    }
-    this.syncSize();
-  }
-
-  private syncSize(): void {
-    const camera = this.boundCamera ?? this.scene.activeCamera;
+  private syncSize(camera: Camera | null = this.scene.activeCamera): void {
     const baseSize = Math.max(this.baseWidth, this.baseHeight);
     if (!camera) {
       this.applyScaling(baseSize);

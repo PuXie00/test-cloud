@@ -121,8 +121,8 @@ export type PickMode = "object" | "motor";
 
 export type ViewPreset = "top" | "front" | "back" | "side" | "left" | "persp" | "iso";
 
-/** 工程落盘 / 视口恢复用的主相机状态 */
-export type SavedView = {
+/** 一格视口的相机状态 */
+export type SavedCameraView = {
   target: [number, number, number];
   alpha: number;
   beta: number;
@@ -130,13 +130,48 @@ export type SavedView = {
   orthoHalfHeight: number;
   preset: ViewPreset;
   focalLengthMm: number;
-  /** 地面网格总尺寸（米） */
-  gridSize: GridSizeM;
 };
 
 export type ViewportLayout = "single" | "dual" | "quad";
 
 export type ViewportSplit = { x: number; y: number };
+
+/**
+ * 视口格：main 是主透视格（单视图那一格，也是双视图、四视图的左上格），
+ * 其余按所在位置命名，每格的视角都可以自己改。
+ */
+export type ViewportCellId = "main" | "dualRight" | "quadTopRight" | "quadBottomLeft" | "quadBottomRight";
+
+export type SecondaryViewportCellId = Exclude<ViewportCellId, "main">;
+
+/** 工程落盘 / 视口恢复：顶层字段是主格相机，其余格和各页面布局可缺省 */
+export type SavedView = SavedCameraView & {
+  /** 地面网格总尺寸（米） */
+  gridSize: GridSizeM;
+  /** 主格以外各格的相机；缺省用该格默认视角 */
+  cells?: Partial<Record<SecondaryViewportCellId, SavedCameraView>>;
+  /** 单 / 双 / 四视图（所有页面共用一套）；缺省单视图 */
+  layout?: ViewportLayout;
+  /** 格间分隔比例；缺省各一半 */
+  split?: ViewportSplit;
+};
+
+/** 一格视口在区域里的位置（占整块画布的比例）与相机概况，供界面画格名和分隔条 */
+export type ViewportCellInfo = {
+  id: ViewportCellId;
+  rect: SlotRect;
+  preset: ViewPreset;
+  orthographic: boolean;
+  followTarget: string | null;
+};
+
+export type ViewportState = {
+  layout: ViewportLayout;
+  split: ViewportSplit;
+  activeCellId: ViewportCellId;
+  maximizedCellId: ViewportCellId | null;
+  cells: ViewportCellInfo[];
+};
 
 export type CameraPose = { position: Vec3; target: Vec3 };
 

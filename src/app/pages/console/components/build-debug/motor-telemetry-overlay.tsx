@@ -57,7 +57,8 @@ export const MotorTelemetryOverlay = () => {
       if (host) {
         const { clientWidth, clientHeight } = host;
         setAnchors(engine.getBoundHoistScreenPositions(clientWidth, clientHeight));
-        const pose = engine.getPose();
+        // 徽章画在标签格（主透视格），聚合距离按那一格的相机算
+        const pose = engine.getPose(engine.getLabelCellId());
         if (pose) {
           const dx = pose.position.x - pose.target.x;
           const dy = pose.position.y - pose.target.y;

@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
 import { useProject } from "@/app/project/use-project";
-import type { ToolMode } from "@/app/viz3d";
+import type { ToolMode, ViewportState } from "@/app/viz3d";
 import { useSetupEditState } from "../../hooks/axis-motion";
 import { pendingGoEntries } from "../../hooks/go-ready";
 import { useGoReady } from "../../hooks/go-ready-provider";
@@ -25,6 +25,7 @@ import { useViz3DContext } from "../Viz3DProvider";
 import { SequencePreviewBar } from "./sequence-preview-bar";
 import { ShapePresetPalette } from "./ShapePresetPalette";
 import { ViewMenu } from "./ViewMenu";
+import { ViewportCellsOverlay } from "./ViewportCellsOverlay";
 
 const MODE_BUTTONS: { mode: ToolMode; icon: LucideIcon; label: string }[] = [
   { mode: "select", icon: MousePointer2, label: "选择" },
@@ -164,7 +165,14 @@ const CurrentPoseToggle = () => {
  * 预览时 3D 窗口和实时画面要一眼分得开：整圈描边 + 顶部「预览」标签（长按预览没有进度条时也有）。
  * 用 secondary（非实时）色，和实时运行的绿色、选中的青色都区分开。
  */
-export const PreviewFrame = ({ sequenceId }: { sequenceId: number }) => {
+export const PreviewFrame = ({
+  sequenceId,
+  belowCellNames = false,
+}: {
+  sequenceId: number;
+  /** 多格时顶行格名在 top-9，标签再往下放，免得盖住右上格的格名 */
+  belowCellNames?: boolean;
+}) => {
   const { currentProject } = useProject();
   const name = currentProject?.document?.motion.actionSequences.find(
     (sequence) => sequence.id === sequenceId,
@@ -178,7 +186,10 @@ export const PreviewFrame = ({ sequenceId }: { sequenceId: number }) => {
       />
       <div
         role="status"
-        className="pointer-events-none absolute left-1/2 top-11 flex max-w-[80%] -translate-x-1/2 items-center gap-1.5 rounded-full bg-secondary px-3 py-1 text-body-sm font-semibold text-secondary-foreground"
+        className={cn(
+          "pointer-events-none absolute left-1/2 flex max-w-[80%] -translate-x-1/2 items-center gap-1.5 rounded-full bg-secondary px-3 py-1 text-body-sm font-semibold text-secondary-foreground",
+          belowCellNames ? "top-[4.5rem]" : "top-11",
+        )}
       >
         <span className="inline-block size-2 shrink-0 rounded-full bg-secondary-foreground" aria-hidden />
         <span className="truncate">{name ? `预览「${name}」` : "预览"}</span>
@@ -198,12 +209,16 @@ export const ViewportOverlay = () => {
   const isControl = activeNav === "control";
   const isSequences = activeNav === "sequences";
   const [mode, setMode] = useState<ToolMode>(() => engine.getMode());
+  const [multiCell, setMultiCell] = useState(() => (engine.getViewportState()?.cells.length ?? 1) > 1);
 
   useEffect(() => {
     const handleMode = (next: ToolMode) => setMode(next);
+    const handleViewport = (state: ViewportState) => setMultiCell(state.cells.length > 1);
     engine.events.on("modeChange", handleMode);
+    engine.events.on("viewportChange", handleViewport);
     return () => {
       engine.events.off("modeChange", handleMode);
+      engine.events.off("viewportChange", handleViewport);
     };
   }, [engine]);
 
@@ -215,6 +230,7 @@ export const ViewportOverlay = () => {
 
   return (
     <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden rounded-md">
+      <ViewportCellsOverlay toolPaletteVisible={showToolMode} onPointerGuard={stopPointer} />
       {showToolMode && (
         <>
           <div
@@ -250,7 +266,7 @@ export const ViewportOverlay = () => {
 
       <div
         onPointerDown={stopPointer}
-        className="pointer-events-auto flex items-center justify-between px-2 py-1"
+        className="pointer-events-auto relative z-10 flex items-center justify-between px-2 py-1"
         style={{
           backgroundColor: "rgba(167, 164, 163, 0.14)",
         }}
@@ -269,7 +285,7 @@ export const ViewportOverlay = () => {
         ) : null}
       </div>
       {(isControl || isSequences) && preview.sequenceId !== null ? (
-        <PreviewFrame sequenceId={preview.sequenceId} />
+        <PreviewFrame sequenceId={preview.sequenceId} belowCellNames={multiCell} />
       ) : null}
       {(isControl || isSequences) && preview.sequenceId !== null && !preview.holdMode ? (
         <SequencePreviewBar />

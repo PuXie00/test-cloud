@@ -11,7 +11,8 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import type { ScreenRect } from "@/app/viz3d";
+import type { ScreenRect, ViewportCellId } from "@/app/viz3d";
+import { clipRectToCell } from "@/app/viz3d/viewports/ViewportLayout";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -48,6 +49,7 @@ import {
   resolveViewportDragFinish,
   shouldFinishViewportDrag,
 } from "./viewport-pointer-gestures";
+import { resolveViewportKeyCommand } from "./viewport-key-commands";
 
 type DragState = {
   startX: number;
@@ -56,6 +58,8 @@ type DragState = {
   startOffsetY: number;
   pointerId: number;
   additive: boolean;
+  /** 框选只在起点所在格里进行 */
+  cellId: ViewportCellId | null;
 };
 
 const toCanvasRelativeRect = (
@@ -100,6 +104,8 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<DragState | null>(null);
+  /** 光标在画布上的位置（画布坐标）；离开画布为 null，快捷键作用于光标所在格 */
+  const pointerRef = useRef<{ x: number; y: number } | null>(null);
   const lastContextMenuPickMmRef = useRef<{ x: number; z: number } | null>(null);
   const {
     copySelection,
@@ -140,11 +146,30 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
 
     engine.mount(canvas);
 
+    // 滚轮缩放光标所在格，不切当前格
     const handleWheel = (event: WheelEvent) => {
-      engine.applyWheelZoom(event.deltaY);
+      pointerRef.current = { x: event.offsetX, y: event.offsetY };
+      engine.applyWheelZoomAt(event.offsetX, event.offsetY, event.deltaY);
       event.preventDefault();
     };
     canvas.addEventListener("wheel", handleWheel, { passive: false });
+
+    // 捕获阶段先切当前格，Babylon 的画布监听（目标阶段）才拿到这次按下，轨道输入就挂在这一格上。
+    // 多指时第二根手指不切格，免得手势中途换相机。
+    const handlePointerDownCapture = (event: PointerEvent) => {
+      if (event.target !== canvas || !event.isPrimary) return;
+      engine.activateCellAt(event.offsetX, event.offsetY);
+    };
+    container.addEventListener("pointerdown", handlePointerDownCapture, { capture: true });
+
+    const handlePointerMove = (event: PointerEvent) => {
+      pointerRef.current = { x: event.offsetX, y: event.offsetY };
+    };
+    const handlePointerLeave = () => {
+      pointerRef.current = null;
+    };
+    canvas.addEventListener("pointermove", handlePointerMove);
+    canvas.addEventListener("pointerleave", handlePointerLeave);
 
     const observer = new ResizeObserver(() => {
       engine.resize();
@@ -153,6 +178,10 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
 
     return () => {
       canvas.removeEventListener("wheel", handleWheel);
+      container.removeEventListener("pointerdown", handlePointerDownCapture, { capture: true });
+      canvas.removeEventListener("pointermove", handlePointerMove);
+      canvas.removeEventListener("pointerleave", handlePointerLeave);
+      pointerRef.current = null;
       observer.disconnect();
       engine.unmount();
       appliedViewProjectIdRef.current = null;
@@ -198,13 +227,35 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
       );
     };
 
+    /** 光标所在格，光标不在画布上时为当前格 */
+    const targetCell = (): ViewportCellId | undefined => {
+      const pointer = pointerRef.current;
+      return (pointer && engine.getCellIdAt(pointer.x, pointer.y)) || undefined;
+    };
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (isEditableTarget(event.target)) return;
 
       // `.` 聚焦选中物体：任意模式均可用，且不依赖画布焦点（选择可在树/面板中完成）。
       if (event.key === ".") {
         event.preventDefault();
-        engine.focusSelection();
+        engine.focusSelection(targetCell());
+        return;
+      }
+
+      // 视角快捷键（同 Blender）只在光标停在 3D 上或画布有焦点时生效，不抢别处的按键
+      const command = resolveViewportKeyCommand(event);
+      if (command && (pointerRef.current || document.activeElement === el)) {
+        event.preventDefault();
+        const cellId = targetCell() ?? engine.getViewportState()?.activeCellId;
+        if (command.kind === "toggleQuad") {
+          engine.setLayout(engine.getLayout() === "quad" ? "single" : "quad");
+        } else if (cellId && command.kind === "view") {
+          engine.setCellView(cellId, command.preset);
+        } else if (cellId && command.kind === "toggleOrtho") {
+          const cell = engine.getViewportState()?.cells.find((entry) => entry.id === cellId);
+          engine.setCellOrthographic(cellId, !(cell?.orthographic ?? false));
+        }
         return;
       }
 
@@ -281,6 +332,7 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
       startOffsetY: event.nativeEvent.offsetY,
       pointerId: event.pointerId,
       additive: event.shiftKey,
+      cellId: engine.getCellIdAt(event.nativeEvent.offsetX, event.nativeEvent.offsetY),
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -296,14 +348,14 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
       setBoxRect(null);
       return;
     }
-    setBoxRect(
-      toCanvasRelativeRect(
-        drag.startOffsetX,
-        drag.startOffsetY,
-        event.nativeEvent.offsetX,
-        event.nativeEvent.offsetY,
-      ),
+    const rect = toCanvasRelativeRect(
+      drag.startOffsetX,
+      drag.startOffsetY,
+      event.nativeEvent.offsetX,
+      event.nativeEvent.offsetY,
     );
+    const cellRect = drag.cellId ? engine.getCellRect(drag.cellId) : null;
+    setBoxRect(cellRect ? clipRectToCell(rect, cellRect) : rect);
   };
 
   const finishDrag = (event: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -331,6 +383,7 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
           event.nativeEvent.offsetY,
         ),
         action.mode,
+        drag.cellId ?? undefined,
       );
     } else {
       engine.pickAt(event.nativeEvent.offsetX, event.nativeEvent.offsetY, action.mode, true);

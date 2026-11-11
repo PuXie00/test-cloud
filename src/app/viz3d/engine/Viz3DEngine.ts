@@ -2,7 +2,7 @@ import "../babylon/side-effects";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine";
-import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Camera } from "@babylonjs/core/Cameras/camera";
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
@@ -39,14 +39,15 @@ import type {
   HoistTravelInput,
   SavedView,
   ViewPreset,
+  ViewportCellId,
   ViewportLayout,
   ViewportSplit,
+  ViewportState,
   VirtualAxisValues,
   Viz3DColorMap,
   Viz3DOptions,
 } from "../types";
 import { DEFAULT_GRID_SIZE_M, normalizeGridSizeM } from "../helpers/grid-config";
-import { applyCameraFollow } from "../cameras/CameraFollow";
 import { mergeFocusBounds, resolveFocusFit } from "../cameras/camera-focus";
 import { VideoRecorder, isRecordingSupported } from "../output/VideoRecorder";
 import { canEditObjectFromStatus } from "../state/object-edit-lock";
@@ -67,6 +68,8 @@ import { PickController } from "../picking/PickController";
 import { objectModeSelection } from "../picking/object-mode-pick";
 import { raycastGroundPlane } from "../picking/raycast-ground";
 import { ViewportManager } from "../viewports/ViewportManager";
+import { clipRectToCell } from "../viewports/ViewportLayout";
+import { projectWorldToCell } from "../viewports/project-to-cell";
 import { ViewportSaver } from "../cameras/ViewportSaver";
 import { alignByBounds, distributeByBounds, type AlignBoundsItem } from "../tools/SceneBuildTools";
 import {
@@ -104,7 +107,6 @@ import { isTransformToolMode } from "../tool-mode";
 import {
   getWorldBounds,
   getWorldPosition,
-  projectWorldToScreen,
   type WorldBounds,
 } from "../babylon/utils";
 import type { SceneObjectHandle } from "../objects/SceneObjectRegistry";
@@ -143,6 +145,8 @@ export type Viz3DEventMap = {
   viewChange: ViewPreset;
   gridSizeChange: GridSizeM;
   layoutChange: ViewportLayout;
+  /** 布局、分隔、当前格、最大化或某格视角 / 投影 / 跟随变化 */
+  viewportChange: ViewportState;
   modeChange: ToolMode;
   transformStart: { id: string };
   transformEnd: TransformEndPayload;
@@ -173,7 +177,6 @@ export class Viz3DEngine implements Disposable {
   private readonly viewportSaver = new ViewportSaver();
   private mode: ToolMode = "select";
   private hoistLabelMode: HoistLabelMode = DEFAULT_HOIST_LABEL_MODE;
-  private followTarget: string | null = null;
   private videoRecorder: VideoRecorder | null = null;
   private colors = readThemeColors(domGetCssVar);
   private telemetryController: TelemetryController | null = null;
@@ -482,20 +485,93 @@ export class Viz3DEngine implements Disposable {
     this.motorSelectionManager?.clear();
   }
 
-  getPose(): CameraPose | null {
-    return this.viewportManager?.getPose() ?? null;
+  /** 相机位姿；缺省为当前格 */
+  getPose(cellId?: ViewportCellId): CameraPose | null {
+    if (!this.viewportManager) return null;
+    return cellId ? this.viewportManager.getCell(cellId).getPose() : this.viewportManager.getPose();
   }
 
+  /** 屏幕标签和调试徽章所在的格（主透视格；最大化别的格时为那一格） */
+  getLabelCellId(): ViewportCellId {
+    return this.viewportManager?.getLabelCellId() ?? "main";
+  }
+
+  /** 当前格切透视 / 正交 */
   setOrthographicEnabled(enabled: boolean): void {
-    this.viewportManager?.setOrthographicEnabled(enabled);
+    if (!this.viewportManager) return;
+    this.setCellOrthographic(this.viewportManager.getActiveCellId(), enabled);
   }
 
   isOrthographic(): boolean {
-    return this.viewportManager?.isOrthographic() ?? false;
+    return this.viewportManager?.getActiveCell().isOrthographic() ?? false;
   }
 
   getViewPreset(): ViewPreset {
-    return this.viewportManager?.getViewPreset() ?? "persp";
+    return this.viewportManager?.getActiveCell().getPreset() ?? "persp";
+  }
+
+  getViewportState(): ViewportState | null {
+    return this.viewportManager?.getState() ?? null;
+  }
+
+  setActiveCell(id: ViewportCellId): void {
+    this.viewportManager?.setActiveCell(id);
+  }
+
+  /** 画布坐标所在的格设为当前格；返回该格 */
+  activateCellAt(canvasX: number, canvasY: number): ViewportCellId | null {
+    const id = this.getCellIdAt(canvasX, canvasY);
+    if (id) {
+      this.setActiveCell(id);
+    }
+    return id;
+  }
+
+  getCellIdAt(canvasX: number, canvasY: number): ViewportCellId | null {
+    return this.viewportManager?.getCellIdAt(canvasX, canvasY, this.getLocalSlotRect()) ?? null;
+  }
+
+  /** 格子在画布里的矩形（CSS px） */
+  getCellRect(id: ViewportCellId): SlotRect | null {
+    return this.viewportManager?.getCellRect(id, this.getLocalSlotRect()) ?? null;
+  }
+
+  toggleMaximizeCell(id: ViewportCellId): void {
+    this.viewportManager?.toggleMaximize(id);
+  }
+
+  setCellView(id: ViewportCellId, preset: ViewPreset): void {
+    if (!this.viewportManager) return;
+    this.viewportManager.setCellView(id, preset);
+    if (id === this.viewportManager.getActiveCellId()) {
+      this.events.emit("viewChange", preset);
+    }
+  }
+
+  setCellOrthographic(id: ViewportCellId, enabled: boolean): void {
+    if (!this.viewportManager) return;
+    this.viewportManager.setCellOrthographic(id, enabled);
+    if (id === this.viewportManager.getActiveCellId()) {
+      this.events.emit("viewChange", this.viewportManager.getCell(id).getPreset());
+    }
+  }
+
+  setCellFollowTarget(id: ViewportCellId, objectId: string | null): void {
+    this.viewportManager?.setCellFollowTarget(id, objectId);
+  }
+
+  private emitViewportState(): void {
+    const state = this.viewportManager?.getState();
+    if (state) {
+      this.events.emit("viewportChange", state);
+    }
+  }
+
+  private emitLayoutChangeIfNeeded(before: ViewportLayout): void {
+    const after = this.viewportManager?.getLayout();
+    if (after && after !== before) {
+      this.events.emit("layoutChange", after);
+    }
   }
 
   getSavedView(): SavedView | null {
@@ -511,10 +587,12 @@ export class Viz3DEngine implements Disposable {
       this.pendingSavedView = view;
       return;
     }
+    const before = this.viewportManager.getLayout();
     this.viewportManager.applySavedView(view);
     this.applyGridSizeFromView(view);
     this.pendingSavedView = null;
-    this.events.emit("viewChange", view.preset);
+    this.emitLayoutChangeIfNeeded(before);
+    this.events.emit("viewChange", this.getViewPreset());
   }
 
   private applyGridSizeFromView(view: SavedView): void {
@@ -527,19 +605,23 @@ export class Viz3DEngine implements Disposable {
     }
   }
 
-  /** 截主画布为 PNG data URL（最长边约 960px） */
+  /** 截当前格为 PNG data URL（最长边约 960px）；多格时只截当前那一格 */
   captureCoverPngBase64(): string | null {
     if (!this.canvas) return null;
     const src = this.canvas;
     const maxEdge = 960;
-    const sw = src.width || src.clientWidth;
-    const sh = src.height || src.clientHeight;
+    const canvasW = src.width || src.clientWidth;
+    const canvasH = src.height || src.clientHeight;
+    if (canvasW <= 0 || canvasH <= 0) return null;
+    const crop = this.resolveCoverCrop(canvasW, canvasH);
+    const sw = crop.width;
+    const sh = crop.height;
     if (sw <= 0 || sh <= 0) return null;
     const scale = Math.min(1, maxEdge / Math.max(sw, sh));
     const dw = Math.max(1, Math.round(sw * scale));
     const dh = Math.max(1, Math.round(sh * scale));
     try {
-      if (dw === sw && dh === sh) {
+      if (dw === canvasW && dh === canvasH) {
         return src.toDataURL("image/png");
       }
       const offscreen = document.createElement("canvas");
@@ -547,11 +629,35 @@ export class Viz3DEngine implements Disposable {
       offscreen.height = dh;
       const ctx = offscreen.getContext("2d");
       if (!ctx) return src.toDataURL("image/png");
-      ctx.drawImage(src, 0, 0, dw, dh);
+      ctx.drawImage(src, crop.left, crop.top, sw, sh, 0, 0, dw, dh);
       return offscreen.toDataURL("image/png");
     } catch {
       return null;
     }
+  }
+
+  /** 当前格在画布像素坐标里的范围；单视图就是整块画布 */
+  private resolveCoverCrop(canvasW: number, canvasH: number): SlotRect {
+    const full = { left: 0, top: 0, width: canvasW, height: canvasH };
+    const manager = this.viewportManager;
+    const cssW = this.canvas?.clientWidth ?? 0;
+    const cssH = this.canvas?.clientHeight ?? 0;
+    if (!manager || cssW <= 0 || cssH <= 0) return full;
+    const rect = manager.getCellRect(manager.getActiveCellId(), {
+      left: 0,
+      top: 0,
+      width: cssW,
+      height: cssH,
+    });
+    if (!rect) return full;
+    const sx = canvasW / cssW;
+    const sy = canvasH / cssH;
+    return {
+      left: Math.round(rect.left * sx),
+      top: Math.round(rect.top * sy),
+      width: Math.round(rect.width * sx),
+      height: Math.round(rect.height * sy),
+    };
   }
 
   /**
@@ -640,13 +746,22 @@ export class Viz3DEngine implements Disposable {
     }
   }
 
-  /** 已绑电机吊点的屏幕投影（供调试徽章锚定） */
+  /** 已绑电机吊点在标签格（主透视格）里的投影（画布坐标，供调试徽章锚定） */
   getBoundHoistScreenPositions(
     viewportWidth: number,
     viewportHeight: number,
   ): Array<{ motorId: string; objectId: string; x: number; y: number; visible: boolean }> {
-    const scene = this.sceneManager?.scene;
-    if (!scene || !this.objectRegistry) return [];
+    const manager = this.viewportManager;
+    if (!manager || !this.objectRegistry) return [];
+    const labelCellId = manager.getLabelCellId();
+    const cellRect = manager.getCellRect(labelCellId, {
+      left: 0,
+      top: 0,
+      width: viewportWidth,
+      height: viewportHeight,
+    });
+    if (!cellRect) return [];
+    const camera = manager.getCell(labelCellId).camera;
     const results: Array<{ motorId: string; objectId: string; x: number; y: number; visible: boolean }> = [];
     for (const handle of this.objectRegistry.list()) {
       const config = handle.getConfig();
@@ -656,7 +771,7 @@ export class Viz3DEngine implements Disposable {
         const root = handle.getHoistPointRoot(axis.motorId);
         if (!root) continue;
         const world = getWorldPosition(root);
-        const screen = projectWorldToScreen(world, scene, viewportWidth, viewportHeight);
+        const screen = projectWorldToCell(world, camera, cellRect);
         results.push({
           motorId: axis.motorId,
           objectId: handle.id,
@@ -669,14 +784,18 @@ export class Viz3DEngine implements Disposable {
     return results;
   }
 
+  /** 当前格切到预设视角 */
   setView(preset: ViewPreset): void {
-    this.viewportManager?.setView(preset);
-    this.events.emit("viewChange", preset);
+    if (!this.viewportManager) return;
+    this.setCellView(this.viewportManager.getActiveCellId(), preset);
   }
 
+  /** 单 / 双 / 四视图（所有页面共用一套） */
   setLayout(layout: ViewportLayout): void {
-    this.viewportManager?.setLayout(layout);
-    this.events.emit("layoutChange", layout);
+    if (!this.viewportManager) return;
+    const before = this.viewportManager.getLayout();
+    this.viewportManager.setLayout(layout);
+    this.emitLayoutChangeIfNeeded(before);
   }
 
   getLayout(): ViewportLayout {
@@ -693,7 +812,6 @@ export class Viz3DEngine implements Disposable {
 
   setMode(mode: ToolMode): void {
     this.mode = mode;
-    this.viewportManager?.setMode(mode);
 
     if (isTransformToolMode(mode)) {
       this.ensureTransformController();
@@ -709,25 +827,21 @@ export class Viz3DEngine implements Disposable {
     this.events.emit("modeChange", mode);
   }
 
+  /** 菜单打开等场合临时停掉轨道输入；恢复时各格按正交 / 跟随重新锁旋转 */
   setOrbitEnabled(enabled: boolean): void {
     this.viewportManager?.setOrbitEnabled(enabled);
-    if (enabled) {
-      this.syncFollowOrbitConstraints();
-    }
   }
 
-  private syncFollowOrbitConstraints(): void {
-    // 正交视角必须锁 alpha/beta；勿被「菜单关闭后恢复 orbit」覆盖
-    if (this.viewportManager?.isOrthographic()) {
-      this.viewportManager.setOrbitRotateEnabled(false);
-      return;
-    }
-    this.viewportManager?.setOrbitRotateEnabled(this.followTarget == null);
-  }
-
+  /** 当前格滚轮缩放 */
   applyWheelZoom(deltaY: number): void {
-    this.viewportManager?.cancelFocusAnimation();
-    this.viewportManager?.getControls()?.applyWheelZoom(deltaY);
+    this.viewportManager?.getActiveCell().applyWheelZoom(deltaY);
+  }
+
+  /** 光标所在格滚轮缩放（不切当前格） */
+  applyWheelZoomAt(canvasX: number, canvasY: number, deltaY: number): void {
+    const id = this.getCellIdAt(canvasX, canvasY);
+    if (!id || !this.viewportManager) return;
+    this.viewportManager.getCell(id).applyWheelZoom(deltaY);
   }
 
   getMode(): ToolMode {
@@ -826,14 +940,14 @@ export class Viz3DEngine implements Disposable {
     return payloads;
   }
 
-  /** 当前主视图里 +X、+Z 在屏幕上的朝向，对齐和均布的图标跟着它转 */
+  /** 当前格里 +X、+Z 在屏幕上的朝向，对齐和均布的图标跟着它转 */
   getAxisScreenDirections(): AxisScreenDirections {
     return this.axisScreenDirections;
   }
 
   /** 每帧算一次，只在跨过 45° 档位时通知，转视角时界面不会每帧刷新 */
   private syncAxisScreenDirections(): void {
-    const camera = this.viewportManager?.getPrimaryCamera();
+    const camera = this.viewportManager?.getActiveCamera();
     if (!camera) {
       return;
     }
@@ -948,13 +1062,14 @@ export class Viz3DEngine implements Disposable {
     return this.viewportSaver.list();
   }
 
+  /** 当前格跟随物体（每格各自跟随） */
   setFollowTarget(id: string | null): void {
-    this.followTarget = id;
-    this.syncFollowOrbitConstraints();
+    if (!this.viewportManager) return;
+    this.setCellFollowTarget(this.viewportManager.getActiveCellId(), id);
   }
 
   getFollowTarget(): string | null {
-    return this.followTarget;
+    return this.viewportManager?.getActiveCell().getFollowTarget() ?? null;
   }
 
   setFocalLength(mm: number): void {
@@ -1128,21 +1243,36 @@ export class Viz3DEngine implements Disposable {
     }
   }
 
+  /**
+   * 框选：只在一格里算（缺省为框起点所在格），框超出格子的部分裁掉。
+   * screenRect 是画布坐标（CSS px）。
+   */
   pickInRect(
     screenRect: ScreenRect,
     selectionMode: "replace" | "additive" = "replace",
+    cellId?: ViewportCellId,
   ): string[] {
     if (!this.objectRegistry || !this.selectionManager || !this.viewportManager || !this.sceneManager) {
       return [];
     }
 
-    const camera = this.viewportManager.getPrimaryCamera();
-    const projectionRect = this.getLocalSlotRect();
+    const slotRect = this.getLocalSlotRect();
+    const id =
+      cellId ??
+      this.viewportManager.getCellIdAt(screenRect.left, screenRect.top, slotRect) ??
+      this.viewportManager.getActiveCellId();
+    const cellRect = this.viewportManager.getCellRect(id, slotRect);
+    const clipped = cellRect ? clipRectToCell(screenRect, cellRect) : null;
+    if (!cellRect || !clipped) {
+      return selectionMode === "additive" ? this.getSelection() : [];
+    }
+    const camera = this.viewportManager.getCell(id).camera;
     const projectCorners = (box: WorldBounds) =>
       boundsCorners(box).flatMap((corner) => {
-        const projected = projectBoundsCorner(corner, camera, projectionRect);
-        return projected ? [projected] : [];
+        const projected = projectWorldToCell(corner, camera, cellRect);
+        return projected.inFront ? [{ x: projected.x, y: projected.y }] : [];
       });
+    screenRect = clipped;
 
     if (this.pickMode === "motor") {
       const items = this.objectRegistry.list().flatMap((handle) =>
@@ -1234,6 +1364,7 @@ export class Viz3DEngine implements Disposable {
     return payload;
   }
 
+  /** 当前格聚焦到物体 */
   focusObject(id: string): void {
     const handle = this.objectRegistry?.get(id);
     if (!handle || !this.viewportManager) {
@@ -1245,13 +1376,14 @@ export class Viz3DEngine implements Disposable {
     this.viewportManager.focusOnWorldPoint(center, distance);
   }
 
-  /** 聚焦当前选中物体（支持多选），保留观察方向，平滑缩放居中 */
-  focusSelection(): void {
+  /** 聚焦当前选中物体（支持多选），保留观察方向，平滑缩放居中；缺省作用于当前格 */
+  focusSelection(cellId?: ViewportCellId): void {
     const viewportManager = this.viewportManager;
     const objectRegistry = this.objectRegistry;
     if (!viewportManager || !objectRegistry) {
       return;
     }
+    const cell = viewportManager.getCell(cellId ?? viewportManager.getActiveCellId());
 
     const selectedIds = this.getSelection();
     if (selectedIds.length === 0) {
@@ -1268,16 +1400,15 @@ export class Viz3DEngine implements Disposable {
       return;
     }
 
-    const camera = viewportManager.getPrimaryCamera();
-    const slotRect = this.getLocalSlotRect();
-    const aspect = slotRect.height > 0 ? slotRect.width / slotRect.height : 1;
+    const rect = viewportManager.getCellRect(cell.id, this.getLocalSlotRect());
+    const aspect = rect && rect.height > 0 ? rect.width / rect.height : 1;
     const fit = resolveFocusFit(bounds, {
-      fov: camera.fov,
+      fov: cell.camera.fov,
       aspect,
-      orthographic: viewportManager.isOrthographic(),
+      orthographic: cell.isOrthographic(),
     });
 
-    viewportManager.focusAnimated(fit.center, fit.distance, fit.orthoHalfHeight);
+    cell.focusAnimated(fit.center, fit.distance, fit.orthoHalfHeight);
   }
 
   pickAt(
@@ -1427,8 +1558,12 @@ export class Viz3DEngine implements Disposable {
     if (this.pendingSavedView && this.viewportManager) {
       this.viewportManager.applySavedView(this.pendingSavedView);
       this.applyGridSizeFromView(this.pendingSavedView);
-      this.events.emit("viewChange", this.pendingSavedView.preset);
       this.pendingSavedView = null;
+    }
+    if (this.viewportManager) {
+      this.events.emit("layoutChange", this.viewportManager.getLayout());
+      this.events.emit("viewChange", this.getViewPreset());
+      this.emitViewportState();
     }
 
     this.babylonEngine?.runRenderLoop(() => {
@@ -1492,8 +1627,7 @@ export class Viz3DEngine implements Disposable {
     this.sceneManager.attachEnvironment();
 
     const scene = this.sceneManager.scene;
-    this.viewportManager = new ViewportManager(scene, () => {});
-    this.viewportManager.setMode(this.mode);
+    this.viewportManager = new ViewportManager(scene, () => this.emitViewportState());
 
     this.colors = readThemeColors(domGetCssVar);
     this.modelLoader = new ModelLoader(scene);
@@ -1572,32 +1706,29 @@ export class Viz3DEngine implements Disposable {
       return;
     }
 
-    if (this.followTarget) {
-      const handle = this.objectRegistry?.get(this.followTarget);
-      const controls = this.viewportManager.getControls();
-      if (handle && controls) {
-        const center = worldBoundsCenter(readObjectBounds(handle));
-        applyCameraFollow(
-          this.viewportManager.getPrimaryCamera(),
-          controls,
-          center,
-        );
+    this.viewportManager.forEachFollowingCell((cell, objectId) => {
+      const handle = this.objectRegistry?.get(objectId);
+      if (handle) {
+        cell.applyFollow(worldBoundsCenter(readObjectBounds(handle)));
       }
-    }
+    });
 
     this.selectionBoxManager?.update();
     this.syncTransformCenterMarker();
 
     const slotRect = this.getLocalSlotRect();
     this.viewportManager.tick(performance.now());
-    this.viewportManager.render(this.babylonEngine, this.sceneManager.scene, slotRect);
+    this.viewportManager.render(this.sceneManager.scene, slotRect);
     this.syncAxisScreenDirections();
 
-    if (this.slotElement && slotRect.width > 0 && slotRect.height > 0) {
+    // 屏幕标签固定画在主透视格（不随当前格跳；多格时 DOM 数量不翻倍）
+    const labelCellId = this.viewportManager.getLabelCellId();
+    const labelRect = this.viewportManager.getCellRect(labelCellId, slotRect);
+    if (this.slotElement && labelRect && labelRect.width > 0 && labelRect.height > 0) {
       this.telemetryController?.syncLabelPositions();
       this.sceneManager.renderLabels(
-        this.viewportManager.getPrimaryCamera(),
-        slotRect,
+        this.viewportManager.getCell(labelCellId).camera,
+        labelRect,
         this.slotElement,
       );
     }
@@ -2077,27 +2208,6 @@ const boundsCorners = (bounds: WorldBounds): Vec3[] => [
   { x: bounds.min.x, y: bounds.max.y, z: bounds.max.z },
   { x: bounds.max.x, y: bounds.max.y, z: bounds.max.z },
 ];
-
-const projectBoundsCorner = (
-  corner: Vec3,
-  camera: Camera,
-  projectionRect: SlotRect,
-): { x: number; y: number } | null => {
-  const viewport = camera.viewport.toGlobal(projectionRect.width, projectionRect.height);
-  const projected = Vector3.Project(
-    new Vector3(corner.x, corner.y, corner.z),
-    Matrix.Identity(),
-    camera.getTransformationMatrix(),
-    viewport,
-  );
-  if (projected.z < 0 || projected.z > 1) {
-    return null;
-  }
-  return {
-    x: projected.x + projectionRect.left,
-    y: projected.y + projectionRect.top,
-  };
-};
 
 const sceneContainer = (scene: Scene) => ({
   add: (object: unknown) => {

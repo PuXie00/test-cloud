@@ -85,8 +85,9 @@ export class SceneManager implements Disposable {
     void height;
   }
 
-  renderLabels(camera: Camera, slotRect: SlotRect, host: HTMLElement): void {
-    this.labelRenderer.render(this.scene, camera, slotRect, host);
+  /** cell：当前格在画布里的矩形，标签只画在这一格 */
+  renderLabels(camera: Camera, cell: SlotRect, host: HTMLElement): void {
+    this.labelRenderer.render(camera, cell, host);
   }
 
   applyColors(colors: Viz3DColorMap): void {

@@ -3,47 +3,31 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/app/components/ui/dropdown-menu";
 import { cn } from "@/app/components/ui/utils";
-import type { GridSizeM, HoistLabelMode, ViewPreset, ViewportLayout } from "@/app/viz3d";
+import type { GridSizeM, HoistLabelMode, ViewportLayout } from "@/app/viz3d";
 import {
   parseHoistLabelMode,
   readStoredHoistLabelMode,
   writeStoredHoistLabelMode,
 } from "@/app/viz3d";
-import { isOrthographicViewPreset } from "@/app/viz3d/cameras/ViewPresets";
 import { GRID_SIZE_PRESETS, isGridSizeM } from "@/app/viz3d/helpers/grid-config";
 import { useViz3DContext } from "../Viz3DProvider";
+import { LAYOUT_OPTIONS } from "./viewport-cell-labels";
 
-const MENU_CONTENT_CLASS =
+export const MENU_CONTENT_CLASS =
   "z-[200] min-w-[11rem] overflow-visible border border-border bg-card p-1 text-foreground shadow-[0_4px_24px_rgba(0,0,0,0.4)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-100 data-[state=open]:duration-75 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-100 data-[state=closed]:duration-75 data-[side=bottom]:slide-in-from-top-0 data-[side=left]:slide-in-from-right-0 data-[side=right]:slide-in-from-left-0 data-[side=top]:slide-in-from-bottom-0";
 
 const FLYOUT_PANEL_CLASS =
   "absolute left-full top-0 z-[201] ml-0.5 min-w-[8rem] rounded-md border border-border bg-card p-1 text-foreground shadow-[0_4px_24px_rgba(0,0,0,0.4)]";
 
-const MENU_ITEM_CLASS = "text-body-sm";
+export const MENU_ITEM_CLASS = "text-body-sm";
 
 const SUB_TRIGGER_CLASS =
   "flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-body-sm outline-hidden transition-colors hover:bg-accent hover:text-accent-foreground";
-
-const LAYOUT_OPTIONS: { label: string; layout: ViewportLayout }[] = [
-  { label: "单视图", layout: "single" },
-  { label: "双视图", layout: "dual" },
-  { label: "四视图", layout: "quad" },
-];
-
-const VIEW_OPTIONS: { label: string; preset: ViewPreset }[] = [
-  { label: "顶视图", preset: "top" },
-  { label: "前视图", preset: "front" },
-  { label: "右视图", preset: "side" },
-  { label: "左视图", preset: "left" },
-  { label: "后视图", preset: "back" },
-];
 
 const GRID_SIZE_OPTIONS: { label: string; size: GridSizeM }[] = GRID_SIZE_PRESETS.map((size) => ({
   label: `${size} m`,
@@ -55,7 +39,7 @@ const LABEL_MODE_OPTIONS: { label: string; mode: HoistLabelMode }[] = [
   { label: "电机序号", mode: "motor" },
 ];
 
-type FlyoutId = "region" | "view" | "grid" | "label";
+type FlyoutId = "region" | "grid" | "label";
 
 type ViewMenuFlyoutProps = {
   label: string;
@@ -129,28 +113,26 @@ type ViewMenuProps = {
   onPointerGuard?: (event: { stopPropagation(): void }) => void;
 };
 
+/**
+ * 顶栏「视图」：只放整块区域的设置（分区布局、网格、标签）。
+ * 视角、透视 / 正交、聚焦、跟随是每格自己的，在各格左上角的格名菜单里。
+ */
 export const ViewMenu = ({ onPointerGuard }: ViewMenuProps) => {
   const engine = useViz3DContext();
   const [layout, setLayout] = useState<ViewportLayout>(() => engine.getLayout());
-  const [activeView, setActiveView] = useState<ViewPreset | null>(null);
   const [gridSize, setGridSize] = useState<GridSizeM>(() => engine.getGridSize());
   const [labelMode, setLabelMode] = useState<HoistLabelMode>(() => engine.getHoistLabelMode());
-  const [selection, setSelection] = useState<string[]>(() => engine.getSelection());
-  const [followTarget, setFollowTarget] = useState<string | null>(() => engine.getFollowTarget());
   const [openFlyout, setOpenFlyout] = useState<FlyoutId | null>(null);
 
   useEffect(() => {
     const handleLayout = (next: ViewportLayout) => setLayout(next);
-    const handleView = (next: ViewPreset) => setActiveView(next);
     const handleGridSize = (next: GridSizeM) => setGridSize(next);
-    const handleSelection = (ids: string[]) => setSelection(ids);
     const handleLabelMode = (next: HoistLabelMode) => setLabelMode(next);
 
     engine.events.on("layoutChange", handleLayout);
-    engine.events.on("viewChange", handleView);
     engine.events.on("gridSizeChange", handleGridSize);
-    engine.events.on("selectionChange", handleSelection);
     engine.events.on("hoistLabelModeChange", handleLabelMode);
+    setLayout(engine.getLayout());
     setGridSize(engine.getGridSize());
 
     const stored = readStoredHoistLabelMode();
@@ -159,16 +141,10 @@ export const ViewMenu = ({ onPointerGuard }: ViewMenuProps) => {
 
     return () => {
       engine.events.off("layoutChange", handleLayout);
-      engine.events.off("viewChange", handleView);
       engine.events.off("gridSizeChange", handleGridSize);
-      engine.events.off("selectionChange", handleSelection);
       engine.events.off("hoistLabelModeChange", handleLabelMode);
     };
   }, [engine]);
-
-  const primaryId = selection[0];
-  const isFollowing = followTarget != null;
-  const canFollow = Boolean(primaryId);
 
   const handleOpenChange = (next: boolean) => {
     if (!next) setOpenFlyout(null);
@@ -177,10 +153,6 @@ export const ViewMenu = ({ onPointerGuard }: ViewMenuProps) => {
 
   const handleLayout = (value: string) => {
     engine.setLayout(value as ViewportLayout);
-  };
-
-  const handleView = (preset: ViewPreset) => {
-    engine.setView(preset);
   };
 
   const handleGridSize = (value: string) => {
@@ -195,17 +167,6 @@ export const ViewMenu = ({ onPointerGuard }: ViewMenuProps) => {
     engine.setHoistLabelMode(next);
     writeStoredHoistLabelMode(next);
     setLabelMode(next);
-  };
-
-  const handleToggleFollow = () => {
-    if (isFollowing) {
-      engine.setFollowTarget(null);
-      setFollowTarget(null);
-      return;
-    }
-    if (!primaryId) return;
-    engine.setFollowTarget(primaryId);
-    setFollowTarget(primaryId);
   };
 
   const openFlyoutId = (id: FlyoutId) => () => setOpenFlyout(id);
@@ -251,25 +212,6 @@ export const ViewMenu = ({ onPointerGuard }: ViewMenuProps) => {
         </ViewMenuFlyout>
 
         <ViewMenuFlyout
-          label="视图"
-          open={openFlyout === "view"}
-          onOpen={openFlyoutId("view")}
-          onClose={() => setOpenFlyout((current) => (current === "view" ? null : current))}
-          onPointerGuard={onPointerGuard}
-        >
-          <DropdownMenuRadioGroup
-            value={activeView ?? ""}
-            onValueChange={(value) => handleView(value as ViewPreset)}
-          >
-            {VIEW_OPTIONS.map(({ label, preset }) => (
-              <DropdownMenuRadioItem key={preset} value={preset} className={MENU_ITEM_CLASS}>
-                {label}
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
-        </ViewMenuFlyout>
-
-        <ViewMenuFlyout
           label="网格"
           open={openFlyout === "grid"}
           onOpen={openFlyoutId("grid")}
@@ -300,38 +242,6 @@ export const ViewMenu = ({ onPointerGuard }: ViewMenuProps) => {
             ))}
           </DropdownMenuRadioGroup>
         </ViewMenuFlyout>
-
-        <DropdownMenuSeparator className="bg-border/60" />
-
-        <DropdownMenuItem
-          className={MENU_ITEM_CLASS}
-          onSelect={() => {
-            if (isOrthographicViewPreset(engine.getViewPreset())) {
-              engine.setView("persp");
-            } else {
-              engine.setOrthographicEnabled(false);
-            }
-          }}
-        >
-          透视
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          className={MENU_ITEM_CLASS}
-          onSelect={() => engine.setOrthographicEnabled(true)}
-        >
-          正交
-        </DropdownMenuItem>
-
-        <DropdownMenuSeparator className="bg-border/60" />
-
-        <DropdownMenuItem
-          className={cn(MENU_ITEM_CLASS, isFollowing && "text-primary")}
-          disabled={!canFollow && !isFollowing}
-          title={!primaryId && !isFollowing ? "请先选中一个对象" : undefined}
-          onSelect={handleToggleFollow}
-        >
-          {isFollowing ? "停止跟随" : "跟随选中对象"}
-        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -1,5 +1,4 @@
 import { Color3 } from "@babylonjs/core/Maths/math.color";
-import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
@@ -66,30 +65,4 @@ export const disposeNodeHierarchy = (root: TransformNode): void => {
     return;
   }
   root.dispose(false, true);
-};
-
-export const projectWorldToScreen = (
-  world: Vec3,
-  scene: Scene,
-  viewportWidth: number,
-  viewportHeight: number,
-): { x: number; y: number; visible: boolean } => {
-  const camera = scene.activeCamera;
-  if (!camera) {
-    return { x: 0, y: 0, visible: false };
-  }
-  const projected = Vector3.Project(
-    new Vector3(world.x, world.y, world.z),
-    Matrix.Identity(),
-    scene.getTransformMatrix(),
-    camera.viewport.toGlobal(viewportWidth, viewportHeight),
-  );
-  const visible =
-    projected.z >= 0 &&
-    projected.z <= 1 &&
-    projected.x >= 0 &&
-    projected.x <= viewportWidth &&
-    projected.y >= 0 &&
-    projected.y <= viewportHeight;
-  return { x: projected.x, y: projected.y, visible };
 };

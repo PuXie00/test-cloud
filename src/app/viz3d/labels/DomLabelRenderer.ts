@@ -1,7 +1,7 @@
 import type { Camera } from "@babylonjs/core/Cameras/camera";
-import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
-import type { Scene } from "@babylonjs/core/scene";
+import type { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { SlotRect } from "../types";
+import { projectWorldToCell } from "../viewports/project-to-cell";
 
 export type DomLabelEntry = {
   element: HTMLElement;
@@ -26,12 +26,11 @@ export class DomLabelRenderer {
     entry.element.remove();
   }
 
-  ensureOverlay(width: number, height: number, host: HTMLElement): HTMLDivElement {
+  /** 标签层盖在一格上（多格时只在当前格），超出格子的标签被裁掉 */
+  ensureOverlay(cell: SlotRect, host: HTMLElement): HTMLDivElement {
     if (!this.overlay) {
       this.overlay = document.createElement("div");
       this.overlay.style.position = "absolute";
-      this.overlay.style.top = "0";
-      this.overlay.style.left = "0";
       this.overlay.style.pointerEvents = "none";
       this.overlay.style.zIndex = "10";
       this.overlay.style.overflow = "hidden";
@@ -40,45 +39,40 @@ export class DomLabelRenderer {
       host.appendChild(this.overlay);
     }
     this.host = host;
-    this.overlay.style.width = `${width}px`;
-    this.overlay.style.height = `${height}px`;
+    const style = this.overlay.style;
+    const left = `${cell.left}px`;
+    const top = `${cell.top}px`;
+    const width = `${cell.width}px`;
+    const height = `${cell.height}px`;
+    if (style.left !== left) style.left = left;
+    if (style.top !== top) style.top = top;
+    if (style.width !== width) style.width = width;
+    if (style.height !== height) style.height = height;
     return this.overlay;
   }
 
-  render(scene: Scene, camera: Camera, slotRect: SlotRect, host: HTMLElement): void {
-    const { width, height } = slotRect;
-    if (width <= 0 || height <= 0) {
+  /** cell：要画标签的那一格在画布里的矩形（CSS px）；camera 必须是这一格的相机 */
+  render(camera: Camera, cell: SlotRect, host: HTMLElement): void {
+    if (cell.width <= 0 || cell.height <= 0) {
       return;
     }
-    this.ensureOverlay(width, height, host);
-    const engine = scene.getEngine();
-    const renderWidth = engine.getRenderWidth();
-    const renderHeight = engine.getRenderHeight();
-    const scaleX = renderWidth > 0 ? width / renderWidth : 1;
-    const scaleY = renderHeight > 0 ? height / renderHeight : 1;
-    const transformMatrix = scene.getTransformMatrix();
-    const viewport = camera.viewport.toGlobal(renderWidth, renderHeight);
+    this.ensureOverlay(cell, host);
+    const local: SlotRect = { left: 0, top: 0, width: cell.width, height: cell.height };
 
     for (const label of this.labels) {
       if (!label.visible) {
         label.element.style.display = "none";
         continue;
       }
-      const projected = Vector3.Project(
-        label.worldPosition,
-        Matrix.Identity(),
-        transformMatrix,
-        viewport,
-      );
-      const inFront = projected.z >= 0 && projected.z <= 1;
-      if (!inFront) {
+      const projected = projectWorldToCell(label.worldPosition, camera, local);
+      if (!projected.inFront) {
         label.element.style.display = "none";
         continue;
       }
       label.element.style.display = "block";
       label.element.style.position = "absolute";
-      label.element.style.left = `${projected.x * scaleX}px`;
-      label.element.style.top = `${projected.y * scaleY}px`;
+      label.element.style.left = `${projected.x}px`;
+      label.element.style.top = `${projected.y}px`;
       label.element.style.transform = "translate(-50%, -50%)";
     }
     void this.host;

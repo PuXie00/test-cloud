@@ -20,9 +20,11 @@ export class OrbitControlsAdapter {
   private rotateEnabled = true;
   private attached = false;
 
-  constructor(camera: ArcRotateCamera, onChange: () => void) {
+  /** enabled=false 时先不挂输入（多格视口里只有当前格挂着） */
+  constructor(camera: ArcRotateCamera, onChange: () => void, enabled = true) {
     this.camera = camera;
     this.onChange = onChange;
+    this.enabled = enabled;
     this.camera.panningSensibility = PERSPECTIVE_PANNING_SENSIBILITY;
     this.camera.useNaturalPinchZoom = false;
     this.camera.wheelPrecision = 120;
