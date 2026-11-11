@@ -6,10 +6,11 @@ import {
   capturePreparedPoses,
   enabledAxesMatchStart,
   evaluateStartGate,
+  isSignificantMove,
   preparedPosesMatchTelemetry,
   remainingProgramMs,
 } from "./initial-pose-gate";
-import { fixtureObjects, fixtureSequence, fourPointFixture } from "./nearest-start.fixture";
+import { fixtureNonforcedSequence, fixtureObjects, fourPointFixture } from "./nearest-start.fixture";
 
 const singlePointObject = (
   overrides: Partial<ControlledObjectConfig> = {},
@@ -143,8 +144,11 @@ describe("evaluateStartGate", () => {
     });
     if (result.status !== "at-start") return;
     expect(result.plan.members).toHaveLength(1);
+    // 非强制每台设备三轴都有准备 Move，一起下发；单点物体没有 P/Y：pos 为实时值、速度 0（不下发）
     expect(result.plan.members[0]!.axes).toEqual([
-      expect.objectContaining({ axis: "v1", from: 10.5, to: 10 }),
+      expect.objectContaining({ axis: "v1", from: 10.5, to: 10, joinVelocity: 0 }),
+      expect.objectContaining({ axis: "v2", from: 40, to: 40, entryMove: { pos: 40, vel: 0, accVel: 0, decVel: 0 } }),
+      expect.objectContaining({ axis: "v3", from: 50, to: 50, entryMove: { pos: 50, vel: 0, accVel: 0, decVel: 0 } }),
     ]);
     expect(result.plan.prepareTimeMs).toBe(Math.ceil(result.plan.transitionSec * 1000));
   });
@@ -182,12 +186,18 @@ describe("evaluateStartGate", () => {
     expect(result.totalSeconds).toBeCloseTo(result.transitionSeconds + 4, 9);
   });
 
-  it("joins at a later keyframe with nearest on, so the total can be shorter", () => {
+  it("joins near the end at speed with nearest on, so the total can be shorter", () => {
     const result = gate(sequence, 390, { nearest: true });
     expect(result.status).toBe("transition");
     if (result.status !== "transition") return;
-    expect(result.plan.targetFrameMs).toBe(4000);
-    expect(result.totalSeconds).toBeCloseTo(result.transitionSeconds, 9);
+    expect(result.plan.targetFrameMs).toBeGreaterThan(3000);
+    expect(result.plan.targetFrameMs).toBeLessThan(4000);
+    // 非强制接在曲线运动中：助跑后带速接上，不在关键帧停着等
+    expect(result.plan.members[0]!.axes[0]!.joinVelocity).toBeGreaterThan(0);
+    expect(result.totalSeconds).toBeCloseTo(
+      result.transitionSeconds + (4000 - result.plan.targetFrameMs) / 1000,
+      9,
+    );
     expect(result.totalSeconds).toBeLessThan(result.programSeconds);
   });
 
@@ -211,7 +221,7 @@ describe("evaluateStartGate", () => {
 
   it("plans the mixed hoist fixture with every member", () => {
     const result = evaluateStartGate({
-      sequence: fixtureSequence(false),
+      sequence: fixtureNonforcedSequence(),
       objects: fixtureObjects(),
       motors: [],
       telemetryByObjectId: new Map([[1, { h: 120, p: 0, y: 0 }]]),
@@ -377,16 +387,23 @@ describe("evaluateStartGate from a specified frame", () => {
     });
   });
 
-  it("joins a non-forced action at the nearest keyframe from the frame along the direction", () => {
+  it("joins a non-forced action exactly at the specified frame, or reports that it cannot", () => {
     const sequence = roundTripSequence(false);
-    expect(gate(sequence, 210, { specifiedFrameMs: 500 })).toMatchObject({ plan: { targetFrameMs: 2000 } });
     expect(gate(sequence, 210, { specifiedFrameMs: 2000 })).toMatchObject({
       status: "at-start",
       plan: { targetFrameMs: 2000 },
     });
+    const rising = gate(sequence, 10, { specifiedFrameMs: 500 });
+    expect(rising).toMatchObject({ status: "transition", plan: { targetFrameMs: 500 } });
+    if (rising.status === "transition") expect(rising.plan.members[0]!.axes[0]!.joinVelocity).toBeGreaterThan(0);
     expect(gate(sequence, 10, { reverse: true, specifiedFrameMs: 3000 })).toMatchObject({
-      plan: { targetFrameMs: 0, direction: -1 },
+      status: "transition",
+      plan: { targetFrameMs: 3000, direction: -1 },
     });
+    // 设备已在接入点前面，一条准备 Move 追不上
+    const ahead = gate(sequence, 210, { specifiedFrameMs: 500 });
+    expect(ahead.status).toBe("error");
+    if (ahead.status === "error") expect(ahead.message).toMatch(/^指定帧无法接入/);
   });
 
   it("keeps an out-of-range frame inside the action", () => {
@@ -432,7 +449,13 @@ describe("axes the sequence never sets", () => {
     const result = gateAt(200, 7);
     expect(result.status).toBe("transition");
     if (result.status !== "transition") return;
-    const axes = result.plan.members.flatMap((member) => member.axes.map((move) => move.axis));
-    expect(axes).toEqual(["v1"]);
+    const axes = result.plan.members.flatMap((member) => member.axes);
+    expect(axes.filter(isSignificantMove).map((move) => move.axis)).toEqual(["v1"]);
+    // 不设定的摆动轴也随三轴准备 Move 下发，但目标就是当前位置
+    expect(axes.find((move) => move.axis === "v2")).toMatchObject({
+      from: 7,
+      to: 7,
+      entryMove: expect.objectContaining({ pos: 7 }),
+    });
   });
 });

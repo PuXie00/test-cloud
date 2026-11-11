@@ -11,7 +11,7 @@ import { entryFramesOf, type EntryFrames, type NearestStartPlan } from "./neares
 /**
  * 准备弹窗里操作者可选的接入方式，全部映射到就近算法已有的参数：
  * nearest 就近（有参考帧时就是“从停下处继续”）、boundary 从头开始（反向从末尾）、
- * frame 指定位置（强制正好从这一帧开始；非强制落到沿方向最近的原关键帧）。
+ * frame 指定位置（强制、非强制都正好从这一帧开始，接不上就报错）。
  */
 export type StartEntryChoice =
   | { kind: "nearest" }
@@ -56,10 +56,16 @@ export type StartEntryOutcome =
 
 /** 算法报错转成操作者看得懂的话；原文留作详细原因 */
 export const describeEntryError = (message: string): string => {
-  if (/均无可执行接入方案/.test(message)) return "沿运行方向找不到能接入的位置";
+  if (/计算超时/.test(message)) return "计算超时，可改选从头开始或指定位置";
+  if (/原帧表.*(超过最大能力|超出协议上限|超出行程)/.test(message)) return "动作里有超出设备能力或行程的运动，在它之前接不上";
+  if (/最多比参考帧靠后/.test(message)) return "停下处附近接不上，可改选从头开始或指定位置";
+  if (/均无可执行接入方案|运行方向上没有可接入的帧/.test(message)) return "沿运行方向找不到能接入的位置";
   if (/没有可执行的共同关键帧|没有候选关键帧/.test(message)) return "沿运行方向没有能接入的关键帧";
-  if (/当前位置已超出.*行程/.test(message)) return "有设备当前位置超出行程";
-  if (/超出虚轴行程/.test(message)) return "接入点超出设备行程";
+  if (/当前位置(已)?超出.*行程/.test(message)) return "有设备当前位置超出行程";
+  if (/超出虚轴行程|接入位置超出行程/.test(message)) return "接入点超出设备行程";
+  if (/还在运动/.test(message)) return "有设备还在运动，停稳后再准备";
+  if (/^指定帧无法接入/.test(message)) return "这个位置接不上，可换一个位置或改选从头开始";
+  if (/^起点无法接入/.test(message)) return "无法从起点开始，可改选就近或指定位置";
   if (/速度必须大于0|速度为0|速度不能为0/.test(message)) return "有设备的速度参数为 0，无法计算移动";
   if (/缺少受控物体/.test(message)) return "动作里有设备不在当前工程中";
   if (/无法解析/.test(message)) return "动作数据有误，无法计算";
@@ -103,40 +109,24 @@ export const startEntryFrames = (input: StartEntryInput): (EntryFrames & { total
   }
 };
 
-/** 强制轨迹指定位置的步进 */
+/** 指定位置的步进 */
 export const ENTRY_FRAME_STEP_MS = 100;
 
-/**
- * 指定位置 − / +：强制按 0.1 秒步进，落在 [首帧, 末帧]；非强制在原关键帧之间跳。
- * 非强制从不在关键帧上的位置出发时，先跳到那一侧最近的关键帧。
- */
-export const stepEntryFrame = (
-  frames: EntryFrames,
-  frameMs: number,
-  delta: -1 | 1,
-  forced: boolean,
-): number => {
-  if (forced || frames.keyframesMs.length === 0) {
-    const stepped = Math.round(frameMs / ENTRY_FRAME_STEP_MS + delta) * ENTRY_FRAME_STEP_MS;
-    return Math.min(Math.max(stepped, frames.firstMs), frames.lastMs);
-  }
-  const keyframes = frames.keyframesMs;
-  if (delta > 0) return keyframes.find((frame) => frame > frameMs + 0.5) ?? keyframes[keyframes.length - 1]!;
-  return [...keyframes].reverse().find((frame) => frame < frameMs - 0.5) ?? keyframes[0]!;
+/** 指定位置 − / +：按 0.1 秒步进，落在 [首帧, 末帧] */
+export const stepEntryFrame = (frames: EntryFrames, frameMs: number, delta: -1 | 1): number => {
+  const stepped = Math.round(frameMs / ENTRY_FRAME_STEP_MS + delta) * ENTRY_FRAME_STEP_MS;
+  return Math.min(Math.max(stepped, frames.firstMs), frames.lastMs);
 };
 
-/**
- * 在时间轴上点的位置：非强制吸到最近的原关键帧；强制靠近关键帧（总长 2% 以内）时吸过去，
- * 否则按 0.1 秒取整。
- */
-export const pickEntryFrame = (frames: EntryFrames, frameMs: number, forced: boolean): number => {
+/** 在时间轴上点的位置：靠近关键帧（总长 2% 以内）时吸过去，否则按 0.1 秒取整 */
+export const pickEntryFrame = (frames: EntryFrames, frameMs: number): number => {
   const span = Math.max(1, frames.lastMs - frames.firstMs);
   const clamped = Math.min(Math.max(frameMs, frames.firstMs), frames.lastMs);
   let nearest: number | null = null;
   for (const frame of frames.keyframesMs) {
     if (nearest === null || Math.abs(frame - clamped) < Math.abs(nearest - clamped)) nearest = frame;
   }
-  if (nearest !== null && (!forced || Math.abs(nearest - clamped) <= span * 0.02)) return nearest;
+  if (nearest !== null && Math.abs(nearest - clamped) <= span * 0.02) return nearest;
   const rounded = Math.round(clamped / ENTRY_FRAME_STEP_MS) * ENTRY_FRAME_STEP_MS;
   return Math.min(Math.max(rounded, frames.firstMs), frames.lastMs);
 };

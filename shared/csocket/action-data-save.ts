@@ -48,8 +48,9 @@ export type PlcCompiledAction = {
  *   （曲线上本该到的值；序列不控制的轴是准备时的实时值）。
  * - 反向的帧表按倒走的曲线单独生成，time 仍是原曲线时刻。
  * - 中途接入（就近帧）：各轴从接入帧的下一帧（反向为上一帧）往回找第一条 vel > 0 的立即下发，
- *   之后照常逐帧。
+ *   之后照常逐帧。接入帧之前怎么准备（GO 时的三轴准备 Move、按计时到接入帧）见 SyncMoveStartPlan。
  * - 调速倍率 k（GO 时）：time / k，vel × k，accVel、decVel × k²，走出的就是按时间缩放的同一条曲线。
+ *   有接入计划时，准备阶段按 100% 走，倍率从接入帧起才生效（见 SyncMoveStartPlan 第 5 条）。
  * - 运行中改倍率 k1 → k2：剩余帧按 k2 重新排时间；当前生效的 move 立刻按 k2 重发，但这段运动剩下的
  *   move（到下一条 vel > 0 且 passVel = 0 之前）减速度按 max(k1, k2)² 缩放且只增不减，
  *   否则降倍率时可能来不及停在 pos；vel > 0 且 passVel = 0 的 move 要等轴停在上一个 pos 后再发
@@ -92,6 +93,8 @@ export type ActionStartPlan = {
       velocity: number
       acceleration: number
       deceleration: number
+      /** 非强制：GO 时原样下发的准备 Move（pos 为停车目标，不一定是接入点） */
+      entryMove?: { pos: number; vel: number; accVel: number; decVel: number }
     }[]
   }[]
 }

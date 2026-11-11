@@ -561,7 +561,8 @@ export const goSequence = async (args: {
   const runDirection = toPlcRunDirection(args.reverse === true);
 
   try {
-    // 非强制的 GO（syncMovebegin）不带速度，PLC 按 100% 起步，先调到推子速度
+    // 非强制的 GO（syncMovebegin）不带速度，先把推子倍率发下去。有接入计划时 C++ 按 100% 准备，
+    // 到接入帧才用这个倍率（SyncMoveStartPlan 第 5 条）
     if (!found.sequence.trajectoryMode) {
       await transport.setSpeed?.({
         actionId: found.sequence.id,

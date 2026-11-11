@@ -163,6 +163,9 @@ const StartEntryBody = ({
   const outcome = outcomeOf(selected);
   const recommended = outcomeOf(defaultChoice.kind);
   const moving = outcome.ok && planMoves(outcome.plan);
+  // 非强制接在曲线运动中：设备不停下等待，助跑后带速接上
+  const joinsAtSpeed =
+    outcome.ok && outcome.plan.members.some((member) => member.axes.some((move) => (move.joinVelocity ?? 0) !== 0));
 
   const startWord = reverse ? "动作末尾" : "动作起点";
   const reason = (() => {
@@ -196,11 +199,15 @@ const StartEntryBody = ({
     const at = formatFrame(outcome.plan.targetFrameMs);
     if (chained) {
       return moving
-        ? "确认后立即开始：设备先移动到接入点，到位后一起开始动作。"
+        ? joinsAtSpeed
+          ? "确认后立即开始：设备一起起步，接入时已跟上动作速度，之后照动作运行。"
+          : "确认后立即开始：设备先移动到接入点，到位后一起开始动作。"
         : `确认后立即从 ${at}开始动作。`;
     }
     return moving
-      ? "确认后准备，设备不会动；按 GO 时设备先移动到接入点，到位后一起开始动作。"
+      ? joinsAtSpeed
+        ? "确认后准备，设备不会动；按 GO 时设备一起起步，接入时已跟上动作速度，之后照动作运行。"
+        : "确认后准备，设备不会动；按 GO 时设备先移动到接入点，到位后一起开始动作。"
       : `确认后准备，设备不会动；按 GO 时从 ${at}开始动作。`;
   })();
 
@@ -209,22 +216,19 @@ const StartEntryBody = ({
     const rect = event.currentTarget.getBoundingClientRect();
     if (rect.width <= 0) return;
     const fraction = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
-    setFrameMs(pickEntryFrame(frames, fraction * totalMs, forced));
+    setFrameMs(pickEntryFrame(frames, fraction * totalMs));
     setSelected("frame");
   };
 
   const step = (delta: -1 | 1) => {
     if (!frames) return;
-    setFrameMs((current) => stepEntryFrame(frames, current, delta, forced));
+    setFrameMs((current) => stepEntryFrame(frames, current, delta));
     setSelected("frame");
   };
 
   const specifiedHint = (() => {
-    if (selected !== "frame") return forced ? "任意时间点" : "只能接在关键帧";
-    if (!forced && specified.ok && Math.abs(specified.plan.targetFrameMs - frameMs) > 0.5) {
-      return `选的是 ${formatFrame(frameMs)}，非强制轨迹实际从 ${formatFrame(specified.plan.targetFrameMs)}的关键帧接入`;
-    }
-    return forced ? "按 − / + 每次 0.1 秒，或点时间轴" : "按 − / + 换关键帧，或点时间轴";
+    if (selected !== "frame") return "任意时间点";
+    return "按 − / + 每次 0.1 秒，或点时间轴";
   })();
 
   return (
@@ -326,7 +330,7 @@ const StartEntryBody = ({
             <div className="flex items-center justify-end gap-2 px-1">
               <button
                 type="button"
-                aria-label={forced ? "提前 0.1 秒" : "上一关键帧"}
+                aria-label="提前 0.1 秒"
                 onClick={() => step(-1)}
                 className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-input-background text-foreground hover:bg-accent"
               >
@@ -340,7 +344,7 @@ const StartEntryBody = ({
               </span>
               <button
                 type="button"
-                aria-label={forced ? "推后 0.1 秒" : "下一关键帧"}
+                aria-label="推后 0.1 秒"
                 onClick={() => step(1)}
                 className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-input-background text-foreground hover:bg-accent"
               >

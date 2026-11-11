@@ -4,6 +4,9 @@
 搜索连续曲线候选，验证共同时间的位置/有符号速度以及其后整段自然续跑。
 使用真实最大V/A/D，不用默认值覆盖；最终参数0.1精度，未参与轴保留实际位置。
 并非每个指定帧都能用单Move自然接续，无方案时返回infeasible，不输出多Move补救。
+原帧表里超能力/超行程的Move之前（含）不接入（预检，不再逐帧回放）；有停止参考帧时，
+接入帧沿运行方向最多比参考帧靠后entry_max_skip_ms（默认3000ms，参考帧之前的接入点不受限）。
+有参考帧时只搜当前段和运行方向后续段，不回头兜底到动作起点；接不上返回infeasible。
 """
 
 import bisect
@@ -16,7 +19,7 @@ from time import perf_counter as _clock
 from pathlib import Path
 from collections import OrderedDict
 
-ALGORITHM_VERSION = "nonforced_single_move_join_20261110_fast_5s"
+ALGORITHM_VERSION = "nonforced_single_move_join_20261110_fast_5s_skip_limit"
 AXIS_NAMES = ("H", "P", "Y")
 COEFFICIENT_NAMES = ("a", "b", "c", "d", "e", "f")
 _EPS = 1e-9
@@ -43,6 +46,9 @@ DEFAULT_SETTINGS = {
     "entry_acceleration_source": "max",
     # 结果里附上从曲线还原出的 Move 帧表（便于与上位机下发的对照）
     "include_move_table": False,
+    # 就近且有停止参考帧时，接入帧沿运行方向最多比参考帧靠后多少毫秒（null为不限）；
+    # 参考帧之前的接入点不受此限
+    "entry_max_skip_ms": 3000,
 }
 
 
@@ -693,6 +699,8 @@ def _settings_of(parameters):
             raise ValueError(f"{key}须为布尔值")
     if settings["entry_acceleration_source"] not in ("max", "default"):
         raise ValueError("entry_acceleration_source只能是max或default")
+    if settings["entry_max_skip_ms"] is not None and _number(settings["entry_max_skip_ms"], "entry_max_skip_ms") < 0:
+        raise ValueError("entry_max_skip_ms不能为负数")
     return settings
 
 
@@ -828,6 +836,39 @@ class _Device:
                 track = AxisTrack(self.current[axis],[])
             self.tracks.append(track)
         self.moves = any(self.active[axis] and self.tracks[axis].sends for axis in range(3))
+        # 帧表能力预检：接入后要执行的原表Move超能力/超行程时，与准备方式无关，_verify必然失败。
+        # 记下每轴最后一条这样的Move（运行时刻），在它之前或同时的接入点直接判不可行。
+        self.table_limit_u = [-math.inf]*3
+        self.table_limit_reasons = [None]*3
+        for axis, track in enumerate(self.tracks):
+            for u, command in track.sends:
+                problem = _table_move_problem(command, self, axis)
+                if problem is not None:
+                    self.table_limit_u[axis] = u
+                    self.table_limit_reasons[axis] = f"原帧表{_ms_text(run_origin+direction*u)}ms处Move的{problem}"
+
+
+def _ms_text(value):
+    return format(round(value, 3), ".3f").rstrip("0").rstrip(".")
+
+
+def _table_move_problem(command, device, index):
+    """原表Move是否必然通不过_verify的指令检查；口径与_verify相同。
+
+    能力为0的轴在原地保持时_verify另有放行，与准备方式有关，这里不判，仍交给_verify。
+    """
+    if not device.lower[index]-1e-8 <= command["pos"] <= device.upper[index]+1e-8:
+        return f"目标{_ms_text(command['pos'])}超出行程"
+    if not -214748364.8 <= command["pos"] <= 214748364.7:
+        return f"目标{_ms_text(command['pos'])}超出协议范围"
+    for key, maximum in (("vel", device.reposition_velocity[index]),
+                         ("accVel", device.reposition_acceleration[index]),
+                         ("decVel", device.reposition_deceleration[index])):
+        if command[key] > _RATE_LIMIT+1e-8:
+            return f"{key}={_ms_text(command[key])}超出协议上限{_RATE_LIMIT}"
+        if maximum > 0 and command[key] > maximum+1e-8:
+            return f"{key}={_ms_text(command[key])}超过最大能力{_ms_text(maximum)}"
+    return None
 
 
 def _wire_move(command, settings):
@@ -861,8 +902,9 @@ def _rates_near(value, limit, settings, radius=1):
     if not settings["entry_quantize_protocol"]:
         return [min(value, limit)]
     center = quantize(value)
+    # 距离相同时取较小值，不依赖set的迭代顺序（TS移植可逐条对数）
     return sorted({round(center + k / 10, 1) for k in range(-radius, radius + 1)
-                   if .1 - 1e-9 <= center + k / 10 <= limit + 1e-8}, key=lambda x: abs(x-value))
+                   if .1 - 1e-9 <= center + k / 10 <= limit + 1e-8}, key=lambda x: (abs(x-value), x))
 
 
 def _target_on_wire(value, device, index, settings):
@@ -892,6 +934,9 @@ def _axis_request(device, index, u0, settings):
     q, v = segment.state(u0)
     current = device.current[index]
     label = device.axis_labels[index]
+    # _verify核对u0之后（含容差）的全部原表Move，这里用同一边界
+    if u0 <= device.table_limit_u[index]+1e-9:
+        raise EntryInfeasible([f"{label}{device.table_limit_reasons[index]}，只能在它之后接入"])
     if not device.current_in_range[index]:
         raise EntryInfeasible([f"{label}当前位置超出行程"])
     if not device.lower[index] - _EPS <= q <= device.upper[index] + _EPS:
@@ -965,7 +1010,8 @@ def _axis_request(device, index, u0, settings):
     peak = min(V, math.sqrt(max(0., (2*A*dec*L+A*w*w)/(A+dec))))
     if peak < w - 1e-8:
         raise EntryInfeasible([f"{label}单Move峰值速度不足"])
-    minimum = (L+peak*peak/(2*A)+(peak-w)**2/(2*dec))/peak
+    # 平方一律写成乘法：x**2 走C库pow，末位与x*x偶有不同，TS移植无法逐位对上
+    minimum = (L+peak*peak/(2*A)+(peak-w)*(peak-w)/(2*dec))/peak
     request.update(family=family, dec=dec, minimum=minimum, maximum=2*L/w)
     return request
 
@@ -1049,7 +1095,7 @@ def _candidate_moves(request, seconds, settings):
             for cap in sorted(caps):
                 if cap < w-1e-9:
                     continue
-                denominator = 2*(cap*seconds-(cap-w)**2/(2*dec)-effective)
+                denominator = 2*(cap*seconds-(cap-w)*(cap-w)/(2*dec)-effective)
                 if denominator <= 0:
                     continue
                 for acc in _rates_near(cap*cap/denominator, A, settings, 2):
@@ -1100,7 +1146,7 @@ def _entry_for_time(request, seconds, u0, settings):
         if kind != "in_place":
             entry["distance"] = request["L"]
         if kind == "run_up":
-            entry["run_up_distance"] = request["w"]**2/(2*move["accVel"])
+            entry["run_up_distance"] = request["w"]*request["w"]/(2*move["accVel"])
         plan = _materialize({"u0": u0, "lead_ms": seconds*1000, "entries": [(device, entry)]}, settings)
         if _verify(plan, settings, fail_fast=True)["passed"]:
             return entry
@@ -1137,7 +1183,7 @@ def _plan_at(devices, u0, settings, allow_two_step=False, requests=None):
             peak = min(request["V"], math.sqrt((2*A*D*L+A*w*w)/(A+D)))
             for cap in _rates_near(peak, request["V"], settings, 2):
                 if cap >= w:
-                    times.add((L+cap*cap/(2*A)+(cap-w)**2/(2*D))/cap)
+                    times.add((L+cap*cap/(2*A)+(cap-w)*(cap-w)/(2*D))/cap)
     # 编码邻点时间，不以停等或额外指令填补。
     times.update(lower+k/10000 for k in range(1, 11))
     if math.isfinite(upper):
@@ -1491,13 +1537,10 @@ def _windows(devices, first, last, reverse, reference):
     else:
         index = next((i for i,(low,high) in enumerate(windows) if low < reference <= high), 0)
         ordered = list(reversed(windows[:index+1]))
-    result = [(low,high,"current_segment" if i == 0 else "directional_fallback")
-              for i,(low,high) in enumerate(ordered)]
-    # 当前段优先仍保留；沿方向找不到时，余下整条轨迹也必须搜索，包含零速首末点。
-    visited = set(ordered)
-    remainder = list(reversed(windows)) if reverse else windows
-    result.extend((low,high,"directional_fallback") for low,high in remainder if (low,high) not in visited)
-    return result
+    # 有参考帧（继续/反向回）时只查当前段和运行方向后续段，不再回头搜参考帧之前的整条轨迹：
+    # 自动退回起点重跑操作者难以预料，接不上就返回不可行，由操作者改选从头开始或指定位置。
+    return [(low,high,"current_segment" if i == 0 else "directional_fallback")
+            for i,(low,high) in enumerate(ordered)]
 
 
 ###############################################################################
@@ -1792,19 +1835,41 @@ def _calculate(parameters):
             return _infeasible(command, mode, reference, f"起点无法接入：{error}", attempts, error.reasons)
     else:
         mode = "current_segment_first" if reference is not None else "nearest_whole_action"
+        max_skip = settings["entry_max_skip_ms"] if reference is not None else None
+        limit_u, limited = None, False
+        if max_skip is not None:
+            # 截止帧往参考帧一侧取到帧网格上：截后的候选正好是原候选里不超限的那部分
+            resolution = settings["frame_resolution_ms"]
+            limit_curve = reference+direction*max_skip
+            limit_curve = (math.floor(limit_curve/resolution+1e-9) if direction > 0
+                           else math.ceil(limit_curve/resolution-1e-9))*resolution
+            limit_u = to_run(limit_curve)
         for low, high, phase in _windows(devices, first, last, reverse, reference):
             _check_deadline()
             if reference_window is None:
                 reference_window = [low, high]
             lower, upper = sorted((to_run(low), to_run(high)))
+            attempt = {"range_ms": [low, high], "phase": phase}
+            if limit_u is not None and upper > limit_u+1e-9:
+                limited = True
+                if lower > limit_u+1e-9:
+                    attempts.append({**attempt, "status": "beyond_max_skip"})
+                    continue
+                upper = limit_u
+                attempt["searched_range_ms"] = sorted((to_curve(lower), to_curve(upper)))
             best, count = _search_window(devices, lower, upper, to_curve, to_run, settings)
             evaluated += count
-            attempts.append({"range_ms": [low, high], "phase": phase, "status": "planned" if best else "infeasible"})
+            attempts.append({**attempt, "status": "planned" if best else "infeasible"})
             if best is not None:
                 plan, selected_window = best, [low, high]
                 break
         if plan is None:
-            return _infeasible(command, mode, reference, "运行方向上没有可接入的帧", attempts, [])
+            reasons = [f"{device.axis_labels[index]}{device.table_limit_reasons[index]}"
+                       for device in devices for index in range(3) if device.table_limit_reasons[index]]
+            message = "运行方向上没有可接入的帧"
+            if limited:
+                message += f"（接入帧最多比参考帧靠后{_ms_text(max_skip)}ms）"
+            return _infeasible(command, mode, reference, message, attempts, reasons)
 
     return _planned(devices, plan, command, settings, mode, reference, clamped, reference_window,
                     selected_window, attempts, evaluated, to_curve)
@@ -1874,6 +1939,7 @@ def _planned(devices, plan, command, settings, mode, reference, clamped, referen
         "selected_segment_range_ms": selected_window,
         "segment_search_attempts": attempts,
         "candidates_evaluated": evaluated,
+        "max_skip_ms": settings["entry_max_skip_ms"] if mode == "current_segment_first" else None,
         "entry_moves": entry_moves,
         "devices": device_rows,
         "execution": {
