@@ -18,7 +18,8 @@ import {
 
 /**
  * 逐项移植 python/调速范围计算/调速范围计算.py 的 calculate_range_result：
- * 非强制先按单点 / 同步非单点 / 不同步分类，再取各模型 本模型实轴限速 ÷ 原动作峰速 的最小值。
+ * 非强制先按单点 / 同步非单点 / 不同步分类，再取各模型 本模型实轴限速 ÷ 原动作峰速、
+ * H/P/Y 虚轴 max_velocity_HPY ÷ 该轴原动作峰速 的最小值（2026-11-11 加入虚轴倍率）。
  * max_factor 相对原动作，1 = 100%；unlimited 时无有限上限。不做 action_signature。
  */
 
@@ -852,13 +853,65 @@ const segmentVelocityKey = (segment: SegmentLike, geometryKey: string, unitMs: n
     ]),
   ]);
 
-/** calculate_velocity_adjust：各模型 本模型实轴限速 ÷ 原动作峰速 的最小值，带分类上限 */
+const HPY_NAMES = "HPY";
+
+/** max_velocity_HPY：三个有限非负数；0 允许静止轴 */
+const virtualVelocityLimitsOf = (model: AlgorithmModel, label: string): Hpy => {
+  const supplied: unknown = model.max_velocity_HPY;
+  if (!Array.isArray(supplied) || supplied.length !== 3) {
+    throw new Error(`${label}需要max_velocity_HPY，按H/P/Y提供三个虚轴最大速度`);
+  }
+  const limits = supplied.map((value) =>
+    typeof value === "number" || typeof value === "string" ? Number(value) : Number.NaN,
+  ) as Hpy;
+  if (limits.some((value) => !Number.isFinite(value) || value < 0)) {
+    throw new Error(`${label}的max_velocity_HPY必须是三个有限非负数`);
+  }
+  return limits;
+};
+
+/** calculate_virtual_velocity_factor：各模型 H/P/Y 原曲线峰速与保存的虚轴最大速度之比的最小值 */
+export const calculateVirtualVelocityFactor = (models: readonly AlgorithmModel[], unitMs: number): number => {
+  let allowedFactor = Number.POSITIVE_INFINITY;
+  for (const model of models) {
+    const label = `模型${model.model_id ?? "?"}`;
+    const limits = virtualVelocityLimitsOf(model, label);
+    const peaks: Hpy = [0, 0, 0];
+    for (const segment of model.segments) {
+      calculateVirtualState(segment, segment.start_frame, unitMs);
+      for (const piece of piecesOf(segment)) {
+        const startMs = Number(piece.start_frame);
+        const endMs = Number(piece.end_frame);
+        const startVelocity = calculateVirtualState(piece, startMs, unitMs).velocities;
+        const endVelocity = calculateVirtualState(piece, endMs, unitMs).velocities;
+        for (let axis = 0; axis < 3; axis += 1) {
+          // 两端加上段内加速度为 0 的位置，覆盖负速度和高阶曲线
+          let peak = Math.max(Math.abs(startVelocity[axis]!), Math.abs(endVelocity[axis]!));
+          for (const fraction of accelerationRoots(piece, axis, unitMs)) {
+            const frameMs = startMs + fraction * (endMs - startMs);
+            peak = Math.max(peak, Math.abs(calculateVirtualState(piece, frameMs, unitMs).velocities[axis]!));
+          }
+          if (!Number.isFinite(peak)) throw new Error(`${label}的${HPY_NAMES[axis]}轴原曲线峰速必须是有限数值`);
+          peaks[axis] = Math.max(peaks[axis]!, peak);
+        }
+      }
+    }
+    peaks.forEach((peak, axis) => {
+      if (!(peak > 0)) return;
+      if (limits[axis] === 0) throw new Error(`${label}的${HPY_NAMES[axis]}轴最大速度为0，但原曲线包含该轴运动`);
+      allowedFactor = Math.min(allowedFactor, limits[axis]! / peak);
+    });
+  }
+  return allowedFactor;
+};
+
+/** calculate_velocity_adjust：各模型 本模型实轴限速 ÷ 原动作峰速 的最小值，带分类上限与虚轴倍率 */
 const calculateVelocityAdjust = (
   models: readonly AlgorithmModel[],
   unitMs: number,
   classificationMaxFactor: number,
 ): number => {
-  let velocityAdjust = classificationMaxFactor;
+  let velocityAdjust = Math.min(classificationMaxFactor, calculateVirtualVelocityFactor(models, unitMs));
   // 只在本次计算中复用相同动作段的峰速
   const cache = new Map<string, number>();
   for (const model of models) {
