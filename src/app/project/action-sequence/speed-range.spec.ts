@@ -21,15 +21,16 @@ const range = (trajectoryRun: boolean, edit?: (parameters: RangeParameters) => v
 };
 
 describe("calculateRangeResult", () => {
-  it("takes the smallest motor-limit ratio of every model", () => {
+  it("takes the smallest motor and virtual-axis ratio of every model", () => {
+    // 包内示例：H 峰速 100mm/s、上限 150；P 峰速 2°/s、上限 3°/s，均为 150%
     expect(range(true)).toEqual({
-      max_factor: 3.804880930591192,
+      max_factor: 1.5,
       unlimited: false,
       action_category: "强制轨迹：按原始曲线计算",
       range_version: "shared_json_v1",
     });
     expect(range(false)).toMatchObject({
-      max_factor: 3.804880930591192,
+      max_factor: 1.5,
       action_category: "同步非单点：可升速、可降速",
     });
   });
@@ -42,6 +43,7 @@ describe("calculateRangeResult", () => {
   ])("bounds the motor speed of model %i on its own", (index, expected) => {
     const result = range(true, (parameters) => {
       parameters.models = [parameters.models[index]!];
+      parameters.models[0]!.max_velocity_HPY = [1e9, 1e9, 1e9];
     });
     expect(result.max_factor).toBeCloseTo(expected, 12);
   });
@@ -86,6 +88,54 @@ describe("calculateRangeResult", () => {
         parameters.models[0]!.model_type = 3;
       }),
     ).toThrow("不支持的模型类型：3，目前只支持 2、6、7、8");
+  });
+});
+
+describe("virtual-axis velocity limit", () => {
+  it("divides each axis limit by its own peak", () => {
+    // P 峰速 2°/s、上限 6°/s → 300%；Y 静止，上限 0 也可以
+    const result = range(true, (parameters) => {
+      parameters.models = [parameters.models[1]!];
+      parameters.models[0]!.max_velocity_HPY = [1e9, 6, 0];
+    });
+    expect(result.max_factor).toBe(3);
+  });
+
+  it("counts a negative peak inside a higher-order piece", () => {
+    // H 速度 10·(-6u + 0.3u²)：两端为 0，u=10 处 -300mm/s，上限 150 → 50%
+    for (const trajectoryRun of [true, false]) {
+      const result = range(trajectoryRun, (parameters) => {
+        const model = parameters.models[0]!;
+        model.max_motor_velocity = 1e6;
+        const segment = model.segments[0]!;
+        segment.b![0] = 0;
+        segment.c![0] = -3;
+        segment.d![0] = 0.1;
+        parameters.models = [model];
+      });
+      expect(result.max_factor).toBeCloseTo(0.5000000000000002, 12);
+    }
+  });
+
+  it("rejects a zero limit on a moving axis", () => {
+    expect(() =>
+      range(true, (parameters) => {
+        parameters.models[1]!.max_velocity_HPY = [150, 0, 0];
+      }),
+    ).toThrow("模型101的P轴最大速度为0，但原曲线包含该轴运动");
+  });
+
+  it.each([
+    ["missing", undefined, "模型100需要max_velocity_HPY，按H/P/Y提供三个虚轴最大速度"],
+    ["two values", [150, 0], "模型100需要max_velocity_HPY，按H/P/Y提供三个虚轴最大速度"],
+    ["negative", [150, -1, 0], "模型100的max_velocity_HPY必须是三个有限非负数"],
+    ["boolean", [150, true, 0], "模型100的max_velocity_HPY必须是三个有限非负数"],
+  ])("validates max_velocity_HPY (%s)", (_, limits, message) => {
+    expect(() =>
+      range(true, (parameters) => {
+        (parameters.models[0] as { max_velocity_HPY?: unknown }).max_velocity_HPY = limits;
+      }),
+    ).toThrow(message);
   });
 });
 

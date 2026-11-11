@@ -6,6 +6,7 @@ import type { NearestStartPlan } from "@/app/project/action-sequence/nearest-sta
 import { adjustSequenceSpeed, createSpeedSender } from "./sequence-speed";
 import { SPEED_CEILING_PERCENT } from "./speed-cap";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
+import { MOTION_DEFAULTS } from "@/app/project/configuration-rules";
 import { createEmptyDocument } from "@/app/project/project-document-empty";
 import type { ControlledObjectConfig, ProjectDocument } from "@/app/project/project-document-types";
 import {
@@ -918,7 +919,9 @@ describe("createCsocketSequenceTransport", () => {
 
 describe("resolveSequenceSpeedCap", () => {
   it("caps the fader below the motor limit of a fast move", () => {
-    const cap = resolveSequenceSpeedCap(documentWithSequence(movingSequence), movingSequence.id, new Map());
+    const document = documentWithSequence(movingSequence);
+    document.setup.controlledObjects = [{ ...fixtureObject(), motionParams: { h: { ...MOTION_DEFAULTS.move } } }];
+    const cap = resolveSequenceSpeedCap(document, movingSequence.id, new Map());
     expect(cap.ok).toBe(true);
     expect(cap.maxPercent).toBeGreaterThan(0);
     expect(cap.maxPercent).toBeLessThan(100);
@@ -928,6 +931,15 @@ describe("resolveSequenceSpeedCap", () => {
     expect(resolveSequenceSpeedCap(documentWithSequence(validSequence), validSequence.id, new Map())).toEqual({
       ok: true,
       maxPercent: null,
+    });
+  });
+
+  it("allows only the programmed speed when a moving axis has no max velocity", () => {
+    // 没有运动参数的启用轴，算法拿到的虚轴最大速度为 0
+    expect(resolveSequenceSpeedCap(documentWithSequence(movingSequence), movingSequence.id, new Map())).toEqual({
+      ok: false,
+      maxPercent: 100,
+      message: expect.stringContaining("H轴最大速度为0，但原曲线包含该轴运动"),
     });
   });
 
