@@ -799,8 +799,19 @@ const validateRules = (value: unknown, path: string, a: StructuralAssertions): v
 const VIEW_PRESETS = ["top", "front", "back", "side", "left", "persp", "iso"] as const;
 const GRID_SIZES = [10, 20, 40, 80] as const;
 
-const validateSavedView = (value: unknown, path: string, a: StructuralAssertions): void => {
-  const view = a.record(value, path);
+const VIEWPORT_LAYOUTS = ["single", "dual", "quad"] as const;
+const SECONDARY_VIEWPORT_CELLS = [
+  "dualRight",
+  "quadTopRight",
+  "quadBottomLeft",
+  "quadBottomRight",
+] as const;
+
+const validateSavedCameraView = (
+  view: Record<string, unknown>,
+  path: string,
+  a: StructuralAssertions,
+): void => {
   const target = a.array(view.target, `${path}.target`);
   if (target.length !== 3) {
     a.fail(`${path}.target`, "expected [x,y,z]");
@@ -812,9 +823,30 @@ const validateSavedView = (value: unknown, path: string, a: StructuralAssertions
   a.finite(view.orthoHalfHeight, `${path}.orthoHalfHeight`);
   a.enum(view.preset, VIEW_PRESETS, `${path}.preset`);
   a.finite(view.focalLengthMm, `${path}.focalLengthMm`);
+};
+
+const validateSavedView = (value: unknown, path: string, a: StructuralAssertions): void => {
+  const view = a.record(value, path);
+  validateSavedCameraView(view, path, a);
   const gridSize = a.finite(view.gridSize, `${path}.gridSize`);
   if (!(GRID_SIZES as readonly number[]).includes(gridSize)) {
     a.fail(`${path}.gridSize`, `expected one of ${GRID_SIZES.join(", ")}`);
+  }
+  if (view.cells !== undefined) {
+    const cells = a.record(view.cells, `${path}.cells`);
+    for (const id of SECONDARY_VIEWPORT_CELLS) {
+      if (cells[id] !== undefined) {
+        validateSavedCameraView(a.record(cells[id], `${path}.cells.${id}`), `${path}.cells.${id}`, a);
+      }
+    }
+  }
+  if (view.layout !== undefined) {
+    a.enum(view.layout, VIEWPORT_LAYOUTS, `${path}.layout`);
+  }
+  if (view.split !== undefined) {
+    const split = a.record(view.split, `${path}.split`);
+    a.finite(split.x, `${path}.split.x`);
+    a.finite(split.y, `${path}.split.y`);
   }
 };
 

@@ -1,4 +1,10 @@
-import type { SavedView, ViewPreset } from "@/app/viz3d/types";
+import type {
+  SavedCameraView,
+  SavedView,
+  SecondaryViewportCellId,
+  ViewPreset,
+} from "@/app/viz3d/types";
+import { clampSplit, isViewportLayout } from "@/app/viz3d/viewports/ViewportLayout";
 import { DEFAULT_FOCAL_LENGTH_MM } from "@/app/viz3d/cameras/focal-length";
 import { DEFAULT_VIEW_DISTANCE } from "@/app/viz3d/cameras/ViewPresets";
 import {
@@ -58,19 +64,58 @@ export const isSavedView = (value: unknown): value is SavedView => {
   return isGridSizeM((value as { gridSize?: unknown }).gridSize);
 };
 
+const SECONDARY_CELL_IDS: readonly SecondaryViewportCellId[] = [
+  "dualRight",
+  "quadTopRight",
+  "quadBottomLeft",
+  "quadBottomRight",
+];
+
+const pickCameraView = (v: SavedCameraView): SavedCameraView => ({
+  target: [v.target[0], v.target[1], v.target[2]],
+  alpha: v.alpha,
+  beta: v.beta,
+  zoomRadius: v.zoomRadius,
+  orthoHalfHeight: v.orthoHalfHeight,
+  preset: v.preset,
+  focalLengthMm: v.focalLengthMm,
+});
+
+/** 其余格相机：不合法的格丢掉（回到该格默认视角） */
+const normalizeCells = (value: unknown): SavedView["cells"] => {
+  if (!value || typeof value !== "object") return undefined;
+  const source = value as Record<string, unknown>;
+  const cells: NonNullable<SavedView["cells"]> = {};
+  for (const id of SECONDARY_CELL_IDS) {
+    const cell = source[id];
+    if (hasValidCameraSavedViewFields(cell)) {
+      cells[id] = pickCameraView(cell);
+    }
+  }
+  return Object.keys(cells).length > 0 ? cells : undefined;
+};
+
+/** 分隔比例：不合法丢掉（回到各一半） */
+const normalizeSplit = (value: unknown): SavedView["split"] => {
+  if (!value || typeof value !== "object") return undefined;
+  const { x, y } = value as { x?: unknown; y?: unknown };
+  if (!isFiniteNumber(x) || !isFiniteNumber(y)) return undefined;
+  return clampSplit({ x, y });
+};
+
 export const normalizeSavedView = (value: unknown): SavedView => {
   if (!hasValidCameraSavedViewFields(value)) {
     return createDefaultSavedView();
   }
   const v = value as Omit<SavedView, "gridSize"> & { gridSize?: unknown };
+  const cells = normalizeCells(v.cells);
+  const layout = isViewportLayout(v.layout) ? v.layout : undefined;
+  const split = normalizeSplit(v.split);
   return {
-    target: [v.target[0], v.target[1], v.target[2]],
-    alpha: v.alpha,
-    beta: v.beta,
-    zoomRadius: v.zoomRadius,
-    orthoHalfHeight: v.orthoHalfHeight,
-    preset: v.preset,
-    focalLengthMm: v.focalLengthMm,
+    ...pickCameraView(v),
     gridSize: normalizeGridSizeM(v.gridSize),
+    ...(cells ? { cells } : {}),
+    ...(layout ? { layout } : {}),
+    ...(split ? { split } : {}),
   };
 };

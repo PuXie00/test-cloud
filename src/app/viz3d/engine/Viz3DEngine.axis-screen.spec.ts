@@ -23,7 +23,7 @@ describe("Viz3DEngine 坐标轴屏幕朝向", () => {
     engine = Object.assign(blank, {
       events: new Emitter(),
       axisScreenDirections: DEFAULT_AXIS_SCREEN_DIRECTIONS,
-      viewportManager: { getPrimaryCamera: () => camera },
+      viewportManager: { getActiveCamera: () => camera },
     });
   });
 
