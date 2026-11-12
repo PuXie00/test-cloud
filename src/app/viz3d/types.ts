@@ -177,16 +177,6 @@ export type CameraPose = { position: Vec3; target: Vec3 };
 
 export type ToolMode = "select" | "translate" | "rotate" | "scale" | "measure";
 
-export type MeasureKind = "min" | "ground";
-
-export type MeasurePayload = {
-  kind: MeasureKind;
-  distance: number;
-  unit: "m";
-  ids: string[];
-  points?: [Vec3, Vec3];
-};
-
 export type ScreenRect = { left: number; top: number; width: number; height: number };
 
 export type TransformMode = "translate" | "rotate" | "scale";

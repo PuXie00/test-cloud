@@ -24,6 +24,7 @@ import {
   disposeNodeHierarchy,
   getNodeMetadata,
   getWorldBounds,
+  getWorldPosition,
   hexStringToColor3,
   setNodeMetadata,
   type WorldBounds,
@@ -469,6 +470,13 @@ export class SceneObject implements Disposable {
         ? [{ motorId, target: visual.selectionBoundsTarget }]
         : [];
     });
+  }
+
+  /** 可见吊点（含未绑电机）的中心：贴物体顶面的挂点，测量吸附用 */
+  listHoistPointAnchors(): Vec3[] {
+    return [...this.hoistPoints.values()].flatMap((visual) =>
+      visual.root.isEnabled() ? [getWorldPosition(visual.root)] : [],
+    );
   }
 
   getHoistPointSelectionBoundsTarget(motorId: string): TransformNode | undefined {

@@ -20,6 +20,8 @@ export type { HoistLabelMode } from "./hoist-label-mode";
 export { hoistAxesEqual } from "./hoist-axis-config";
 export type { TransformCenterPreset } from "./tools/transform-center";
 export type { AxisScreenDirections } from "./tools/axis-screen-direction";
+export type { MeasureRulerInfo, MeasureState } from "./measure/MeasureTool";
+export { formatMeasureLength } from "./measure/measure-rulers";
 export type {
   AlignAxis,
   AlignEdge,
@@ -32,8 +34,6 @@ export type {
   ModelLoadedPayload,
   ModelSource,
   LoadModelOptions,
-  MeasureKind,
-  MeasurePayload,
   PresetShape,
   HoistAxisConfig,
   HoistTravelAxisKind,
