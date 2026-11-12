@@ -104,6 +104,8 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<DragState | null>(null);
+  /** 测量模式下正在画 / 拖标尺的指针 */
+  const measurePointerRef = useRef<number | null>(null);
   /** 光标在画布上的位置（画布坐标）；离开画布为 null，快捷键作用于光标所在格 */
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
   const lastContextMenuPickMmRef = useRef<{ x: number; z: number } | null>(null);
@@ -188,6 +190,11 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
     };
   }, [engine]);
 
+  // 标尺只属于当前工程，换工程 / 关闭工程时清空
+  useEffect(() => {
+    engine.setMeasurementProject(currentProject?.id ?? null);
+  }, [currentProject?.id, engine]);
+
   // 打开/切换工程后恢复落盘视角；引擎异步 ready 前会排队
   useEffect(() => {
     if (!currentProject) {
@@ -264,6 +271,28 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
       if (document.activeElement !== el) return;
 
       const mod = event.ctrlKey || event.metaKey;
+      // 测量工具（同 Blender）：Delete 删选中标尺、Esc 取消拖动 / 取消选中、Ctrl+C 复制长度；不删物体
+      if (engine.getMode() === "measure") {
+        if (event.key === "Delete" || event.key === "Backspace") {
+          event.preventDefault();
+          engine.deleteSelectedMeasurement();
+          return;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          if (!engine.cancelMeasureDrag()) engine.selectMeasurement(null);
+          return;
+        }
+        const text = mod && event.key.toLowerCase() === "c" ? engine.getSelectedMeasurementText() : null;
+        if (text) {
+          event.preventDefault();
+          void navigator.clipboard
+            ?.writeText(text)
+            .then(() => toast.success(`已复制 ${text}`))
+            .catch(() => toast.error("复制失败"));
+          return;
+        }
+      }
       if (mod && event.key.toLowerCase() === "c") {
         event.preventDefault();
         copySelection();
@@ -321,6 +350,22 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
       engine.setOrbitEnabled(true);
     }
 
+    // 测量模式：左键 / 单指画标尺，不框选也不点选物体；第二根手指按下时放弃当前标尺（让给双指相机手势）
+    if (engine.getMode() === "measure") {
+      const handled = engine.measurePointerDown(event.nativeEvent.offsetX, event.nativeEvent.offsetY, {
+        pointerId: event.pointerId,
+        toggleSnap: event.ctrlKey || event.metaKey,
+        coarse: event.pointerType !== "mouse",
+      });
+      if (handled) {
+        measurePointerRef.current = event.pointerId;
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } else {
+        measurePointerRef.current = null;
+      }
+      return;
+    }
+
     if (engine.hitsTransformHandle(event.nativeEvent.offsetX, event.nativeEvent.offsetY)) {
       return;
     }
@@ -338,6 +383,13 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
   };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (measurePointerRef.current === event.pointerId) {
+      engine.measurePointerMove(event.nativeEvent.offsetX, event.nativeEvent.offsetY, {
+        pointerId: event.pointerId,
+        toggleSnap: event.ctrlKey || event.metaKey,
+      });
+      return;
+    }
     const drag = dragRef.current;
     if (!drag || event.pointerId !== drag.pointerId) {
       return;
@@ -396,10 +448,30 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
     if (!shouldFinishViewportDrag(event.button)) {
       return;
     }
+    if (measurePointerRef.current === event.pointerId) {
+      measurePointerRef.current = null;
+      engine.measurePointerUp(event.nativeEvent.offsetX, event.nativeEvent.offsetY, {
+        pointerId: event.pointerId,
+        toggleSnap: event.ctrlKey || event.metaKey,
+      });
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      return;
+    }
     finishDrag(event);
   };
 
+  /** 指针被打断（系统手势、丢失捕获）：放弃进行中的标尺 */
+  const abortMeasurePointer = (pointerId: number): boolean => {
+    if (measurePointerRef.current !== pointerId) return false;
+    measurePointerRef.current = null;
+    engine.cancelMeasureDrag();
+    return true;
+  };
+
   const handlePointerCancel = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (abortMeasurePointer(event.pointerId)) return;
     const drag = dragRef.current;
     if (!drag || event.pointerId !== drag.pointerId) {
       return;
@@ -411,6 +483,7 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
   };
 
   const handleLostPointerCapture = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (abortMeasurePointer(event.pointerId)) return;
     const drag = dragRef.current;
     if (!drag || event.pointerId !== drag.pointerId) {
       return;

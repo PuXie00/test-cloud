@@ -36,6 +36,8 @@ export type SceneObjectHandle = {
   getHoistPointSelectionBoundsTarget: (motorId: string) => TransformNode | undefined;
   /** 可见且已绑定电机的吊点（电机框选用） */
   listHoistPointSelectionTargets: () => { motorId: string; target: TransformNode }[];
+  /** 可见吊点中心（世界坐标，m） */
+  listHoistPointAnchors: () => Vec3[];
   refreshHoistLabels: (mode: HoistLabelMode) => void;
   applyHoistTravel: (byMotorId: ReadonlyMap<string, HoistTravelInput>) => void;
   dispose: () => void;

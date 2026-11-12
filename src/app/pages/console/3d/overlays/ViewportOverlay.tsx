@@ -23,6 +23,7 @@ import { useControlLayout } from "../../hooks/use-control-layout";
 import { useActionBuilder } from "../../components/action-builder/use-action-builder";
 import { useViz3DContext } from "../Viz3DProvider";
 import { SequencePreviewBar } from "./sequence-preview-bar";
+import { MeasureToolPanel } from "./MeasureToolPanel";
 import { ShapePresetPalette } from "./ShapePresetPalette";
 import { ViewMenu } from "./ViewMenu";
 import { ViewportCellsOverlay } from "./ViewportCellsOverlay";
@@ -261,6 +262,7 @@ export const ViewportOverlay = () => {
             </div>
           </div>
           <ShapePresetPalette />
+          {mode === "measure" ? <MeasureToolPanel onPointerGuard={stopPointer} /> : null}
         </>
       )}
 

@@ -18,7 +18,6 @@ import type {
   Disposable,
   DriveUnitLabelFields,
   LoadModelOptions,
-  MeasurePayload,
   ModelLoadedPayload,
   PivotChangePayload,
   RecordingOptions,
@@ -96,12 +95,11 @@ import {
   type TransformCenterPreset,
 } from "../tools/transform-center";
 import { BoundingBox } from "../state/BoundingBox";
-import { MeasureMarkers } from "../state/MeasureMarkers";
-import {
-  groundDistanceFromAabb,
-  minDistanceBetweenAabbs,
-  type AABB,
-} from "../measure/measure-distance";
+import { MeasureTool, type MeasureState } from "../measure/MeasureTool";
+import { MeasureOverlay } from "../measure/MeasureOverlay";
+import { formatMeasureLength, rulerLengthMm } from "../measure/measure-rulers";
+import { projectRulerToCell } from "../measure/project-ruler";
+import { resolveMeasurePoint } from "../measure/resolve-measure-point";
 import { selectIdsInScreenRect } from "../picking/box-select-screen";
 import { isTransformToolMode } from "../tool-mode";
 import {
@@ -153,7 +151,8 @@ export type Viz3DEventMap = {
   transformEndBatch: TransformEndPayload[];
   transformCancel: void;
   modelLoaded: ModelLoadedPayload;
-  measure: MeasurePayload;
+  /** 测量标尺增删改、选中或吸附开关变化 */
+  measureChange: MeasureState;
   recordingState: RecordingStatePayload;
   hoistLabelModeChange: HoistLabelMode;
   axisScreenChange: AxisScreenDirections;
@@ -192,7 +191,15 @@ export class Viz3DEngine implements Disposable {
   private transformController: TransformController | null = null;
   private readonly boundingBoxes = new Map<string, BoundingBox>();
   private modelLoader: ModelLoader | null = null;
-  private measureMarkers: MeasureMarkers | null = null;
+  /** 标尺数据跟引擎走：画布重挂、切页面都保留，换工程时清空 */
+  private readonly measureTool = new MeasureTool(
+    (x, y, cellId, options) => this.resolveMeasurePointAt(x, y, cellId, options),
+    (rulers, cellId) => this.projectRulersInCell(rulers, cellId),
+    () => this.events.emit("measureChange", this.measureTool.getState()),
+  );
+  private measureOverlay: MeasureOverlay | null = null;
+  /** 标尺属于哪个工程；undefined = 还没设置过 */
+  private measureProjectId: string | null | undefined = undefined;
   private boxSelectEnabled = true;
   private pickMode: PickMode = "object";
   /** 点选、框选都跳过的物体（工程物体 id），如控制页、动作页的占位物体 */
@@ -300,8 +307,9 @@ export class Viz3DEngine implements Disposable {
     this.sequencePreviewController?.dispose();
     this.sequencePreviewController = null;
 
-    this.measureMarkers?.dispose();
-    this.measureMarkers = null;
+    this.measureTool.cancelDrag();
+    this.measureOverlay?.dispose();
+    this.measureOverlay = null;
 
     this.viewportManager?.dispose();
     this.viewportManager = null;
@@ -811,7 +819,11 @@ export class Viz3DEngine implements Disposable {
   }
 
   setMode(mode: ToolMode): void {
+    if (mode !== "measure") {
+      this.measureTool.cancelDrag();
+    }
     this.mode = mode;
+    this.applyModeCursor();
 
     if (isTransformToolMode(mode)) {
       this.ensureTransformController();
@@ -1204,10 +1216,6 @@ export class Viz3DEngine implements Disposable {
     this.telemetryController?.showDriveUnitLabel(id, fields);
   }
 
-  setDistanceMarkersVisible(on: boolean): void {
-    this.measureMarkers?.setVisible(on);
-  }
-
   enableBoxSelect(on: boolean): void {
     this.boxSelectEnabled = on;
   }
@@ -1308,60 +1316,128 @@ export class Viz3DEngine implements Disposable {
     return ids;
   }
 
-  measureMinDistance(idA: string, idB: string): MeasurePayload | null {
-    const handleA = this.objectRegistry?.get(idA);
-    const handleB = this.objectRegistry?.get(idB);
-    if (!handleA || !handleB) {
-      return null;
-    }
-
-    const aabbA = worldBoundsToAabb(readObjectBounds(handleA));
-    const aabbB = worldBoundsToAabb(readObjectBounds(handleB));
-    const result = minDistanceBetweenAabbs(aabbA, aabbB);
-
-    const payload: MeasurePayload = {
-      kind: "min",
-      distance: result.distance,
-      unit: "m",
-      ids: [idA, idB],
-      points: [result.pointA, result.pointB],
-    };
-
-    this.measureMarkers?.setSegment(
-      result.pointA,
-      result.pointB,
-      `${result.distance.toFixed(2)} m`,
-    );
-    this.events.emit("measure", payload);
-    return payload;
+  /** 测量工具用十字光标（Babylon 指针移动时按 scene.defaultCursor 设置画布光标） */
+  private applyModeCursor(): void {
+    const scene = this.sceneManager?.scene;
+    if (!scene) return;
+    scene.defaultCursor = this.mode === "measure" ? "crosshair" : "default";
+    if (this.canvas) this.canvas.style.cursor = scene.defaultCursor;
   }
 
-  measureGroundDistance(id: string): MeasurePayload | null {
-    const handle = this.objectRegistry?.get(id);
-    if (!handle) {
-      return null;
-    }
+  getMeasureState(): MeasureState {
+    return this.measureTool.getState();
+  }
 
-    const box = readObjectBounds(handle);
-    const aabb = worldBoundsToAabb(box);
-    const { distance, groundPoint } = groundDistanceFromAabb(aabb);
-    const bottomPoint: Vec3 = {
-      x: (box.min.x + box.max.x) / 2,
-      y: box.min.y,
-      z: (box.min.z + box.max.z) / 2,
-    };
+  /** 测量模式下的左键 / 单指按下；返回是否由测量工具接手 */
+  measurePointerDown(
+    canvasX: number,
+    canvasY: number,
+    input: { pointerId: number; toggleSnap: boolean; coarse: boolean },
+  ): boolean {
+    if (this.mode !== "measure") return false;
+    const cellId = this.getCellIdAt(canvasX, canvasY);
+    if (!cellId) return false;
+    return this.measureTool.pointerDown({ x: canvasX, y: canvasY, cellId, ...input });
+  }
 
-    const payload: MeasurePayload = {
-      kind: "ground",
-      distance,
-      unit: "m",
-      ids: [id],
-      points: [bottomPoint, groundPoint],
-    };
+  measurePointerMove(canvasX: number, canvasY: number, input: { pointerId: number; toggleSnap: boolean }): void {
+    this.measureTool.pointerMove({ x: canvasX, y: canvasY, ...input });
+  }
 
-    this.measureMarkers?.setSegment(bottomPoint, groundPoint, `${distance.toFixed(2)} m`);
-    this.events.emit("measure", payload);
-    return payload;
+  measurePointerUp(canvasX: number, canvasY: number, input: { pointerId: number; toggleSnap: boolean }): void {
+    this.measureTool.pointerUp({ x: canvasX, y: canvasY, ...input });
+  }
+
+  /** 放弃进行中的标尺拖动；没有在拖时返回 false */
+  cancelMeasureDrag(): boolean {
+    return this.measureTool.cancelDrag();
+  }
+
+  isMeasureDragging(): boolean {
+    return this.measureTool.isDragging();
+  }
+
+  selectMeasurement(id: string | null): void {
+    this.measureTool.select(id);
+  }
+
+  deleteSelectedMeasurement(): boolean {
+    return this.measureTool.deleteSelected();
+  }
+
+  clearMeasurements(): void {
+    this.measureTool.clear();
+  }
+
+  setMeasureSnapVertices(on: boolean): void {
+    this.measureTool.setSnapVertices(on);
+  }
+
+  /** 选中标尺的长度文字（按当前显示单位） */
+  getSelectedMeasurementText(): string | null {
+    const id = this.measureTool.getSelectedId();
+    const ruler = this.measureTool.getRulers().find((entry) => entry.id === id);
+    return ruler ? formatMeasureLength(rulerLengthMm(ruler), this.displayLengthUnit) : null;
+  }
+
+  /** 标尺只属于当前工程：换工程（或关闭工程）时清空 */
+  setMeasurementProject(projectId: string | null): void {
+    if (this.measureProjectId === projectId) return;
+    const changed = this.measureProjectId !== undefined;
+    this.measureProjectId = projectId;
+    if (changed) this.measureTool.clear();
+  }
+
+  private resolveMeasurePointAt(
+    canvasX: number,
+    canvasY: number,
+    cellId: ViewportCellId,
+    options: { snapVertices: boolean; coarse: boolean },
+  ) {
+    const manager = this.viewportManager;
+    const registry = this.objectRegistry;
+    if (!manager || !registry) return null;
+    const cellRect = manager.getCellRect(cellId, this.getLocalSlotRect());
+    if (!cellRect) return null;
+    const handles = registry.list();
+    return resolveMeasurePoint(
+      canvasX,
+      canvasY,
+      {
+        camera: manager.getCell(cellId).camera,
+        cellRect,
+        targets: handles.map((handle) => asTransformNode(handle.object3d)),
+        hoistAnchors: handles.flatMap((handle) => handle.listHoistPointAnchors()),
+      },
+      options,
+    );
+  }
+
+  private projectRulersInCell(rulers: readonly { id: string; a: Vec3; b: Vec3 }[], cellId: ViewportCellId) {
+    const manager = this.viewportManager;
+    const cellRect = manager?.getCellRect(cellId, this.getLocalSlotRect());
+    if (!manager || !cellRect) return [];
+    const camera = manager.getCell(cellId).camera;
+    return rulers.flatMap((ruler) => {
+      const projected = projectRulerToCell(ruler, camera, cellRect);
+      return projected ? [projected] : [];
+    });
+  }
+
+  private renderMeasureOverlay(slotRect: SlotRect): void {
+    const overlay = this.measureOverlay;
+    const manager = this.viewportManager;
+    if (!overlay || !manager) return;
+    // 同 Blender：标尺只在测量工具里显示
+    overlay.setVisible(this.mode === "measure");
+    if (this.mode !== "measure") return;
+    overlay.render(
+      manager.getCellRects(slotRect).map(({ id, rect }) => ({ id, rect, camera: manager.getCell(id).camera })),
+      this.measureTool.getRulers(),
+      this.measureTool.getSelectedId(),
+      this.measureTool.getDragSnap(),
+      (ruler) => formatMeasureLength(rulerLengthMm(ruler), this.displayLengthUnit),
+    );
   }
 
   /** 当前格聚焦到物体 */
@@ -1691,12 +1767,10 @@ export class Viz3DEngine implements Disposable {
       this.events.emit("motorSelectionChange", motorIds);
     });
 
-    this.measureMarkers = new MeasureMarkers(
-      scene,
-      this.sceneManager.getLabelRenderer(),
-      this.colors.primary,
-      this.colors.foreground,
-    );
+    if (this.slotElement) {
+      this.measureOverlay = new MeasureOverlay(this.slotElement);
+    }
+    this.applyModeCursor();
 
     this.resize();
   }
@@ -1720,6 +1794,8 @@ export class Viz3DEngine implements Disposable {
     this.viewportManager.tick(performance.now());
     this.viewportManager.render(this.sceneManager.scene, slotRect);
     this.syncAxisScreenDirections();
+
+    this.renderMeasureOverlay(slotRect);
 
     // 屏幕标签固定画在主透视格（不随当前格跳；多格时 DOM 数量不翻倍）
     const labelCellId = this.viewportManager.getLabelCellId();
@@ -2179,11 +2255,6 @@ const POSITION_EPSILON_M = 1e-6;
 
 const readObjectBounds = (handle: SceneObjectHandle): WorldBounds =>
   getWorldBounds(asTransformNode(handle.selectionBoundsTarget));
-
-const worldBoundsToAabb = (bounds: WorldBounds): AABB => ({
-  min: bounds.min,
-  max: bounds.max,
-});
 
 const worldBoundsCenter = (bounds: WorldBounds): Vec3 => ({
   x: (bounds.min.x + bounds.max.x) / 2,
