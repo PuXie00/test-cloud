@@ -532,10 +532,7 @@ describe("compilePlcAction", () => {
           }];
         });
         const resolved = resolveActionSequence(sequence);
-        const expected = axisMoveCommands(objectAxisMotions(resolved.segments, "v1"), {
-          reverse,
-          loop: sequence.loop === true,
-        }).map(({ adjusted: _adjusted, ...command }) => command);
+        const expected = axisMoveCommands(objectAxisMotions(resolved.segments, "v1"), { reverse }).map(({ adjusted: _adjusted, ...command }) => command);
         expect(decoded).toEqual(expected);
       }
     }

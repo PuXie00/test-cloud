@@ -375,38 +375,37 @@ describe("axisMoveCommands", () => {
     expect(sim.worstBrakeRatio).toBeLessThanOrEqual(BRAKE_RATIO_LIMIT);
   });
 
-  it("carries a loop seam crossed at speed into the next lap", () => {
-    // 0 ↑500 ↓-500 ↑0：末段和首段都向上，首尾以 250 衔接，末尾这段的目标是下一圈的 500
+  it("restarts every loop lap from rest at the seam", () => {
+    // 0 ↑500 ↓-500 ↑0：末段和首段都向上，循环也在首尾停下，每圈的指令都一样
     const sequence = sequenceOf(
       [
-        pose("p0", 0, { v1: 0 }),
+        pose("p0", 0, { v1: 0 }, { v1: 250 }),
         pose("p1", 2000, { v1: 500 }),
         pose("p2", 6000, { v1: -500 }),
         pose("p3", 8000, { v1: 0 }),
       ],
       { loop: true },
     );
-    const commands = axisMoveCommands(v1MotionsOf(sequence), { loop: true });
-    expect(commands[0]).toMatchObject({ atMs: 0, target: 500, passSpeed: 250 });
-    expect(commands.filter((command) => command.target === 500).length).toBeGreaterThan(1);
-    expect(commands.filter((command) => command.atMs > 6000).every((command) => command.target === 500)).toBe(true);
+    const commands = axisMoveCommands(v1MotionsOf(sequence));
+    expect(commands[0]).toMatchObject({ atMs: 0, target: 500, passSpeed: 0 });
+    expect(commands[commands.length - 1]!.target).toBe(0);
 
     const period = 8000;
     const laps = [0, 1, 2].flatMap((lap) =>
       commands.map((command) => ({ ...command, atSec: (command.atMs + lap * period) / 1000 })),
     );
-    // 首圈从静止起步；第二圈起应与曲线一致
     const sim = simulateDrive(laps, 0, (3 * period) / 1000);
     let worst = 0;
-    for (let atMs = period; atMs < 3 * period; atMs += 5) {
+    for (let atMs = 0; atMs < 3 * period; atMs += 5) {
       worst = Math.max(worst, Math.abs(sim.positionAt(atMs / 1000) - planAt(sequence, atMs % period)));
     }
     expect(worst).toBeLessThan(0.01);
     expect(sim.worstBrakeRatio).toBeLessThanOrEqual(BRAKE_RATIO_LIMIT);
 
-    // 反向循环：倒走时末尾 8000 处补发一条，越过首尾的那段目标是上一圈的 -500
-    const backwards = axisMoveCommands(v1MotionsOf(sequence), { loop: true, reverse: true });
-    expect(backwards[backwards.length - 1]).toMatchObject({ atMs: 8000, target: -500, passSpeed: 250 });
+    // 反向循环：倒走每圈也从末尾静止起步，目标是本圈的 0
+    const backwards = axisMoveCommands(v1MotionsOf(sequence), { reverse: true });
+    expect(backwards[backwards.length - 1]).toMatchObject({ atMs: 8000, target: -500, passSpeed: 0 });
+    expect(backwards[0]!.target).toBe(0);
     const reverseLaps = [0, 1, 2].flatMap((lap) =>
       [...backwards].reverse().map((command) => ({
         ...command,
@@ -415,7 +414,7 @@ describe("axisMoveCommands", () => {
     );
     const reverseSim = simulateDrive(reverseLaps, 0, (3 * period) / 1000);
     let reverseWorst = 0;
-    for (let runMs = period; runMs < 3 * period; runMs += 5) {
+    for (let runMs = 0; runMs < 3 * period; runMs += 5) {
       const curveMs = period - (runMs % period);
       reverseWorst = Math.max(
         reverseWorst,

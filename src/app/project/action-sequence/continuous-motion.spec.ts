@@ -133,41 +133,30 @@ describe("continuous motion between poses", () => {
     ]);
   });
 
-  it("joins the loop seam when the path runs the same way across it", () => {
-    // 0 ↑500 ↓-500 ↑0：末段和首段都向上，首尾以 250 衔接
-    const loop = sequenceOf(
-      [
-        pose("p0", 0, { v1: 0 }),
-        pose("p1", 2000, { v1: 500 }),
-        pose("p2", 6000, { v1: -500 }),
-        pose("p3", 8000, { v1: 0 }),
-      ],
-      { loop: true },
-    );
+  it("stops at the loop seam even when the path runs the same way across it", () => {
+    // 0 ↑500 ↓-500 ↑0：末段和首段都向上，循环也在首尾停下，起始位姿手填的经过速度不起作用
+    const poses = [
+      pose("p0", 0, { v1: 0 }, { v1: 250 }),
+      pose("p1", 2000, { v1: 500 }),
+      pose("p2", 6000, { v1: -500 }),
+      pose("p3", 8000, { v1: 0 }),
+    ];
+    const loop = sequenceOf(poses, { loop: true });
     const motions = v1Motions(loop);
-    expect(motions[0]?.startSpeed).toBeCloseTo(250);
-    expect(motions[2]?.endSpeed).toBeCloseTo(250);
+    expect(motions[0]?.startSpeed).toBe(0);
+    expect(motions[2]?.endSpeed).toBe(0);
     const junctions = junctionsOf(loop);
-    expect(junctions[0]).toEqual({ speed: 250, kind: "auto" });
-    expect(junctions[3]).toEqual({ speed: 250, kind: "seam" });
+    expect(junctions[0]).toEqual({ speed: 0, kind: "edge" });
+    expect(junctions[3]).toEqual({ speed: 0, kind: "edge" });
 
+    // 曲线和帧表与不循环完全一样：首行不带初速度，末段目标就是本圈的 0
     const compiled = compilePlcAction(loop, context);
-    // PLC 时间单位 0.1 s：首行带 25 每 0.1 s 的初速度
-    expect(compiled.timelines[0]!.segments[0]!.b).toBeCloseTo(25);
-    // 帧表：末段 -500→0 越过首尾继续向上，目标是下一圈的 500；0s 补发的一条带初速度，写在 2000 帧
-    expect(
-      compiled.models[0]!.timeBlockList.map((block) => [
-        block.time,
-        block.virtualAxis[0]?.pos,
-        block.virtualAxis[0]?.passVel,
-      ]),
-    ).toEqual([
-      [0, 0, 0],
-      [2000, 500, 250],
-      [6000, -500, 0],
-      [7600, 500, 0],
-      [8000, 500, 281.25],
-    ]);
+    expect(compiled.timelines[0]!.segments[0]!.b).toBe(0);
+    const once = compilePlcAction(sequenceOf(poses), context);
+    expect(compiled.timelines).toEqual(once.timelines);
+    expect(compiled.models).toEqual(once.models);
+    const lastBlock = compiled.models[0]!.timeBlockList.at(-1)!;
+    expect([lastBlock.time, lastBlock.virtualAxis[0]?.pos]).toEqual([8000, 0]);
   });
 
   it("writes PLC rows that enter and leave the pose moving", () => {

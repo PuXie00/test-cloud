@@ -78,7 +78,7 @@ const AXES: VirtualAxisId[] = ["v1", "v2", "v3"];
 const compileModels = (
   resolved: ResolvedActionSequence,
   objectById: Map<number, PlcCompileObject>,
-  options: { reverse: boolean; loop: boolean },
+  options: { reverse: boolean },
 ): cCompiledModel[] =>
   [...resolved.posesByObject.entries()]
     .sort((left, right) => compareNumber(left[0], right[0]))
@@ -210,7 +210,7 @@ export const compilePlcAction = (
         ? pinUncontrolledAxes(resolved, (objectId, axis) => context.livePoseByObjectId?.get(objectId)?.[axis])
         : resolved,
       objectById,
-      { reverse, loop: sequence.loop === true },
+      { reverse },
     ),
     ioBlocks: sortIoBlocks(resolved.commands.map(instructionToCompiledEvent)),
   };

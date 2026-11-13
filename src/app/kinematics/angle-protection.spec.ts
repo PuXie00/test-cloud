@@ -168,6 +168,31 @@ describe("validateActionSequence angle-protection", () => {
     expect(issues.some((issue) => issue.code === "angle-protection")).toBe(true);
   });
 
+  it("keeps a loop sequence inside the envelope at its bottom seam", () => {
+    // 循环首尾在最低点：v1 折返从静止起步，v2 若带速度穿过 0 会冲出包络；循环首尾一律停下
+    const pose = (id: string, atMs: number, v1: number, v2: number) =>
+      ({ id, kind: "pose", objectId: 7, atMs, pose: { v1, v2 } }) as const;
+    const loop: ActionSequenceConfig = {
+      id: 0,
+      name: "loop",
+      trajectoryMode: true,
+      loop: true,
+      blocks: [pose("p0", 0, 0, 0), pose("p1", 10_000, 4000, 10), pose("p2", 20_000, 3000, -10), pose("p3", 30_000, 0, 0)],
+      segments: [],
+    };
+    const issues = validateActionSequence(loop, {
+      objects: [
+        {
+          id: 7,
+          enabledVirtualAxes: ["v1", "v2", "v3"],
+          limits: { v1: axis(0, 5000), v2: axis(-30, 30), v3: axis(-30, 30) },
+          safetyRadius: 1000,
+        },
+      ],
+    });
+    expect(issues.filter((issue) => issue.code === "angle-protection")).toEqual([]);
+  });
+
   it("does not flag a sequence without safetyRadius", () => {
     const issues = validateActionSequence(sequenceOf({ v1: 0, v2: 10, v3: 0 }), {
       objects: [

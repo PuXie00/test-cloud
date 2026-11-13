@@ -30,7 +30,10 @@ export type AxisMoveCommand = {
 export type AxisMoveCommandOptions = {
   /** 反向运行：按原曲线倒着走，目标是每段连续运动的起点 */
   reverse?: boolean;
-  /** 循环序列：首尾以非 0 速度衔接时，末尾这段运动的目标在下一圈 */
+  /**
+   * 循环序列：首尾以非 0 速度衔接时，末尾这段运动的目标在下一圈。
+   * 只有 runMoveCommands 用（从 PLC 曲线还原，与 python 对数）；本软件解算的循环首尾总是停。
+   */
   loop?: boolean;
 };
 
@@ -89,7 +92,7 @@ const ceilRate = (value: number) =>
 const isMoving = (motion: ResolvedAxisMotion) =>
   motion.to !== motion.from && motion.durationMs > 0 && motion.profile.kind === "trapezoid";
 
-const forwardPhases = (motion: ResolvedAxisMotion, seam: boolean): Phase[] => {
+const forwardPhases = (motion: ResolvedAxisMotion): Phase[] => {
   const shape = axisMotionShape(motion);
   if (!shape) throw new Error("invalid trapezoid motion profile");
   const { startSpeed, cruiseSpeed, endSpeed, accelSec, cruiseSec, decelSec } = shape;
@@ -99,25 +102,25 @@ const forwardPhases = (motion: ResolvedAxisMotion, seam: boolean): Phase[] => {
     { atMs: motion.endMs - decelSec * 1000, fromSpeed: cruiseSpeed, toSpeed: endSpeed, durationSec: decelSec },
   ]
     .filter((phase) => phase.durationSec > 0)
-    .map((phase, index) => ({
+    .map((phase) => ({
       ...phase,
       distance: (phase.durationSec * (phase.fromSpeed + phase.toSpeed)) / 2,
-      seam: seam && index === 0,
+      seam: false,
       direction: 1 as const,
     }));
 };
 
 /** 倒着走同一段：阶段倒序，起止速度互换，从原曲线的阶段末尾开始 */
-const reversePhases = (motion: ResolvedAxisMotion, seam: boolean): Phase[] =>
-  forwardPhases(motion, false)
+const reversePhases = (motion: ResolvedAxisMotion): Phase[] =>
+  forwardPhases(motion)
     .reverse()
-    .map((phase, index) => ({
+    .map((phase) => ({
       atMs: phase.atMs + phase.durationSec * 1000,
       fromSpeed: phase.toSpeed,
       toSpeed: phase.fromSpeed,
       durationSec: phase.durationSec,
       distance: phase.distance,
-      seam: seam && index === 0,
+      seam: false,
       direction: -1 as const,
     }));
 
@@ -379,41 +382,21 @@ const runCommands = (phases: readonly Phase[], target: number): AxisMoveCommand[
  * 一个轴整条序列的 move 指令，按原曲线时刻升序。motions 是该轴依次跟随的曲线
  * （objectAxisMotions），停留段不出指令。反向运行时指令按倒走的曲线生成，
  * 时刻仍是原曲线时刻：从末尾往前，原曲线时钟走到 atMs 时下发。
+ * 解算出的曲线首尾总是停（循环序列也是），所以这里不需要跨圈衔接。
  */
 export const axisMoveCommands = (
   motions: readonly ResolvedAxisMotion[],
-  options: AxisMoveCommandOptions = {},
+  options: Pick<AxisMoveCommandOptions, "reverse"> = {},
 ): AxisMoveCommand[] => {
-  const runs = groupRuns(motions.filter(isMoving));
-  const tail = runs[runs.length - 1];
-  const head = runs[0];
-  const tailMotion = tail?.[tail.length - 1];
-  const headMotion = head?.[0];
-  // 循环首尾以非 0 速度衔接：末尾这段和下一圈开头是同一段连续运动
-  const seamJoined =
-    options.loop === true &&
-    runs.length > 1 &&
-    tailMotion !== undefined &&
-    headMotion !== undefined &&
-    tailMotion.endSpeed > 0 &&
-    headMotion.startSpeed > 0;
-  const joined: { motions: ResolvedAxisMotion[]; seamAt: number }[] = seamJoined
-    ? [
-        { motions: [...tail!, ...head!], seamAt: tail!.length },
-        ...runs.slice(1, -1).map((run) => ({ motions: run, seamAt: -1 })),
-      ]
-    : runs.map((run) => ({ motions: run, seamAt: -1 }));
-
-  const commands = joined.flatMap(({ motions: run, seamAt }) => {
+  const commands = groupRuns(motions.filter(isMoving)).flatMap((run) => {
     if (options.reverse) {
-      // 倒走：从最后一段往前，衔接处是倒走时进入末尾那段（seamAt - 1）的地方
       const phases = run
-        .map((motion, index) => reversePhases(motion, index === seamAt - 1))
+        .map(reversePhases)
         .reverse()
         .flat();
       return runCommands(phases, run[0]!.from);
     }
-    const phases = run.flatMap((motion, index) => forwardPhases(motion, index === seamAt));
+    const phases = run.flatMap(forwardPhases);
     return runCommands(phases, run[run.length - 1]!.to);
   });
   return commands.sort((left, right) => left.atMs - right.atMs);
