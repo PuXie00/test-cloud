@@ -39,10 +39,10 @@ export type ResolvedPosePoint = {
 };
 
 /**
- * 衔接速度的来由：auto 自动（调和平均）、manual 手填、edge 序列起止、reverse 折返、
- * hold 前后有一段不动、seam 循环末帧跟随起始位姿。
+ * 衔接速度的来由：auto 自动（调和平均）、manual 手填、edge 序列起止（循环序列也是）、
+ * reverse 折返、hold 前后有一段不动。
  */
-export type PoseJunctionKind = "auto" | "manual" | "edge" | "reverse" | "hold" | "seam";
+export type PoseJunctionKind = "auto" | "manual" | "edge" | "reverse" | "hold";
 
 export type PoseJunction = { speed: number; kind: PoseJunctionKind };
 
@@ -564,12 +564,11 @@ const junctionOf = (
 
 /**
  * 衔接：每个设定点按前后两段平均速度的调和平均通过（可手填，0 即停）；
- * 序列起止、折返、停留处为 0。循环序列的首尾按同一个衔接点算，由起始位姿的手填值决定。
+ * 序列起止、折返、停留处为 0。循环序列每圈也在首尾停下：末帧减到 0，下一圈从 0 起步。
  */
 const assignJunctionSpeeds = (
   series: readonly ResolvedPosePoint[],
   objectSegments: readonly ResolvedMotionSegment[],
-  sequence: ActionSequenceConfig,
 ): void => {
   const pointByRef = new Map(series.map((point) => [point.sourceRef, point]));
   for (const axis of AXES) {
@@ -580,28 +579,19 @@ const assignJunctionSpeeds = (
     };
     const motions = objectAxisMotions(objectSegments, axis);
     const first = motions[0];
-    const last = motions[motions.length - 1];
-    if (!first || !last) {
+    if (!first) {
       if (series[0]) setJunction(series[0].sourceRef, { speed: 0, kind: "edge" });
       continue;
     }
     const refs = [first.fromRef, ...motions.map((motion) => motion.toRef)];
     const manualAt = (ref: string) => pointByRef.get(ref)?.passSpeeds?.[axis];
-    const seam = sequence.loop === true;
     refs.forEach((ref, index) => {
-      const isFirst = index === 0;
-      const isLast = index === refs.length - 1;
-      if (seam && isLast) return;
-      const incoming = isFirst ? (seam ? last : undefined) : motions[index - 1];
-      const outgoing = isLast ? undefined : motions[index];
+      const incoming = index === 0 ? undefined : motions[index - 1];
+      const outgoing = index === refs.length - 1 ? undefined : motions[index];
       const junction = junctionOf(incoming, outgoing, manualAt(ref));
       if (incoming) incoming.endSpeed = junction.speed;
       if (outgoing) outgoing.startSpeed = junction.speed;
       setJunction(ref, junction);
-      if (seam && isFirst) {
-        const followsFirst = junction.kind === "auto" || junction.kind === "manual";
-        setJunction(last.toRef, followsFirst ? { speed: junction.speed, kind: "seam" } : junction);
-      }
     });
   }
 };
@@ -808,7 +798,7 @@ export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedA
       });
     }
     attachAxisMotions(series, objectSegments, spansByAxis);
-    assignJunctionSpeeds(series, objectSegments, sequence);
+    assignJunctionSpeeds(series, objectSegments);
     refillBoundarySpans(series, objectSegments);
     segments.push(...objectSegments);
   }

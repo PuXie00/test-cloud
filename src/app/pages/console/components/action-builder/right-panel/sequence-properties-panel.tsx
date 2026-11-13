@@ -207,7 +207,6 @@ const JUNCTION_LABEL: Record<PoseJunctionKind, string> = {
   edge: "起止停",
   reverse: "折返停",
   hold: "停留",
-  seam: "随首帧",
 };
 
 const PoseAxesEditor = ({
