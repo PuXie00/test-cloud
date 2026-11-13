@@ -19,6 +19,9 @@ import {
 import { encodeControlType } from "./control-type-code";
 import { normalizeMaxAxisVelocity } from "./motion-speed";
 import { normalizeMotionParams } from "./motion-acceleration";
+import type { MotionAxisId } from "./configuration-types";
+import { MOTION_AXIS_IDS, virtualAxisForMotionAxisId } from "./virtual-axis-mapping";
+import { virtualAxisMaxVelocityOf } from "./virtual-axis-max-velocity";
 import { resolveMultiLevelParams } from "./multi-level-hoist";
 import type {
   ControlType,
@@ -85,15 +88,27 @@ const deriveShapeDimensions = (
 const resolveShapeDimensions = (object: ControlledObject): ShapeDimensions =>
   object.shapeDimensions ?? deriveShapeDimensions(object.shapePreset, object.dimensions);
 
+/** 落盘时按绑定驱动单元重算最大加减速度、异常减速度（虚轴最大速度 / 最短加减速时间、异常减速时间） */
 const resolveMotionParams = (
   object: ControlledObject,
   controlType: ControlType,
+  motors: readonly Motor[],
 ): MotionParamsByAxis => {
   const raw =
     Object.keys(object.motionParams ?? {}).length > 0
       ? (object.motionParams ?? {})
       : defaultMotionParamsForControlType(controlType);
-  return normalizeMotionParams(raw);
+  const maxVelocityByAxis = Object.fromEntries(
+    MOTION_AXIS_IDS.map((id) => [
+      id,
+      virtualAxisMaxVelocityOf(
+        { id: object.id, motionParams: raw },
+        motors,
+        virtualAxisForMotionAxisId(id),
+      ),
+    ]),
+  ) as Record<MotionAxisId, number>;
+  return normalizeMotionParams(raw, maxVelocityByAxis);
 };
 
 const persistMountLayout = (layout: MountLayout | undefined): MountLayout | undefined => {
@@ -112,7 +127,10 @@ const persistMountLayout = (layout: MountLayout | undefined): MountLayout | unde
   };
 };
 
-export const wizardControlledObjectToConfig = (object: ControlledObject): ControlledObjectConfig => {
+export const wizardControlledObjectToConfig = (
+  object: ControlledObject,
+  motors: readonly Motor[],
+): ControlledObjectConfig => {
   const controlType = assertControlType(object.controlType);
   const swingYaw = resolveSwingYawModelParams(controlType, object);
   const mountLayout = persistMountLayout(object.mountLayout);
@@ -157,7 +175,7 @@ export const wizardControlledObjectToConfig = (object: ControlledObject): Contro
         mount: roundProjectMount(axis.mount),
       })),
     ),
-    motionParams: resolveMotionParams(object, controlType),
+    motionParams: resolveMotionParams(object, controlType, motors),
     ...(object.motionSpeedControl !== undefined
       ? { motionSpeedControl: object.motionSpeedControl }
       : {}),
@@ -202,7 +220,9 @@ export const persistSetupFromWizard = (
   return {
     plcs: state.plcs.map((plc) => wizardPlcToConfig(plc, existingPlcsById.get(plc.id))),
     motors: state.motors.map(wizardMotorToConfig),
-    controlledObjects: state.objects.map(wizardControlledObjectToConfig),
+    controlledObjects: state.objects.map((object) =>
+      wizardControlledObjectToConfig(object, state.motors),
+    ),
     alignment,
     ...(existing?.scene !== undefined ? { scene: existing.scene } : {}),
     ...(existing?.manualJog !== undefined ? { manualJog: existing.manualJog } : {}),

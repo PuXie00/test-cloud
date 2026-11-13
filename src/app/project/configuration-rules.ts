@@ -9,7 +9,10 @@ import type {
 import type { VirtualAxisId } from "./project-document-types";
 import { normalizeMotionAxisParams } from "./motion-acceleration";
 import { motionAxisIdForKind } from "./virtual-axis-mapping";
-import { DEFAULT_SWING_AXIS_MAX_VELOCITY } from "./virtual-axis-max-velocity";
+import {
+  DEFAULT_SWING_AXIS_MAX_VELOCITY,
+  UNBOUND_V1_MAX_VELOCITY,
+} from "./virtual-axis-max-velocity";
 import {
   normalizeInitialTiltDirection,
   normalizeMountRotation,
@@ -120,6 +123,7 @@ export const ensureMinimumDriveAxes = <T extends DriveAxisConfig>(
   return result;
 };
 
+/** 新物体还没绑定驱动单元：最大加减速度、异常减速度按未绑定时的虚轴最大速度推导 */
 export const MOTION_DEFAULTS = {
   move: normalizeMotionAxisParams({
     minAngle: 0,
@@ -133,7 +137,7 @@ export const MOTION_DEFAULTS = {
     maxAcceleration: 0,
     maxDeceleration: 0,
     abnormalDeceleration: 0,
-  }),
+  }, UNBOUND_V1_MAX_VELOCITY),
   rotation: normalizeMotionAxisParams({
     minAngle: 0,
     maxAngle: 360,
@@ -146,7 +150,7 @@ export const MOTION_DEFAULTS = {
     maxAcceleration: 0,
     maxDeceleration: 0,
     abnormalDeceleration: 0,
-  }),
+  }, UNBOUND_V1_MAX_VELOCITY),
   swingX: normalizeMotionAxisParams({
     minAngle: -20,
     maxAngle: 20,
@@ -160,7 +164,7 @@ export const MOTION_DEFAULTS = {
     maxDeceleration: 0,
     abnormalDeceleration: 0,
     defaultMaxVelocity: DEFAULT_SWING_AXIS_MAX_VELOCITY,
-  }),
+  }, DEFAULT_SWING_AXIS_MAX_VELOCITY),
   swingY: normalizeMotionAxisParams({
     minAngle: -20,
     maxAngle: 20,
@@ -174,7 +178,7 @@ export const MOTION_DEFAULTS = {
     maxDeceleration: 0,
     abnormalDeceleration: 0,
     defaultMaxVelocity: DEFAULT_SWING_AXIS_MAX_VELOCITY,
-  }),
+  }, DEFAULT_SWING_AXIS_MAX_VELOCITY),
   yawY: normalizeMotionAxisParams({
     minAngle: -20,
     maxAngle: 20,
@@ -188,7 +192,7 @@ export const MOTION_DEFAULTS = {
     maxDeceleration: 0,
     abnormalDeceleration: 0,
     defaultMaxVelocity: DEFAULT_SWING_AXIS_MAX_VELOCITY,
-  }),
+  }, DEFAULT_SWING_AXIS_MAX_VELOCITY),
 } satisfies Record<MotionAxisKind, MotionAxisParams>;
 
 export const defaultMotionParamsForControlType = (controlType: ControlType): MotionParamsByAxis => {

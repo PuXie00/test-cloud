@@ -106,6 +106,47 @@ describe("buildModelParamPayload max acceleration", () => {
     expect(payload?.paramCount.hMaxAcceleration).toBe(500);
     expect(payload?.paramCount.hMaxDeceleration).toBe(500);
   });
+
+  it("derives h/p/y abnormal deceleration from each virtual axis max velocity / emergencyDecelTime", () => {
+    const object: ControlledObject = {
+      ...multiPointObject,
+      motionParams: {
+        // 存的 abnormalDeceleration（500）是旧的 speed 推导值，下发时不用
+        h: axisParams({ speed: 40, emergencyDecelTime: 0.1 }),
+        p: axisParams({ speed: 2, emergencyDecelTime: 0.2, defaultMaxVelocity: 4 }),
+        y: axisParams({ speed: 3, emergencyDecelTime: 0.5, defaultMaxVelocity: 5 }),
+      },
+    };
+    const payload = buildModelParamPayload(object, [motor(300), motor(250)]);
+    expect(payload?.paramCount.hAbnormalDeceleration).toBe(2500);
+    expect(payload?.paramCount.pAbnormalDeceleration).toBe(20);
+    expect(payload?.paramCount.yAbnormalDeceleration).toBe(10);
+  });
+
+  it("does not change max accel/decel or abnormal deceleration with the running speed", () => {
+    const withSpeed = (speed: number): ControlledObject => ({
+      ...hoistObject,
+      motionParams: { h: axisParams({ speed, minAccelTime: 2, emergencyDecelTime: 0.5 }) },
+    });
+    const slow = buildModelParamPayload(withSpeed(10), [motor(200)])?.paramCount;
+    const fast = buildModelParamPayload(withSpeed(150), [motor(200)])?.paramCount;
+    expect(slow?.hDefaultVelocity).toBe(10);
+    expect(fast?.hDefaultVelocity).toBe(150);
+    for (const paramCount of [slow, fast]) {
+      expect(paramCount?.hMaxAcceleration).toBe(100);
+      expect(paramCount?.hMaxDeceleration).toBe(100);
+      expect(paramCount?.hAbnormalDeceleration).toBe(400);
+    }
+  });
+
+  it("ignores motors bound to other objects when taking the v1 max velocity", () => {
+    const other = { controlledObjectId: 7, params: { maxAxisVelocity: 50 } } as unknown as Parameters<
+      typeof buildModelParamPayload
+    >[1][number];
+    const payload = buildModelParamPayload(hoistObject, [motor(300), other]);
+    expect(payload?.paramCount.hMaxAcceleration).toBe(300);
+    expect(payload?.paramCount.hAbnormalDeceleration).toBe(3000);
+  });
 });
 
 describe("buildModelParamPayload multi-level hoist", () => {

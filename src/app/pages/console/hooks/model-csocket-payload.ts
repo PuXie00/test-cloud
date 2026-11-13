@@ -3,16 +3,10 @@ import type {
   ControlledObject,
   Motor,
 } from "../components/right-sidebar/config-wizard/config-wizard-types";
-import {
-  CONTROL_TYPE_RULES,
-  ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE,
-} from "@/app/project/configuration-rules";
+import { CONTROL_TYPE_RULES } from "@/app/project/configuration-rules";
 import { motionKindForAxisId } from "@/app/project/virtual-axis-mapping";
-import { deriveMaxAccelerationFromMaxVelocity } from "@/app/project/motion-acceleration";
-import {
-  DEFAULT_SWING_AXIS_MAX_VELOCITY,
-  resolveVirtualAxisMaxVelocity,
-} from "@/app/project/virtual-axis-max-velocity";
+import { deriveMotionAxisLimitRates } from "@/app/project/motion-acceleration";
+import { virtualAxisMaxVelocityOf } from "@/app/project/virtual-axis-max-velocity";
 import { isCppAckFailed } from "@shared/csocket/ack";
 import { adjustDistancesForPlc } from "@/app/project/multi-level-hoist";
 import { runCsocket } from "./motor-csocket-payload";
@@ -57,25 +51,22 @@ const ZERO_AXIS: MappedAxis = {
   abnormalDeceleration: 0,
 };
 
-/** 最大加减速度按虚轴最大速度 / 最短加减速时间换算；无虚轴上限时退回默认速度 */
-const mapAxis = (
-  params: MotionAxisParams | undefined,
-  maxVelocity: number | undefined,
-): MappedAxis => {
+/**
+ * 最大加减速度 = 虚轴最大速度 / 最短加减速时间，异常减速度 = 虚轴最大速度 / 异常减速时间；
+ * 按下发时的绑定驱动单元现算，不用 motionParams 里存的值，也不用运行速度 speed
+ */
+const mapAxis = (params: MotionAxisParams | undefined, maxVelocity: number): MappedAxis => {
   if (!params) return ZERO_AXIS;
-  const maxRate = deriveMaxAccelerationFromMaxVelocity(
-    maxVelocity ?? params.speed,
-    params.minAccelTime,
-  );
+  const limits = deriveMotionAxisLimitRates(maxVelocity, params);
   return {
     maxStroke: params.maxAngle,
     minStroke: params.minAngle,
     defaultVelocity: params.speed,
     defaultAcceleration: params.acceleration,
     defaultDeceleration: params.deceleration,
-    maxAcceleration: maxRate,
-    maxDeceleration: maxRate,
-    abnormalDeceleration: params.abnormalDeceleration,
+    maxAcceleration: limits.maxAcceleration,
+    maxDeceleration: limits.maxDeceleration,
+    abnormalDeceleration: limits.abnormalDeceleration,
   };
 };
 
@@ -215,24 +206,14 @@ export const buildModelParamPayload = (
 
   const hanging = buildHangingBinding(object, motors);
 
-  const maxVelocity = resolveVirtualAxisMaxVelocity(
-    {
-      id: object.id,
-      enabledVirtualAxes: ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE[object.controlType],
-      motionParams: object.motionParams,
-    },
-    motors,
-  );
+  const maxVelocityOf = (axis: "v1" | "v2" | "v3") =>
+    virtualAxisMaxVelocityOf(object, motors, axis);
 
-  const h = mapAxis(object.motionParams?.h, maxVelocity.v1);
+  const h = mapAxis(object.motionParams?.h, maxVelocityOf("v1"));
   const pRaw = resolveSwingParams(object, "p");
   const yRaw = resolveSwingParams(object, "y");
-  const p = pRaw
-    ? mapAxis(pRaw, maxVelocity.v2 ?? DEFAULT_SWING_AXIS_MAX_VELOCITY)
-    : undefined;
-  const y = yRaw
-    ? mapAxis(yRaw, maxVelocity.v3 ?? DEFAULT_SWING_AXIS_MAX_VELOCITY)
-    : undefined;
+  const p = pRaw ? mapAxis(pRaw, maxVelocityOf("v2")) : undefined;
+  const y = yRaw ? mapAxis(yRaw, maxVelocityOf("v3")) : undefined;
 
   return {
     deviceId: object.id,

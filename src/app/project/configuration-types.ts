@@ -55,13 +55,14 @@ export type MotionAxisParams = {
   /** 减速度，由 speed / accelTime 派生（与 acceleration 相等） */
   deceleration: number;
   /**
-   * 最大加速度，由 speed / minAccelTime 派生（与 maxDeceleration 相等）。
-   * 下发 PLC 时不用此值，改按虚轴最大速度 / minAccelTime 换算（见 model-csocket-payload）。
+   * 最大加速度 = 虚轴最大速度 / minAccelTime（与 maxDeceleration 相等），不用 speed。
+   * 虚轴 1 最大速度 = 绑定驱动单元轴最大速度取最小值（virtualAxisMaxVelocityOf）；
+   * 落盘时重算，下发 PLC 时按当时的绑定现算（见 model-csocket-payload）。
    */
   maxAcceleration: number;
-  /** 最大减速度，由 speed / minAccelTime 派生（与 maxAcceleration 相等） */
+  /** 最大减速度 = 虚轴最大速度 / minAccelTime（与 maxAcceleration 相等） */
   maxDeceleration: number;
-  /** 异常减速度，由 speed / emergencyDecelTime 派生 */
+  /** 异常减速度 = 虚轴最大速度 / emergencyDecelTime */
   abnormalDeceleration: number;
   /** 虚轴最大速度（°/s）；仅 p / y（虚轴 2/3）必有，h（虚轴 1）无 */
   defaultMaxVelocity?: number;
