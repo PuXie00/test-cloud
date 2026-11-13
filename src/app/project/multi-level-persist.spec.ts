@@ -37,18 +37,18 @@ const documentWith = (object: ControlledObjectConfig) => {
 
 describe("multi-level config in the project file", () => {
   it("saves sorted and loads back", () => {
-    const config = wizardControlledObjectToConfig(hoist());
+    const config = wizardControlledObjectToConfig(hoist(), []);
     expect(config.multiLevel).toEqual({ adjustDistances: [100, 300], decelerationRatio: 70 });
     expect(controlledObjectConfigToWizard(config).multiLevel).toEqual(config.multiLevel);
   });
 
   it("fills the default for a multi-level hoist saved without it", () => {
-    const config = wizardControlledObjectToConfig(hoist({ multiLevel: undefined }));
+    const config = wizardControlledObjectToConfig(hoist({ multiLevel: undefined }), []);
     expect(config.multiLevel).toEqual({ adjustDistances: [], decelerationRatio: 50 });
   });
 
   it("validates it only on multi-level hoists", () => {
-    const valid = wizardControlledObjectToConfig(hoist());
+    const valid = wizardControlledObjectToConfig(hoist(), []);
     expect(() => assertProjectDocumentStructure(documentWith(valid))).not.toThrow();
 
     const unsorted = { ...valid, multiLevel: { adjustDistances: [300, 100], decelerationRatio: 50 } };

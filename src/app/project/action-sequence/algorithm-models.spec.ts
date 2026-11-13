@@ -68,6 +68,43 @@ describe("buildAlgorithmModels", () => {
     });
   });
 
+  it("takes max velocity/acceleration from the virtual axis max velocity, never the running speed", () => {
+    const objects = fixtureObjects().map((object) =>
+      object.id === 3
+        ? {
+            ...object,
+            motionParams: {
+              ...object.motionParams,
+              h: { ...object.motionParams.h!, speed: 40, minAccelTime: 2 },
+              // 没配 v2 最大速度：退回默认值，不用 speed
+              p: { ...object.motionParams.p!, speed: 1.5, defaultMaxVelocity: undefined },
+            },
+          }
+        : object,
+    );
+    const motor = (id: number, maxAxisVelocity: number) => ({
+      id,
+      productModel: "M",
+      plcId: 1,
+      busNo: 0 as const,
+      axisType: 0 as const,
+      nodeAddress: null,
+      controlledObjectId: 3,
+      axisKey: String(id),
+      params: { maxAxisVelocity },
+    });
+    const { models } = buildAlgorithmModels({
+      resolved: resolveActionSequence(fixtureSequence(true)),
+      objects,
+      motors: [motor(1, 320), motor(2, 280)],
+      telemetryByObjectId: new Map(),
+    });
+    expect(models[1]).toMatchObject({
+      max_velocity_HPY: [280, 3, 3],
+      max_acceleration_HPY: [140, 3, 3],
+    });
+  });
+
   it("cuts one original segment per pose span and holds the last pose until the sequence ends", () => {
     const { models } = build(fixtureSequence(true));
     // 多点摆的最后一个位姿在 15 s，序列到 16 s 才结束

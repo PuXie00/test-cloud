@@ -10,7 +10,7 @@ import {
   motionAxisIdForVirtualAxis,
   motionParamsOfKind,
 } from "@/app/project/virtual-axis-mapping";
-import { resolveVirtualAxisMaxVelocity } from "@/app/project/virtual-axis-max-velocity";
+import { virtualAxisMaxVelocityOf } from "@/app/project/virtual-axis-max-velocity";
 import {
   COEFFICIENT_NAMES,
   type ActionSegment,
@@ -88,7 +88,7 @@ const motorCountOf = (modelType: 2 | 7 | 8, object: ControlledObjectConfig): num
 const paramsFor = (object: ControlledObjectConfig, axis: VirtualAxisId) =>
   object.motionParams[motionAxisIdForVirtualAxis(axis)];
 
-/** 最大速度取虚轴最大速度，最大加减速度 = 最大速度 / 最短加速时间 */
+/** 最大速度取虚轴最大速度（v1 = 绑定驱动单元轴最大速度取最小），最大加减速度 = 最大速度 / 最短加速时间 */
 const maxVadFor = (
   object: ControlledObjectConfig,
   motors: readonly MotorConfig[],
@@ -96,7 +96,7 @@ const maxVadFor = (
 ): [number, number, number] => {
   const params = paramsFor(object, axis);
   if (!object.enabledVirtualAxes.includes(axis) || !params) return [0, 0, 0];
-  const velocity = resolveVirtualAxisMaxVelocity(object, motors)[axis] ?? params.speed;
+  const velocity = virtualAxisMaxVelocityOf(object, motors, axis);
   const acceleration = params.minAccelTime > 0 ? velocity / params.minAccelTime : 0;
   return [velocity, acceleration, acceleration];
 };

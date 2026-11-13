@@ -67,6 +67,7 @@ export const withSwingAxisMaxVelocity = (
   return { ...motionParams, [id]: { ...params, defaultMaxVelocity: value } };
 };
 
+/** 虚轴 1 最大速度：该物体绑定的驱动单元轴最大速度（maxAxisVelocity）取最小值；一个都没有时用 UNBOUND_V1_MAX_VELOCITY */
 const v1MaxFromMotors = (
   objectId: number,
   motors: readonly MotorVelocitySource[],
@@ -80,6 +81,19 @@ const v1MaxFromMotors = (
   }
   return min ?? UNBOUND_V1_MAX_VELOCITY;
 };
+
+/**
+ * 推导最大加减速度、异常减速度用的虚轴最大速度：
+ * v1 按绑定驱动单元轴最大速度取最小值，v2/v3 用配置的最大速度（缺省默认值），不看运行速度 speed。
+ */
+export const virtualAxisMaxVelocityOf = (
+  object: Pick<VirtualAxisMaxObject, "id" | "motionParams">,
+  motors: readonly MotorVelocitySource[],
+  axis: VirtualAxisId,
+): number =>
+  axis === "v1"
+    ? v1MaxFromMotors(object.id, motors)
+    : (swingAxisMaxVelocityOf(object.motionParams, axis) ?? DEFAULT_SWING_AXIS_MAX_VELOCITY);
 
 export const resolveVirtualAxisMaxVelocity = (
   object: VirtualAxisMaxObject,
