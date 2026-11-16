@@ -27,6 +27,14 @@ export const getProjectsRoot = (): string => {
   return path.join(getInstallDir(), 'Project')
 }
 
+/**
+ * 卸载程序（升级、回退、卸载都会跑）删程序文件前把 Project 挪到 <安装目录>.project-keep，删完挪回去，
+ * 见 build/installer.nsh 的 YZ_KEPT_SUFFIX，改的话两边一起改。
+ */
+export const KEPT_PROJECTS_SUFFIX = '.project-keep'
+
+export const getKeptProjectsDir = (): string => `${getInstallDir()}${KEPT_PROJECTS_SUFFIX}`
+
 export const getProjectDir = (name: string): string => path.join(getProjectsRoot(), name)
 
 export const getProjectJsonPath = (name: string): string =>

@@ -46,6 +46,7 @@ import type { ProjectRecord } from "./project-types";
 import { preloadMotorModelConfigs } from "@/app/pages/console/hooks/motor-config";
 import { setLastOpenProjectAck } from "@/app/pages/console/hooks/project-verify";
 import type { CppAckResult } from "@/types/electron";
+import { PROJECT_FORMAT_VERSION } from "@shared/project/project-format";
 
 export type DocumentMutationOrigin =
   | "setup"
@@ -96,6 +97,8 @@ type ProjectContextValue = {
   exportProject: (folderName?: string) => Promise<string | null>;
   refreshHistory: (folderName?: string) => Promise<void>;
   restoreVersion: (historyId: string) => Promise<void>;
+  /** 打不开的工程（版本过高、读不了）直接恢复历史版本，不打开 */
+  restoreUnopenableVersion: (folderName: string, historyId: string) => Promise<void>;
   currentConfigurationStateId: string | null;
   documentRevision: DocumentRevision;
   canUndo: boolean;
@@ -691,6 +694,8 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
                 modifiedAt: document.meta.modifiedAt,
                 status: document.meta.status,
                 schemaVersion: document.schemaVersion,
+                formatVersion: PROJECT_FORMAT_VERSION,
+                compat: "ok",
                 sizeBytes: 0,
                 hasCover: false,
                 coverPath: null,
@@ -727,6 +732,17 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       }
     },
     [selectedProject?.folderName, resetSessionHistory],
+  );
+
+  /** 版本过高、读不了的工程打不开：不打开，直接恢复成本软件能读的历史版本，再刷新列表 */
+  const restoreUnopenableVersion = useCallback(
+    async (folderName: string, historyId: string) => {
+      unwrapResult(await getProjectAPI().restoreHistory({ historyId, name: folderName }));
+      await refreshProjects();
+      await refreshHistory(folderName);
+      setError(null);
+    },
+    [refreshProjects, refreshHistory],
   );
 
   const runTrackedDocumentUpdate = useCallback(
@@ -1158,6 +1174,7 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       exportProject,
       refreshHistory,
       restoreVersion,
+      restoreUnopenableVersion,
       currentConfigurationStateId: currentConfigurationState?.id ?? null,
       documentRevision,
       canUndo,
@@ -1199,6 +1216,7 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       exportProject,
       refreshHistory,
       restoreVersion,
+      restoreUnopenableVersion,
       currentConfigurationState?.id,
       documentRevision,
       canUndo,

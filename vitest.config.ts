@@ -1,7 +1,14 @@
 import path from 'node:path'
+import { loadEnv } from 'vite'
 import { defineConfig } from 'vitest/config'
 
+// 和打包一样从 .env 读工程文件格式版本（见 vite.config.ts）
+const projectSchemaVersion = loadEnv('test', __dirname, 'YZ_').YZ_PROJECT_SCHEMA_VERSION ?? '1'
+
 export default defineConfig({
+  define: {
+    __YZ_PROJECT_SCHEMA_VERSION__: JSON.stringify(projectSchemaVersion),
+  },
   resolve: {
     alias: {
       '@': path.join(__dirname, 'src'),
@@ -30,6 +37,7 @@ export default defineConfig({
       'src/app/pages/console/components/operation-log/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       'src/app/pages/console/3d/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       'src/app/components/ics/**/*.{test,spec}.?(c|m)[jt]s?(x)',
+      'src/app/components/project-center/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       'src/app/components/ui/input-numeric.test.ts',
       'src/app/viz3d/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       // 用户与权限

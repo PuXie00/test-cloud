@@ -25,14 +25,26 @@ export type ProjectDocumentLike = {
   snapshots: unknown[]
 }
 
+/**
+ * 工程文件能不能被本软件打开（见 shared/project/project-format.ts）：
+ * ok 当前格式；upgrade 旧格式，能打开，保存时升级成当前格式；too-new 更高版本软件保存的，不能打开；invalid 读不了
+ */
+export type ProjectCompat = 'ok' | 'upgrade' | 'too-new' | 'invalid'
+
 export type ProjectSummary = {
   name: string
+  /** 读不了的工程没有 id，用 folder:<目录名> */
   id: string
   author: string
   createdAt: string
   modifiedAt: string
   status?: string
   schemaVersion: string
+  /** 工程格式版本；读不出来为 null */
+  formatVersion: number | null
+  compat: ProjectCompat
+  /** compat 不是 ok 时给人看的说明 */
+  compatMessage?: string
   sizeBytes: number
   hasCover: boolean
   coverPath: string | null
@@ -95,6 +107,8 @@ export type HistoryBackupParams = {
 
 export type HistoryRestoreParams = {
   historyId: string
+  /** 不传就是当前打开的工程；版本过高打不开的工程靠这个直接恢复成本软件能读的历史版本 */
+  name?: string
 }
 
 export type HistoryDiffParams = {

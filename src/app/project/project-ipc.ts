@@ -85,6 +85,9 @@ export const summaryToRecord = (
   coverPath: summary.coverPath,
   coverDataUrl: summary.coverDataUrl,
   projectPath: summary.projectPath,
+  formatVersion: summary.formatVersion,
+  compat: summary.compat,
+  compatMessage: summary.compatMessage,
 });
 
 export const toDocumentLike = (doc: ProjectDocument): ProjectDocumentLike =>

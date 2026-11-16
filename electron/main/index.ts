@@ -10,7 +10,7 @@ import { registerAuthHandlers } from './auth'
 import { registerKinematicsHandlers, shutdownKinematics } from './kinematics'
 import { attachCloseGuard, registerToolHandlers } from './tool'
 import { registerConfigHandlers } from './getConfig'
-import { registerProjectHandlers } from './project'
+import { registerProjectHandlers, restoreKeptProjectsOnStartup } from './project'
 import { attachAiBridgeWindow, registerAiBridgeHandlers, shutdownAiBridge } from './ai-bridge'
 // import { update } from './update'
 
@@ -127,7 +127,9 @@ async function createWindow() {
 
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // 卸载程序没来得及挪回来的工程先放回 Project，再列工程、启动 C++
+  await restoreKeptProjectsOnStartup()
   // 当前登录用户名（不是显示名）写进发给 C++ 的报文的 userName（操作日志的操作人）
   registerAuthHandlers({
     onSessionChange: (session) => {
