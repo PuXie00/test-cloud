@@ -19,6 +19,8 @@
     "build:linux:appimage": "vite build && electron-builder --linux AppImage",
     "build:linux:deb": "vite build && electron-builder --linux deb",
     "build:linux:rpm": "vite build && electron-builder --linux rpm",
+    "update:keygen": "node scripts/update-package.mjs keygen",
+    "update:pack": "node scripts/update-package.mjs pack",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "postinstall": "electron-builder install-app-deps",

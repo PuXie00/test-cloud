@@ -12,7 +12,7 @@ import { attachCloseGuard, registerToolHandlers } from './tool'
 import { registerConfigHandlers } from './getConfig'
 import { registerProjectHandlers, restoreKeptProjectsOnStartup } from './project'
 import { attachAiBridgeWindow, registerAiBridgeHandlers, shutdownAiBridge } from './ai-bridge'
-// import { update } from './update'
+import { registerUpdateHandlers } from './update'
 
 const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -122,9 +122,6 @@ async function createWindow() {
     return { action: 'deny' }
   })
 
-  // Auto update
-  // update(win)
-
 }
 
 app.whenReady().then(async () => {
@@ -142,6 +139,7 @@ app.whenReady().then(async () => {
   registerConfigHandlers()
   registerToolHandlers()
   registerAiBridgeHandlers()
+  registerUpdateHandlers()
   // 然后创建主窗口（在后台加载）
   createWindow()
 })

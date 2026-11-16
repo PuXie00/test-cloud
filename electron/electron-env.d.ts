@@ -12,6 +12,8 @@ declare namespace NodeJS {
     VITE_PUBLIC: string
     YZ_CPP_WS_URL?: string
     YZ_PROJECT_ROOT?: string
+    /** 在线更新目录（latest.json + .yzupd），见 main/update */
+    YZ_UPDATE_URL?: string
     YZ_AI_HTTP_PORT?: string
     /** 本机用户数据文件，默认在用户数据目录的 users.json */
     YZ_USERS_FILE?: string

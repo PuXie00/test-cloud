@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Bell, Gamepad2, Globe, Info, Palette, UserRound } from "lucide-react";
+import { Bell, Gamepad2, Globe, Info, Palette, PackageCheck, UserRound } from "lucide-react";
 import type { PermissionId } from "@shared/auth/permissions";
 import type { SettingsNavId, SettingsNavItem } from "./system-settings-types";
 
@@ -10,6 +10,7 @@ export const SETTINGS_NAV_ITEMS: (SettingsNavItem & { icon: LucideIcon; permissi
   { id: "calibration", label: "控台校准", icon: Gamepad2, permission: "system.settings" },
   { id: "network", label: "网络配置", icon: Globe, permission: "system.settings" },
   { id: "notifications", label: "通知与声音", icon: Bell, permission: "system.settings" },
+  { id: "update", label: "软件更新", icon: PackageCheck, permission: "system.settings" },
   { id: "about", label: "关于软件", icon: Info },
 ];
 

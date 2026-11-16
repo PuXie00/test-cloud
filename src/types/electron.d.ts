@@ -20,6 +20,13 @@ import type {
   SaveAsProjectParams,
   SaveProjectParams,
 } from '../../shared/project/types'
+import type {
+  StoredUpdatePackage,
+  UpdateCheckResult,
+  UpdateDownloadProgress,
+  UpdateResult,
+  UpdateStatus,
+} from '../../shared/update/types'
 import type { ActionDataSaveItem } from '../../shared/csocket/action-data-save'
 import type { LicenseAck, LicenseActivateItem } from '../../shared/csocket/license'
 import type {
@@ -235,6 +242,20 @@ export type AiBridgeAPI = {
   ) => () => void
 }
 
+/** 软件升级（window.updateAPI），见 shared/update/types.ts */
+export type UpdateAPI = {
+  status: () => Promise<UpdateResult<UpdateStatus>>
+  /** 不传路径就弹选择文件 */
+  importPackage: (params?: { filePath?: string }) => Promise<UpdateResult<StoredUpdatePackage>>
+  check: () => Promise<UpdateResult<UpdateCheckResult>>
+  download: () => Promise<UpdateResult<StoredUpdatePackage>>
+  cancelDownload: () => Promise<UpdateResult<null>>
+  /** 成功后软件会退出，安装程序装完再打开 */
+  install: (params: { version: string }) => Promise<UpdateResult<null>>
+  /** 下载进度，null 表示下载结束；返回注销函数 */
+  onProgress: (listener: (progress: UpdateDownloadProgress | null) => void) => () => void
+}
+
 /** 工具域门面：window.toolAPI */
 export type ToolAPI = {
   confirm: (params: ConfirmToolParams) => Promise<boolean>
@@ -257,6 +278,8 @@ declare global {
     aiBridgeApi?: AiBridgeAPI
     /** 本机用户与权限；测试 / 纯浏览器环境下不存在 */
     authAPI?: AuthAPI
+    /** 软件升级；测试 / 纯浏览器环境下不存在 */
+    updateAPI?: UpdateAPI
     /** @deprecated 新域请用 xxxAPI；仅兼容尚未迁移的通道 */
     ipcRenderer: {
       on: (

@@ -18,6 +18,7 @@ import { CalibrationPanel } from "./panels/calibration-panel";
 import { InterfaceSettingsPanel } from "./panels/interface-settings-panel";
 import { NetworkSettingsPanel } from "./panels/network-settings-panel";
 import { NotificationsPanel } from "./panels/notifications-panel";
+import { UpdatePanel } from "./panels/update-panel";
 import { UserPanel } from "./panels/user-panel";
 import { SettingsNavItem } from "./settings-nav-item";
 import {
@@ -43,6 +44,8 @@ const renderPanel = (navId: SettingsNavId, close: () => void) => {
       return <NetworkSettingsPanel />;
     case "notifications":
       return <NotificationsPanel />;
+    case "update":
+      return <UpdatePanel />;
     case "about":
       return <AboutPanel />;
   }
