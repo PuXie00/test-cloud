@@ -7,7 +7,7 @@ import { ProjectProvider } from "@/app/project/project-provider";
 import App from "./app/App";
 import "./styles/index.css";
 
-// Electron 生产态用 loadFile(file://)，BrowserRouter 无法匹配路由；HashRouter 兼容开发与打包
+// 路由用 hash，开发态与打包后的本地页面服务按同一套路径匹配
 createRoot(document.getElementById("root")!).render(
   <HashRouter>
     <LicenseProvider>
