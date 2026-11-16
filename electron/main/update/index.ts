@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import fs from 'node:fs/promises'
 import path from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, net } from 'electron'
 import { movingAxisIds } from '../../../shared/csocket/axis-info'
@@ -7,7 +8,7 @@ import {
   UPDATE_CHANNELS,
   UPDATE_PACKAGE_EXT,
   UPDATE_PRODUCT,
-  type UpdateDownloadProgress,
+  type UpdatePickedFile,
   type UpdateResult,
 } from '../../../shared/update/types'
 import { getCsocketApiService, shutdownCppSocket } from '../cSocket'
@@ -47,9 +48,9 @@ const launchInstaller = (installerPath: string, args: readonly string[]): Promis
     })
   })
 
-const broadcastProgress = (progress: UpdateDownloadProgress | null): void => {
+const broadcast = (channel: string, payload: unknown): void => {
   for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) win.webContents.send(UPDATE_CHANNELS.progress, progress)
+    if (!win.isDestroyed()) win.webContents.send(channel, payload)
   }
 }
 
@@ -58,10 +59,13 @@ let service: UpdateService | null = null
 export const getUpdateService = (): UpdateService => {
   if (service) return service
   const root = resolveUpdatesRoot()
+  const target = { platform: process.platform, arch: process.arch }
   service = new UpdateService({
     currentVersion: app.getVersion(),
+    target,
+    // 软件里装：目前只有 Windows 安装版（NSIS）；Linux 还要按发布方式（deb / AppImage）接安装步骤
     installSupported: process.platform === 'win32' && app.isPackaged,
-    store: new UpdatePackageStore(root, UPDATE_SIGNING_PUBLIC_KEY, UPDATE_PRODUCT),
+    store: new UpdatePackageStore(root, UPDATE_SIGNING_PUBLIC_KEY, UPDATE_PRODUCT, target),
     onlineUrl: normalizeUpdateUrl(process.env.YZ_UPDATE_URL),
     downloadsDir: path.join(root, 'downloads'),
     // 走 Chromium 网络栈，跟系统代理
@@ -76,7 +80,8 @@ export const getUpdateService = (): UpdateService => {
       releaseCloseGuards()
       setImmediate(() => app.quit())
     },
-    onProgress: broadcastProgress,
+    onProgress: (progress) => broadcast(UPDATE_CHANNELS.progress, progress),
+    onImportProgress: (progress) => broadcast(UPDATE_CHANNELS.importProgress, progress),
   })
   return service
 }
@@ -91,19 +96,28 @@ export const registerUpdateHandlers = (): void => {
 
   ipcMain.handle(UPDATE_CHANNELS.status, () => getUpdateService().status())
 
-  ipcMain.handle(UPDATE_CHANNELS.importPackage, async (event, params?: { filePath?: string }) => {
-    let filePath = params?.filePath?.trim()
-    if (!filePath) {
-      const win = BrowserWindow.fromWebContents(event.sender)
-      const options = {
-        title: '选择升级包',
-        properties: ['openFile' as const],
-        filters: [{ name: '升级包', extensions: [UPDATE_PACKAGE_EXT.slice(1)] }],
-      }
-      const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
-      if (result.canceled || result.filePaths.length === 0) return cancelled()
-      filePath = result.filePaths[0]
+  // 选文件和导入分开：选完界面马上能显示「正在读取 xxx」，再开始导入
+  ipcMain.handle(UPDATE_CHANNELS.pickPackage, async (event): Promise<UpdateResult<UpdatePickedFile>> => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const options = {
+      title: '选择升级包',
+      properties: ['openFile' as const],
+      filters: [{ name: '升级包', extensions: [UPDATE_PACKAGE_EXT.slice(1)] }],
     }
+    const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
+    if (result.canceled || result.filePaths.length === 0) return cancelled()
+    const filePath = result.filePaths[0]
+    try {
+      const { size } = await fs.stat(filePath)
+      return { ok: true, data: { filePath, fileName: path.basename(filePath), sizeBytes: size } }
+    } catch (err) {
+      return { ok: false, code: 'READ_FAILED', message: `读不到这个文件（${err instanceof Error ? err.message : String(err)}）` }
+    }
+  })
+
+  ipcMain.handle(UPDATE_CHANNELS.importPackage, (_event, params: { filePath?: unknown } | undefined) => {
+    const filePath = typeof params?.filePath === 'string' ? params.filePath.trim() : ''
+    if (!filePath) return { ok: false, code: 'BAD_REQUEST', message: '没有指定升级包文件' }
     return getUpdateService().importPackage(filePath)
   })
 

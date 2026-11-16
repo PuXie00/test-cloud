@@ -3,15 +3,16 @@ import { createWriteStream } from 'node:fs'
 import fs from 'node:fs/promises'
 import { once } from 'node:events'
 import {
+  latestFileName,
   parseUpdateLatest,
-  UPDATE_LATEST_FILE,
   type UpdateLatest,
   type UpdateResult,
+  type UpdateTarget,
 } from '../../../shared/update/types'
 
 /**
- * 在线更新：服务器目录（YZ_UPDATE_URL）下放 latest.json 和 .yzupd。
- * latest.json 只是指路，下载完照样按签名完整校验升级包（见 package-store.ts）。
+ * 在线更新：服务器目录（YZ_UPDATE_URL）下放 latest-<平台>-<架构>.json 和 .yzupd，每种平台 + 架构各一份。
+ * latest 文件只是指路，下载完照样按签名完整校验升级包（见 package-store.ts）。
  */
 
 export type FetchLike = (url: string, init?: { signal?: AbortSignal }) => Promise<Response>
@@ -35,8 +36,10 @@ export const normalizeUpdateUrl = (raw: string | undefined): string | null => {
 export const fetchLatest = async (
   baseUrl: string,
   fetchImpl: FetchLike,
+  target: UpdateTarget,
 ): Promise<UpdateResult<UpdateLatest>> => {
-  const url = new URL(UPDATE_LATEST_FILE, baseUrl)
+  const fileName = latestFileName(target)
+  const url = new URL(fileName, baseUrl)
   // 带个时间戳，别拿到中间缓存的旧 latest.json
   url.searchParams.set('t', String(Date.now()))
   let res: Response
@@ -45,15 +48,20 @@ export const fetchLatest = async (
   } catch (err) {
     return fail('NETWORK', `连不上更新服务器（${errorText(err)}）`)
   }
+  if (res.status === 404) return fail('NO_RELEASE', `更新服务器上还没有本机这种平台的版本（${fileName}）`)
   if (!res.ok) return fail('NETWORK', `更新服务器返回 ${res.status}`)
   let body: unknown
   try {
     body = await res.json()
   } catch {
-    return fail('BAD_LATEST', '更新服务器上的 latest.json 不是有效的 JSON')
+    return fail('BAD_LATEST', `更新服务器上的 ${fileName} 不是有效的 JSON`)
   }
   const latest = parseUpdateLatest(body)
-  return typeof latest === 'string' ? fail('BAD_LATEST', `latest.json 内容不对：${latest}`) : ok(latest)
+  if (typeof latest === 'string') return fail('BAD_LATEST', `${fileName} 内容不对：${latest}`)
+  if (latest.platform !== target.platform || latest.arch !== target.arch) {
+    return fail('BAD_LATEST', `${fileName} 写的是 ${latest.platform}-${latest.arch} 的版本`)
+  }
+  return ok(latest)
 }
 
 /** 下载到 dest（先写 dest.part，大小和 sha512 对上才改名）；onProgress 收到已下载的字节数 */

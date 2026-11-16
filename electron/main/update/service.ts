@@ -4,14 +4,16 @@ import type {
   StoredUpdatePackage,
   UpdateCheckResult,
   UpdateDownloadProgress,
+  UpdateImportProgress,
   UpdateManifest,
   UpdateRelation,
   UpdateResult,
   UpdateStatus,
+  UpdateTarget,
 } from '../../../shared/update/types'
 import { compareVersions } from '../../../shared/update/version'
 import { downloadFile, fetchLatest, type FetchLike } from './online'
-import type { UpdatePackageStore } from './package-store'
+import type { ImportProgressListener, UpdatePackageStore } from './package-store'
 
 /** 本机最多留几个升级包（不算当前版本的） */
 export const KEEP_PACKAGES = 5
@@ -24,7 +26,9 @@ const PROGRESS_INTERVAL_MS = 250
 
 export type UpdateServiceDeps = {
   currentVersion: string
-  /** Windows 安装版才能在软件里装（开发态、Linux 不行） */
+  /** 本机的平台和架构 */
+  target: UpdateTarget
+  /** 这个平台、这种安装方式能不能在软件里装（开发态都不行） */
   installSupported: boolean
   store: UpdatePackageStore
   /** 在线更新地址，null 表示没配 */
@@ -42,6 +46,8 @@ export type UpdateServiceDeps = {
   quit: () => void
   /** 下载进度，null 表示下载结束 */
   onProgress: (progress: UpdateDownloadProgress | null) => void
+  /** 导入进度，null 表示导入结束 */
+  onImportProgress: (progress: UpdateImportProgress | null) => void
 }
 
 const ok = <T>(data: T): UpdateResult<T> => ({ ok: true, data })
@@ -49,6 +55,7 @@ const fail = <T>(code: string, message: string): UpdateResult<T> => ({ ok: false
 
 export class UpdateService {
   private download: { progress: UpdateDownloadProgress; controller: AbortController } | null = null
+  private importing: UpdateImportProgress | null = null
   private installing = false
 
   constructor(private readonly deps: UpdateServiceDeps) {}
@@ -72,24 +79,46 @@ export class UpdateService {
     const manifests = await this.deps.store.list()
     return ok({
       currentVersion: this.deps.currentVersion,
+      target: this.deps.target,
       installSupported: this.deps.installSupported,
       signingKeyConfigured: this.deps.store.signingKeyConfigured,
       onlineUrl: this.deps.onlineUrl,
       packages: manifests.map((m) => this.toStored(m)),
       download: this.download?.progress ?? null,
+      importing: this.importing,
     })
   }
 
+  /** 导入升级包（读进本机、解压、校验）。几百 MB 的包要好几秒，过程通过 onImportProgress 推给界面 */
   async importPackage(file: string): Promise<UpdateResult<StoredUpdatePackage>> {
-    const imported = await this.deps.store.importPackage(file)
-    if (!imported.ok) return imported
-    await this.deps.store.prune(this.deps.currentVersion, KEEP_PACKAGES)
-    return ok(this.toStored(imported.data))
+    if (this.importing) return fail('BUSY', '正在导入另一个升级包，等它完成再选')
+    const fileName = path.basename(file)
+    let lastStage: UpdateImportProgress['stage'] | null = null
+    let lastPush = 0
+    const report: ImportProgressListener = (stage, received, total) => {
+      this.importing = { fileName, stage, received, total }
+      const now = Date.now()
+      // 换步骤、做完一步时马上推；同一步里最多 PROGRESS_INTERVAL_MS 推一次
+      if (stage !== lastStage || received === total || now - lastPush >= PROGRESS_INTERVAL_MS) {
+        lastStage = stage
+        lastPush = now
+        this.deps.onImportProgress(this.importing)
+      }
+    }
+    try {
+      const imported = await this.deps.store.importPackage(file, report)
+      if (!imported.ok) return imported
+      await this.deps.store.prune(this.deps.currentVersion, KEEP_PACKAGES)
+      return ok(this.toStored(imported.data))
+    } finally {
+      this.importing = null
+      this.deps.onImportProgress(null)
+    }
   }
 
   async check(): Promise<UpdateResult<UpdateCheckResult>> {
     if (!this.deps.onlineUrl) return fail('NO_SERVER', '没有配置更新服务器（YZ_UPDATE_URL）')
-    const latest = await fetchLatest(this.deps.onlineUrl, this.deps.fetch)
+    const latest = await fetchLatest(this.deps.onlineUrl, this.deps.fetch, this.deps.target)
     if (!latest.ok) return latest
     const stored = (await this.deps.store.list()).some((m) => m.version === latest.data.version)
     return ok({ latest: latest.data, relation: this.relationOf(latest.data.version), stored })
@@ -161,6 +190,7 @@ export class UpdateService {
     if (!this.deps.installSupported) return fail('UNSUPPORTED', '只有 Windows 安装版能在软件里升级')
     if (version === this.deps.currentVersion) return fail('SAME_VERSION', `已经是 v${version}`)
     if (this.download) return fail('BUSY', '正在下载升级包，下载完或取消后再安装')
+    if (this.importing) return fail('BUSY', '正在导入升级包，导入完再安装')
     const verified = await this.deps.store.verifyStored(version)
     if (!verified.ok) return verified
     const blocked = this.deps.motionBlock()

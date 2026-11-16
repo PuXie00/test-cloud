@@ -6,12 +6,14 @@
  *      pnpm update:keygen --out D:\keys\yz-update-key.pem
  *    公钥会写进 shared/update/signing-key.ts，提交这个文件；之后打的安装包才认这把私钥签的升级包。
  *
- * 2) 打升级包：先 pnpm build 出安装程序，再
+ * 2) 打升级包：先 pnpm build（或 build:linux:*）出安装程序，再
  *      pnpm update:pack --key D:\keys\yz-update-key.pem --notes 更新说明.txt
- *    默认读 release/<版本>/yzapp_<版本>.exe，输出到同一个目录：
- *      yzapp_<版本>.yzupd  拷到现场：系统设置 › 软件更新 › 选择升级包
- *      latest.json         有更新服务器后，和 .yzupd 一起放到 YZ_UPDATE_URL 指向的目录
- *    其他参数：--installer <exe>  --version <x.y.z>  --out <目录>  --released-at <ISO 时间>
+ *    默认读 release/<版本>/yzapp_<版本>.exe（Windows x64），输出到同一个目录：
+ *      yzapp_<版本>_<平台>-<架构>.yzupd  拷到现场：系统设置 › 软件更新 › 选择升级包
+ *      latest-<平台>-<架构>.json         有更新服务器后，和 .yzupd 一起放到 YZ_UPDATE_URL 指向的目录
+ *    平台按安装程序的扩展名判断：.exe 是 win32，.deb / .rpm / .AppImage 是 linux；
+ *    架构用 --arch 指定（x64、arm64…，取值同 Node 的 process.arch），默认 x64。每种平台 + 架构各打一个包。
+ *    其他参数：--installer <文件>  --version <x.y.z>  --out <目录>  --released-at <ISO 时间>
  */
 import {
   createHash,
@@ -31,6 +33,16 @@ const PUBLIC_KEY_FILE = path.join(REPO_ROOT, 'shared', 'update', 'signing-key.ts
 const KEY_CONST_RE = /export const UPDATE_SIGNING_PUBLIC_KEY = (?:'([^']*)'|`([^`]*)`)/
 
 export const PRODUCT = 'yzapp'
+const ARCH_RE = /^[a-z0-9_]{1,20}$/
+
+/** 按安装程序扩展名认平台（同 shared/update/types.ts 的 INSTALLER_EXTENSIONS） */
+export const platformOfInstaller = (file) => {
+  const ext = path.extname(file).toLowerCase()
+  if (ext === '.exe') return 'win32'
+  if (['.deb', '.rpm', '.appimage'].includes(ext)) return 'linux'
+  throw new Error(`认不出安装程序 ${path.basename(file)} 是哪个平台的（.exe / .deb / .rpm / .AppImage）`)
+}
+
 const VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 
 export const generateSigningKeys = () => {
@@ -92,12 +104,17 @@ export const packUpdate = async ({
   releasedAt = new Date().toISOString(),
   outDir,
   product = PRODUCT,
+  arch = 'x64',
 }) => {
   if (!VERSION_RE.test(version)) throw new Error(`版本号格式不对：${version}`)
+  if (!ARCH_RE.test(arch)) throw new Error(`架构写法不对：${arch}`)
+  const platform = platformOfInstaller(installer)
   const installerStat = await fs.stat(installer)
   const manifest = {
     format: 1,
     product,
+    platform,
+    arch,
     version,
     releasedAt,
     notes,
@@ -112,7 +129,7 @@ export const packUpdate = async ({
   const signature = sign(null, manifestBytes, createPrivateKey(privateKeyPem)).toString('base64')
 
   await fs.mkdir(outDir, { recursive: true })
-  const packagePath = path.join(outDir, `${product}_${version}.yzupd`)
+  const packagePath = path.join(outDir, `${product}_${version}_${platform}-${arch}.yzupd`)
   await writeZip(packagePath, [
     { name: 'manifest.json', data: manifestBytes },
     { name: 'manifest.sig', data: Buffer.from(`${signature}\n`, 'utf8') },
@@ -120,6 +137,8 @@ export const packUpdate = async ({
   ])
 
   const latest = {
+    platform,
+    arch,
     version,
     releasedAt,
     notes,
@@ -127,7 +146,7 @@ export const packUpdate = async ({
     size: (await fs.stat(packagePath)).size,
     sha512: await sha512File(packagePath),
   }
-  const latestPath = path.join(outDir, 'latest.json')
+  const latestPath = path.join(outDir, `latest-${platform}-${arch}.json`)
   await fs.writeFile(latestPath, `${JSON.stringify(latest, null, 2)}\n`, 'utf8')
   return { packagePath, latestPath, manifest, latest }
 }
@@ -179,6 +198,7 @@ const pack = async (args) => {
       version: { type: 'string' },
       out: { type: 'string' },
       'released-at': { type: 'string' },
+      arch: { type: 'string' },
     },
   })
   if (!values.key) die('用 --key 指定私钥文件')
@@ -201,10 +221,11 @@ const pack = async (args) => {
     version,
     notes,
     releasedAt: values['released-at'],
+    arch: values.arch,
     outDir: path.resolve(values.out ?? path.dirname(installer)),
   })
   console.log(`升级包：${result.packagePath}`)
-  console.log(`latest.json：${result.latestPath}`)
+  console.log(`latest 文件：${result.latestPath}`)
 }
 
 const main = async () => {

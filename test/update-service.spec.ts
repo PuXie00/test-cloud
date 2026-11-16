@@ -5,11 +5,16 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { normalizeUpdateUrl, type FetchLike } from '../electron/main/update/online'
 import { UpdatePackageStore } from '../electron/main/update/package-store'
 import { INSTALLER_ARGS, UpdateService, type UpdateServiceDeps } from '../electron/main/update/service'
-import { UPDATE_PRODUCT, type UpdateDownloadProgress } from '../shared/update/types'
+import {
+  UPDATE_PRODUCT,
+  type UpdateDownloadProgress,
+  type UpdateImportProgress,
+} from '../shared/update/types'
 // @ts-expect-error 发版脚本是 .mjs，没有类型
 import * as tool from '../scripts/update-package.mjs'
 
 const BASE = 'https://updates.example.com/yzapp/'
+const WIN_X64 = { platform: 'win32', arch: 'x64' }
 
 describe('UpdateService', () => {
   let tmp: string
@@ -17,6 +22,7 @@ describe('UpdateService', () => {
   let store: UpdatePackageStore
   let calls: string[]
   let progress: (UpdateDownloadProgress | null)[]
+  let importProgress: (UpdateImportProgress | null)[]
   let served: Map<string, () => Response>
   let moving: string | null
 
@@ -30,12 +36,12 @@ describe('UpdateService', () => {
       outDir: path.join(tmp, 'out', version),
     })) as { packagePath: string; latestPath: string }
 
-  /** 服务器上放 version 的 latest.json 和升级包 */
+  /** 服务器上放 version 的 latest-win32-x64.json 和升级包 */
   const serve = async (version: string) => {
     const { packagePath, latestPath } = await packed(version)
     const latest = await fs.readFile(latestPath)
     const pkg = await fs.readFile(packagePath)
-    served.set('latest.json', () => new Response(latest))
+    served.set('latest-win32-x64.json', () => new Response(latest))
     served.set(path.basename(packagePath), () => new Response(pkg))
   }
 
@@ -51,6 +57,7 @@ describe('UpdateService', () => {
   const createService = (patch: Partial<UpdateServiceDeps> = {}) =>
     new UpdateService({
       currentVersion: '1.1.0',
+      target: WIN_X64,
       installSupported: true,
       store,
       onlineUrl: BASE,
@@ -63,6 +70,7 @@ describe('UpdateService', () => {
       stopRuntimes: () => calls.push('stop runtimes'),
       quit: () => calls.push('quit'),
       onProgress: (p) => progress.push(p),
+      onImportProgress: (p) => importProgress.push(p),
       ...patch,
     })
 
@@ -70,7 +78,8 @@ describe('UpdateService', () => {
     tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'yz-update-svc-'))
     keys = tool.generateSigningKeys()
     await fs.writeFile(path.join(tmp, 'yzapp_setup.exe'), Buffer.alloc(200_000, 3))
-    store = new UpdatePackageStore(path.join(tmp, 'Updates'), keys.publicKeyPem, UPDATE_PRODUCT)
+    store = new UpdatePackageStore(path.join(tmp, 'Updates'), keys.publicKeyPem, UPDATE_PRODUCT, WIN_X64)
+    importProgress = []
     calls = []
     progress = []
     served = new Map()
@@ -177,7 +186,7 @@ describe('UpdateService', () => {
 
     it('throws away a download that does not match latest.json', async () => {
       await serve('1.2.0')
-      served.set('yzapp_1.2.0.yzupd', () => new Response(Buffer.alloc(10)))
+      served.set('yzapp_1.2.0_win32-x64.yzupd', () => new Response(Buffer.alloc(10)))
       expect(await createService().downloadLatest()).toMatchObject({ ok: false, code: 'BAD_DOWNLOAD' })
       expect(await fs.readdir(path.join(tmp, 'Updates', 'downloads'))).toEqual([])
     })
@@ -187,7 +196,7 @@ describe('UpdateService', () => {
       let abortSignal: AbortSignal | undefined
       const service = createService({
         fetch: async (url, init) => {
-          if (url.includes('latest.json')) return fetchImpl(url, init)
+          if (url.includes('latest-')) return fetchImpl(url, init)
           abortSignal = init?.signal
           return new Response(
             new ReadableStream<Uint8Array>({
@@ -211,24 +220,70 @@ describe('UpdateService', () => {
     })
 
     it('reports a broken latest.json', async () => {
-      served.set('latest.json', () => new Response('{"version":"x"}'))
+      served.set('latest-win32-x64.json', () => new Response('{"version":"x"}'))
       expect(await createService().check()).toMatchObject({ ok: false, code: 'BAD_LATEST' })
     })
   })
 
   it('status says whether packages can be used', async () => {
-    const noKey = new UpdatePackageStore(path.join(tmp, 'U2'), '', UPDATE_PRODUCT)
+    const noKey = new UpdatePackageStore(path.join(tmp, 'U2'), '', UPDATE_PRODUCT, WIN_X64)
     const status = await createService({ store: noKey, onlineUrl: null }).status()
     expect(status).toEqual({
       ok: true,
       data: {
         currentVersion: '1.1.0',
+        target: WIN_X64,
         installSupported: true,
         signingKeyConfigured: false,
         onlineUrl: null,
         packages: [],
         download: null,
+        importing: null,
       },
+    })
+  })
+
+  describe('import', () => {
+    it('pushes every step of the import and clears it at the end', async () => {
+      const service = createService()
+      const { packagePath } = await packed('1.2.0')
+
+      expect(await service.importPackage(packagePath)).toMatchObject({ ok: true, data: { version: '1.2.0' } })
+
+      const fileName = path.basename(packagePath)
+      const steps = importProgress.filter((p) => p !== null).map((p) => p!.stage)
+      expect([...new Set(steps)]).toEqual(['read', 'extract', 'verify'])
+      expect(importProgress.every((p) => p === null || p.fileName === fileName)).toBe(true)
+      expect(importProgress.at(-1)).toBeNull()
+      const status = await service.status()
+      expect(status.ok && status.data.importing).toBeNull()
+    })
+
+    it('shows the import in status while it runs and refuses a second one or an install meanwhile', async () => {
+      let service!: UpdateService
+      const seen: unknown[] = []
+      service = createService({
+        onImportProgress: (p) => {
+          if (p?.stage === 'extract' && seen.length === 0) {
+            seen.push('extract')
+            void service.status().then((s) => seen.push(s.ok && s.data.importing?.stage))
+            void service.importPackage('/nope.yzupd').then((r) => seen.push(!r.ok && r.code))
+            void service.install('1.0.0').then((r) => seen.push(!r.ok && r.code))
+          }
+        },
+      })
+      const { packagePath } = await packed('1.2.0')
+      await service.importPackage(packagePath)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(seen).toEqual(expect.arrayContaining(['extract', 'BUSY']))
+      expect(seen.filter((x) => x === 'BUSY')).toHaveLength(2)
+    })
+
+    it('reports when the server has no build for this platform', async () => {
+      expect(await createService({ target: { platform: 'linux', arch: 'arm64' } }).check()).toMatchObject({
+        ok: false,
+        code: 'NO_RELEASE',
+      })
     })
   })
 })

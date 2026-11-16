@@ -1,11 +1,13 @@
 import { FolderOpen, Loader2, RefreshCw, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import type {
-  StoredUpdatePackage,
-  UpdateCheckResult,
-  UpdateRelation,
-  UpdateStatus,
+import {
+  targetLabel,
+  type StoredUpdatePackage,
+  type UpdateCheckResult,
+  type UpdateImportProgress,
+  type UpdateRelation,
+  type UpdateStatus,
 } from "@shared/update/types";
 import { Button } from "@/app/components/ui/button";
 import { Progress } from "@/app/components/ui/progress";
@@ -29,6 +31,32 @@ const percent = (received: number, total: number): number =>
   total > 0 ? Math.min(100, Math.round((received / total) * 100)) : 0;
 
 type Busy = "import" | "check" | "download" | "install" | null;
+
+const IMPORT_STAGE_LABEL: Record<UpdateImportProgress["stage"], string> = {
+  read: "正在读取升级包",
+  extract: "正在解压",
+  verify: "正在校验安装程序",
+};
+
+/** 导入升级包要好几秒（U 盘上的包更久），一直显示在做哪一步、做了多少 */
+const ImportProgressRow = ({ progress }: { progress: UpdateImportProgress }) => {
+  const hasTotal = progress.total > 0;
+  const value = percent(progress.received, progress.total);
+  return (
+    <div role="status" aria-label="导入进度" className="flex flex-col gap-2 rounded-md bg-input-background px-3 py-3">
+      <div className="flex items-center gap-2 text-body-sm text-foreground">
+        <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" aria-hidden />
+        <span className="shrink-0">{IMPORT_STAGE_LABEL[progress.stage]}</span>
+        <span className="min-w-0 truncate font-mono text-mono-sm text-muted-foreground">{progress.fileName}</span>
+        {hasTotal ? (
+          <span className="ml-auto shrink-0 font-mono text-mono-sm tabular-nums text-muted-foreground">{value}%</span>
+        ) : null}
+      </div>
+      {hasTotal ? <Progress value={value} /> : null}
+      <p className="text-body-sm text-muted-foreground">升级包比较大，需要一点时间；关掉设置窗口也会在后台继续。</p>
+    </div>
+  );
+};
 
 /**
  * 系统设置 › 软件更新：在线检查 / 下载（配了 YZ_UPDATE_URL 才有）、导入离线升级包、安装或回退到本机的升级包。
@@ -60,9 +88,13 @@ export const UpdatePanel = () => {
     void refresh();
   }, [refresh]);
 
-  // 下载在主进程里跑，关掉设置再打开也能接着看进度
+  // 下载、导入都在主进程里跑，关掉设置再打开也能接着看进度
   useEffect(
     () => api?.onProgress((download) => setStatus((prev) => (prev ? { ...prev, download } : prev))),
+    [api],
+  );
+  useEffect(
+    () => api?.onImportProgress((importing) => setStatus((prev) => (prev ? { ...prev, importing } : prev))),
     [api],
   );
 
@@ -76,18 +108,30 @@ export const UpdatePanel = () => {
   const packagesUsable = status.signingKeyConfigured;
   const installUsable = status.signingKeyConfigured && status.installSupported;
   const download = status.download;
+  const importing = status.importing;
 
   const handleImport = async () => {
     setBusy("import");
     try {
-      const result = await api.importPackage();
+      const picked = await api.pickPackage();
+      if (!picked.ok) {
+        if (picked.code !== "CANCELLED") toast.error(picked.message);
+        return;
+      }
+      // 选完马上显示，不等主进程的第一条进度
+      const { fileName, filePath, sizeBytes } = picked.data;
+      setStatus((prev) =>
+        prev ? { ...prev, importing: { fileName, stage: "read", received: 0, total: sizeBytes } } : prev,
+      );
+      const result = await api.importPackage({ filePath });
       if (!result.ok) {
-        if (result.code !== "CANCELLED") toast.error(result.message);
+        toast.error(result.message);
         return;
       }
       toast.success(`已加入升级包 v${result.data.version}`);
       await refresh();
     } finally {
+      setStatus((prev) => (prev ? { ...prev, importing: null } : prev));
       setBusy(null);
     }
   };
@@ -173,13 +217,16 @@ export const UpdatePanel = () => {
     <div className="flex max-w-2xl flex-col gap-6">
       <SettingsSection title="已安装版本">
         <div className="flex flex-col gap-2 rounded-md bg-muted p-4">
-          <span className="font-mono text-mono-md tabular-nums text-foreground">v{status.currentVersion}</span>
+          <span className="font-mono text-mono-md tabular-nums text-foreground">
+            v{status.currentVersion}
+            <span className="text-muted-foreground"> · {targetLabel(status.target)}</span>
+          </span>
           {!status.signingKeyConfigured ? (
             <p className="rounded-md bg-warning-surface px-3 py-2 text-body-sm text-warning">
               软件里没有配置升级签名公钥，不能导入或安装升级包。
             </p>
           ) : !status.installSupported ? (
-            <p className="text-body-sm text-muted-foreground">只有 Windows 安装版能在软件里安装，这里只能导入和查看升级包。</p>
+            <p className="text-body-sm text-muted-foreground">这个版本暂时不能在软件里安装，这里只能导入和查看升级包。</p>
           ) : null}
         </div>
       </SettingsSection>
@@ -235,13 +282,22 @@ export const UpdatePanel = () => {
         <div className="flex flex-col gap-3 rounded-md bg-muted p-4">
           <div className="flex items-center justify-between gap-3">
             <span className="text-body-sm text-muted-foreground">
-              选一个 .yzupd 升级包（比如从 U 盘），校验通过后加到下面
+              选一个 {targetLabel(status.target)} 的 .yzupd 升级包（比如从 U 盘），校验通过后加到下面
             </span>
-            <Button variant="secondary" disabled={!packagesUsable || busy !== null} onClick={() => void handleImport()}>
-              <FolderOpen className="h-4 w-4" aria-hidden />
-              选择升级包…
+            <Button
+              variant="secondary"
+              disabled={!packagesUsable || busy !== null || importing !== null}
+              onClick={() => void handleImport()}
+            >
+              {importing ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <FolderOpen className="h-4 w-4" aria-hidden />
+              )}
+              {importing ? "正在导入…" : "选择升级包…"}
             </Button>
           </div>
+          {importing ? <ImportProgressRow progress={importing} /> : null}
           {status.packages.length === 0 ? (
             <p className="text-body-sm text-muted-foreground">本机还没有升级包</p>
           ) : (
@@ -263,7 +319,7 @@ export const UpdatePanel = () => {
                       {pkg.relation === "current" ? null : (
                         <Button
                           variant={pkg.relation === "newer" ? "default" : "secondary"}
-                          disabled={!installUsable || busy !== null || download !== null}
+                          disabled={!installUsable || busy !== null || download !== null || importing !== null}
                           onClick={() => void handleInstall(pkg)}
                         >
                           {installingVersion === pkg.version ? (

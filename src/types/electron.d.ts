@@ -24,6 +24,8 @@ import type {
   StoredUpdatePackage,
   UpdateCheckResult,
   UpdateDownloadProgress,
+  UpdateImportProgress,
+  UpdatePickedFile,
   UpdateResult,
   UpdateStatus,
 } from '../../shared/update/types'
@@ -245,8 +247,12 @@ export type AiBridgeAPI = {
 /** 软件升级（window.updateAPI），见 shared/update/types.ts */
 export type UpdateAPI = {
   status: () => Promise<UpdateResult<UpdateStatus>>
-  /** 不传路径就弹选择文件 */
-  importPackage: (params?: { filePath?: string }) => Promise<UpdateResult<StoredUpdatePackage>>
+  /** 弹出选择文件；取消时 code 为 CANCELLED */
+  pickPackage: () => Promise<UpdateResult<UpdatePickedFile>>
+  /** 导入（解压、校验）选好的升级包，过程走 onImportProgress */
+  importPackage: (params: { filePath: string }) => Promise<UpdateResult<StoredUpdatePackage>>
+  /** 导入进度，null 表示导入结束；返回注销函数 */
+  onImportProgress: (listener: (progress: UpdateImportProgress | null) => void) => () => void
   check: () => Promise<UpdateResult<UpdateCheckResult>>
   download: () => Promise<UpdateResult<StoredUpdatePackage>>
   cancelDownload: () => Promise<UpdateResult<null>>

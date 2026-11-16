@@ -9,6 +9,8 @@ import { parseUpdateLatest, UPDATE_PRODUCT } from '../shared/update/types'
 // @ts-expect-error 发版脚本是 .mjs，没有类型
 import * as tool from '../scripts/update-package.mjs'
 
+const WIN_X64 = { platform: 'win32', arch: 'x64' }
+
 type Keys = { publicKeyPem: string; privateKeyPem: string }
 
 describe('compareVersions', () => {
@@ -58,7 +60,7 @@ describe('update package', () => {
     keys = tool.generateSigningKeys()
     installer = path.join(tmp, 'yzapp_setup.exe')
     await fs.writeFile(installer, Buffer.alloc(300_000, 7))
-    store = new UpdatePackageStore(path.join(tmp, 'Updates'), keys.publicKeyPem, UPDATE_PRODUCT)
+    store = new UpdatePackageStore(path.join(tmp, 'Updates'), keys.publicKeyPem, UPDATE_PRODUCT, WIN_X64)
   })
 
   afterEach(async () => {
@@ -67,8 +69,13 @@ describe('update package', () => {
 
   it('imports a signed package and keeps only the three files', async () => {
     const { packagePath, latestPath } = await pack('1.2.0')
+    expect(path.basename(packagePath)).toBe('yzapp_1.2.0_win32-x64.yzupd')
+    expect(path.basename(latestPath)).toBe('latest-win32-x64.json')
 
-    const imported = await store.importPackage(packagePath)
+    const progress: string[] = []
+    const imported = await store.importPackage(packagePath, (stage, received, total) =>
+      progress.push(`${stage} ${received}/${total}`),
+    )
 
     expect(imported).toMatchObject({ ok: true, data: { version: '1.2.0', notes: 'v1.2.0 更新说明\n第二行' } })
     expect((await fs.readdir(path.join(store.packagesDir, '1.2.0'))).sort()).toEqual([
@@ -82,7 +89,46 @@ describe('update package', () => {
     // 临时目录用完就删
     expect(await fs.readdir(path.join(tmp, 'Updates', 'staging'))).toEqual([])
     // latest.json 能被软件读懂
-    expect(typeof parseUpdateLatest(JSON.parse(await fs.readFile(latestPath, 'utf8')))).toBe('object')
+    expect(parseUpdateLatest(JSON.parse(await fs.readFile(latestPath, 'utf8')))).toMatchObject({
+      platform: 'win32',
+      arch: 'x64',
+      version: '1.2.0',
+    })
+    // 按读取 → 解压 → 校验的顺序报，读取、校验报到满
+    const stages = [...new Set(progress.map((line) => line.split(' ')[0]))]
+    expect(stages).toEqual(['read', 'extract', 'verify'])
+    const packageSize = (await fs.stat(packagePath)).size
+    expect(progress).toContain(`read ${packageSize}/${packageSize}`)
+    expect(progress.at(-1)).toBe('verify 300000/300000')
+  })
+
+  it('rejects packages for another platform or CPU architecture', async () => {
+    const debInstaller = path.join(tmp, 'yzapp_1.2.0.deb')
+    await fs.writeFile(debInstaller, Buffer.alloc(1000, 1))
+    const linux = await pack('1.2.0', { installer: debInstaller, arch: 'arm64' })
+    expect(path.basename(linux.packagePath)).toBe('yzapp_1.2.0_linux-arm64.yzupd')
+    const result = await store.importPackage(linux.packagePath)
+    expect(result).toMatchObject({ ok: false, code: 'WRONG_PLATFORM' })
+    expect(!result.ok && result.message).toContain('Linux arm64')
+
+    const arm = await pack('1.2.0', { arch: 'arm64' })
+    expect(await store.importPackage(arm.packagePath)).toMatchObject({ ok: false, code: 'WRONG_PLATFORM' })
+
+    const linuxStore = new UpdatePackageStore(path.join(tmp, 'U3'), keys.publicKeyPem, UPDATE_PRODUCT, {
+      platform: 'linux',
+      arch: 'arm64',
+    })
+    expect((await linuxStore.importPackage(linux.packagePath)).ok).toBe(true)
+  })
+
+  it('refuses installers it does not know and reports unreadable files', async () => {
+    const zip = path.join(tmp, 'yzapp.zip')
+    await fs.writeFile(zip, 'x')
+    await expect(pack('1.2.0', { installer: zip })).rejects.toThrow('认不出安装程序')
+    expect(await store.importPackage(path.join(tmp, 'missing.yzupd'))).toMatchObject({
+      ok: false,
+      code: 'READ_FAILED',
+    })
   })
 
   it('rejects packages signed with another key', async () => {
@@ -140,7 +186,7 @@ describe('update package', () => {
 
   it('refuses everything without a public key', async () => {
     const { packagePath } = await pack('1.2.0')
-    const noKey = new UpdatePackageStore(path.join(tmp, 'Updates2'), '', UPDATE_PRODUCT)
+    const noKey = new UpdatePackageStore(path.join(tmp, 'Updates2'), '', UPDATE_PRODUCT, WIN_X64)
     expect(noKey.signingKeyConfigured).toBe(false)
     expect(await noKey.importPackage(packagePath)).toMatchObject({ ok: false, code: 'NO_SIGNING_KEY' })
   })
