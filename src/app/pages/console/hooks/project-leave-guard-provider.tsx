@@ -15,8 +15,8 @@ import { useProject } from "@/app/project/use-project";
 import { useActionBuilder } from "../components/action-builder/use-action-builder";
 import { useSaveProject } from "./use-save-project";
 
-/** 要离开当前工程：进工程管理（在里面可以换工程）、关闭工程、退出程序 */
-export type ProjectLeaveReason = "manage" | "close" | "quit";
+/** 要离开当前工程：进工程管理（在里面可以换工程）、关闭工程、退出程序、安装升级（软件会退出） */
+export type ProjectLeaveReason = "manage" | "close" | "quit" | "update";
 
 /** 有没保存的修改时先问；true = 可以继续（已保存或选了不保存），false = 留下 */
 export type ConfirmProjectLeave = (reason: ProjectLeaveReason) => Promise<boolean>;
@@ -32,6 +32,7 @@ const LEAVE_ACTION: Record<ProjectLeaveReason, string> = {
   manage: "进入工程管理",
   close: "关闭工程",
   quit: "退出",
+  update: "安装升级",
 };
 
 const quoted = (names: readonly string[]): string => names.map((name) => `「${name}」`).join("");

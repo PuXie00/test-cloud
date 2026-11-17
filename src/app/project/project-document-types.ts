@@ -1,4 +1,5 @@
 /** 工程文件 schema，试验版 — 见 docs/superpowers/specs/2026-06-04-project-document-design.md */
+import { PROJECT_FORMAT_VERSION, toStoredSchemaVersion } from "@shared/project/project-format";
 import type {
   ControlType,
   MotionParamsByAxis,
@@ -25,9 +26,10 @@ export type {
   ShapePresetId,
 } from "./configuration-types";
 
-export const PROJECT_SCHEMA_VERSION = "1.3.0-draft" as const;
+/** 当前工程格式写进文件的 schemaVersion，版本号由 .env 的 YZ_PROJECT_SCHEMA_VERSION 定（shared/project/project-format.ts） */
+export const PROJECT_SCHEMA_VERSION: string = toStoredSchemaVersion(PROJECT_FORMAT_VERSION);
 
-export type ProjectSchemaVersion = typeof PROJECT_SCHEMA_VERSION;
+export type ProjectSchemaVersion = string;
 
 export type ProjectStatus = "active" | "draft" | "archived";
 

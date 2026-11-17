@@ -13,6 +13,11 @@ import type {
   SaveProjectParams,
 } from '../../shared/project/types'
 import { CONFIG_CHANNELS } from '../../shared/config'
+import {
+  UPDATE_CHANNELS,
+  type UpdateDownloadProgress,
+  type UpdateImportProgress,
+} from '../../shared/update/types'
 import type { ConfigResult, DeviceConfigCatalog } from '../../shared/config'
 import { createCsocketApi } from './csocket-api'
 import { createKinematicsApi } from './kinematics-api'
@@ -68,6 +73,33 @@ contextBridge.exposeInMainWorld('toolAPI', {
     }
   },
   confirmClose: () => ipcRenderer.send('tool:close-confirm'),
+})
+
+contextBridge.exposeInMainWorld('updateAPI', {
+  status: () => ipcRenderer.invoke(UPDATE_CHANNELS.status),
+  pickPackage: () => ipcRenderer.invoke(UPDATE_CHANNELS.pickPackage),
+  importPackage: (params: { filePath: string }) =>
+    ipcRenderer.invoke(UPDATE_CHANNELS.importPackage, params),
+  onImportProgress: (listener: (progress: UpdateImportProgress | null) => void) => {
+    const subscription = (_event: IpcRendererEvent, progress: UpdateImportProgress | null) =>
+      listener(progress)
+    ipcRenderer.on(UPDATE_CHANNELS.importProgress, subscription)
+    return () => {
+      ipcRenderer.removeListener(UPDATE_CHANNELS.importProgress, subscription)
+    }
+  },
+  check: () => ipcRenderer.invoke(UPDATE_CHANNELS.check),
+  download: () => ipcRenderer.invoke(UPDATE_CHANNELS.download),
+  cancelDownload: () => ipcRenderer.invoke(UPDATE_CHANNELS.cancelDownload),
+  install: (params: { version: string }) => ipcRenderer.invoke(UPDATE_CHANNELS.install, params),
+  onProgress: (listener: (progress: UpdateDownloadProgress | null) => void) => {
+    const subscription = (_event: IpcRendererEvent, progress: UpdateDownloadProgress | null) =>
+      listener(progress)
+    ipcRenderer.on(UPDATE_CHANNELS.progress, subscription)
+    return () => {
+      ipcRenderer.removeListener(UPDATE_CHANNELS.progress, subscription)
+    }
+  },
 })
 
 contextBridge.exposeInMainWorld('csocketApi', createCsocketApi())

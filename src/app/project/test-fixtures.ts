@@ -1,6 +1,6 @@
 import { GZ_2025_DOCUMENT } from "./mock-documents/gz-2025.document";
 import { SH_BALLET_DOCUMENT } from "./mock-documents/sh-ballet.document";
-import type { ProjectDocument } from "./project-document-types";
+import { PROJECT_SCHEMA_VERSION, type ProjectDocument } from "./project-document-types";
 import type { ProjectRecord } from "./project-types";
 import { formatProjectModifiedAt } from "./project-utils";
 
@@ -42,7 +42,10 @@ export const createMemoryProjectAPI = (seed: ProjectRecord[] = [GZ_2025_RECORD, 
     createdAt: record.document?.meta.createdAt ?? new Date().toISOString(),
     modifiedAt: record.document?.meta.modifiedAt ?? new Date().toISOString(),
     status: record.status,
-    schemaVersion: record.document?.schemaVersion ?? "1.3.0-draft",
+    schemaVersion: record.document?.schemaVersion ?? PROJECT_SCHEMA_VERSION,
+    formatVersion: record.formatVersion === undefined ? 1 : record.formatVersion,
+    compat: record.compat ?? ("ok" as const),
+    compatMessage: record.compatMessage,
     sizeBytes: Math.round(record.sizeMb * 1024 * 1024),
     hasCover: Boolean(record.hasCover || record.coverDataUrl),
     coverPath: record.coverPath ?? null,

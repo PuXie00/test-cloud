@@ -1,4 +1,5 @@
 import { Copy, Download, History, Loader2, Play, Trash2 } from "lucide-react";
+import { canOpenProject, formatVersionLabel } from "@/app/project/project-compat";
 import type { ProjectRecord, ProjectVersionEntry } from "@/app/project/project-types";
 
 type ProjectDetailSidebarProps = {
@@ -32,6 +33,9 @@ export const ProjectDetailSidebar = ({
     );
   }
 
+  // 版本过高、读不了的工程不能打开 / 另存为；导出、删除、恢复历史版本照常
+  const openable = canOpenProject(project);
+
   return (
     <aside className="custom-scrollbar flex w-[300px] shrink-0 flex-col gap-5 overflow-y-auto border-l border-border bg-muted/30 p-6">
       <div>
@@ -41,8 +45,8 @@ export const ProjectDetailSidebar = ({
 
       <dl className="flex flex-col gap-2 text-body-sm">
         <div className="flex justify-between gap-2">
-          <dt className="text-muted-foreground">工程版本</dt>
-          <dd className="font-mono text-foreground">{project.version}</dd>
+          <dt className="text-muted-foreground">工程格式</dt>
+          <dd className="font-mono text-foreground">{formatVersionLabel(project)}</dd>
         </div>
         <div className="flex justify-between gap-2">
           <dt className="text-muted-foreground">创建日期</dt>
@@ -63,12 +67,25 @@ export const ProjectDetailSidebar = ({
         <span>设备 {project.deviceCount}</span>
       </div>
 
+      {project.compatMessage ? (
+        <p
+          className={
+            openable
+              ? "rounded-md bg-card px-3 py-2 text-body-sm text-muted-foreground"
+              : "rounded-md bg-warning-surface px-3 py-2 text-body-sm text-warning"
+          }
+        >
+          {project.compatMessage}
+          {openable ? null : "。可以从下面的版本历史恢复成本软件能读的版本。"}
+        </p>
+      ) : null}
+
       <div className="flex flex-col gap-2">
         <button
           data-guide="project-center-open"
           type="button"
           onClick={onOpen}
-          disabled={project.status === "archived" || opening}
+          disabled={project.status === "archived" || opening || !openable}
           className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {opening ? (
@@ -78,7 +95,7 @@ export const ProjectDetailSidebar = ({
           )}
           {opening ? "正在打开…" : "打开工程"}
         </button>
-        {onSaveAs ? (
+        {onSaveAs && openable ? (
           <button type="button" className={ghostAction} onClick={onSaveAs}>
             <Copy className="h-4 w-4" aria-hidden />
             另存为副本

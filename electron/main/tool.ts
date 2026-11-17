@@ -61,6 +61,14 @@ export const attachCloseGuard = (win: BrowserWindow): void => {
   })
 }
 
+/** 安装升级要退出：界面已经问过保存 / 不保存，关窗口时不再拦 */
+export const releaseCloseGuards = (): void => {
+  for (const state of closeGuards.values()) {
+    clearAckTimer(state)
+    state.confirmed = true
+  }
+}
+
 /**
  * 确认对话框统一走主进程原生 dialog，避免无边框窗口下
  * window.confirm 关闭后渲染进程键盘焦点丢失。

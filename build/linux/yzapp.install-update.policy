@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!--
+  在软件里安装升级时 pkexec 用的授权动作，deb 装到 /usr/share/polkit-1/actions/（electron-builder.json 的 deb.fpm）。
+  exec.path 必须是 root 辅助程序装好后的路径：/opt/<productName>/resources/linux/yz-install-update。
+  默认要管理员密码；现场要免密，给这个动作 id 配 polkit 规则即可（见 docs/software-update.md）。
+-->
+<policyconfig>
+  <vendor>yzapp</vendor>
+  <action id="yzapp.install-update">
+    <description>Install a yzapp update</description>
+    <description xml:lang="zh_CN">安装 yzapp 软件升级</description>
+    <message>Authentication is required to install a yzapp update</message>
+    <message xml:lang="zh_CN">安装软件升级需要管理员授权</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/opt/yzapp/resources/linux/yz-install-update</annotate>
+  </action>
+</policyconfig>

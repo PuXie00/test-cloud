@@ -14,11 +14,12 @@ import {
   pathExists,
   validateProjectName,
 } from './paths'
-import { isProjectDocumentLike } from './empty-document'
+import { PROJECT_FORMAT_VERSION } from '../../../shared/project/project-format'
 import {
   buildSummary,
   ensureProjectScaffold,
   getCurrentProjectName,
+  parseProjectDocument,
   readProjectDocument,
   writeProjectDocument,
 } from './service'
@@ -188,13 +189,20 @@ export const importProject = async (
       return fail('INVALID_PACKAGE', '工程包中缺少 project.json')
     }
 
-    const raw = await fs.readFile(path.join(contentRoot, PROJECT_JSON), 'utf8')
-    const parsed: unknown = JSON.parse(raw)
-    if (!isProjectDocumentLike(parsed)) {
-      return fail('INVALID_DOCUMENT', '工程配置结构无效')
+    // 旧格式的包照常导入（写回时升级，原文件备份进 History）；更高版本软件导出的不导入
+    const parsed = parseProjectDocument(
+      await fs.readFile(path.join(contentRoot, PROJECT_JSON), 'utf8'),
+    )
+    if (!parsed.ok) {
+      return fail(
+        parsed.code,
+        parsed.code === 'SCHEMA_TOO_NEW'
+          ? `工程包由更高版本的软件导出（工程格式 v${parsed.formatVersion}，本软件只支持到 v${PROJECT_FORMAT_VERSION}），请升级软件后再导入`
+          : `工程包无法读取：${parsed.message}`,
+      )
     }
 
-    let targetName = (parsed.meta.name || path.basename(contentRoot)).trim()
+    let targetName = (parsed.document.meta.name || path.basename(contentRoot)).trim()
     const nameError = validateProjectName(targetName)
     if (nameError) {
       targetName = `imported_${Date.now()}`

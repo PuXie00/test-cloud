@@ -54,6 +54,7 @@ import {
   type SqlDatabase,
 } from './operation-log-db'
 import { mockLogWrite } from './operation-log-mock'
+import { toCppRelativeProjectPath } from './project-path'
 
 type SendData = CppAckResult
 
@@ -85,14 +86,6 @@ const ackFailed = (r: SendData): SendData => ({
   data: r.data,
 })
 
-/** C++ CONFIG|Pro|open 只认 .\Project\<工程名>，不发本机绝对路径 */
-const toCppRelativeProjectPath = (projectPath: string): string => {
-  const normalized = projectPath.trim().replace(/\//g, '\\').replace(/\\+$/, '')
-  const match = normalized.match(/(?:^|\\)Project\\([^\\]+)$/i)
-  if (match?.[1]) return `.\\Project\\${match[1]}`
-  const name = normalized.split('\\').filter(Boolean).pop() ?? ''
-  return `.\\Project\\${name}`
-}
 // const toCppRelativeProjectPath = (projectPath: string): string => {
 //   const normalized = projectPath.trim().replace(/\//g, '\\').replace(/\\+$/, '')
 //   const match = normalized.match(/(?:^|\\)Project\\([^\\]+)$/i)

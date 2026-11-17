@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { usePermissions } from "@/app/auth/permissions";
+import { canOpenProject } from "@/app/project/project-compat";
 import { useProject } from "@/app/project/use-project";
 import type { ProjectVersionEntry } from "@/app/project/project-types";
 import { NewProjectDialog } from "./new-project-dialog";
@@ -36,6 +37,7 @@ export const ProjectCenterScreen = ({
     exportProject,
     refreshHistory,
     restoreVersion,
+    restoreUnopenableVersion,
     loading,
     error,
     searchQuery,
@@ -76,7 +78,14 @@ export const ProjectCenterScreen = ({
   };
 
   const handleOpenProject = async () => {
-    if (!selectedProject || selectedProject.status === "archived" || opening) return;
+    if (
+      !selectedProject ||
+      selectedProject.status === "archived" ||
+      !canOpenProject(selectedProject) ||
+      opening
+    ) {
+      return;
+    }
     setOpening(true);
     try {
       const result = await openProject(selectedProject.folderName);
@@ -161,10 +170,15 @@ export const ProjectCenterScreen = ({
     });
     if (!ok) return;
     try {
-      if (currentProject?.folderName !== selectedProject.folderName) {
-        await openProject(selectedProject.folderName);
+      if (!canOpenProject(selectedProject)) {
+        // 版本过高、读不了的工程打不开，直接恢复成本软件能读的历史版本
+        await restoreUnopenableVersion(selectedProject.folderName, entry.historyId);
+      } else {
+        if (currentProject?.folderName !== selectedProject.folderName) {
+          await openProject(selectedProject.folderName);
+        }
+        await restoreVersion(entry.historyId);
       }
-      await restoreVersion(entry.historyId);
       toast.success(`已恢复版本「${entry.version}」`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "恢复失败");
