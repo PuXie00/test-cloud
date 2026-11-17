@@ -3,14 +3,17 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { app } from 'electron'
 
-export const DEFAULT_CPP_RUNTIME_EXE = 'YzRuntime.exe'
+/** C++ 运行时的程序名：Windows 是 YzRuntime.exe，Linux 版没有扩展名 */
+export const cppRuntimeExeName = (platform: string): string => (platform === 'win32' ? 'YzRuntime.exe' : 'YzRuntime')
+
+export const DEFAULT_CPP_RUNTIME_EXE = cppRuntimeExeName(process.platform)
 
 const CONSOLE_TITLE = 'YzRuntime'
 
 let child: ChildProcess | null = null
 let stopping = false
 
-/** IS_DEV 用项目目录 Runtime/YzRuntime.exe，否则用安装目录 Runtime/YzRuntime.exe。 */
+/** IS_DEV 用项目目录 Runtime/YzRuntime(.exe)，否则用安装目录 Runtime/YzRuntime(.exe)。 */
 export const resolveCppRuntimePath = (): string => {
   const installDir = path.dirname(app.getPath('exe'))
   const base = process.env.IS_DEV === 'true'

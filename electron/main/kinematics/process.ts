@@ -2,18 +2,36 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { app } from 'electron'
-import { DEFAULT_KINEMATICS_EXE, KINEMATICS_PORT } from '../../../shared/kinematics/protocol'
-import { resolveKinematicsExePathFrom } from '../../../shared/kinematics/resolve-exe'
+import { KINEMATICS_PORT } from '../../../shared/kinematics/protocol'
+import {
+  kinematicsExeName,
+  resolveKinematicsExePathFrom,
+  resolveKinematicsWorkDirFrom,
+} from '../../../shared/kinematics/resolve-exe'
 import { parseListeningPids } from './parse-port'
 
 let child: ChildProcess | null = null
 let stopping = false
 
-export const resolveKinematicsCwd = (): string => path.dirname(resolveKinematicsExePath())
+/** 运动学程序的当前目录，也是 YXZ_call.json / YXZ.json 所在的目录（见 resolveKinematicsWorkDirFrom） */
+export const resolveKinematicsCwd = (): string =>
+  resolveKinematicsWorkDirFrom({
+    platform: process.platform,
+    dev: process.env.IS_DEV === 'true',
+    exePath: resolveKinematicsExePath(),
+    userDataDir: app.getPath('userData'),
+  })
+
+/** 同 resolveKinematicsCwd，没有就建（Linux 打包版在用户数据目录里） */
+export const ensureKinematicsCwd = (): string => {
+  const cwd = resolveKinematicsCwd()
+  fs.mkdirSync(cwd, { recursive: true })
+  return cwd
+}
 
 export const resolveKinematicsExePath = (): string =>
   resolveKinematicsExePathFrom({
-    exeName: DEFAULT_KINEMATICS_EXE,
+    exeName: kinematicsExeName(process.platform),
     installDir: path.dirname(app.getPath('exe')),
     projectDir: process.env.APP_ROOT?.trim(),
     dev: process.env.IS_DEV === 'true',
@@ -41,7 +59,7 @@ export const startKinematicsRuntime = ():
 
   try {
     freeForeignPortListeners(KINEMATICS_PORT)
-    const cwd = resolveKinematicsCwd()
+    const cwd = ensureKinematicsCwd()
     child = spawn(exePath, [], {
       cwd,
       windowsHide: true,

@@ -16,7 +16,7 @@ import {
 import type { KinematicsSolveResult } from '../../../shared/kinematics/types'
 import {
   isKinematicsRunning,
-  resolveKinematicsCwd,
+  ensureKinematicsCwd,
   startKinematicsRuntime,
   stopKinematicsRuntime,
 } from './process'
@@ -174,7 +174,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
 
 const writeCallFile = async (items: unknown[]): Promise<string> => {
-  const cwd = resolveKinematicsCwd()
+  const cwd = ensureKinematicsCwd()
   const callPath = path.join(cwd, KINEMATICS_CALL_FILE)
   const body = buildKinematicsCallFile(items, cwd)
   const handle = await fs.open(callPath, 'w')

@@ -4,7 +4,7 @@
  * 升级包 .yzupd 是一个 zip，顶层三个文件：
  * - manifest.json：UpdateManifest，原样字节就是签名的内容
  * - manifest.sig：manifest.json 的 Ed25519 签名（base64），公钥见 signing-key.ts
- * - 安装程序（manifest.installer.file：Windows 是 NSIS .exe，Linux 是 .deb / .rpm / .AppImage），大小和 sha512 写在 manifest 里
+ * - 安装程序（manifest.installer.file：Windows 是 NSIS .exe，Linux 是 .deb），大小和 sha512 写在 manifest 里
  * 每个升级包只给一种平台 + CPU 架构（如 win32-x64、linux-arm64）用。
  * 打包：scripts/update-package.mjs。在线更新的服务器上放 latest-<平台>-<架构>.json（UpdateLatest）和 .yzupd。
  */
@@ -19,10 +19,10 @@ export const UPDATE_PRODUCT = 'yzapp'
 /** 平台、CPU 架构，取值同 Node 的 process.platform / process.arch */
 export type UpdateTarget = { platform: string; arch: string }
 
-/** 各平台认的安装程序（小写扩展名） */
+/** 各平台认的安装程序（小写扩展名）。Linux 只发 deb（Ubuntu），见 build/linux/ */
 export const INSTALLER_EXTENSIONS: Readonly<Record<string, readonly string[]>> = {
   win32: ['.exe'],
-  linux: ['.deb', '.rpm', '.appimage'],
+  linux: ['.deb'],
 }
 
 const PLATFORM_LABELS: Readonly<Record<string, string>> = { win32: 'Windows', linux: 'Linux', darwin: 'macOS' }
@@ -183,6 +183,8 @@ export type UpdateStatus = {
   target: UpdateTarget
   /** 这个平台、这种安装方式能不能在软件里装（开发态都不行） */
   installSupported: boolean
+  /** 不能在软件里装时的原因（给人看），能装时为 null */
+  installUnsupportedReason: string | null
   /** 软件里没有签名公钥时，不能导入、安装任何升级包 */
   signingKeyConfigured: boolean
   /** 在线更新地址（YZ_UPDATE_URL），没配为 null */

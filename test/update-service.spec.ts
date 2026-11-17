@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { normalizeUpdateUrl, type FetchLike } from '../electron/main/update/online'
 import { UpdatePackageStore } from '../electron/main/update/package-store'
-import { INSTALLER_ARGS, UpdateService, type UpdateServiceDeps } from '../electron/main/update/service'
+import { UpdateService, type UpdateServiceDeps } from '../electron/main/update/service'
 import {
   UPDATE_PRODUCT,
   type UpdateDownloadProgress,
@@ -14,6 +14,7 @@ import {
 import * as tool from '../scripts/update-package.mjs'
 
 const BASE = 'https://updates.example.com/yzapp/'
+const pendingName = 'pending-install.json'
 const WIN_X64 = { platform: 'win32', arch: 'x64' }
 
 describe('UpdateService', () => {
@@ -54,19 +55,23 @@ describe('UpdateService', () => {
     return respond()
   }
 
+  const pendingFile = () => path.join(tmp, 'Updates', pendingName)
+  const readPending = async () => JSON.parse(await fs.readFile(pendingFile(), 'utf8')) as Record<string, string>
+
   const createService = (patch: Partial<UpdateServiceDeps> = {}) =>
     new UpdateService({
       currentVersion: '1.1.0',
       target: WIN_X64,
-      installSupported: true,
+      installUnsupportedReason: null,
       store,
       onlineUrl: BASE,
       downloadsDir: path.join(tmp, 'Updates', 'downloads'),
       fetch: fetchImpl,
       motionBlock: () => moving,
-      launchInstaller: async (installerPath, args) => {
-        calls.push(`launch ${path.basename(installerPath)} ${args.join(' ')}`)
+      launchInstaller: async (target) => {
+        calls.push(`launch ${target.version} ${path.relative(tmp, target.installerPath)} in ${path.relative(tmp, target.packageDir)}`)
       },
+      pendingInstallFile: pendingFile(),
       stopRuntimes: () => calls.push('stop runtimes'),
       quit: () => calls.push('quit'),
       onProgress: (p) => progress.push(p),
@@ -96,7 +101,14 @@ describe('UpdateService', () => {
       expect((await service.importPackage((await packed('1.2.0')).packagePath)).ok).toBe(true)
 
       expect(await service.install('1.2.0')).toEqual({ ok: true, data: null })
-      expect(calls).toEqual([`launch yzapp_setup.exe ${INSTALLER_ARGS.join(' ')}`, 'stop runtimes', 'quit'])
+      const packageDir = path.join('Updates', 'packages', '1.2.0')
+      expect(calls).toEqual([
+        `launch 1.2.0 ${path.join(packageDir, 'yzapp_setup.exe')} in ${packageDir}`,
+        'stop runtimes',
+        'quit',
+      ])
+      // 下次启动按这一笔判断装没装成
+      expect(await readPending()).toMatchObject({ fromVersion: '1.1.0', toVersion: '1.2.0' })
       expect(await service.install('1.2.0')).toMatchObject({ ok: false, code: 'BUSY' })
     })
 
@@ -118,10 +130,9 @@ describe('UpdateService', () => {
     })
 
     it('refuses unsupported builds, the current version and unknown versions', async () => {
-      expect(await createService({ installSupported: false }).install('1.2.0')).toMatchObject({
-        ok: false,
-        code: 'UNSUPPORTED',
-      })
+      expect(
+        await createService({ installUnsupportedReason: '系统里没有 pkexec' }).install('1.2.0'),
+      ).toEqual({ ok: false, code: 'UNSUPPORTED', message: '系统里没有 pkexec' })
       expect(await createService().install('1.1.0')).toMatchObject({ ok: false, code: 'SAME_VERSION' })
       expect(await createService().install('9.9.9')).toMatchObject({ ok: false, code: 'NOT_FOUND' })
       expect(calls).toEqual([])
@@ -139,6 +150,8 @@ describe('UpdateService', () => {
 
       expect(await service.install('1.2.0')).toMatchObject({ ok: false, code: 'LAUNCH_FAILED' })
       expect(calls).toEqual([])
+      // 没启动起来就不留记录，不然下次启动会误报「没装成」
+      await expect(fs.access(pendingFile())).rejects.toThrow()
       expect((await service.install('1.2.0')).ok).toBe(true)
       expect(calls).toEqual(['stop runtimes', 'quit'])
     })
@@ -234,6 +247,7 @@ describe('UpdateService', () => {
         currentVersion: '1.1.0',
         target: WIN_X64,
         installSupported: true,
+        installUnsupportedReason: null,
         signingKeyConfigured: false,
         onlineUrl: null,
         packages: [],

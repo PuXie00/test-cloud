@@ -1,4 +1,6 @@
 import { app, dialog } from 'electron'
+import { constants } from 'node:fs'
+import fs from 'node:fs/promises'
 import { restoreKeptProjects } from './kept-projects'
 import { getKeptProjectsDir, getProjectsRoot } from './paths'
 
@@ -12,11 +14,11 @@ export type {
 } from './types'
 
 /**
- * 卸载程序中途断电之类没把 Project 挪回去的，启动时放回（见 kept-projects.ts）。
+ * 卸载程序中途断电之类没把 Project 挪回去的，启动时放回（见 kept-projects.ts）。只有 Windows 的卸载程序会挪。
  * 要在注册工程 IPC、启动 C++ 之前跑完。开发态和单独指定了 YZ_PROJECT_ROOT 时不管。
  */
 export const restoreKeptProjectsOnStartup = async (): Promise<void> => {
-  if (!app.isPackaged || process.env.YZ_PROJECT_ROOT?.trim()) return
+  if (!app.isPackaged || process.platform !== 'win32' || process.env.YZ_PROJECT_ROOT?.trim()) return
   const keptDir = getKeptProjectsDir()
   try {
     const report = await restoreKeptProjects({ keptDir, projectsRoot: getProjectsRoot() })
@@ -33,6 +35,26 @@ export const restoreKeptProjectsOnStartup = async (): Promise<void> => {
     })
   } catch (err) {
     console.error(`[project] 放回工程失败: ${errorText(err)}`)
+  }
+}
+
+/**
+ * Linux deb 版的工程目录 /opt/<软件名>/Project 由安装脚本建好并设成所有用户可写（build/linux/after-install.tpl）。
+ * 写不了时新建、保存工程都会失败，开机就说清楚怎么修，别等到保存时才报权限错误。
+ */
+export const checkProjectsRootWritableOnStartup = async (): Promise<void> => {
+  if (!app.isPackaged || process.platform !== 'linux' || process.env.YZ_PROJECT_ROOT?.trim()) return
+  const root = getProjectsRoot()
+  try {
+    await fs.mkdir(root, { recursive: true })
+    await fs.access(root, constants.W_OK)
+  } catch (err) {
+    void dialog.showMessageBox({
+      type: 'warning',
+      title: '工程目录不能写入',
+      message: `${root} 不能写入，新建、保存工程会失败。`,
+      detail: `安装包本来会把它设成所有用户可写。请让管理员在终端运行：\nsudo mkdir -p ${root} && sudo chmod 1777 ${root}\n\n（${errorText(err)}）`,
+    })
   }
 }
 

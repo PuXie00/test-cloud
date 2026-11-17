@@ -10,9 +10,9 @@ import { registerAuthHandlers } from './auth'
 import { registerKinematicsHandlers, shutdownKinematics } from './kinematics'
 import { attachCloseGuard, registerToolHandlers } from './tool'
 import { registerConfigHandlers } from './getConfig'
-import { registerProjectHandlers, restoreKeptProjectsOnStartup } from './project'
+import { checkProjectsRootWritableOnStartup, registerProjectHandlers, restoreKeptProjectsOnStartup } from './project'
 import { attachAiBridgeWindow, registerAiBridgeHandlers, shutdownAiBridge } from './ai-bridge'
-import { registerUpdateHandlers } from './update'
+import { registerUpdateHandlers, reportLastInstallOnStartup } from './update'
 
 const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -127,6 +127,7 @@ async function createWindow() {
 app.whenReady().then(async () => {
   // 卸载程序没来得及挪回来的工程先放回 Project，再列工程、启动 C++
   await restoreKeptProjectsOnStartup()
+  await checkProjectsRootWritableOnStartup()
   // 当前登录用户名（不是显示名）写进发给 C++ 的报文的 userName（操作日志的操作人）
   registerAuthHandlers({
     onSessionChange: (session) => {
@@ -142,6 +143,8 @@ app.whenReady().then(async () => {
   registerUpdateHandlers()
   // 然后创建主窗口（在后台加载）
   createWindow()
+  // 上次在软件里升级没装成（还是旧版本）时说明原因
+  void reportLastInstallOnStartup()
 })
 
 app.on('before-quit', () => {

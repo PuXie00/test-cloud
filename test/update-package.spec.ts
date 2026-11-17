@@ -102,6 +102,18 @@ describe('update package', () => {
     expect(progress.at(-1)).toBe('verify 300000/300000')
   })
 
+  it('reads the architecture from the deb file name', async () => {
+    const debInstaller = path.join(tmp, 'yzapp_1.2.0_arm64.deb')
+    await fs.writeFile(debInstaller, Buffer.alloc(1000, 1))
+    const linux = await pack('1.2.0', { installer: debInstaller })
+    expect(path.basename(linux.packagePath)).toBe('yzapp_1.2.0_linux-arm64.yzupd')
+    expect(path.basename(linux.latestPath)).toBe('latest-linux-arm64.json')
+    await expect(pack('1.2.0', { installer: debInstaller, arch: 'x64' })).rejects.toThrow('对不上')
+    expect(tool.archOfInstaller('yzapp_1.2.0_amd64.deb')).toBe('x64')
+    expect(tool.archOfInstaller('yzapp_1.2.0.deb')).toBeNull()
+    expect(tool.archOfInstaller('yzapp_1.2.0.exe')).toBeNull()
+  })
+
   it('rejects packages for another platform or CPU architecture', async () => {
     const debInstaller = path.join(tmp, 'yzapp_1.2.0.deb')
     await fs.writeFile(debInstaller, Buffer.alloc(1000, 1))
@@ -122,9 +134,12 @@ describe('update package', () => {
   })
 
   it('refuses installers it does not know and reports unreadable files', async () => {
-    const zip = path.join(tmp, 'yzapp.zip')
-    await fs.writeFile(zip, 'x')
-    await expect(pack('1.2.0', { installer: zip })).rejects.toThrow('认不出安装程序')
+    // Linux 只发 deb
+    for (const name of ['yzapp.zip', 'yzapp-1.2.0.x86_64.rpm', 'yzapp-1.2.0.AppImage']) {
+      const file = path.join(tmp, name)
+      await fs.writeFile(file, 'x')
+      await expect(pack('1.2.0', { installer: file })).rejects.toThrow('认不出安装程序')
+    }
     expect(await store.importPackage(path.join(tmp, 'missing.yzupd'))).toMatchObject({
       ok: false,
       code: 'READ_FAILED',

@@ -12,6 +12,7 @@ const baseStatus = (patch: Partial<UpdateStatus> = {}): UpdateStatus => ({
   currentVersion: "1.1.0",
   target: { platform: "win32", arch: "x64" },
   installSupported: true,
+  installUnsupportedReason: null,
   signingKeyConfigured: true,
   onlineUrl: null,
   packages: [
@@ -27,7 +28,7 @@ const baseStatus = (patch: Partial<UpdateStatus> = {}): UpdateStatus => ({
 let progressListener: ((progress: UpdateDownloadProgress | null) => void) | null = null;
 let importListener: ((progress: UpdateImportProgress | null) => void) | null = null;
 /** 导入一直不结束，方便看过程中的界面；测试里手动 resolve */
-let finishImport: ((value: unknown) => void) | null = null;
+let finishImport: ((value: Awaited<ReturnType<UpdateAPI["importPackage"]>>) => void) | null = null;
 
 const installApi = (status: UpdateStatus) => {
   const api = {
@@ -125,6 +126,28 @@ describe("软件更新", () => {
     expect(confirm).toHaveBeenCalledWith(
       expect.objectContaining({ title: "回退版本", danger: true, detail: expect.stringContaining("版本过高") }),
     );
+  });
+
+  it("Linux：确认时提醒软件关闭后要输管理员密码", async () => {
+    const api = installApi(baseStatus({ target: { platform: "linux", arch: "x64" } }));
+    render(<UpdatePanel />);
+    fireEvent.click(await screen.findByRole("button", { name: "安装" }));
+    await waitFor(() => expect(api.install).toHaveBeenCalledWith({ version: "1.2.0" }));
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining("管理员密码") }));
+  });
+
+  it("不能在软件里装时说明原因，还能导入", async () => {
+    installApi(
+      baseStatus({
+        target: { platform: "linux", arch: "x64" },
+        installSupported: false,
+        installUnsupportedReason: "系统里没有 pkexec（Ubuntu 软件包 pkexec 或 policykit-1），装上以后才能在软件里升级",
+      }),
+    );
+    render(<UpdatePanel />);
+    expect(await screen.findByText(/不能在软件里安装（系统里没有 pkexec/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "安装" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: /选择升级包/ }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("有轴在动时不装，也不问", async () => {

@@ -6,14 +6,15 @@
  *      pnpm update:keygen --out D:\keys\yz-update-key.pem
  *    公钥会写进 shared/update/signing-key.ts，提交这个文件；之后打的安装包才认这把私钥签的升级包。
  *
- * 2) 打升级包：先 pnpm build（或 build:linux:*）出安装程序，再
+ * 2) 打升级包：先出安装程序（Windows 上 pnpm build；Ubuntu 上 pnpm build:linux:deb），再
  *      pnpm update:pack --key D:\keys\yz-update-key.pem --notes 更新说明.txt
- *    默认读 release/<版本>/yzapp_<版本>.exe（Windows x64），输出到同一个目录：
+ *    默认在 release/<版本>/ 里找安装程序（yzapp_<版本>.exe 或 yzapp_<版本>_<架构>.deb，只能有一个），输出到同一个目录：
  *      yzapp_<版本>_<平台>-<架构>.yzupd  拷到现场：系统设置 › 软件更新 › 选择升级包
  *      latest-<平台>-<架构>.json         有更新服务器后，和 .yzupd 一起放到 YZ_UPDATE_URL 指向的目录
- *    平台按安装程序的扩展名判断：.exe 是 win32，.deb / .rpm / .AppImage 是 linux；
- *    架构用 --arch 指定（x64、arm64…，取值同 Node 的 process.arch），默认 x64。每种平台 + 架构各打一个包。
- *    其他参数：--installer <文件>  --version <x.y.z>  --out <目录>  --released-at <ISO 时间>
+ *    平台按安装程序的扩展名判断：.exe 是 win32，.deb 是 linux。
+ *    架构（取值同 Node 的 process.arch）：.deb 按文件名里的 amd64 / arm64 认；.exe 默认 x64；也可以 --arch 指定。
+ *    每种平台 + 架构各打一个包。
+ *    其他参数：--installer <文件>  --arch <x64|arm64>  --version <x.y.z>  --out <目录>  --released-at <ISO 时间>
  */
 import {
   createHash,
@@ -39,8 +40,26 @@ const ARCH_RE = /^[a-z0-9_]{1,20}$/
 export const platformOfInstaller = (file) => {
   const ext = path.extname(file).toLowerCase()
   if (ext === '.exe') return 'win32'
-  if (['.deb', '.rpm', '.appimage'].includes(ext)) return 'linux'
-  throw new Error(`认不出安装程序 ${path.basename(file)} 是哪个平台的（.exe / .deb / .rpm / .AppImage）`)
+  if (ext === '.deb') return 'linux'
+  throw new Error(`认不出安装程序 ${path.basename(file)} 是哪个平台的（Windows 用 .exe，Linux 用 .deb）`)
+}
+
+/** deb 的架构名 → Node 的 process.arch */
+const DEB_ARCHES = { amd64: 'x64', arm64: 'arm64', armhf: 'armv7l', i386: 'ia32' }
+
+/** electron-builder 出的 deb 文件名带架构（yzapp_1.2.0_amd64.deb），认不出为 null */
+export const archOfInstaller = (file) => {
+  const match = /_([a-z0-9]+)\.deb$/i.exec(path.basename(file))
+  return match ? (DEB_ARCHES[match[1].toLowerCase()] ?? null) : null
+}
+
+/** 架构：--arch 优先，但不能和 deb 文件名对不上；都没有时默认 x64 */
+export const resolveArch = (installer, arch) => {
+  const fromName = archOfInstaller(installer)
+  if (arch && fromName && arch !== fromName) {
+    throw new Error(`--arch ${arch} 和安装程序 ${path.basename(installer)}（${fromName}）对不上`)
+  }
+  return arch ?? fromName ?? 'x64'
 }
 
 const VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
@@ -104,11 +123,12 @@ export const packUpdate = async ({
   releasedAt = new Date().toISOString(),
   outDir,
   product = PRODUCT,
-  arch = 'x64',
+  arch: archOption,
 }) => {
   if (!VERSION_RE.test(version)) throw new Error(`版本号格式不对：${version}`)
-  if (!ARCH_RE.test(arch)) throw new Error(`架构写法不对：${arch}`)
   const platform = platformOfInstaller(installer)
+  const arch = resolveArch(installer, archOption)
+  if (!ARCH_RE.test(arch)) throw new Error(`架构写法不对：${arch}`)
   const installerStat = await fs.stat(installer)
   const manifest = {
     format: 1,
@@ -188,6 +208,18 @@ const keygen = async (args) => {
   console.log(`公钥已写进 ${path.relative(REPO_ROOT, PUBLIC_KEY_FILE)}，请提交这个文件`)
 }
 
+/** release/<版本>/ 里的安装程序：Windows 的 yzapp_<版本>.exe 或 Linux 的 yzapp_<版本>_<架构>.deb，只能有一个 */
+const findInstaller = async (pkg, version) => {
+  const dir = path.join(REPO_ROOT, 'release', version)
+  const names = await fs.readdir(dir).catch(() => [])
+  const found = names.filter(
+    (name) => name === `${pkg.productName}_${version}.exe` || (name.startsWith(`${pkg.name}_${version}_`) && name.endsWith('.deb')),
+  )
+  if (found.length === 0) die(`${dir} 里没有 ${version} 的安装程序，先出安装包，或用 --installer 指定`)
+  if (found.length > 1) die(`${dir} 里有好几个安装程序（${found.join('、')}），用 --installer 指定打哪个`)
+  return path.join(dir, found[0])
+}
+
 const pack = async (args) => {
   const { values } = parseArgs({
     args,
@@ -204,10 +236,8 @@ const pack = async (args) => {
   if (!values.key) die('用 --key 指定私钥文件')
   const pkg = JSON.parse(await fs.readFile(path.join(REPO_ROOT, 'package.json'), 'utf8'))
   const version = values.version ?? pkg.version
-  const installer = path.resolve(
-    values.installer ?? path.join(REPO_ROOT, 'release', version, `${pkg.productName}_${version}.exe`),
-  )
-  if (!(await exists(installer))) die(`找不到安装程序 ${installer}，先 pnpm build，或用 --installer 指定`)
+  const installer = values.installer ? path.resolve(values.installer) : await findInstaller(pkg, version)
+  if (!(await exists(installer))) die(`找不到安装程序 ${installer}，先出安装包，或用 --installer 指定`)
   const privateKeyPem = await fs.readFile(path.resolve(values.key), 'utf8')
   const configured = readPublicKeyConstant(await fs.readFile(PUBLIC_KEY_FILE, 'utf8'))
   if (!configured) die('signing-key.ts 里还没有公钥，先 pnpm update:keygen')

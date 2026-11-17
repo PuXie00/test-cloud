@@ -1,0 +1,49 @@
+#!/bin/sh
+# 在软件里安装升级（Linux deb 版）的 root 辅助程序，装到 /opt/yzapp/resources/linux/。
+# 软件退出后由 pkexec 以 root 运行（polkit 动作 yzapp.install-update，见 yzapp.install-update.policy）：
+#   pkexec /opt/yzapp/resources/linux/yz-install-update <升级包目录>
+# 升级包目录是软件存好的 packages/<版本>（manifest.json、manifest.sig、.deb）。
+# 先在 root 自己的临时目录里重新验签名（verify-update.cjs），再用 apt-get 装：版本新是升级，旧是回退。
+# 验签名用软件自带的 Node（ELECTRON_RUN_AS_NODE），electron-builder 的 electronFuses 不能关掉 runAsNode。
+# 只装用本软件签名私钥签过的 yzapp 包，所以现场给它配免密授权，也不会变成能装任意软件包的口子。
+# 工程在 /opt/yzapp/Project，不归 dpkg 管，升级、回退、卸载都不会动它。
+# 退出码：0 装好；10 用法不对；11 准备失败；12 校验没通过；20 apt-get 失败（同 electron/main/update/installers.ts）。
+set -u
+umask 022
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+unset ELECTRON_RUN_AS_NODE NODE_OPTIONS
+
+PACKAGE=yzapp
+EXECUTABLE=yzapp
+
+fail() {
+  echo "yz-install-update: $2" >&2
+  exit "$1"
+}
+
+[ "$(id -u)" -eq 0 ] || fail 10 "要用 root 运行（pkexec）"
+[ "$#" -eq 1 ] || fail 10 "用法：yz-install-update <升级包目录>"
+src=$1
+[ -d "$src" ] || fail 10 "找不到升级包目录 $src"
+
+here=$(dirname "$(readlink -f "$0")")
+app_dir=$(dirname "$(dirname "$here")")
+app_bin="$app_dir/$EXECUTABLE"
+[ -x "$app_bin" ] || fail 11 "找不到 $app_bin"
+
+work=$(mktemp -d /tmp/yzapp-update.XXXXXXXX) || fail 11 "建临时目录失败"
+trap 'rm -rf "$work"' EXIT
+trap 'exit 130' HUP INT TERM
+# apt 读本地 .deb 时用 _apt 用户，目录要能读；只有 root 能写
+chmod 755 "$work" || fail 11 "设置临时目录权限失败"
+
+# 用软件自带的 Node 验，不依赖系统里另装东西
+deb=$(ELECTRON_RUN_AS_NODE=1 "$app_bin" "$here/verify-update.cjs" "$src" "$work") || fail 12 "升级包校验没通过"
+name=$(dpkg-deb --field "$deb" Package) || fail 12 "读不了安装包信息"
+[ "$name" = "$PACKAGE" ] || fail 12 "安装包是 $name，不是 $PACKAGE"
+
+echo "yz-install-update: 安装 $(basename "$deb")"
+DEBIAN_FRONTEND=noninteractive apt-get install --yes --allow-downgrades --no-remove \
+  -o DPkg::Lock::Timeout=120 "$deb" || fail 20 "apt-get 安装失败"
+echo "yz-install-update: 装好了"

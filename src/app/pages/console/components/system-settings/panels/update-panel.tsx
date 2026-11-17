@@ -182,6 +182,9 @@ export const UpdatePanel = () => {
       message: rollback ? `回退到 v${pkg.version}？` : `升级到 v${pkg.version}？`,
       detail: [
         "软件会关闭并断开设备连接，装完自动重新打开，期间不要关机。",
+        status.target.platform === "linux"
+          ? "软件关闭后会弹出系统授权窗口，需要输入管理员密码；取消的话软件会照原样重新打开。"
+          : null,
         rollback
           ? "回退后，用新版本保存过的工程在旧版本里显示「版本过高」，可以在工程管理里从版本历史恢复升级前的备份。"
           : null,
@@ -226,7 +229,9 @@ export const UpdatePanel = () => {
               软件里没有配置升级签名公钥，不能导入或安装升级包。
             </p>
           ) : !status.installSupported ? (
-            <p className="text-body-sm text-muted-foreground">这个版本暂时不能在软件里安装，这里只能导入和查看升级包。</p>
+            <p className="text-body-sm text-muted-foreground">
+              不能在软件里安装（{status.installUnsupportedReason ?? "这个版本暂不支持"}），这里只能导入和查看升级包。
+            </p>
           ) : null}
         </div>
       </SettingsSection>

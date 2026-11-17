@@ -12,14 +12,12 @@ import type {
   UpdateTarget,
 } from '../../../shared/update/types'
 import { compareVersions } from '../../../shared/update/version'
+import { clearPendingInstall, writePendingInstall } from './install-record'
 import { downloadFile, fetchLatest, type FetchLike } from './online'
 import type { ImportProgressListener, UpdatePackageStore } from './package-store'
 
 /** 本机最多留几个升级包（不算当前版本的） */
 export const KEEP_PACKAGES = 5
-
-/** NSIS 静默安装，装完自动打开（参数同 electron-updater 的 NsisUpdater） */
-export const INSTALLER_ARGS = ['--updated', '/S', '--force-run'] as const
 
 /** 进度最多这么久推一次 */
 const PROGRESS_INTERVAL_MS = 250
@@ -28,8 +26,8 @@ export type UpdateServiceDeps = {
   currentVersion: string
   /** 本机的平台和架构 */
   target: UpdateTarget
-  /** 这个平台、这种安装方式能不能在软件里装（开发态都不行） */
-  installSupported: boolean
+  /** 这个平台、这种安装方式不能在软件里装的原因（开发态都不行），能装为 null */
+  installUnsupportedReason: string | null
   store: UpdatePackageStore
   /** 在线更新地址，null 表示没配 */
   onlineUrl: string | null
@@ -38,8 +36,10 @@ export type UpdateServiceDeps = {
   fetch: FetchLike
   /** 有轴在动时返回提示，能装时返回 null（主进程 Info|axis 缓存） */
   motionBlock: () => string | null
-  /** 启动安装程序（分离进程，软件退出后它还在） */
-  launchInstaller: (installerPath: string, args: readonly string[]) => Promise<void>
+  /** 启动安装（分离进程，软件退出后它还在），见 installers.ts */
+  launchInstaller: (pkg: InstallLaunch) => Promise<void>
+  /** 启动安装前记一笔，下次启动看装没装成（install-record.ts） */
+  pendingInstallFile: string
   /** 停掉 C++ 运行时和运动学程序，不然安装目录里的文件被占着换不掉 */
   stopRuntimes: () => void
   /** 放开关闭拦截并退出软件 */
@@ -48,6 +48,14 @@ export type UpdateServiceDeps = {
   onProgress: (progress: UpdateDownloadProgress | null) => void
   /** 导入进度，null 表示导入结束 */
   onImportProgress: (progress: UpdateImportProgress | null) => void
+}
+
+/** 要装的版本，已经重新校验过 */
+export type InstallLaunch = {
+  version: string
+  installerPath: string
+  /** 存好的升级包目录（manifest.json、manifest.sig、安装程序） */
+  packageDir: string
 }
 
 const ok = <T>(data: T): UpdateResult<T> => ({ ok: true, data })
@@ -80,7 +88,8 @@ export class UpdateService {
     return ok({
       currentVersion: this.deps.currentVersion,
       target: this.deps.target,
-      installSupported: this.deps.installSupported,
+      installSupported: this.deps.installUnsupportedReason === null,
+      installUnsupportedReason: this.deps.installUnsupportedReason,
       signingKeyConfigured: this.deps.store.signingKeyConfigured,
       onlineUrl: this.deps.onlineUrl,
       packages: manifests.map((m) => this.toStored(m)),
@@ -187,7 +196,7 @@ export class UpdateService {
    */
   async install(version: string): Promise<UpdateResult<null>> {
     if (this.installing) return fail('BUSY', '正在启动安装')
-    if (!this.deps.installSupported) return fail('UNSUPPORTED', '只有 Windows 安装版能在软件里升级')
+    if (this.deps.installUnsupportedReason !== null) return fail('UNSUPPORTED', this.deps.installUnsupportedReason)
     if (version === this.deps.currentVersion) return fail('SAME_VERSION', `已经是 v${version}`)
     if (this.download) return fail('BUSY', '正在下载升级包，下载完或取消后再安装')
     if (this.importing) return fail('BUSY', '正在导入升级包，导入完再安装')
@@ -197,11 +206,18 @@ export class UpdateService {
     if (blocked) return fail('AXIS_MOVING', blocked)
 
     this.installing = true
+    const { installerPath } = verified.data
     try {
-      // 先把安装程序拉起来，起不来就什么都不动；它会等软件退出后再卸载旧版本
-      await this.deps.launchInstaller(verified.data.installerPath, INSTALLER_ARGS)
+      await writePendingInstall(this.deps.pendingInstallFile, {
+        fromVersion: this.deps.currentVersion,
+        toVersion: version,
+        startedAt: new Date().toISOString(),
+      })
+      // 先把安装拉起来，起不来就什么都不动；它会等软件退出后再装
+      await this.deps.launchInstaller({ version, installerPath, packageDir: path.dirname(installerPath) })
     } catch (err) {
       this.installing = false
+      await clearPendingInstall(this.deps.pendingInstallFile).catch(() => undefined)
       return fail('LAUNCH_FAILED', `安装程序没能启动：${err instanceof Error ? err.message : String(err)}`)
     }
     this.deps.stopRuntimes()
