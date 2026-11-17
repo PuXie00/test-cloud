@@ -1,5 +1,6 @@
 import { MoreVertical, Theater } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
+import { projectCompatBadge } from "@/app/project/project-compat";
 import type { ProjectRecord } from "@/app/project/project-types";
 
 type ProjectCardProps = {
@@ -15,6 +16,7 @@ const statusBadge = (status: ProjectRecord["status"]) => {
 };
 
 export const ProjectCard = ({ project, selected, onSelect }: ProjectCardProps) => {
+  const compatBadge = projectCompatBadge(project);
 
   return (
     <button
@@ -38,6 +40,16 @@ export const ProjectCard = ({ project, selected, onSelect }: ProjectCardProps) =
             <Theater className="h-10 w-10 text-muted-foreground/50" aria-hidden />
           </div>
         )}
+        {compatBadge ? (
+          <span
+            className={cn(
+              "absolute left-2 top-2 rounded px-2 py-0.5 text-body-sm font-medium",
+              compatBadge.className,
+            )}
+          >
+            {compatBadge.label}
+          </span>
+        ) : null}
       </div>
       <div className="flex flex-col gap-2 p-4">
         <div className="flex items-start justify-between gap-2">

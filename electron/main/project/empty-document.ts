@@ -1,6 +1,11 @@
+import {
+  PROJECT_FORMAT_VERSION,
+  toStoredSchemaVersion,
+} from '../../../shared/project/project-format'
 import type { ProjectDocumentLike } from './types'
 
-const PROJECT_SCHEMA_VERSION = '1.3.0-draft'
+/** 当前格式写进文件的 schemaVersion */
+const currentSchemaVersion = (): string => toStoredSchemaVersion(PROJECT_FORMAT_VERSION)
 
 export const createEmptyDocument = (meta: {
   id: string
@@ -9,7 +14,7 @@ export const createEmptyDocument = (meta: {
 }): ProjectDocumentLike => {
   const now = new Date().toISOString()
   return {
-    schemaVersion: PROJECT_SCHEMA_VERSION,
+    schemaVersion: currentSchemaVersion(),
     meta: {
       id: meta.id,
       name: meta.name,
@@ -45,7 +50,7 @@ export const createEmptyDocument = (meta: {
 export const isProjectDocumentLike = (value: unknown): value is ProjectDocumentLike => {
   if (!value || typeof value !== 'object') return false
   const doc = value as Record<string, unknown>
-  if (doc.schemaVersion !== PROJECT_SCHEMA_VERSION) return false
+  if (doc.schemaVersion !== currentSchemaVersion()) return false
   if (!doc.meta || typeof doc.meta !== 'object') return false
   const meta = doc.meta as Record<string, unknown>
   if (typeof meta.id !== 'string' || typeof meta.name !== 'string') return false

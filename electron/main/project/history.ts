@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import { diffJson } from './diff'
+import { appendHistoryEntry, readHistoryIndex } from './history-index'
 import {
-  getHistoryIndexPath,
   getHistorySnapshotPath,
+  getProjectJsonPath,
   pathExists,
   validateProjectName,
 } from './paths'
@@ -11,6 +12,7 @@ import {
   buildSummary,
   ensureProjectScaffold,
   getCurrentProjectName,
+  parseProjectDocument,
   readProjectDocument,
   writeProjectDocument,
 } from './service'
@@ -34,56 +36,30 @@ const resolveProjectName = (name?: string): ProjectResult<string> => {
   return ok(target)
 }
 
-const readIndex = async (projectName: string): Promise<HistoryEntry[]> => {
-  const indexPath = getHistoryIndexPath(projectName)
-  if (!(await pathExists(indexPath))) return []
-  const raw = await fs.readFile(indexPath, 'utf8')
-  const parsed: unknown = JSON.parse(raw)
-  if (!Array.isArray(parsed)) return []
-  return parsed.filter((item): item is HistoryEntry => {
-    if (!item || typeof item !== 'object') return false
-    const e = item as Record<string, unknown>
-    return typeof e.id === 'string' && typeof e.label === 'string' && typeof e.createdAt === 'string'
-  })
-}
-
-const writeIndex = async (projectName: string, entries: HistoryEntry[]): Promise<void> => {
-  await fs.writeFile(getHistoryIndexPath(projectName), JSON.stringify(entries, null, 2), 'utf8')
-}
-
-const writeSnapshotFile = async (
-  projectName: string,
-  historyId: string,
-  document: ProjectDocumentLike,
-): Promise<void> => {
-  const snapshot: ProjectDocumentLike = {
-    ...document,
-    snapshots: [],
+const readAuthor = (text: string): string | undefined => {
+  try {
+    const author = (JSON.parse(text) as { meta?: { author?: unknown } } | null)?.meta?.author
+    return typeof author === 'string' ? author : undefined
+  } catch {
+    return undefined
   }
-  await fs.writeFile(
-    getHistorySnapshotPath(projectName, historyId),
-    JSON.stringify(snapshot, null, 2),
-    'utf8',
-  )
 }
 
+/** 原样备份盘上的 project.json，旧格式、比本软件新的也能备份 */
 const createBackupEntry = async (
   projectName: string,
   params: { label: string; note?: string; author?: string },
 ): Promise<HistoryEntry> => {
   await ensureProjectScaffold(projectName)
-  const document = await readProjectDocument(projectName)
+  const text = await fs.readFile(getProjectJsonPath(projectName), 'utf8')
   const entry: HistoryEntry = {
     id: randomUUID(),
     label: params.label.trim() || '未命名备份',
     note: params.note?.trim() || undefined,
     createdAt: new Date().toISOString(),
-    author: params.author?.trim() || document.meta.author,
+    author: params.author?.trim() || readAuthor(text),
   }
-  await writeSnapshotFile(projectName, entry.id, document)
-  const index = await readIndex(projectName)
-  index.unshift(entry)
-  await writeIndex(projectName, index)
+  await appendHistoryEntry(projectName, entry, text)
   return entry
 }
 
@@ -95,7 +71,7 @@ export const listHistory = async (
     if (!resolved.ok) return resolved
     const projectName = resolved.data
     await ensureProjectScaffold(projectName)
-    return ok(await readIndex(projectName))
+    return ok(await readHistoryIndex(projectName))
   } catch (err) {
     return fail('HISTORY_LIST_FAILED', err instanceof Error ? err.message : String(err))
   }
@@ -120,7 +96,7 @@ export const restoreHistory = async (
   params: HistoryRestoreParams,
 ): Promise<ProjectResult<ProjectDocumentLike>> => {
   try {
-    const resolved = resolveProjectName()
+    const resolved = resolveProjectName(params.name)
     if (!resolved.ok) return resolved
     const projectName = resolved.data
 
@@ -129,13 +105,23 @@ export const restoreHistory = async (
       return fail('HISTORY_NOT_FOUND', `快照不存在: ${params.historyId}`)
     }
 
+    // 快照可能是旧格式（升级前备份）或更高版本软件存的：先升到当前格式，本软件读不了的不恢复
+    const parsed = parseProjectDocument(await fs.readFile(snapshotPath, 'utf8'))
+    if (!parsed.ok) {
+      return fail(
+        parsed.code,
+        parsed.code === 'SCHEMA_TOO_NEW'
+          ? `这个历史版本${parsed.message}`
+          : `这个历史版本无法读取：${parsed.message}`,
+      )
+    }
+
     await createBackupEntry(projectName, {
       label: 'auto-before-restore',
       note: `恢复前自动备份（目标 ${params.historyId}）`,
     })
 
-    const raw = await fs.readFile(snapshotPath, 'utf8')
-    const document = JSON.parse(raw) as ProjectDocumentLike
+    const document = parsed.document
     document.snapshots = []
     document.meta.name = projectName
     await writeProjectDocument(projectName, document)
@@ -151,15 +137,16 @@ const loadDiffSource = async (
   projectName: string,
   ref: string | 'current',
 ): Promise<ProjectDocumentLike> => {
-  if (ref === 'current') {
-    return readProjectDocument(projectName)
+  const file = ref === 'current'
+    ? getProjectJsonPath(projectName)
+    : getHistorySnapshotPath(projectName, ref)
+  if (!(await pathExists(file))) {
+    throw new Error(ref === 'current' ? `工程不存在: ${projectName}` : `快照不存在: ${ref}`)
   }
-  const snapshotPath = getHistorySnapshotPath(projectName, ref)
-  if (!(await pathExists(snapshotPath))) {
-    throw new Error(`快照不存在: ${ref}`)
-  }
-  const raw = await fs.readFile(snapshotPath, 'utf8')
-  return JSON.parse(raw) as ProjectDocumentLike
+  // 两边按当前格式比；本软件读不了的（版本过高）按原样比
+  const text = await fs.readFile(file, 'utf8')
+  const parsed = parseProjectDocument(text)
+  return parsed.ok ? parsed.document : (JSON.parse(text) as ProjectDocumentLike)
 }
 
 export const diffHistory = async (

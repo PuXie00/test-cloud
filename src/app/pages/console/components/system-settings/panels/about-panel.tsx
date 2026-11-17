@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ShieldCheck } from "lucide-react";
 import { LicenseManageButton } from "@/app/components/license";
 import { buttonVariants } from "@/app/components/ui/button";
@@ -22,6 +22,18 @@ export const AboutPanel = () => {
   const { state } = useLicense();
   const info = state.info;
   const valid = info?.status === "valid";
+  // 实际安装的版本（升级、回退看的就是它）；测试 / 纯浏览器里没有就显示默认文字
+  const [installedVersion, setInstalledVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void window.updateAPI?.status().then((result) => {
+      if (alive && result.ok) setInstalledVersion(result.data.currentVersion);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   return (
     <div className="flex max-w-2xl flex-col gap-6">
@@ -32,7 +44,7 @@ export const AboutPanel = () => {
               {SOFTWARE_INFO.softwareName}
             </span>
             <span className="font-mono text-mono-md tabular-nums text-muted-foreground">
-              {SOFTWARE_INFO.version}
+              {installedVersion ? `v${installedVersion}` : SOFTWARE_INFO.version}
             </span>
           </div>
         </div>

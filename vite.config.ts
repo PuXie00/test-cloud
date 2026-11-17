@@ -16,7 +16,11 @@ export default defineConfig(({ command, mode }) => {
   // 环境 = mode：开发 development（pnpm dev）/ 测试 staging / 正式 production（vite build 默认）
   // 读 .env、.env.local、.env.[mode]、.env.[mode].local，打包机 shell 里的同名变量优先
   const fileEnv = loadEnv(mode, __dirname, ['YZ_', 'IS_DEBUG', 'IS_DEV'])
-  const yzEnv = Object.fromEntries(Object.entries(fileEnv).filter(([key]) => key.startsWith('YZ_')))
+  // 工程文件格式版本：打包时写进主进程和界面（__YZ_PROJECT_SCHEMA_VERSION__），不放进 __YZ_ENV__，现场的系统环境变量改不了它
+  const projectSchemaVersion = JSON.stringify(fileEnv.YZ_PROJECT_SCHEMA_VERSION ?? '1')
+  const yzEnv = Object.fromEntries(
+    Object.entries(fileEnv).filter(([key]) => key.startsWith('YZ_') && key !== 'YZ_PROJECT_SCHEMA_VERSION'),
+  )
   const isDebugBuild = fileEnv.IS_DEBUG === 'true'
   const isDev = fileEnv.IS_DEV === 'true'
   const sourcemap = isServe || !!process.env.VSCODE_DEBUG
@@ -34,6 +38,9 @@ export default defineConfig(({ command, mode }) => {
       },
     },
     esbuild: esbuildDrop,
+    define: {
+      __YZ_PROJECT_SCHEMA_VERSION__: projectSchemaVersion,
+    },
     plugins: [
       react(),
       tailwindcss(),
@@ -64,6 +71,7 @@ export default defineConfig(({ command, mode }) => {
             define: {
               __BUILD_DEBUG__: JSON.stringify(isDebugBuild),
               __YZ_ENV__: JSON.stringify(yzEnv),
+              __YZ_PROJECT_SCHEMA_VERSION__: projectSchemaVersion,
               'process.env.IS_DEBUG': JSON.stringify(isDebugBuild ? 'true' : 'false'),
               'process.env.IS_DEV': JSON.stringify(isDev ? 'true' : 'false'),
             },

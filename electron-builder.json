@@ -22,13 +22,6 @@
       ]
     },
     {
-      "from": "YXZ.exe",
-      "to": "YXZ.exe",
-      "filter": [
-        "**/*"
-      ]
-    },
-    {
       "from": "Runtime",
       "to": "Runtime",
       "filter": [
@@ -42,7 +35,6 @@
         "**/*"
       ]
     }
-
   ],
   "mac": {
     "artifactName": "${productName}_${version}.${ext}",
@@ -61,9 +53,16 @@
         ]
       }
     ],
-    "artifactName": "${productName}_${version}.${ext}"
+    "artifactName": "${productName}_${version}.${ext}",
+    "extraFiles": [
+      {
+        "from": "YXZ.exe",
+        "to": "YXZ.exe"
+      }
+    ]
   },
   "nsis": {
+    "include": "build/installer.nsh",
     "oneClick": false,
     "perMachine": false,
     "allowToChangeInstallationDirectory": true,
@@ -72,9 +71,42 @@
     "uninstallerIcon": "public/favicon.ico",
     "installerHeaderIcon": "public/favicon.ico"
   },
-  "publish": {
-    "provider": "generic",
-    "channel": "latest",
-    "url": "https://github.com/electron-vite/electron-vite-react/releases/download/v0.9.9/"
+  "linux": {
+    "executableName": "yzapp",
+    "icon": "public/favicon.ico",
+    "category": "Utility",
+    "target": [
+      "deb"
+    ],
+    "extraFiles": [
+      {
+        "from": "YXZ",
+        "to": "YXZ"
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "build/linux/yz-install-update",
+        "to": "linux/yz-install-update"
+      },
+      {
+        "from": "build/linux/verify-update.cjs",
+        "to": "linux/verify-update.cjs"
+      },
+      {
+        "from": "shared/update/signing-key.ts",
+        "to": "linux/signing-key.ts"
+      }
+    ]
+  },
+  "deb": {
+    "afterInstall": "build/linux/after-install.tpl",
+    "fpm": [
+      "build/linux/yzapp.install-update.policy=/usr/share/polkit-1/actions/yzapp.install-update.policy"
+    ],
+    "recommends": [
+      "pkexec | policykit-1",
+      "libappindicator3-1"
+    ]
   }
 }

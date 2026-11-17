@@ -21,6 +21,8 @@ docs
 /YXZ_call.json
 /YXZ.json
 /YXZ.exe
+# Linux 版运动学程序（没有扩展名）
+/YXZ
 # .cursor
 *.test.ts
 *.test.tsx

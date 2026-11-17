@@ -4,6 +4,7 @@ export type SettingsNavId =
   | "calibration"
   | "network"
   | "notifications"
+  | "update"
   | "about";
 
 export type SettingsNavItem = {
