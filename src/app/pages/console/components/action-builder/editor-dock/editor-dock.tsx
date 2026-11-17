@@ -407,7 +407,7 @@ const SequenceEditor = () => {
         onContextMenu={handleTimelineContextMenu}
         actions={presetActions}
       >
-        <div className="flex min-h-0 flex-1">
+        <div data-guide="console-action-timeline" className="flex min-h-0 flex-1">
           <TimelineEditor
             sequence={sequence}
             resolved={timelineResolved}
@@ -457,6 +457,7 @@ export const EditorDock = ({ className }: { className?: string }) => {
 
   return (
     <div
+      data-guide="console-action-editor"
       className={cn(
         "flex h-[280px] shrink-0 flex-col overflow-hidden rounded-lg bg-card",
         className,

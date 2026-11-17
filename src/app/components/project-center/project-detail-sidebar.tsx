@@ -65,6 +65,7 @@ export const ProjectDetailSidebar = ({
 
       <div className="flex flex-col gap-2">
         <button
+          data-guide="project-center-open"
           type="button"
           onClick={onOpen}
           disabled={project.status === "archived" || opening}
@@ -91,6 +92,7 @@ export const ProjectDetailSidebar = ({
         ) : null}
         {onDelete ? (
           <button
+            data-guide="project-center-delete"
             type="button"
             className="flex h-10 w-full items-center justify-center gap-2 rounded-md border border-border bg-transparent text-body-sm text-destructive hover:bg-destructive/10"
             onClick={onDelete}

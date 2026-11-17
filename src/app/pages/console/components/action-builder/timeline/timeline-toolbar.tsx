@@ -406,7 +406,7 @@ export const TimelineToolbar = ({
         <span className="px-2 text-body-sm text-muted-foreground">只读</span>
       ) : (
         <>
-          <ToolbarIcon icon={Trash2} label="删除序列" onClick={onDelete} disabled={!canDelete} />
+          <ToolbarIcon data-guide="console-action-template-delete" icon={Trash2} label="删除序列" onClick={onDelete} disabled={!canDelete} />
           <button
             type="button"
             onClick={onSave}

@@ -36,6 +36,7 @@ export const TreeView = <T,>({
   rowHeight = 36,
   className,
   "aria-label": ariaLabel,
+  "data-guide": dataGuide,
 }: TreeViewProps<T>) => {
   const rows = useMemo(
     () => flattenVisibleNodes(nodes, getNodeId, getChildren, expandedIds),
@@ -169,6 +170,7 @@ export const TreeView = <T,>({
     <div
       role="tree"
       aria-label={ariaLabel}
+      data-guide={dataGuide}
       className={cn("flex flex-col py-1", className)}
     >
       <TreeDndShell

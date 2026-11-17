@@ -42,6 +42,7 @@ export const ShapePresetPalette = () => {
 
   return (
     <div
+      data-guide="console-shape-palette"
       className="pointer-events-auto absolute right-3 top-1/2 flex -translate-y-1/2 flex-col"
       aria-label="几何预设"
     >

@@ -13,11 +13,29 @@ const NAV_ITEMS: {
   id: LeftNavId;
   icon: typeof SlidersHorizontal;
   label: string;
+  guide?: string;
   permission?: PermissionId;
 }[] = [
-  { id: "control", icon: SlidersHorizontal, label: "控制" },
-  { id: "devices", icon: Cpu, label: "搭建", permission: "build.view" },
-  { id: "sequences", icon: List, label: "动作", permission: "action.view" },
+  {
+    id: "control",
+    icon: SlidersHorizontal,
+    label: "控制",
+    guide: "console-control-navigation",
+  },
+  {
+    id: "devices",
+    icon: Cpu,
+    label: "搭建",
+    guide: "console-build-navigation",
+    permission: "build.view",
+  },
+  {
+    id: "sequences",
+    icon: List,
+    label: "动作",
+    guide: "console-action-navigation",
+    permission: "action.view",
+  },
 ];
 
 type LeftSidebarProps = {

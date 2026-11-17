@@ -608,7 +608,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
           onReverseBack={(cardId) => handleRerun(cardId, "reverse-back")}
         />
       </div>
-      <div className="min-w-0 flex-1">
+      <div data-guide="console-action-faders" className="min-w-0 flex-1">
         <Executors onTriggerSequence={handleStableTriggerSequence} />
       </div>
       <StartEntryDialog

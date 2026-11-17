@@ -146,6 +146,7 @@ export const ObjectAxesEditor = ({ objectId, controlType, axes }: ObjectAxesEdit
       ) : null}
 
       <button
+        data-guide="console-hitch-config-trigger"
         type="button"
         onClick={() => handleOpenMultiPointDialog()}
         className="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-3 text-body-sm font-semibold text-primary-foreground hover:bg-primary/90"

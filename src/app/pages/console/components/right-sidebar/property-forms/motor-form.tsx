@@ -355,9 +355,11 @@ export const MotorForm = ({ motorId }: MotorFormProps) => {
                 aria-label="轴类型"
               />
             </Form.Item>
-            <Form.Item label="绑定吊点" name="bindTarget">
-              <Select options={bindOptions} placeholder="选择绑定" aria-label="绑定吊点" />
-            </Form.Item>
+            <div data-guide="console-real-axis-bind">
+              <Form.Item label="绑定吊点" name="bindTarget">
+                <Select options={bindOptions} placeholder="选择绑定" aria-label="绑定吊点" />
+              </Form.Item>
+            </div>
           </div>
         </CollapsePanel>
 

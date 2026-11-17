@@ -16,10 +16,10 @@ import { SelectionTabContent } from "./selection-tab-content";
 /** "manual" 与视口「当前位置」同步：选中该 tab 即显示设备实时位置 */
 export type ActionRightTab = "selection" | "manual" | "program";
 
-const RIGHT_TABS: { id: ActionRightTab; label: string }[] = [
-  { id: "selection", label: "属性" },
+const RIGHT_TABS: { id: ActionRightTab; label: string; guide?: string }[] = [
+  { id: "selection", label: "属性", guide: "console-action-properties-tab" },
   { id: "manual", label: "手动控制" },
-  { id: "program", label: "节目管理" },
+  { id: "program", label: "节目管理", guide: "console-action-program-tab" },
 ];
 
 type ActionRightPanelProps = {
@@ -78,6 +78,7 @@ export const ActionRightPanel = ({
         </p>
       )}
       {shownTab === "selection" && (
+        <div data-guide="console-action-selection-properties" className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <ReadOnlyScope readOnly={readOnly} className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <SelectionTabContent
           dockMode={dockMode}
@@ -95,6 +96,7 @@ export const ActionRightPanel = ({
           onApplyDynamicPreset={onApplyDynamicPreset}
         />
         </ReadOnlyScope>
+        </div>
       )}
       {shownTab === "manual" && <ActionManualControlTab />}
       {shownTab === "program" && <ProgramPanel variant="authoring" />}

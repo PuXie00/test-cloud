@@ -238,7 +238,7 @@ export const BuildDebugMotorList = () => {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-background">
+    <div data-guide="console-real-axis-debug-list" className="flex min-h-0 flex-1 flex-col bg-background">
       {/* <PanelHeader title="调试 · 电机列表" /> */}
 
       <div className="flex shrink-0 items-center gap-2 bg-muted px-2 pt-1.5">

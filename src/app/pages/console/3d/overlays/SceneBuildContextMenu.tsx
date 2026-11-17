@@ -75,6 +75,7 @@ const EditMenuItems = ({
       粘贴
     </DropdownMenuItem>
     <DropdownMenuItem
+      data-guide="console-controlled-object-delete"
       variant="destructive"
       disabled={!canDelete}
       className={menuItemClass}

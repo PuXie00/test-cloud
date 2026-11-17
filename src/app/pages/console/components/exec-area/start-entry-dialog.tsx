@@ -395,6 +395,7 @@ const StartEntryBody = ({
       <AlertDialogFooter>
         <AlertDialogCancel type="button">取消</AlertDialogCancel>
         <button
+          data-guide="console-action-start-confirm"
           type="button"
           className="h-10 rounded-md bg-primary px-3 font-semibold text-primary-foreground disabled:opacity-50"
           disabled={!outcome.ok}
@@ -423,7 +424,7 @@ export const StartEntryDialog = ({ request, onCancel, onConfirm }: StartEntryDia
       if (!next) onCancel();
     }}
   >
-    <AlertDialogContent className="gap-3 border-0 bg-card shadow-[0_4px_24px_rgba(0,0,0,0.4)] sm:max-w-xl">
+    <AlertDialogContent data-guide="console-action-start-dialog" className="gap-3 border-0 bg-card shadow-[0_4px_24px_rgba(0,0,0,0.4)] sm:max-w-xl">
       {request ? <StartEntryBody request={request} onConfirm={onConfirm} /> : null}
     </AlertDialogContent>
   </AlertDialog>

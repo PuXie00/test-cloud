@@ -60,6 +60,7 @@ export type TreeViewProps<T> = {
   rowHeight?: number;
   className?: string;
   "aria-label"?: string;
+  "data-guide"?: string;
 };
 
 /** @dnd-kit data payload */

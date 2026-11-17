@@ -49,7 +49,10 @@ export const DeleteImpactDialog = ({
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="bg-card">
+      <AlertDialogContent
+        data-guide="console-deletion-dialog"
+        className="bg-card"
+      >
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription asChild>
@@ -82,6 +85,7 @@ export const DeleteImpactDialog = ({
         <AlertDialogFooter>
           <AlertDialogCancel>取消</AlertDialogCancel>
           <AlertDialogAction
+            data-guide="console-deletion-confirm"
             onClick={handleConfirmClick}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >

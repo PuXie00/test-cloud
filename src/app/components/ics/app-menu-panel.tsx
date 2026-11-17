@@ -257,6 +257,13 @@ export const AppMenuPanel = ({
                   return (
                     <li key={resolved.id}>
                       <button
+                        data-guide={
+                          resolved.id === "save"
+                            ? "console-app-menu-save"
+                            : resolved.id === "close"
+                              ? "console-app-menu-close"
+                              : undefined
+                        }
                         type="button"
                         disabled={disabled}
                         aria-disabled={disabled || undefined}

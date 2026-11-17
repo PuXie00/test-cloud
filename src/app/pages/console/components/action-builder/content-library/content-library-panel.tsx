@@ -256,12 +256,13 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
   };
 
   return (
-    <aside className={cn("flex flex-col overflow-hidden rounded-lg bg-card", className)}>
+    <aside data-guide="console-action-library" className={cn("flex flex-col overflow-hidden rounded-lg bg-card", className)}>
       <PanelHeader
         title="动作序列库"
         extra={
           canEdit ? (
             <button
+              data-guide="console-action-template-create"
               type="button"
               aria-label="新建动作序列"
               onClick={() => handleCreateSequence(selectedObjectIds)}

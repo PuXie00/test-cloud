@@ -301,12 +301,13 @@ export const AuthoringProgramPanel = ({ className }: AuthoringProgramPanelProps)
   }, [sequences]);
 
   return (
-    <div className={cn("flex min-h-0 flex-1 flex-col", className)}>
+    <div data-guide="console-authoring-program" className={cn("flex min-h-0 flex-1 flex-col", className)}>
       <PanelHeader
         title="节目管理"
         extra={
           canEdit ? (
             <button
+              data-guide="console-chapter-create"
               type="button"
               aria-label="新建章节"
               onClick={handleChapterAdd}
@@ -318,13 +319,14 @@ export const AuthoringProgramPanel = ({ className }: AuthoringProgramPanelProps)
           ) : undefined
         }
       />
-      <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto p-2">
+      <div data-guide="console-action-drop-zone" className="custom-scrollbar min-h-0 flex-1 overflow-y-auto p-2">
         {programs.length === 0 && (
           <div className="flex flex-col items-center gap-3 px-4 py-8 text-center">
             <p className="text-body-sm text-muted-foreground">
               {canEdit ? "暂无节目。新建章节后，把动作序列库的动作序列拖入章节即可编排。" : "暂无节目。"}
             </p>
             {canEdit && <button
+              data-guide="console-chapter-create"
               type="button"
               onClick={handleChapterAdd}
               className="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-3 text-body-sm font-semibold text-primary-foreground hover:bg-primary/90"

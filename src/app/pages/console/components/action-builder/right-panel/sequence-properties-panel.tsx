@@ -127,6 +127,7 @@ const PropertiesShell = ({
             {actions}
             {onDelete ? (
               <button
+                data-guide="console-action-block-delete"
                 type="button"
                 onClick={onDelete}
                 className="inline-flex h-9 w-full items-center justify-center rounded-md bg-destructive text-body-sm font-semibold text-destructive-foreground hover:bg-destructive/90"

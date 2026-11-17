@@ -112,10 +112,12 @@ const MasterEditor = ({ id }: { id: number }) => {
   const { findPlc } = useProjectStore();
   const plc = findPlc(id);
   if (!plc) return null;
-  return <PlcForm plcId={id} />;
+  return <div data-guide="console-master-properties"><PlcForm plcId={id} /></div>;
 };
 
-const MotorEditor = ({ id }: { id: number }) => <MotorForm motorId={id} />;
+const MotorEditor = ({ id }: { id: number }) => (
+  <div data-guide="console-real-axis-properties"><MotorForm motorId={id} /></div>
+);
 
 const PropertyContent = () => {
   const { treeFocus, multiSelectedIds, multiSelectedMotorIds } = useSelection();
@@ -186,6 +188,7 @@ export const PropertySection = ({ className }: PropertySectionProps) => {
 
   return (
     <section
+      data-guide="console-controlled-object-properties"
       className={cn(
         "flex h-full min-h-0 w-[320px] max-w-[320px] shrink-0 flex-col overflow-hidden bg-card-muted",
         className,

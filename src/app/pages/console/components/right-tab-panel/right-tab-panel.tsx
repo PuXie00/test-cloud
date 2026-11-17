@@ -29,9 +29,9 @@ export const RightTabPanel = ({ className }: RightTabPanelProps) => {
   const canManual = canAny("control.manual", "control.device", "control.couple");
 
   const tabs = useMemo(() => {
-    const rehearsal: { id: ControlRightTabId; label: string }[] = [
-      { id: "manual", label: TAB_LABEL.manual },
-      { id: "program", label: TAB_LABEL.program },
+    const rehearsal: { id: ControlRightTabId; label: string; guide?: string }[] = [
+      { id: "manual", label: TAB_LABEL.manual, guide: "console-manual-control-tab" },
+      { id: "program", label: TAB_LABEL.program, guide: "console-control-program-tab" },
       { id: "log", label: TAB_LABEL.log },
       { id: "detail", label: TAB_LABEL.detail },
     ];

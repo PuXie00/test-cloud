@@ -82,7 +82,7 @@ export const PlcScanDialog = ({ open, onOpenChange, results }: PlcScanDialogProp
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogPortal>
         <DialogOverlay className="bg-background/80 backdrop-blur-sm" />
-        <DialogPrimitive.Content className="fixed top-[50%] left-[50%] z-50 flex max-h-[min(640px,calc(100vh-2rem))] w-full max-w-[520px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg bg-card shadow-[0_4px_24px_rgba(0,0,0,0.4)] outline-none">
+        <DialogPrimitive.Content data-guide="console-master-scan-dialog" className="fixed top-[50%] left-[50%] z-50 flex max-h-[min(640px,calc(100vh-2rem))] w-full max-w-[520px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg bg-card shadow-[0_4px_24px_rgba(0,0,0,0.4)] outline-none">
           <div className="flex h-12 shrink-0 items-center justify-between bg-muted px-4">
             <DialogTitle className="text-heading-md font-semibold">扫描结果</DialogTitle>
             <button type="button" onClick={() => onOpenChange(false)} aria-label="关闭">
@@ -132,6 +132,7 @@ export const PlcScanDialog = ({ open, onOpenChange, results }: PlcScanDialogProp
               取消
             </button>
             <button
+              data-guide="console-master-scan-apply"
               type="button"
               disabled={!hasSelection}
               onClick={handleAdd}

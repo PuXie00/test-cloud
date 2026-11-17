@@ -3,6 +3,7 @@ import { cn } from "../ui/utils";
 type TabItem<T extends string> = {
   id: T;
   label: string;
+  guide?: string;
 };
 
 type TabBarProps<T extends string> = {
@@ -34,6 +35,7 @@ export const TabBar = <T extends string>({
         // 不用原生 button：切页签只是看，在只读范围（fieldset disabled）里也要能切
         <div
           key={tab.id}
+          data-guide={tab.guide}
           role="tab"
           tabIndex={0}
           aria-selected={isActive}

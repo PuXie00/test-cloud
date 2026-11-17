@@ -56,7 +56,7 @@ export const NewProjectDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md bg-card">
+      <DialogContent data-guide="project-dialog" className="max-w-md bg-card">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
@@ -84,6 +84,7 @@ export const NewProjectDialog = ({
             取消
           </button>
           <button
+            data-guide="project-dialog-confirm"
             type="button"
             onClick={() => void handleCreate()}
             disabled={busy}

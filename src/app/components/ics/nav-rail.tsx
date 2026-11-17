@@ -5,6 +5,7 @@ export type NavRailItem<T extends string> = {
   id: T;
   icon: ElementType;
   label: string;
+  guide?: string;
 };
 
 type NavRailProps<T extends string> = {
@@ -24,6 +25,7 @@ export const NavRail = <T extends string>({ items, active, onChange, header, foo
       return (
         <button
           key={item.id}
+          data-guide={item.guide}
           type="button"
           aria-label={item.label}
           aria-current={isActive ? "page" : undefined}

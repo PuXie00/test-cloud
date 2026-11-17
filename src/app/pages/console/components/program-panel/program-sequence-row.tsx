@@ -195,6 +195,7 @@ export const ProgramSequenceRow = ({
       ) : null}
       {onRemove ? (
         <button
+          data-guide="console-action-remove"
           type="button"
           data-row-chrome=""
           aria-label={`移除 ${name}`}

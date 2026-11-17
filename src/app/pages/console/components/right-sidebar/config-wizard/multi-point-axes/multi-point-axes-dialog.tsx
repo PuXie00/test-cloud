@@ -485,6 +485,7 @@ export const MultiPointAxesDialog = ({
                         </p>
                       </div>
                       <button
+                        data-guide="console-hitch-add"
                         type="button"
                         disabled={!canAddAxis}
                         onClick={handleAddAxis}
@@ -732,7 +733,12 @@ export const MultiPointAxesDialog = ({
             </div>
 
             <div className="flex h-12 shrink-0 flex-row-reverse items-center gap-2 bg-muted px-4">
-              <Button type="button" disabled={!canApply} onClick={handleApply}>
+              <Button
+                data-guide="console-hitch-config-apply"
+                type="button"
+                disabled={!canApply}
+                onClick={handleApply}
+              >
                 应用
               </Button>
               <Button type="button" variant="ghost" onClick={handleRequestClose}>
@@ -765,7 +771,10 @@ export const MultiPointAxesDialog = ({
         open={pendingBoundRemovalKey !== null}
         onOpenChange={(next) => !next && setPendingBoundRemovalKey(null)}
       >
-        <AlertDialogContent className="bg-card">
+        <AlertDialogContent
+          data-guide="console-hitch-delete-dialog"
+          className="bg-card"
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>删除已绑定吊点</AlertDialogTitle>
             <AlertDialogDescription>
@@ -776,7 +785,10 @@ export const MultiPointAxesDialog = ({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmBoundRemoval}>
+            <AlertDialogAction
+              data-guide="console-hitch-delete-confirm"
+              onClick={handleConfirmBoundRemoval}
+            >
               删除并解绑
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -226,7 +226,7 @@ export const JogControl = ({
   );
 
   return (
-    <div className="space-y-2 px-3">
+    <div data-guide="console-controlled-object-jog" className="space-y-2 px-3">
       <div className="rounded-md overflow-hidden">
         <div className="flex h-9 items-center justify-between bg-muted px-3">
           <span>点动控制</span>

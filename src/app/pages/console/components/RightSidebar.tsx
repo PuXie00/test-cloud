@@ -12,9 +12,24 @@ import { RulesPanel } from "./right-sidebar/rules-panel";
 export type RightPanelTab = "structure" | "debug" | "wizard" | "rules";
 
 /** 工程结构和规则跟着搭建页（只读也能看）；调试、配置向导要各自的权限 */
-const RIGHT_TABS: { id: RightPanelTab; label: string; permission: PermissionId }[] = [
-  { id: "structure", label: "工程结构", permission: "build.view" },
-  { id: "debug", label: "调试", permission: "build.debug" },
+const RIGHT_TABS: {
+  id: RightPanelTab;
+  label: string;
+  guide?: string;
+  permission: PermissionId;
+}[] = [
+  {
+    id: "structure",
+    label: "工程结构",
+    guide: "console-project-structure-tab",
+    permission: "build.view",
+  },
+  {
+    id: "debug",
+    label: "调试",
+    guide: "console-build-debug-tab",
+    permission: "build.debug",
+  },
   { id: "wizard", label: "配置向导", permission: "build.edit" },
   { id: "rules", label: "规则", permission: "build.view" },
 ];
@@ -38,7 +53,7 @@ export const RightSidebar = ({ activeTab, onTabChange }: RightSidebarProps) => {
   const motionLock = useAxisMotionLocks().setup;
   const showMotionLock = motionLock !== null && activeTab !== "debug";
   const tabs = useMemo(
-    () => RIGHT_TABS.filter((tab) => can(tab.permission)).map(({ id, label }) => ({ id, label })),
+    () => RIGHT_TABS.filter((tab) => can(tab.permission)).map(({ id, label, guide }) => ({ id, label, guide })),
     [can],
   );
   return (

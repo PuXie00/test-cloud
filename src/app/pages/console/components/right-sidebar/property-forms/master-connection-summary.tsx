@@ -156,6 +156,7 @@ export const MasterConnectionSummary = ({
         ) : null}
         {runtime.connection === "connected" && canResetPlc ? (
           <button
+            data-guide="console-master-reset"
             type="button"
             onClick={handlePlcReset}
             aria-label="PLC复位"

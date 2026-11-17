@@ -73,7 +73,7 @@ export const MultiPointAxisList = ({
   }, [axes, draft, motors, objectId]);
 
   return (
-    <div className="space-y-1">
+    <div data-guide="console-hitch-position-config" className="space-y-1">
       {axes.map((axis, index) => {
         const label = formatAxisLabel(index);
         const selected = axis.key === selectedAxisKey;
@@ -87,6 +87,7 @@ export const MultiPointAxisList = ({
 
         const deleteButton = (
           <button
+            data-guide="console-hitch-delete"
             type="button"
             aria-label={deleteLabel}
             disabled={!canDelete}

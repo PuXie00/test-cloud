@@ -33,7 +33,7 @@ export const SequenceDeleteDialog = ({ open, onOpenChange }: SequenceDeleteDialo
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="bg-card">
+      <AlertDialogContent data-guide="console-action-template-delete-dialog" className="bg-card">
         <AlertDialogHeader>
           <AlertDialogTitle>删除动作序列「{sequence.name}」</AlertDialogTitle>
           <AlertDialogDescription>
@@ -45,6 +45,7 @@ export const SequenceDeleteDialog = ({ open, onOpenChange }: SequenceDeleteDialo
         <AlertDialogFooter>
           <AlertDialogCancel>取消</AlertDialogCancel>
           <AlertDialogAction
+            data-guide="console-action-template-delete-confirm"
             onClick={handleDeleteSequence}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >

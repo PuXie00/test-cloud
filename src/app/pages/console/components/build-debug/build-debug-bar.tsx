@@ -968,6 +968,7 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
         />
 
         <button
+          data-guide="console-real-axis-stop"
           type="button"
           disabled={setPositionDisabled}
           onClick={() => {
@@ -980,6 +981,7 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
 
         {canCalibrate && (
           <button
+            data-guide="console-real-axis-origin"
             type="button"
             disabled={setPositionDisabled}
             onClick={() => void handleSetOrigin()}
@@ -990,6 +992,7 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
         )}
 
         <JogButton
+          dataGuide="console-real-axis-jog"
           ariaLabel={limitRange ? "限位点动正向" : "点动正向"}
           disabled={setPositionDisabled}
           onHoldStart={() => {
@@ -1038,6 +1041,7 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
         >
           <PopoverTrigger asChild>
             <button
+              data-guide="console-real-axis-move"
               type="button"
               disabled={setPositionDisabled}
               aria-label="位置移动"
@@ -1047,6 +1051,7 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
             </button>
           </PopoverTrigger>
           <PopoverContent
+            data-guide="console-real-axis-move-dialog"
             side="top"
             align="center"
             sideOffset={8}
@@ -1145,6 +1150,7 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
                 取消
               </button>
               <button
+                data-guide="console-real-axis-move-confirm"
                 type="button"
                 onClick={handleMoveExecute}
                 className="inline-flex h-9 items-center rounded-md bg-primary px-3 text-body-sm font-semibold text-primary-foreground"
@@ -1156,6 +1162,7 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
         </Popover>
 
         <button
+          data-guide="console-real-axis-more"
           type="button"
           aria-expanded={expanded}
           aria-label={expanded ? "收起更多操作" : "展开更多操作"}
@@ -1271,6 +1278,7 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
             )}
 
             <button
+              data-guide="console-real-axis-reset"
               type="button"
               disabled={batchDisabled}
               onClick={() => void handleResetAlarm()}
@@ -1287,6 +1295,7 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
               清报警
             </button>
             <button
+              data-guide="console-real-axis-enable"
               type="button"
               disabled={batchDisabled}
               onClick={() => void handleEnable(true)}
@@ -1295,6 +1304,7 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
               使能
             </button>
             <button
+              data-guide="console-real-axis-disable"
               type="button"
               disabled={batchDisabled}
               onClick={() => void handleEnable(false)}

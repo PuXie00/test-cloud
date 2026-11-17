@@ -50,6 +50,7 @@ export const ObjectSelectionPanel = ({
         <>
           <div className="mb-4 flex justify-center">
             <button
+              data-guide="console-action-add-pose"
               type="button"
               onClick={() => onCreatePose(selectedObjectIds)}
               className="flex min-h-10 w-full items-center justify-center rounded-md bg-primary px-2 text-body-sm font-semibold text-primary-foreground hover:bg-primary/90"

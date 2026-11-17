@@ -192,6 +192,19 @@ export const StatusControlBar = ({
               <button
                 key={action.id}
                 type="button"
+                data-guide={
+                  action.id === "enable"
+                    ? "console-controlled-object-enable"
+                    : action.id === "couple"
+                      ? "console-controlled-object-couple"
+                      : action.id === "reset"
+                        ? "console-controlled-object-reset"
+                        : action.id === "stop"
+                          ? "console-controlled-object-stop"
+                          : action.id === "home"
+                            ? "console-controlled-object-home"
+                            : undefined
+                }
                 disabled={!allowed(action.id) || (action.id === "couple" && coupleBusy)}
                 onClick={() => handleActionClick(action.id)}
                 className={cn(
@@ -209,7 +222,10 @@ export const StatusControlBar = ({
       )}
 
       <AlertDialog open={pending !== null} onOpenChange={handleOpenChange}>
-        <AlertDialogContent className="bg-card">
+        <AlertDialogContent
+          className="bg-card"
+          data-guide="console-controlled-object-action-dialog"
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>
               {title} · {objectLabel}
@@ -224,6 +240,17 @@ export const StatusControlBar = ({
               ? choice.choices.map((item, index) => (
                   <AlertDialogAction
                     key={item.id}
+                    data-guide={
+                      pending === "enable"
+                        ? item.id === "on"
+                          ? "console-controlled-object-enable-on"
+                          : "console-controlled-object-enable-off"
+                        : pending === "couple"
+                          ? item.id === "on"
+                            ? "console-controlled-object-couple-on"
+                            : "console-controlled-object-couple-off"
+                          : undefined
+                    }
                     onClick={() => {
                       if (pending === "couple") {
                         handleCoupleChoice(item.id === "on" ? 1 : 0);
@@ -247,6 +274,13 @@ export const StatusControlBar = ({
                 ))
               : (
                   <AlertDialogAction
+                    data-guide={
+                      pending === "reset"
+                        ? "console-controlled-object-reset-confirm"
+                        : pending === "home"
+                          ? "console-controlled-object-home-confirm"
+                          : undefined
+                    }
                     onClick={() => {
                       if (pending === "reset") onReset?.();
                       if (pending === "home") onHome?.();

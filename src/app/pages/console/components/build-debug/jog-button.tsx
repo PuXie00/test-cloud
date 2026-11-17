@@ -6,6 +6,7 @@ type JogButtonProps = {
   onHoldEnd: () => void;
   disabled?: boolean;
   ariaLabel: string;
+  dataGuide?: string;
   children: ReactNode;
   className?: string;
 };
@@ -16,6 +17,7 @@ export const JogButton = ({
   onHoldEnd,
   disabled,
   ariaLabel,
+  dataGuide,
   children,
   className,
 }: JogButtonProps) => {
@@ -58,6 +60,7 @@ export const JogButton = ({
 
   return (
     <button
+      data-guide={dataGuide}
       type="button"
       aria-label={ariaLabel}
       disabled={disabled}

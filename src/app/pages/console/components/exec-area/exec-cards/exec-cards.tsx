@@ -38,7 +38,7 @@ export const ExecCards = ({ onNextSequence, onContinue, onReverseBack }: ExecCar
   }
 
   return (
-    <div className="custom-scrollbar flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
+    <div data-guide="console-action-exec-cards" className="custom-scrollbar flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
       {cards.map((card) => (
         <ExecCardView
           key={card.id}

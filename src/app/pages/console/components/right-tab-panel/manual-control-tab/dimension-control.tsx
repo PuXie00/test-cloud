@@ -110,7 +110,7 @@ export const DimensionControl = ({ disabled = false, objectIds, onClear }: Dimen
   };
 
   return (
-    <div className="space-y-2 px-3 py-3">
+    <div data-guide="console-controlled-object-move" className="space-y-2 px-3 py-3">
       <div className="rounded-md overflow-hidden">
         <div className="flex h-9 items-center justify-between bg-muted px-3">
           <span>维度控制</span>
@@ -164,6 +164,7 @@ export const DimensionControl = ({ disabled = false, objectIds, onClear }: Dimen
                 清除
               </button>
               <button
+                data-guide="console-controlled-object-move-confirm"
                 type="button"
                 aria-label="选中物体 GO"
                 disabled={disabled || !canGoSelected}

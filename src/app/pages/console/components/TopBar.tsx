@@ -286,6 +286,7 @@ export const TopBar = ({
       <header className="flex h-12 shrink-0 items-center justify-between bg-background px-4">
         <div className="flex min-w-0 items-center gap-2">
           <button
+            data-guide="console-app-menu-trigger"
             type="button"
             aria-label="打开应用菜单"
             aria-expanded={menuOpen}
@@ -352,6 +353,7 @@ export const TopBar = ({
             <SystemStatusPopover />
             {systemStatus.kind === "projectMismatch" && can("build.plc") ? (
               <button
+                data-guide="console-download-configuration"
                 type="button"
                 aria-label="下载当前工程到主控"
                 onClick={() => void handleDownloadPlcProject()}
@@ -363,7 +365,7 @@ export const TopBar = ({
             {/* <CollabQuickPopover connected={connected} onOpenFullManage={() => setCollabOpen(true)} /> */}
             {/* <AlignmentStatusPill /> */}
           </div>
-          <EmergencyStopButton onClick={onStop} />
+          <EmergencyStopButton data-guide="console-emergency-stop" onClick={onStop} />
         </div>
       </header>
       <AppMenuPanel

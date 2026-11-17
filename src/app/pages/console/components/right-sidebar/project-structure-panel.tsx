@@ -81,10 +81,10 @@ const TREE_ROW_HEIGHT = 36;
 
 type StructureViewId = "all" | "objects" | "masters";
 
-const STRUCTURE_VIEW_TABS: readonly { id: StructureViewId; label: string }[] = [
+const STRUCTURE_VIEW_TABS: readonly { id: StructureViewId; label: string; guide?: string }[] = [
   { id: "all", label: "全部" },
-  { id: "objects", label: "物体" },
-  { id: "masters", label: "主控" },
+  { id: "objects", label: "物体", guide: "console-controlled-objects-tab" },
+  { id: "masters", label: "主控", guide: "console-masters-tab" },
 ];
 
 const STATUS_DOT_CLASS: Record<PlcTreeStatusTone, string> = {
@@ -893,6 +893,7 @@ export const ProjectStructurePanel = () => {
     if (node.kind !== "plc" || !canEdit) return null;
     return (
       <button
+        data-guide="console-real-axis-add"
         type="button"
         aria-label={`${formatPlcDisplayName(plcs, node.plc)} 手动添加电机`}
         className={iconBtn}
@@ -965,6 +966,7 @@ export const ProjectStructurePanel = () => {
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem
+            data-guide="console-real-axis-delete"
             variant="destructive"
             onSelect={() => requestDelete(resolveMotorDeleteTarget(node.motor.id))}
           >
@@ -992,6 +994,7 @@ export const ProjectStructurePanel = () => {
     return (
       <ContextMenuContent>
         <ContextMenuItem
+          data-guide="console-master-delete"
           variant="destructive"
           onSelect={() => requestDelete({ kind: "plc", plcId: node.plc.id })}
         >
@@ -1144,6 +1147,7 @@ export const ProjectStructurePanel = () => {
                 extra={
                   canEdit ? <div className="flex items-center gap-1">
                     <button
+                      data-guide="console-master-scan"
                       type="button"
                       aria-label="扫描添加主控"
                       aria-busy={masterScan.scanning}
@@ -1162,6 +1166,7 @@ export const ProjectStructurePanel = () => {
                       )}
                     </button>
                     <button
+                      data-guide="console-master-add"
                       type="button"
                       aria-label="添加主控"
                       className={iconBtn}
@@ -1174,6 +1179,7 @@ export const ProjectStructurePanel = () => {
                 }
               />
               <TreeView
+                data-guide="console-master-tree"
                 nodes={plcNodes}
                 getNodeId={getStructureNodeId}
                 getChildren={getStructureChildren}

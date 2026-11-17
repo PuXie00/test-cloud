@@ -266,7 +266,7 @@ export const MotorAddDialog = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogPortal>
         <DialogOverlay className="bg-background/80 backdrop-blur-sm" />
-        <DialogPrimitive.Content className="fixed top-[50%] left-[50%] z-50 w-full max-w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-card shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
+        <DialogPrimitive.Content data-guide="console-real-axis-add-dialog" className="fixed top-[50%] left-[50%] z-50 w-full max-w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-card shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
           <div className="bg-muted px-4 py-3">
             <DialogTitle className="text-heading-md font-semibold">{title}</DialogTitle>
           </div>
@@ -301,6 +301,7 @@ export const MotorAddDialog = ({
                 取消
               </button>
               <button
+                data-guide="console-real-axis-add-confirm"
                 type="submit"
                 className="rounded-md bg-primary px-4 py-2 text-body-sm font-semibold text-primary-foreground"
               >

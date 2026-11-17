@@ -17,7 +17,7 @@ export const ProjectCardGrid = ({ projects, selectedId, onSelect }: ProjectCardG
   }
 
   return (
-    <div className="grid grid-cols-1 gap-5 pb-4 md:grid-cols-2 xl:grid-cols-3 p-2">
+    <div data-guide="project-center-projects" className="grid grid-cols-1 gap-5 pb-4 md:grid-cols-2 xl:grid-cols-3 p-2">
       {projects.map((project) => (
         <ProjectCard
           key={project.id}
