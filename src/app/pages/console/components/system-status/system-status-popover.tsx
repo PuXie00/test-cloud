@@ -14,6 +14,7 @@ import {
 import { useProjectStore } from "@/app/pages/console/hooks/use-project-store";
 import { formatPlcDisplayName } from "@/app/pages/console/hooks/plc-display-name";
 import { plcVerifyStatusLabel } from "@/app/pages/console/hooks/project-verify";
+import { useHaWholePlcBlock } from "@/app/hot-standby/use-ha-whole-plc-block";
 
 const PILL_STYLES: Record<SystemStatusKind, string> = {
   unconfigured: "bg-muted text-muted-foreground hover:bg-muted/80",
@@ -50,7 +51,10 @@ export const SystemStatusPopover = () => {
   const { runtimes, systemStatus, setSimulationAll, simulationSwitchPending } = usePlcRuntime();
   // 仿真开关属于「主控操作」：关掉仿真后 GO、点动会驱动真实设备
   const canOperateMaster = usePermissions().can("build.plc");
-  const switchState = resolveSimulationSwitchState(runtimes, simulationSwitchPending, canOperateMaster);
+  const baseSwitchState = resolveSimulationSwitchState(runtimes, simulationSwitchPending, canOperateMaster);
+  // 主备热备：仿真开关是整台 PLC 的操作，备机上不能切
+  const haBlock = useHaWholePlcBlock();
+  const switchState = haBlock ? { ...baseSwitchState, disabled: true, title: haBlock } : baseSwitchState;
 
   const runtimeById = new Map(runtimes.map((item) => [item.plcId, item]));
 

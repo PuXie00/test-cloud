@@ -89,6 +89,12 @@ export const ProjectModelLibraryDialog = ({
     void refreshList();
   }, [open, currentModelId, refreshList]);
 
+  // 主备热备：另一台导入、删了模型，打开着就刷新列表
+  useEffect(() => {
+    if (!open) return;
+    return window.haAPI?.onModelsChanged?.(() => void refreshList());
+  }, [open, refreshList]);
+
   const handleImport = async () => {
     setBusy(true);
     try {

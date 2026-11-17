@@ -15,6 +15,7 @@ import { attachAiBridgeWindow, registerAiBridgeHandlers, shutdownAiBridge } from
 import { shutdownAiAgent, startAiAgent } from './ai-agent'
 import { startRendererServer, stopRendererServer } from './renderer-server'
 import { registerUpdateHandlers, reportLastInstallOnStartup } from './update'
+import { registerHaHandlers, shutdownHa } from './ha'
 
 const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -143,6 +144,8 @@ app.whenReady().then(async () => {
   })
   registerProjectHandlers()
   registerCppSocketHandlers()
+  // 主备热备：接进本机 C++ 的指令收发；每次启动都是关的，在主备页手动开启
+  registerHaHandlers(getCsocketApiService())
   registerKinematicsHandlers()
   registerConfigHandlers()
   registerToolHandlers()
@@ -156,6 +159,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('before-quit', () => {
+  shutdownHa()
   shutdownCppSocket()
   shutdownKinematics()
   shutdownAiBridge()

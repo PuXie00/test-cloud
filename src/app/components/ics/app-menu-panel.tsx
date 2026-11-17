@@ -51,7 +51,7 @@ const MENU_SECTIONS: MenuSection[] = [
       { id: "log", label: "操作日志与回放", icon: ScrollText },
       { id: "assets", label: "设备资产管理", icon: Boxes },
       { id: "signals", label: "外部信号配置", icon: Radio },
-      { id: "collab", label: "多机协作管理", icon: Globe },
+      { id: "collab", label: "主备热备", icon: Globe },
       { id: "rules", label: "规则编辑器", icon: Zap },
       { id: "permissions", label: "用户与权限", icon: UserCog },
     ],

@@ -232,8 +232,10 @@ export class CppSocketClient {
       ...input,
     })
     try {
-      console.log('send', JSON.stringify(envelope))
-      this.socket.send(JSON.stringify(envelope))
+      const text = JSON.stringify(envelope)
+      // 热备传整份工程、模型文件时单条接近 1 MB，日志只留开头
+      console.log('send', text.length > 2000 ? `${text.slice(0, 2000)}…(${text.length} chars)` : text)
+      this.socket.send(text)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       return { ok: false, code: 'SEND_FAILED', message }

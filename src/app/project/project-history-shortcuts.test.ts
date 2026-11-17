@@ -103,14 +103,14 @@ vi.mock(
   }),
 );
 
-vi.mock("@/app/pages/console/components/collaboration/collab-dialog", () => ({
-  CollabDialog: () => null,
+vi.mock("@/app/pages/console/components/hot-standby/hot-standby-dialog", () => ({
+  HotStandbyDialog: () => null,
 }));
 
 vi.mock(
-  "@/app/pages/console/components/collaboration/collab-quick-popover",
+  "@/app/pages/console/components/hot-standby/hot-standby-pill",
   () => ({
-    CollabQuickPopover: () => null,
+    HotStandbyPill: () => null,
   }),
 );
 

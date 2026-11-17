@@ -27,6 +27,11 @@ export type CppEnvelope = {
   addr: string
   params: unknown[]
   paramHeard?: CsocketParamHeardItem[]
+  /**
+   * 主备热备的「不写 PLC」标志：C++ 只更新内存（设备表、动作数据、运行状态），不写 PLC。
+   * 备机的配置指令、另一台同步来的指令带它（docs/cpp-hot-standby-api.md 7.3）
+   */
+  noPlc?: boolean
   result?: CppAckResult
   code?: number
 }

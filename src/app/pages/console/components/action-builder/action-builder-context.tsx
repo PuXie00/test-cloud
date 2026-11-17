@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { toast } from "sonner";
+import { useHaProjectSync } from "@/app/hot-standby/ha-project-sync-provider";
 import type { TrajectoryMode } from "@shared/action-sequence";
 import {
   hydrateMotionForActionBuilder,
@@ -282,6 +283,24 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
 
   const motionRef = useRef<MotionProjection>({ sequences: appliedSequences, programs });
   const draftsRef = useRef<SequenceDrafts>(drafts);
+
+  // 主备热备：正在编辑（有草稿）的序列被另一台改了，提示一下；草稿不动，再保存按后到的覆盖对方的（方案 5.3）
+  const { subscribeRemoteChanges } = useHaProjectSync();
+  useEffect(
+    () =>
+      subscribeRemoteChanges(({ keys, byName }) => {
+        const drafted = keys
+          .filter((key) => key.startsWith("motion:sequence:"))
+          .map((key) => Number(key.slice("motion:sequence:".length)))
+          .filter((id) => draftsRef.current.has(id));
+        if (drafted.length === 0) return;
+        const name = draftsRef.current.get(drafted[0])?.name ?? `序列 ${drafted[0]}`;
+        toast.info(`「${name}」被 ${byName} 改了，本机草稿没动；再保存会覆盖对方的修改`, {
+          id: `ha-draft-${drafted[0]}`,
+        });
+      }),
+    [subscribeRemoteChanges],
+  );
   /** 编辑器里看到的序列：有草稿的用草稿 */
   const sequences = useMemo(
     () =>

@@ -52,6 +52,8 @@ import type { KinematicsSolveResult } from '../../shared/kinematics/types'
 import type { AiRendererMessage, AiWriteRequest, AiWriteResult } from '../../shared/ai-bridge/types'
 import type { AuthAPI } from '../../electron/preload/auth-api'
 export type { AuthAPI }
+import type { HaAPI } from '../../electron/preload/ha-api'
+export type { HaAPI }
 
 export type {
   CreateProjectParams,
@@ -286,6 +288,8 @@ declare global {
     authAPI?: AuthAPI
     /** 软件升级；测试 / 纯浏览器环境下不存在 */
     updateAPI?: UpdateAPI
+    /** 主备热备；测试 / 纯浏览器环境下不存在 */
+    haAPI?: HaAPI
     /** @deprecated 新域请用 xxxAPI；仅兼容尚未迁移的通道 */
     ipcRenderer: {
       on: (

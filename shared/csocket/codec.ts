@@ -36,6 +36,7 @@ export const buildEnvelope = (input: BuildEnvelopeInput): CppEnvelope => {
   if (paramHeard && paramHeard.length > 0) {
     envelope.paramHeard = paramHeard
   }
+  if (input.noPlc) envelope.noPlc = true
   return envelope
 }
 

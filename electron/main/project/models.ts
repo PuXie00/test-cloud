@@ -8,6 +8,7 @@ import {
   isAllowedModelFileName,
   normalizeModelId,
 } from '../../../shared/project/model-files'
+import { emitProjectFileEvent } from './file-events'
 import { getModelsDir, pathExists } from './paths'
 import { getCurrentProjectName, readProjectDocument } from './service'
 import type { ProjectResult } from './types'
@@ -167,6 +168,7 @@ export const importModel = async (
     const fileName = allocateUniqueFileName(baseName, existing)
     const destPath = path.join(modelsDir, fileName)
     await fs.copyFile(sourcePath, destPath)
+    emitProjectFileEvent({ kind: 'model-import', projectName: project.data, fileName })
 
     return ok(toEntry(fileName, stat.size))
   } catch (err) {
@@ -195,6 +197,7 @@ export const deleteModel = async (
       return fail('NOT_FOUND', `模型不存在: ${fileName}`)
     }
     await fs.unlink(fullPath)
+    emitProjectFileEvent({ kind: 'model-delete', projectName: project.data, fileName })
     return ok(null)
   } catch (err) {
     return fail('MODELS_DELETE_FAILED', err instanceof Error ? err.message : String(err))

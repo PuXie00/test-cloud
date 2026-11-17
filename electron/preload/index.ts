@@ -23,6 +23,7 @@ import { createCsocketApi } from './csocket-api'
 import { createKinematicsApi } from './kinematics-api'
 import { createAiBridgeApi } from './ai-bridge-api'
 import { createAuthApi } from './auth-api'
+import { createHaApi } from './ha-api'
 import './loading'
 
 contextBridge.exposeInMainWorld('configAPI', {
@@ -106,6 +107,7 @@ contextBridge.exposeInMainWorld('csocketApi', createCsocketApi())
 contextBridge.exposeInMainWorld('kinematicsApi', createKinematicsApi())
 contextBridge.exposeInMainWorld('aiBridgeApi', createAiBridgeApi())
 contextBridge.exposeInMainWorld('authAPI', createAuthApi())
+contextBridge.exposeInMainWorld('haAPI', createHaApi())
 
 // 兼容尚未迁移到域 API 的通道（如更新）；新域请用 xxxAPI 门面
 contextBridge.exposeInMainWorld('ipcRenderer', {

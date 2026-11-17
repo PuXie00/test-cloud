@@ -27,9 +27,10 @@ import { useSaveProject } from "../hooks/use-save-project";
 import { writeConfigOperationLog } from "../hooks/write-operation-log";
 import { ShowModeConfirmDialog } from "./show-mode-confirm/show-mode-confirm-dialog";
 import { ProjectMismatchDialog } from "./system-status/project-mismatch-dialog";
-import { CollabDialog } from "./collaboration/collab-dialog";
+import { HotStandbyDialog } from "./hot-standby/hot-standby-dialog";
 import { OperationLogDialog } from "./operation-log/operation-log-dialog";
-import { CollabQuickPopover } from "./collaboration/collab-quick-popover";
+import { HotStandbyPill } from "./hot-standby/hot-standby-pill";
+import { useHaWholePlcBlock } from "@/app/hot-standby/use-ha-whole-plc-block";
 import { useConsoleLogin } from "./login-overlay/console-login-context";
 import { PermissionsDialog } from "./permissions/permissions-dialog";
 import { SystemSettingsDialog } from "./system-settings/system-settings-dialog";
@@ -57,6 +58,8 @@ export const TopBar = ({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [collabOpen, setCollabOpen] = useState(false);
+  // 主备热备：下载是整台 PLC 的操作，备机上不能做，提示到主机上下载
+  const haWholePlcBlock = useHaWholePlcBlock();
   const [operationLogOpen, setOperationLogOpen] = useState(false);
   const [projectCenterOpen, setProjectCenterOpen] = useState(false);
   const [saveAsOpen, setSaveAsOpen] = useState(false);
@@ -357,12 +360,14 @@ export const TopBar = ({
                 type="button"
                 aria-label="下载当前工程到主控"
                 onClick={() => void handleDownloadPlcProject()}
-                className="inline-flex h-10 items-center rounded-md bg-primary px-3 text-body-sm font-semibold text-primary-foreground hover:bg-primary/90"
+                disabled={haWholePlcBlock !== null}
+                title={haWholePlcBlock ?? undefined}
+                className="inline-flex h-10 items-center rounded-md bg-primary px-3 text-body-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
               >
                 下载
               </button>
             ) : null}
-            {/* <CollabQuickPopover connected={connected} onOpenFullManage={() => setCollabOpen(true)} /> */}
+            <HotStandbyPill onOpen={() => setCollabOpen(true)} />
             {/* <AlignmentStatusPill /> */}
           </div>
           <EmergencyStopButton data-guide="console-emergency-stop" onClick={onStop} />
@@ -412,7 +417,7 @@ export const TopBar = ({
       />
       <SystemSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       <PermissionsDialog open={permissionsOpen} onOpenChange={setPermissionsOpen} />
-      <CollabDialog open={collabOpen} onOpenChange={setCollabOpen} />
+      <HotStandbyDialog open={collabOpen} onOpenChange={setCollabOpen} />
       <OperationLogDialog open={operationLogOpen} onOpenChange={setOperationLogOpen} />
       <ProjectCenterDialog open={projectCenterOpen} onOpenChange={setProjectCenterOpen} />
       <NewProjectDialog

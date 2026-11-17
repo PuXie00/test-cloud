@@ -466,7 +466,8 @@ export const ProjectStoreProvider = ({ children }: { children: ReactNode }) => {
     dispatchSetup({ type: "replace", payload: hydrated });
     hydratedProjectIdRef.current = currentProject.id;
 
-    if (documentRevision.origin === "history") {
+    // 撤销、重做和主备热备同步来的内容：按差异下发给本机 C++（备机上主进程会带「不写 PLC」标志）
+    if (documentRevision.origin === "history" || documentRevision.origin === "remote") {
       syncPlcDevicesByDiff(prevPlcs, hydrated.plcs);
       syncMotorsByDiff(prevMotors, hydrated.motors);
       syncModelsByDiff(

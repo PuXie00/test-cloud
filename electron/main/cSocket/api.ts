@@ -55,8 +55,23 @@ import {
 } from './operation-log-db'
 import { mockLogWrite } from './operation-log-mock'
 import { toCppRelativeProjectPath } from './project-path'
+import type { HaForwardEnvelope } from '../../../shared/ha/protocol'
 
 type SendData = CppAckResult
+
+/** 主备热备接进指令收发（electron/main/ha）；没开热备时不拦、不同步 */
+export type CsocketHaHooks = {
+  /** 发出前：拦下，或者带「不写 PLC」标志；params 用来认出点动松开（方向为 0 的点动） */
+  gate: (optCmd: string, params: unknown[]) => { block: string } | { noPlc: boolean }
+  /** 本机的指令发出（sent）、执行成功（acked）；带标志的不会调 */
+  sent: (envelope: HaForwardEnvelope, stage: 'sent' | 'acked') => void
+  /** C++ 推来的 Info|ha、Info|haRecv */
+  push: (optCmd: string, result: CppAckResult | undefined) => void
+  /** 本机 C++ 的连接状态 */
+  connection: (state: CsocketConnectionState['state']) => void
+  /** Info|act：另一台的动作不交给本机界面；全被滤掉返回 null */
+  filterActionReport?: (result: CppAckResult | undefined) => CppAckResult | undefined | null
+}
 
 /** 只读打开当前工程的日志库查一次；库文件还不存在（C++ 还没写过日志）时返回 missing */
 const readLogDb = async (read: (db: SqlDatabase) => SendData, missing: SendData): Promise<SendData> => {
@@ -172,6 +187,7 @@ export class CsocketApiService {
   private licenseChecking: Promise<LicenseAck> | null = null
   private licenseVerifying: Promise<LicenseAck> | null = null
   private licenseBackgroundVerified = false
+  private haHooks: CsocketHaHooks | null = null
 
 
   constructor(
@@ -197,6 +213,10 @@ export class CsocketApiService {
     this.axisInfo.clear()
     this.statusSink?.clear('objects')
     this.statusSink?.clear('motors')
+  }
+
+  setHaHooks(hooks: CsocketHaHooks | null): void {
+    this.haHooks = hooks
   }
 
   setStatusSink(sink: CsocketStatusSink): void {
@@ -243,6 +263,10 @@ export class CsocketApiService {
       const msg = envelope.result
       const optCmd = envelope.OptCmd
       if (!optCmd) return
+      if (optCmd === 'Info|ha' || optCmd === 'Info|haRecv') {
+        this.haHooks?.push(optCmd, msg)
+        return
+      }
       if (optCmd === 'Info|plc') {
         //console.log('Info|plc', JSON.stringify(msg));
         const next = this.plcMasterStatus.ingestPlc(msg)
@@ -286,14 +310,22 @@ export class CsocketApiService {
         }>)
       }
       if (optCmd === 'Info|act') {
-        this.broadcast(CSOCKET_CHANNELS.readActionRun, msg as CppAckResult<{
+        // 主备热备：另一台准备、启动的动作不当成本机的（C++ 推不推都不影响）
+        let report: CppAckResult | undefined | null = msg
+        try {
+          report = this.haHooks?.filterActionReport ? this.haHooks.filterActionReport(msg) : msg
+        } catch (err) {
+          console.error('hot standby action filter error', err)
+        }
+        if (report === null) return
+        this.broadcast(CSOCKET_CHANNELS.readActionRun, report as CppAckResult<{
           actionId: number, // 动作ID
           state: number, // 动作状态 1:过渡状态，正在走到轨迹上 3： 运行中 
           loopCount: number, // 当前第几次循环
           loopCountSet: number, // 设定循环次数
           runTime: number, // 轨迹运行的当前帧
         }>)
-        this.statusSink?.actions(msg)
+        this.statusSink?.actions(report)
       }
       // C++ 新写入的日志（操作 / 报警 / 系统）。推送是表列名，先转成 LogRecord
       if (optCmd === 'Info|log' && msg) {
@@ -310,6 +342,7 @@ export class CsocketApiService {
 
     this.client.onStatus((status) => {
       this.statusSink?.connection(status.state)
+      this.haHooks?.connection(status.state)
       if (shouldClearPlcMasterStatus(status.state)) {
         this.clearPlcMasterStatus()
         this.clearAxisModelInfo()
@@ -335,6 +368,25 @@ export class CsocketApiService {
     return this.client.getStatus()
   }
 
+  // 热备的钩子出错不能耽误指令：拦不拦按没开热备处理，同步失败只记日志
+  private haGate(id: string, params: unknown[]): { block: string } | { noPlc: boolean } {
+    if (!this.haHooks) return { noPlc: false }
+    try {
+      return this.haHooks.gate(id, params)
+    } catch (err) {
+      console.error('hot standby gate error', err)
+      return { noPlc: false }
+    }
+  }
+
+  private haSent(envelope: HaForwardEnvelope, stage: 'sent' | 'acked'): void {
+    try {
+      this.haHooks?.sent(envelope, stage)
+    } catch (err) {
+      console.error('hot standby sync error', err)
+    }
+  }
+
   // 发送消息
   private sendBuilt(
     id: string,
@@ -342,25 +394,41 @@ export class CsocketApiService {
     params: unknown[],
     opts?: CsocketSendOpts,
   ): Promise<SendData> {
+    // 主备热备：备机的配置带「不写 PLC」标志；备机不能做的（整台 PLC、没核对完时的设备操作）直接拦下
+    const gate = this.haGate(id, params)
+    if ('block' in gate) {
+      console.warn('sendBuilt blocked by hot standby', id, gate.block)
+      return Promise.resolve({ success: false, code: 'HA_BLOCKED', message: gate.block })
+    }
     const projectIdEnabled = opts?.projectId ?? true
     const userNameEnabled = opts?.userName ?? true
     const paramHeard =
       opts?.paramHeard && opts.paramHeard.length > 0 ? opts.paramHeard : undefined
+    const userName = userNameEnabled ? this.ctx.userName : undefined
     console.log('sendBuilt', id, JSON.stringify(params),)
+    const sending = this.client.send(
+      {
+        OptCmd: id,
+        addr,
+        params,
+        ...(paramHeard ? { paramHeard } : {}),
+        projectId: projectIdEnabled ? this.ctx.projectId : undefined,
+        userName,
+        ...(gate.noPlc ? { noPlc: true } : {}),
+      },
+      opts,
+    )
+    // 写完同步给另一台：停止类发出就同步，其它执行成功后同步；带标志的（备机的配置）走工程同步
+    const forward: HaForwardEnvelope | null =
+      this.haHooks && !gate.noPlc
+        ? { OptCmd: id, addr, params, ...(paramHeard ? { paramHeard } : {}), ...(userName ? { userName } : {}) }
+        : null
+    if (forward) this.haSent(forward, 'sent')
     return new Promise<SendData>((resolve) => {
-      this.client.send(
-        {
-          OptCmd: id,
-          addr,
-          params,
-          ...(paramHeard ? { paramHeard } : {}),
-          projectId: projectIdEnabled ? this.ctx.projectId : undefined,
-          userName: userNameEnabled ? this.ctx.userName : undefined,
-        },
-        opts,
-      ).then((result) => {
+      sending.then((result) => {
         console.log('sendBuilt result', JSON.stringify(result))
         if(result.ok && result.data) {
+          if (forward && isCppAckOk(result.data)) this.haSent(forward, 'acked')
           resolve(result.data)
         } else {
           resolve({ success: false,code: 'SEND_FAILED',message: 'SEND_FAILED' })
@@ -370,6 +438,44 @@ export class CsocketApiService {
         resolve({ success: false,code: 'SEND_FAILED',message: 'SEND_FAILED' })
       })
     })
+  }
+
+  /*
+  * 主备热备：机间链路由 C++ 搭，C++ 只原样转发（docs/cpp-hot-standby-api.md 7.3）
+  */
+  // 开启热备：主机在本机 IP 上监听；备机用本机 IP 去连主机
+  haStart(params: { role: 'primary'; ip: string } | { role: 'standby'; ip: string; primaryIp: string }) {
+    return this.sendBuilt('HA|start', '', [params], { projectId: false, userName: false })
+  }
+  // 关闭热备
+  haStop() {
+    return this.sendBuilt('HA|stop', '', [], { projectId: false, userName: false })
+  }
+  /** 发一条消息给另一台：不等应答，C++ 原样转发；返回是否交给了本机 C++ */
+  async haSend(to: string[], payload: unknown): Promise<boolean> {
+    const result = await this.client.send(
+      { OptCmd: 'HA|send', addr: '', params: [{ to, payload }] },
+      { waitAck: false },
+    )
+    return result.ok
+  }
+  /** 另一台同步来的指令：带「不写 PLC」标志交给本机 C++，只更新内存，不再同步出去 */
+  async sendForwarded(envelope: HaForwardEnvelope): Promise<SendData> {
+    const result = await this.client.send({
+      OptCmd: envelope.OptCmd,
+      addr: envelope.addr,
+      params: envelope.params,
+      ...(envelope.paramHeard && envelope.paramHeard.length > 0 ? { paramHeard: envelope.paramHeard } : {}),
+      projectId: this.ctx.projectId,
+      userName: envelope.userName,
+      noPlc: true,
+    })
+    if (result.ok && result.data) return result.data
+    return {
+      success: false,
+      code: result.ok ? 'SEND_FAILED' : result.code,
+      message: result.ok ? 'SEND_FAILED' : result.message,
+    }
   }
 
   /*
