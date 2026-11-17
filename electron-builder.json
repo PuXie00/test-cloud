@@ -29,8 +29,8 @@
       ]
     },
     {
-      "from": "config",
-      "to": "config",
+      "from": "AiAgent",
+      "to": "AiAgent",
       "filter": [
         "**/*"
       ]

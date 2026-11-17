@@ -12,6 +12,8 @@ import { attachCloseGuard, registerToolHandlers } from './tool'
 import { registerConfigHandlers } from './getConfig'
 import { checkProjectsRootWritableOnStartup, registerProjectHandlers, restoreKeptProjectsOnStartup } from './project'
 import { attachAiBridgeWindow, registerAiBridgeHandlers, shutdownAiBridge } from './ai-bridge'
+import { shutdownAiAgent, startAiAgent } from './ai-agent'
+import { startRendererServer, stopRendererServer } from './renderer-server'
 import { registerUpdateHandlers, reportLastInstallOnStartup } from './update'
 
 const require = createRequire(import.meta.url)
@@ -87,7 +89,7 @@ async function createWindow() {
   //   if (VITE_DEV_SERVER_URL) {
   //     win.loadURL(VITE_DEV_SERVER_URL)
   //   } else {
-  //     win.loadFile(indexHtml)
+  //     win.loadURL(await startRendererServer(RENDERER_DIST))
   //   }
   // }
 
@@ -101,7 +103,12 @@ async function createWindow() {
       showMainWindow()
     }, 3500)
   } else {
-    win.loadFile(indexHtml)
+    try {
+      win.loadURL(await startRendererServer(RENDERER_DIST))
+    } catch (err) {
+      console.error(`[renderer] ${err instanceof Error ? err.message : String(err)}`)
+      win.loadFile(indexHtml)
+    }
   }
 
   // 主窗口加载完成后显示
@@ -140,6 +147,7 @@ app.whenReady().then(async () => {
   registerConfigHandlers()
   registerToolHandlers()
   registerAiBridgeHandlers()
+  startAiAgent()
   registerUpdateHandlers()
   // 然后创建主窗口（在后台加载）
   createWindow()
@@ -151,12 +159,16 @@ app.on('before-quit', () => {
   shutdownCppSocket()
   shutdownKinematics()
   shutdownAiBridge()
+  shutdownAiAgent()
+  stopRendererServer()
 })
 
 app.on('will-quit', () => {
   shutdownCppSocket()
   shutdownKinematics()
   shutdownAiBridge()
+  shutdownAiAgent()
+  stopRendererServer()
 })
 
 app.on('window-all-closed', () => {

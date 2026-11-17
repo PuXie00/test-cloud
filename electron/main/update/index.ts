@@ -12,6 +12,7 @@ import {
   type UpdatePickedFile,
   type UpdateResult,
 } from '../../../shared/update/types'
+import { shutdownAiAgent } from '../ai-agent'
 import { getCsocketApiService, shutdownCppSocket } from '../cSocket'
 import { shutdownKinematics } from '../kinematics'
 import { releaseCloseGuards } from '../tool'
@@ -119,6 +120,7 @@ export const getUpdateService = (): UpdateService => {
     stopRuntimes: () => {
       shutdownCppSocket()
       shutdownKinematics()
+      shutdownAiAgent()
     },
     quit: () => {
       releaseCloseGuards()
