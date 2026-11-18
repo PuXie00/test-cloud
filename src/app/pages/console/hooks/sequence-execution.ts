@@ -564,15 +564,15 @@ export const goSequence = async (args: {
     // 非强制的 GO（syncMovebegin）不带速度，先把推子倍率发下去。有接入计划时 C++ 按 100% 准备，
     // 到接入帧才用这个倍率（SyncMoveStartPlan 第 5 条）
     if (!found.sequence.trajectoryMode) {
-      await transport.setSpeed?.({
-        actionId: found.sequence.id,
-        trajectoryMode: false,
-        prvSpeedScale: 1,
-        speedScale,
-        runDirection,
-        loopCount,
-        deviceId,
-      });
+      // await transport.setSpeed?.({
+      //   actionId: found.sequence.id,
+      //   trajectoryMode: false,
+      //   prvSpeedScale: 1,
+      //   speedScale,
+      //   runDirection,
+      //   loopCount,
+      //   deviceId,
+      // });
     }
     await transport.syncCall({
       actionId: found.sequence.id,
