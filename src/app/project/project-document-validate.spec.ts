@@ -326,6 +326,9 @@ describe("virtual axis max velocity fields", () => {
           makeObject(OBJECT_A, "A", {
             controlType: 9,
             enabledVirtualAxes: ["v1", "v2", "v3"],
+            safetyRadius: 1850,
+            initialTiltDirection: 0,
+            mountRotation: 0,
             motionParams: {
               h: { ...MOTION_DEFAULTS.move },
               p: { ...MOTION_DEFAULTS.swingX, defaultMaxVelocity: undefined },

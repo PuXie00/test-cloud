@@ -78,12 +78,9 @@ const businessModelType = (object: ControlledObjectConfig): 2 | 7 | 8 => {
   }
 };
 
-/** 四点按正解固定 4 个吊点；多点按吊点数；单点至少 1 个 */
-const motorCountOf = (modelType: 2 | 7 | 8, object: ControlledObjectConfig): number => {
-  if (modelType === 7) return 4;
-  if (modelType === 8) return object.driveAxes.length;
-  return Math.max(1, object.driveAxes.length);
-};
+/** 按实际吊点数；至少 1 个 */
+const motorCountOf = (_modelType: 2 | 7 | 8, object: ControlledObjectConfig): number =>
+  Math.max(1, object.driveAxes.length);
 
 const paramsFor = (object: ControlledObjectConfig, axis: VirtualAxisId) =>
   object.motionParams[motionAxisIdForVirtualAxis(axis)];

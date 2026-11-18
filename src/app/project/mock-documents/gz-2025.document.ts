@@ -142,6 +142,9 @@ const GZ_SETUP = {
       color: "#4ade80",
       pulleyDistance: 0,
       modelRunDirection: 1 as const,
+      safetyRadius: 1850,
+      initialTiltDirection: 0,
+      mountRotation: 0,
       driveAxes: [
         { key: "0", mount: { x: -700, z: -400 } },
         { key: "1", mount: { x: 700, z: -400 } },
@@ -170,6 +173,9 @@ const GZ_SETUP = {
       color: "#bac3ff",
       pulleyDistance: 0,
       modelRunDirection: 1 as const,
+      safetyRadius: 1850,
+      initialTiltDirection: 0,
+      mountRotation: 0,
       driveAxes: [
         { key: "0", mount: { x: -400, z: -400 } },
         { key: "1", mount: { x: 400, z: -400 } },

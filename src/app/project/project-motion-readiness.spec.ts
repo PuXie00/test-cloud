@@ -87,7 +87,7 @@ describe("sequenceValidationContextFromSetup", () => {
     expect(timeline.maxDecelerationByAxis).toBeUndefined();
   });
 
-  it("copies safetyRadius only for multi-point swing", () => {
+  it("copies safetyRadius for dual tilt and multi-point swing", () => {
     const twoPoint = swingObject();
     const multiPoint: ControlledObjectConfig = {
       ...twoPoint,
@@ -105,7 +105,7 @@ describe("sequenceValidationContextFromSetup", () => {
     document.setup.motors = boundMotors();
     document.setup.plcs = [{ id: 1, masterTypeId: "AC810_1", ip: "127.0.0.1" }];
     const ctx = sequenceValidationContextFromSetup(document as ProjectDocument);
-    expect(ctx.objects[0]?.safetyRadius).toBeUndefined();
+    expect(ctx.objects[0]?.safetyRadius).toBe(1000);
     expect(ctx.objects[1]?.safetyRadius).toBe(1850);
   });
 });

@@ -1,5 +1,6 @@
 import { buildMotorOverspeedObjects } from "@/app/kinematics/motor-overspeed-from-setup";
 import { decodeControlType } from "./control-type-code";
+import { controlTypeHasMultiPointSwingParams } from "./configuration-rules";
 import {
   hasBlockingSequenceIssues,
   validateActionSequence,
@@ -45,7 +46,7 @@ export const sequenceValidationContextFromSetup = (
     id: object.id,
     enabledVirtualAxes: [...object.enabledVirtualAxes],
     limits: limitsFromObject(object, document.setup.motors),
-    ...(decodeControlType(object.controlType) === "multiPointSwing" &&
+    ...(controlTypeHasMultiPointSwingParams(decodeControlType(object.controlType)) &&
     object.safetyRadius !== undefined
       ? { safetyRadius: object.safetyRadius }
       : {}),

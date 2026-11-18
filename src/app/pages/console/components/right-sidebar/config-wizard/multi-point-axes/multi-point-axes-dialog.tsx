@@ -26,6 +26,7 @@ import { Select } from "@/app/components/ui/select";
 import { cn } from "@/app/components/ui/utils";
 import {
   CONTROL_TYPE_RULES,
+  controlTypeHasMultiPointSwingParams,
   maxDriveAxesForControlType,
 } from "@/app/project/configuration-rules";
 import {
@@ -186,7 +187,7 @@ export const MultiPointAxesDialog = ({
   ]);
 
   const footprint = useMemo(() => createShapeFootprint(object), [object]);
-  const isMultiPointSwing = object.controlType === "multiPointSwing";
+  const showSwingRigParams = controlTypeHasMultiPointSwingParams(object.controlType);
   const minimumAxes = CONTROL_TYPE_RULES[object.controlType].minimumDriveAxes;
   const maximumAxes = maxDriveAxesForControlType(object.controlType);
   const canAddAxis = maximumAxes === undefined || draft.axes.length < maximumAxes;
@@ -429,7 +430,7 @@ export const MultiPointAxesDialog = ({
 
               <div className="flex min-h-0 flex-col overflow-hidden bg-background">
                 <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-                  {isMultiPointSwing ? (
+                  {showSwingRigParams ? (
                     <div className="space-y-3 rounded-md bg-muted p-4">
                       <div className="space-y-1">
                         <span className="text-body-sm text-muted-foreground">

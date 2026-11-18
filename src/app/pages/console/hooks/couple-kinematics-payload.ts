@@ -73,11 +73,8 @@ const solverAxisParams = (
 const hoistPoints = (object: ControlledObject): number[][] =>
   object.axes.map((axis) => [axis.mount.x, axis.mount.z, 0]);
 
-/** 安全半径：多点摆取配置值；多点倾斜没有该配置，取物体底面外接圆半径 */
-const rimForType = (object: ControlledObject, type: SolverTypeCode): number[] => {
-  if (type === 9) return [Math.hypot(object.dimensions.w, object.dimensions.d) / 2];
-  return [object.safetyRadius ?? 0];
-};
+/** 安全半径：多点摆和多点倾斜都用配置值 */
+const rimForType = (object: ControlledObject): number[] => [object.safetyRadius ?? 0];
 
 export const assignSolverIndexes = <T>(
   entries: ReadonlyArray<{ objectId: number; payload: T }>,
@@ -109,7 +106,7 @@ export const buildSolverCallItem = (input: {
       axisLimit(solverAxisParams(input.object, "p")),
       axisLimit(solverAxisParams(input.object, "y")),
     ],
-    limit_rim: rimForType(input.object, type),
+    limit_rim: rimForType(input.object),
     betainit: type === 7 ? (input.object.initialTiltDirection ?? 0) : 0,
     HPY: [input.hpy[0], input.hpy[1], input.hpy[2]],
     // HPY: [0, 0, 0],

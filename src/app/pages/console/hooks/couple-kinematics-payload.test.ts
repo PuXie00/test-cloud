@@ -66,6 +66,7 @@ const fourPoint: ControlledObject = {
   id: 43,
   name: "Four",
   controlType: "dualTiltFourPointSwing",
+  safetyRadius: 1500,
   dimensions: { w: 1800, h: 1000, d: 900 },
   motionParams: {
     h: axisParams({ minAngle: 0, maxAngle: 800 }),
@@ -113,7 +114,7 @@ describe("assignSolverIndexes", () => {
 });
 
 describe("buildSolverCallItem", () => {
-  it("builds an XY multi-point request with hoist xyz and footprint circumradius", () => {
+  it("builds an XY multi-point request with hoist xyz and the configured safety radius", () => {
     const item = buildSolverCallItem({
       object: fourPoint,
       motors: [
@@ -138,8 +139,7 @@ describe("buildSolverCallItem", () => {
       [400, 200, 0],
       [-400, 200, 0],
     ]);
-    expect(item.limit_rim).toHaveLength(1);
-    expect(item.limit_rim[0]).toBeCloseTo(Math.hypot(1800, 900) / 2);
+    expect(item.limit_rim).toEqual([1500]);
     expect(item.betainit).toBe(0);
     expect(item.motor_H).toEqual([10, 20, 30, 40]);
   });

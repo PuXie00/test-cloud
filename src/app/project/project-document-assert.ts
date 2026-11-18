@@ -477,10 +477,10 @@ const validateCurrentObject = (value: unknown, path: string, a: StructuralAssert
     validateMountLayout(object.mountLayout, `${path}.mountLayout`, driveAxes.length, a);
   } else {
     if (object.mountLayout !== undefined) {
-      a.fail(`${path}.mountLayout`, "expected mountLayout only for multi-point swing");
+      a.fail(`${path}.mountLayout`, "expected mountLayout only for multi-point swing and dual tilt");
     }
     if (object.mountRotation !== undefined) {
-      a.fail(`${path}.mountRotation`, "expected mountRotation only for multi-point swing");
+      a.fail(`${path}.mountRotation`, "expected mountRotation only for multi-point swing and dual tilt");
     }
   }
   validateMultiLevel(object.multiLevel, controlType, `${path}.multiLevel`, a);

@@ -5,6 +5,7 @@ import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-i
 import { Select } from "@/app/components/ui/select";
 import {
   CONTROL_TYPE_RULES,
+  controlTypeHasMultiPointSwingParams,
   controlTypeHasNoDriveAxes,
 } from "@/app/project/configuration-rules";
 import {
@@ -54,9 +55,9 @@ export const ObjectAxesEditor = ({ objectId, controlType, axes }: ObjectAxesEdit
   const [initialSelectedAxisKey, setInitialSelectedAxisKey] = useState<string | null>(null);
   const minimumAxes = CONTROL_TYPE_RULES[controlType].minimumDriveAxes;
   const object = findObject(objectId);
-  const isMultiPointSwing = controlType === "multiPointSwing";
+  const hasSwingRigParams = controlTypeHasMultiPointSwingParams(controlType);
   const multiPointIssues =
-    isMultiPointSwing && object
+    hasSwingRigParams && object
       ? validateMultiPointAxesDraft(
           createMultiPointAxesDraft(object),
           createShapeFootprint(object),

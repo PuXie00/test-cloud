@@ -38,7 +38,7 @@ export const CONTROL_TYPE_RULES = {
   /** 3D 占位/美化：无吊点、无运动参数 */
   staticProp: { minimumDriveAxes: 0, motionAxes: [] },
   dualTiltFourPointSwing: {
-    minimumDriveAxes: 4,
+    minimumDriveAxes: 2,
     motionAxes: ["move", "swingX", "swingY"],
   },
   multiPointSwing: { minimumDriveAxes: 4, motionAxes: ["move", "swingX", "yawY"] },
@@ -63,11 +63,11 @@ export const controlTypeHasNoDriveAxes = (controlType: ControlType): boolean =>
 export const maxDriveAxesForControlType = (controlType: ControlType): number | undefined =>
   (CONTROL_TYPE_RULES[controlType] as ControlTypeRule).maxDriveAxes;
 
-/** 安全范围半径、初始倾斜角度：仅多点摆 */
+/** 安全范围半径、初始倾斜角度、吊点旋转：多点摆和多点倾斜 */
 export const controlTypeHasMultiPointSwingParams = (controlType: ControlType): boolean =>
-  controlType === "multiPointSwing";
+  controlType === "multiPointSwing" || controlType === "dualTiltFourPointSwing";
 
-/** 按控制类型补齐/剥离多点摆专有物体级参数 */
+/** 按控制类型补齐/剥离摆动物体的安全半径、初始倾斜角度和吊点旋转 */
 export const resolveSwingYawModelParams = (
   controlType: ControlType,
   current?: {
