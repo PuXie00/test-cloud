@@ -3,14 +3,12 @@ import {
   parseMasterStatusAck,
   type PlcMasterStatus,
 } from "@shared/csocket/plc-master-status";
-import { resolveMasterTypeIdByPlcModel } from "./motor-config";
 import type { PlcVerifyRecord } from "./project-verify";
 import {
   createDisconnectedPlcRuntime,
   type PlcConnectionState,
   type PlcLifecycle,
   type PlcRuntimeState,
-  type ScannedMaster,
 } from "./plc-runtime-types";
 import { isLifecycleBusy } from "./system-status-aggregate";
 
@@ -25,10 +23,8 @@ export type PlcMasterRuntimeFields = {
 };
 
 export type ComposePlcRuntimeInput = {
-  plcs: readonly { id: number; ip: string; masterTypeId: string }[];
   masterById: ReadonlyMap<number, PlcMasterStatus>;
   verify: PlcVerifyRecord | undefined;
-  scannedMasters: readonly ScannedMaster[];
 };
 
 export type SimulationSwitchState = {
@@ -117,19 +113,9 @@ export const composePlcRuntime = (
     ...createDisconnectedPlcRuntime(plcId),
     ...mapped,
   };
-  const withVerify = input.verify
+  return input.verify
     ? { ...base, protocolVersion: input.verify.version, proVerify: input.verify.proVerify }
     : base;
-  const plc = input.plcs.find((row) => row.id === plcId);
-  const scanned = plc
-    ? input.scannedMasters.find((row) => row.ip === plc.ip)
-    : undefined;
-  if (!scanned || !plc) return withVerify;
-  return {
-    ...withVerify,
-    modelMismatch: resolveMasterTypeIdByPlcModel(scanned.plcModel) !== plc.masterTypeId,
-    scannedAxes: scanned.axis,
-  };
 };
 
 export const resolveSimulationSwitchState = (

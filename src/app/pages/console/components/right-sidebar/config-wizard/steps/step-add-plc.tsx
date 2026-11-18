@@ -2,8 +2,8 @@ import { Cpu, FileText, Loader2, Plus, ScanLine, SkipForward, Trash2, type Lucid
 import { useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/app/components/ui/utils";
+import type { PlcOnline } from "@/app/pages/console/hooks/plc-online";
 import { usePlcRuntime } from "@/app/pages/console/hooks/plc-runtime-provider";
-import type { PlcConnectionState } from "@/app/pages/console/hooks/plc-runtime-types";
 import { useMasterScan } from "@/app/pages/console/hooks/use-master-scan";
 import { useProjectStore } from "@/app/pages/console/hooks/use-project-store";
 import { formatPlcDisplayName } from "@/app/pages/console/hooks/plc-display-name";
@@ -23,11 +23,12 @@ import { wizardBtnSecondary } from "../wizard-buttons";
 import type { WizardView } from "../wizard-state";
 import { WizardStepHeading } from "../wizard-step-heading";
 
-const CONNECTION_STATUS: Record<PlcConnectionState, { label: string; dotClass: string }> = {
-  disconnected: { label: "未连接", dotClass: "bg-muted-foreground" },
-  connecting: { label: "连接中", dotClass: "bg-primary animate-pulse" },
-  connected: { label: "已连接", dotClass: "bg-show" },
-  abnormal: { label: "连接异常", dotClass: "bg-warning" },
+/** 与工程结构一致：在线只看扫描主控的结果，型号不对应标黄 */
+const onlineStatus = (online: PlcOnline | undefined): { label: string; dotClass: string } => {
+  if (!online || online.kind === "unscanned") return { label: "未扫描", dotClass: "bg-muted-foreground" };
+  if (online.kind === "offline") return { label: "离线", dotClass: "bg-muted-foreground" };
+  if (!online.modelMatch) return { label: "型号不匹配", dotClass: "bg-warning" };
+  return { label: "在线", dotClass: "bg-show" };
 };
 
 type RouteCardProps = {
@@ -64,7 +65,7 @@ type StepAddPlcProps = {
 
 export const StepAddPlc = ({ onNavigate }: StepAddPlcProps) => {
   const { objects, plcs, motors, removePlc } = useProjectStore();
-  const { getPlcRuntime } = usePlcRuntime();
+  const { getPlcOnline } = usePlcRuntime();
   const masterScan = useMasterScan();
   const { treeFocus, clearSelection, setTreeFocus } = useSelection();
   const [addOpen, setAddOpen] = useState(false);
@@ -129,7 +130,7 @@ export const StepAddPlc = ({ onNavigate }: StepAddPlcProps) => {
           <h3 className="text-label-caps text-muted-foreground">已配置主控 ({plcs.length})</h3>
           <div className="space-y-1 rounded-md bg-muted p-2">
             {plcs.map((plc) => {
-              const status = CONNECTION_STATUS[getPlcRuntime(plc.id).connection];
+              const status = onlineStatus(getPlcOnline(plc.id));
               const plcMotors = motors.filter((motor) => motor.plcId === plc.id);
               const portCount = (busNo: 0 | 1) =>
                 plcMotors.filter((motor) => motor.busNo === busNo).length;
@@ -200,11 +201,7 @@ export const StepAddPlc = ({ onNavigate }: StepAddPlcProps) => {
         </section>
       ) : null}
 
-      <PlcScanDialog
-        open={masterScan.resultsOpen}
-        onOpenChange={masterScan.setResultsOpen}
-        results={masterScan.results}
-      />
+      <PlcScanDialog open={masterScan.resultsOpen} onOpenChange={masterScan.setResultsOpen} />
       <PlcAddDialog open={addOpen} onOpenChange={setAddOpen} />
       <MotorAddDialog
         open={motorAddPlcId !== null}

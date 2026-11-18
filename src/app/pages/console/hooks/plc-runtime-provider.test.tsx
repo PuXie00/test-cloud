@@ -44,7 +44,7 @@ const installMasterStatusMocks = () => {
   const openProject = vi.fn(async () => ({ success: true, data: [] }));
   const scanAllMaster = vi.fn(async () => ({
     success: true,
-    data: [{ ip: "10.0.0.1", plcModel: 1, axisCount: 4 }],
+    data: [{ ip: "10.0.0.1", plcModel: 1, axis: [] }],
   }));
   window.csocketApi = {
     onReadMasterStatusPolling,
@@ -120,10 +120,9 @@ describe("PlcRuntimeProvider master status", () => {
       expect(result.current.plc.getPlcRuntime(1).lifecycle).toBe("normal"),
     );
 
-    await act(async () => {
-      await result.current.plc.scanAll();
-    });
-    await waitFor(() => expect(result.current.plc.scannedMasters).toHaveLength(1));
+    // 打开有主控的工程自动扫描一次
+    await waitFor(() => expect(result.current.plc.scan.masters).toHaveLength(1));
+    expect(mocks.scanAllMaster).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       await result.current.project.openProject(SH_BALLET_RECORD.folderName);
@@ -131,7 +130,9 @@ describe("PlcRuntimeProvider master status", () => {
     await waitFor(() =>
       expect(result.current.project.currentProject?.id).toBe("sh-ballet"),
     );
-    expect(result.current.plc.scannedMasters).toEqual([]);
+    await waitFor(() => expect(result.current.plc.scan.masters).toBeNull());
+    // 没有主控的工程不扫描（换工程那一刻手里还是上个工程的主控，也不能拿来触发）
+    expect(mocks.scanAllMaster).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       await result.current.project.openProject(GZ_2025_RECORD.folderName);
@@ -142,6 +143,8 @@ describe("PlcRuntimeProvider master status", () => {
     await waitFor(() =>
       expect(result.current.plc.getPlcRuntime(1).connection).toBe("disconnected"),
     );
+    // 再打开有主控的工程又扫描一次
+    await waitFor(() => expect(mocks.scanAllMaster).toHaveBeenCalledTimes(2));
   });
 
   it("re-pulls the snapshot after a project switch when the main process sends no new frame", async () => {

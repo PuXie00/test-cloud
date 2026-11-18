@@ -5,21 +5,24 @@ import type {
   Plc,
 } from "@/app/pages/console/components/right-sidebar/config-wizard/config-wizard-types";
 import { busNoLabel } from "@/app/pages/console/hooks/motor-bus";
-import type { MotorOrderReconciliation } from "@/app/pages/console/hooks/plc-reconciliation";
-import type { PlcRuntimeState } from "@/app/pages/console/hooks/plc-runtime-types";
+import {
+  formatRealAxisModel,
+  formatRealAxisPosition,
+  type MotorOnlineStatus,
+  type PlcOnline,
+  type RealAxis,
+} from "@/app/pages/console/hooks/plc-online";
 import { formatMotorDisplayName } from "@/app/pages/console/hooks/motor-mid";
 import { formatPlcDisplayName } from "@/app/pages/console/hooks/plc-display-name";
 
 export type PlcTreeStatusTone = "muted" | "primary" | "show" | "warning";
 
 export type PlcTreeStatus = {
-  tone: PlcTreeStatusTone;
-  label: string;
+  /** 主控图标颜色：在线绿、型号不匹配黄、离线 / 未扫描灰 */
+  iconTone: PlcTreeStatusTone;
+  /** 在线时行尾的「实轴 / 配置」；其余不写字，看图标 */
+  label: string | null;
 };
-
-export type MotorTreeStatus = "connected" | "modelMismatch" | "portMismatch" | "missing";
-
-export type DiscoveredMotorTreeStatus = "pending";
 
 export type PendingCoNode = { kind: "pending-co"; object: ControlledObject };
 
@@ -28,7 +31,10 @@ export type PlcTreeNode = { kind: "plc"; plc: Plc };
 export type MotorTreeNode = {
   kind: "motor";
   motor: Motor;
-  status?: MotorTreeStatus;
+  /** 按扫描到的实轴对出来的状态 */
+  status?: MotorOnlineStatus;
+  /** 对应的实轴 */
+  axis?: RealAxis | null;
 };
 
 /** 主控 Tab 下从站口分组（C口 / D口） */
@@ -39,14 +45,15 @@ export type BusGroupTreeNode = {
   label: string;
 };
 
+/** 扫描到、工程里还没有的实轴 */
 export type DiscoveredMotorTreeNode = {
   kind: "discovered-motor";
   plcId: number;
-  discoveredId: string;
+  axis: RealAxis;
+  /** C-3 */
   label: string;
-  slaveNo: number;
-  busNo: number;
-  gourdNo: number;
+  /** 实轴型号显示名 */
+  modelLabel: string;
 };
 
 export type LinkedCoTreeNode = {
@@ -62,8 +69,12 @@ export type StructureTreeNode =
   | DiscoveredMotorTreeNode
   | LinkedCoTreeNode;
 
-export const getDiscoveredMotorTreeId = (plcId: number, discoveredId: string): string =>
-  `discovered:${plcId}:${discoveredId}`;
+export const getDiscoveredMotorTreeId = (plcId: number, axis: Pick<RealAxis, "busNo" | "index">): string =>
+  `discovered:${plcId}:${axis.busNo}:${axis.index}`;
+
+/** 同一个物体可能挂在几个主控下面，行 id 要带上主控 */
+export const getLinkedCoTreeId = (plcId: number, objectId: number): string =>
+  `co:${plcId}:${objectId}`;
 
 export const getBusGroupTreeId = (plcId: number, busNo: BusNo): string =>
   `bus:${plcId}:${busNo}`;
@@ -75,61 +86,48 @@ export const buildBusGroupTreeNode = (plcId: number, busNo: BusNo): BusGroupTree
   label: busNoLabel(busNo),
 });
 
-export const getPlcTreeStatus = (
-  runtime: Pick<PlcRuntimeState, "connection" | "modelMismatch">,
-  configuredCount: number,
-  actualCount: number,
-): PlcTreeStatus => {
-  switch (runtime.connection) {
-    case "disconnected":
-      return { tone: "muted", label: "离线" };
-    case "connecting":
-      return { tone: "primary", label: "连接中" };
-    case "connected":
-      if (runtime.modelMismatch) return { tone: "warning", label: "型号不匹配" };
-      return { tone: "show", label: `${actualCount} / ${configuredCount}` };
-    case "abnormal":
-      return { tone: "warning", label: `${actualCount} / ${configuredCount}` };
-  }
+/** 主控行的在线显示：只看扫描结果（扫到 IP 即在线），与主控连接状态无关 */
+export const getPlcTreeStatus = (online: PlcOnline): PlcTreeStatus => {
+  if (online.kind !== "online") return { iconTone: "muted", label: null };
+  return {
+    iconTone: online.modelMatch ? "show" : "warning",
+    label: `${online.realAxisCount} / ${online.configuredCount}`,
+  };
 };
+
+export const buildMotorTreeNode = (motor: Motor, online: PlcOnline | undefined): MotorTreeNode => {
+  const entry = online?.motorById.get(motor.id);
+  return {
+    kind: "motor",
+    motor,
+    status: entry?.status ?? "unknown",
+    axis: entry?.axis ?? null,
+  };
+};
+
+export const buildDiscoveredTreeNodes = (
+  plcId: number,
+  online: PlcOnline | undefined,
+  busNo?: BusNo,
+): DiscoveredMotorTreeNode[] =>
+  (online?.discovered ?? [])
+    .filter((axis) => busNo === undefined || axis.busNo === busNo)
+    .map((axis) => ({
+      kind: "discovered-motor",
+      plcId,
+      axis,
+      label: formatRealAxisPosition(axis),
+      modelLabel: formatRealAxisModel(axis),
+    }));
 
 export const buildPlcTreeNodes = (
   plc: Plc,
   motors: Motor[],
   linkedObjects: ControlledObject[],
-  reconciliation: MotorOrderReconciliation,
+  online: PlcOnline | undefined,
 ): StructureTreeNode[] => {
-  const onlineIds = new Set(reconciliation.online.map((i) => i.motor.id));
-  const modelMismatchIds = new Set(reconciliation.modelMismatch.map((i) => i.motor.id));
-  const portMismatchIds = new Set(reconciliation.portMismatch.map((i) => i.motor.id));
-  const offlineIds = new Set(reconciliation.offline.map((i) => i.id));
-
-  const motorNodes: MotorTreeNode[] = motors.map((motor) => ({
-    kind: "motor",
-    motor,
-    status: onlineIds.has(motor.id)
-      ? "connected"
-      : modelMismatchIds.has(motor.id)
-        ? "modelMismatch"
-        : portMismatchIds.has(motor.id)
-          ? "portMismatch"
-          : offlineIds.has(motor.id)
-            ? "missing"
-            : undefined,
-  }));
-
-  const discoveredNodes: DiscoveredMotorTreeNode[] = reconciliation.discoveredOnly.map(
-    (axis) => ({
-      kind: "discovered-motor",
-      plcId: plc.id,
-      discoveredId: String(axis.slaveNo),
-      label: `从站#${axis.slaveNo} · ${busNoLabel(axis.busNo as 0 | 1)}`,
-      slaveNo: axis.slaveNo,
-      busNo: axis.busNo,
-      gourdNo: axis.gourdNo,
-    }),
-  );
-
+  const motorNodes = motors.map((motor) => buildMotorTreeNode(motor, online));
+  const discoveredNodes = buildDiscoveredTreeNodes(plc.id, online);
   const objectNodes: LinkedCoTreeNode[] = linkedObjects.map((object) => ({
     kind: "linked-co",
     object,
@@ -152,9 +150,9 @@ export const getStructureNodeId = (
     case "motor":
       return String(node.motor.id);
     case "discovered-motor":
-      return getDiscoveredMotorTreeId(node.plcId, node.discoveredId);
+      return getDiscoveredMotorTreeId(node.plcId, node.axis);
     case "linked-co":
-      return String(node.object.id);
+      return getLinkedCoTreeId(node.plcId, node.object.id);
   }
 };
 
