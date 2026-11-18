@@ -54,7 +54,8 @@ vi.mock("@/app/pages/console/3d/Viz3DProvider", () => ({
 }));
 vi.mock("@/app/pages/console/hooks/plc-runtime-provider", () => ({
   usePlcRuntime: () => ({
-    getPlcRuntime: () => ({ connection: "connected" }),
+    getPlcOnline: () => ({ kind: "online", modelMatch: true, hasDiff: false }),
+    scan: { masters: null, at: null, scanning: false, error: null },
     scanAll,
   }),
 }));
@@ -85,8 +86,7 @@ vi.mock("../dialogs/motor-add-dialog", () => ({
     open ? <div>添加驱动单元弹窗 {plcId}</div> : null,
 }));
 vi.mock("../dialogs/plc-scan-dialog", () => ({
-  PlcScanDialog: ({ open, results }: { open: boolean; results: { ip: string }[] }) =>
-    open ? <div>扫描结果 {results.map((item) => item.ip).join(",")}</div> : null,
+  PlcScanDialog: ({ open }: { open: boolean }) => (open ? <div>扫描结果弹窗</div> : null),
 }));
 vi.mock("../../delete-impact-dialog", () => ({
   DeleteImpactDialog: ({
@@ -206,7 +206,7 @@ describe("主控与驱动", () => {
     });
 
     expect(scanAll).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("扫描结果 192.168.1.50")).toBeTruthy();
+    expect(screen.getByText("扫描结果弹窗")).toBeTruthy();
   });
 
   it("扫到的主控工程里已有时不再提示添加", async () => {

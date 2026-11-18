@@ -39,6 +39,7 @@ export default defineConfig({
       'src/app/components/ics/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       'src/app/components/project-center/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       'src/app/components/ui/input-numeric.test.ts',
+      'src/app/components/ui/input.spec.tsx',
       'src/app/viz3d/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       // 用户与权限
       'src/app/auth/**/*.{test,spec}.?(c|m)[jt]s?(x)',

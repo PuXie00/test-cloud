@@ -14,8 +14,8 @@ import {
   getDefaultPlcRegistryEntry,
   plcModelSelectOptions,
 } from "@/app/pages/console/hooks/motor-config";
+import { usePlcRuntime } from "@/app/pages/console/hooks/plc-runtime-provider";
 import { useProjectStore } from "@/app/pages/console/hooks/use-project-store";
-import { formatPlcDisplayName } from "@/app/pages/console/hooks/plc-display-name";
 
 type PlcAddDialogProps = {
   open: boolean;
@@ -29,6 +29,7 @@ type PlcAddFormValues = {
 
 export const PlcAddDialog = ({ open, onOpenChange }: PlcAddDialogProps) => {
   const { plcs, addPlc } = useProjectStore();
+  const { scanInBackground } = usePlcRuntime();
 
   const masterTypeOptions = useMemo(() => plcModelSelectOptions(), [open]);
   const defaultMaster = useMemo(() => getDefaultPlcRegistryEntry(), [open]);
@@ -48,6 +49,8 @@ export const PlcAddDialog = ({ open, onOpenChange }: PlcAddDialogProps) => {
     });
     if (!plc) return;
     onOpenChange(false);
+    // 每次新增主控后扫描一次：新主控在不在线、型号对不对以扫描为准
+    scanInBackground();
   };
 
   if (!open) return null;

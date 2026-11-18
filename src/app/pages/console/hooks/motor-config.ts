@@ -64,6 +64,19 @@ export const GOURD_NO_TO_PRODUCT_MODEL: Record<number, string> = {
 export const resolveProductModelByGourdNo = (gourdNo: number): string =>
   GOURD_NO_TO_PRODUCT_MODEL[gourdNo] ?? getDefaultMotorRegistryEntry().productModel;
 
+/** 对型号用：型号表里没有的码返回 null，不回退默认型号（认不出的型号不能算一致） */
+export const lookupMasterTypeIdByPlcModel = (plcModel: number): string | null =>
+  PLC_MODEL_TO_MASTER_TYPE[plcModel] ?? null;
+
+export const lookupProductModelByGourdNo = (gourdNo: number): string | null =>
+  GOURD_NO_TO_PRODUCT_MODEL[gourdNo] ?? null;
+
+/** 主控型号显示名：描述文件 device.name，否则就显示 id */
+export const resolvePlcModelName = (masterTypeId: string): string => {
+  const entry = getPlcRegistryEntries().find((item) => item.productModel === masterTypeId);
+  return entry?.label?.trim() || masterTypeId;
+};
+
 /** 主控型号 id：catalog 命中则用，否则回退默认描述文件 id */
 export const resolvePlcMasterTypeId = (masterTypeId: string): string => {
   if (getCachedPlcModelConfig(masterTypeId) || getPlcRegistryEntries().some((e) => e.productModel === masterTypeId)) {

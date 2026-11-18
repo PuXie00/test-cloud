@@ -11,6 +11,8 @@ import {
 } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/app/components/ui/utils";
+import { useFieldEdit } from "@/app/components/ui/field-edit";
+import { sanitizeNumericDraft } from "@/app/components/ui/input-numeric";
 import {
   applyScrubDelta,
   formatNumericDisplay,
@@ -30,7 +32,9 @@ export type NumericInputProps = {
   step?: number;
   min?: number;
   max?: number;
+  /** 小数位数；未传时按 step 推断。0 为整数，键入时不接受小数点 */
   precision?: number;
+  /** 拖动、− + 按 step 取整；键入的值只按 precision 四舍五入，不吸附到 step */
   snapToStep?: boolean;
   sensitivity?: number;
   fineFactor?: number;
@@ -92,13 +96,13 @@ export const NumericInput = ({
   const inReadOnlyScope = useReadOnlyScope();
   const isInteractive = !disabled && !readOnly && !inReadOnlyScope;
   const commitValue = useCallback(
-    (raw: number, emitCommit = true) => {
+    (raw: number, emitCommit = true, snap = snapToStep) => {
       const next = normalizeNumeric(raw, {
         min,
         max,
         step,
         precision: resolvedPrecision,
-        snapToStep,
+        snapToStep: snap,
       });
       onChange(next);
       if (emitCommit) {
@@ -135,26 +139,32 @@ export const NumericInput = ({
     }
     if (submit) {
       const parsed = parseNumericInput(draftText);
+      // 清空 / 只剩 "-"、"." 等不完整内容：不提交，回到原值
       if (parsed != null) {
-        commitValue(parsed);
+        // 键入的值按精度取整即可：step=1、precision=1 的字段要能输入 12.5，不能吸成 13
+        commitValue(parsed, true, false);
       }
     }
     setEditing(false);
   };
 
-  const handleEditKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter") {
+  const fieldEdit = useFieldEdit({
+    onCommitKey: (event: KeyboardEvent<HTMLInputElement>) => {
       event.preventDefault();
       finishEditing(true);
-    }
-    if (event.key === "Escape") {
+    },
+    onCancelKey: (event: KeyboardEvent<HTMLInputElement>) => {
       event.preventDefault();
       finishEditing(false);
-    }
-  };
+    },
+  });
 
-  const handleInputFocus = (event: React.FocusEvent<HTMLInputElement>) => {
-    event.currentTarget.select();
+  const handleDraftChange = (text: string) => {
+    // 整数字段不收小数点，小数位超出 precision 截掉；"1."、".5"、"-"、"-0." 等中间态照常保留
+    const next = sanitizeNumericDraft(text, resolvedPrecision);
+    if (next != null) {
+      setDraftText(next);
+    }
   };
 
   const handleStep = (direction: -1 | 1, event: MouseEvent<HTMLButtonElement>) => {
@@ -334,10 +344,12 @@ export const NumericInput = ({
                 readOnly={readOnly}
                 aria-label={ariaLabel}
                 value={draftText}
-                onChange={(event) => setDraftText(event.target.value)}
-                onFocus={handleInputFocus}
+                onChange={(event) => handleDraftChange(event.target.value)}
+                onFocus={fieldEdit.onFocus}
+                onMouseDown={fieldEdit.onMouseDown}
+                onMouseUp={fieldEdit.onMouseUp}
                 onBlur={() => finishEditing(true)}
-                onKeyDown={handleEditKeyDown}
+                onKeyDown={fieldEdit.onKeyDown}
                 onPointerDown={(event) => event.stopPropagation()}
                 className="numeric-input-edit w-16 bg-transparent text-center font-mono text-mono-sm tabular-nums text-foreground outline-none"
               />

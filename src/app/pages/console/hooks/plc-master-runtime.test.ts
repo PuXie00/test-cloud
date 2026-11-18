@@ -86,19 +86,16 @@ describe("shouldApplyMasterStatusSnapshot", () => {
 });
 
 describe("composePlcRuntime", () => {
-  it("does not let scanAll override connection", () => {
+  it("keeps connection from master status and adds the verify record", () => {
     const masterById = new Map([
       [1, item({ deviceId: 1, masterStatus: DISCONNECTED_MASTER_STATUS })],
     ]);
     const result = composePlcRuntime(1, {
-      plcs: [{ id: 1, ip: "10.0.0.1", masterTypeId: "YZ_PLC_AC810_1" }],
       masterById,
       verify: { version: 1, proVerify: 0 },
-      scannedMasters: [{ ip: "10.0.0.1", plcModel: 1, axis: [] }],
     });
     expect(result.connection).toBe("disconnected");
     expect(result.protocolVersion).toBe(1);
-    expect(result.scannedAxes).toEqual([]);
   });
 });
 
