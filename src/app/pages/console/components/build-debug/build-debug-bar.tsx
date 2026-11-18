@@ -1012,10 +1012,11 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
             void applyJogMotor(setPositionTargetIds, 0, limitRange).catch(() => {});
           }}
         >
+          
           {limitRange ? (
-             <ArrowUp className="h-4 w-4" aria-hidden />
+            <ArrowDownToLine className="h-4 w-4" aria-hidden />
           ) : (
-             <ArrowUpToLine className="h-4 w-4" aria-hidden />
+            <ArrowDown className="h-4 w-4" aria-hidden />
           )}
         </JogButton>
         <JogButton
@@ -1029,9 +1030,9 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
           }}
         >
           {limitRange ? (
-            <ArrowDownToLine className="h-4 w-4" aria-hidden />
+             <ArrowUpToLine className="h-4 w-4" aria-hidden />
           ) : (
-            <ArrowDown className="h-4 w-4" aria-hidden />
+            <ArrowUp className="h-4 w-4" aria-hidden />
           )}
         </JogButton>
 

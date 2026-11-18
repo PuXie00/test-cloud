@@ -104,6 +104,19 @@ export const replaceMasterStatusMap = (
 export const shouldApplyMasterStatusSnapshot = (alreadyReceived: boolean): boolean =>
   !alreadyReceived;
 
+/** 这几项变了，主控和电机的在线情况可能跟着变，要重新扫描主控 */
+const SCAN_TRIGGER_KEYS = ["masterStatus", "simulationStatus", "busStatus"] as const;
+
+/** 已记下的主控里有一台的主控 / 仿真 / 总线状态变了；第一次出现的主控不算 */
+export const hasMasterScanTriggerChange = (
+  known: ReadonlyMap<number, PlcMasterStatus>,
+  next: ReadonlyMap<number, PlcMasterStatus>,
+): boolean =>
+  [...next.values()].some((status) => {
+    const prev = known.get(status.deviceId);
+    return prev !== undefined && SCAN_TRIGGER_KEYS.some((key) => prev[key] !== status[key]);
+  });
+
 export const composePlcRuntime = (
   plcId: number,
   input: ComposePlcRuntimeInput,

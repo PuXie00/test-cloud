@@ -15,6 +15,7 @@ import { isCppAckFailed, isCppAckOk } from "@shared/csocket/ack";
 import type { PlcMasterStatus } from "@shared/csocket/plc-master-status";
 import {
   composePlcRuntime,
+  hasMasterScanTriggerChange,
   replaceMasterStatusMap,
   shouldApplyMasterStatusSnapshot,
 } from "./plc-master-runtime";
@@ -122,9 +123,12 @@ export const PlcRuntimeProvider = ({ children }: { children: ReactNode }) => {
   const autoScannedProjectRef = useRef<string | null>(null);
   // 子组件的 effect 先于工程数据层换数据：换工程这一刻的 plcs 还是上一个工程的
   const plcsAtProjectSwitchRef = useRef<typeof plcs | null>(null);
+  // 每台主控最后一次的状态；主进程断线清空后重连，也拿断线前的状态比
+  const knownMasterStatusRef = useRef(new Map<number, PlcMasterStatus>());
   useEffect(() => {
     autoScannedProjectRef.current = null;
     plcsAtProjectSwitchRef.current = plcsRef.current;
+    knownMasterStatusRef.current = new Map();
     setScan((prev) => ({ ...INITIAL_MASTER_SCAN_STATE, scanning: prev.scanning }));
   }, [projectId]);
 
@@ -247,6 +251,14 @@ export const PlcRuntimeProvider = ({ children }: { children: ReactNode }) => {
     autoScannedProjectRef.current = projectId;
     scanInBackground();
   }, [plcs, projectId, scanInBackground]);
+
+  // 当前监控主控的主控 / 仿真 / 总线状态变了也后台扫描；正在扫描时复用那一次
+  useEffect(() => {
+    const known = knownMasterStatusRef.current;
+    const changed = hasMasterScanTriggerChange(known, masterById);
+    for (const [deviceId, status] of masterById) known.set(deviceId, status);
+    if (changed) scanInBackground();
+  }, [masterById, scanInBackground]);
 
   const setSimulationAll = useCallback(async (enabled: boolean) => {
     const send = window.csocketApi?.simulationSwitchPlc;

@@ -8,7 +8,7 @@ import { createEmptyDocument } from "./project-document-empty";
 const swingObject = (): ControlledObjectConfig => ({
   id: 8,
   name: "swing",
-  controlType: 8,
+  controlType: 9,
   enabledVirtualAxes: ["v1", "v2", "v3"],
   shapePreset: "cube",
   shapeDimensions: { width: 1, height: 1, depth: 1 },

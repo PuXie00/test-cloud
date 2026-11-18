@@ -324,7 +324,7 @@ describe("virtual axis max velocity fields", () => {
         motors: [],
         controlledObjects: [
           makeObject(OBJECT_A, "A", {
-            controlType: 8,
+            controlType: 9,
             enabledVirtualAxes: ["v1", "v2", "v3"],
             motionParams: {
               h: { ...MOTION_DEFAULTS.move },

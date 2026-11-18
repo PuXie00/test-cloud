@@ -3,6 +3,7 @@ import { DISCONNECTED_MASTER_STATUS, type PlcMasterStatus } from "@shared/csocke
 import type { PlcRuntimeState } from "./plc-runtime-types";
 import {
   composePlcRuntime,
+  hasMasterScanTriggerChange,
   mapMasterStatusToRuntimeFields,
   replaceMasterStatusMap,
   resolveSimulationSwitchState,
@@ -75,6 +76,31 @@ describe("replaceMasterStatusMap", () => {
     });
     expect(next?.size).toBe(1);
     expect(next?.get(2)?.masterStatus).toBe(1);
+  });
+});
+
+describe("hasMasterScanTriggerChange", () => {
+  const known = new Map([[1, item({ deviceId: 1 })]]);
+  const next = (overrides: Partial<PlcMasterStatus>) =>
+    new Map([[1, item({ deviceId: 1, ...overrides })]]);
+
+  it("triggers when masterStatus, simulationStatus or busStatus changes", () => {
+    expect(hasMasterScanTriggerChange(known, next({ masterStatus: 2 }))).toBe(true);
+    expect(hasMasterScanTriggerChange(known, next({ simulationStatus: 1 }))).toBe(true);
+    expect(hasMasterScanTriggerChange(known, next({ busStatus: 1 }))).toBe(true);
+  });
+
+  it("ignores the other status fields", () => {
+    expect(
+      hasMasterScanTriggerChange(known, next({ plcModel: 2, ruleStartStatus: 1, ruleId: 3, autoRunStatus: 1, autoId: 4 })),
+    ).toBe(false);
+  });
+
+  it("does not trigger for a master seen for the first time", () => {
+    expect(hasMasterScanTriggerChange(new Map(), next({ masterStatus: 2 }))).toBe(false);
+    expect(
+      hasMasterScanTriggerChange(known, new Map([[2, item({ deviceId: 2, busStatus: 1 })]])),
+    ).toBe(false);
   });
 });
 
