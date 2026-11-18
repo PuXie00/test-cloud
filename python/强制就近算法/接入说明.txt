@@ -1,0 +1,45 @@
+四模型强制轨迹就近接入
+更新于2026-11-18
+
+公共调用为 calculate_nearest_entry(parameters)。
+输入示例为算法参数.json，每个字段的说明写在同一文件中。
+
+模型编号
+2为单点，3为多级升降，7为普通多点摆，9为XY多点摆。
+2与3每根真实电机位置等于H，多级升降分段策略已经体现在输入H曲线中。
+7使用HPY=[高度,倾角,方向角]，9使用HPY=[高度,X倾角,Y倾角]。
+7/9的吊点支持二维和三维坐标，保留原始吊点顺序及全部真实电机。
+几何取用户指定YXZ_new.py中的普通多点和XY正解约定。
+
+调用流程
+1. 同一次输入整个动作的全部模型及停稳反馈位置，包含各PLC模型。
+2. 强制使用command.trajectory_run=true。
+3. 就近使用nearest_start=true、use_specified_time=false及stopped_time_ms。
+   停止帧所在的整个原动作段有可执行点时优先留在该段，按位置最近选帧。
+   只有整段不可执行时才按正向后续段、反向前序段继续。
+   反向仍传原曲线帧，不能再镜像一次。
+4. 非就近使用nearest_start=false，正向首帧、反向末帧。
+   固定原帧使用use_specified_time=true及specified_time_ms。
+5. 先按真实最大虚轴V/A/D计算零速起止准备，PLC A=D时取最大A/D中的较小值。
+   各移动轴同步启步、同时到达。真实电机速度上界超限时全组统一降速。
+6. 采用输出1006_payloads中的selectedCurveTimeMs、prepareTimeMs及各设备V/A。
+   全组1007使用同一个T0，以T0+prepareTimeMs为共同准备结束时间门。
+   整台静止PLC也按共同时间门等待。PLC仍按原帧取得目标位置。
+
+selected_curve_time_ms为原曲线时刻，prepare_time_ms为准备运动耗时。
+prepare_time_ms_ceil为向上取整后的共同等待毫秒数，三者不能混用。
+结果的target_HPY为强制准备停车位置，目标末速为0。
+V/A/D以浮点数输出，1006按0.1精度编码。
+本次实轴速度和同步验算使用未编码数值，0.1编码与PLC扫描会引入既有精度误差。
+
+包的调用范围
+本包负责强制轨迹准备。非强制请使用同目录的非强制就近算法.zip。
+新版单Move包在models中提供model_type、max_motor_velocity及7/9几何字段后，
+会联合检查准备及后续真实电机速度。详见该包的输入JSON与接入说明。
+在线调速按虚轴执行表计算，四类模型均已做离线回归。
+在线调速倍率仍使用对应模型调速范围计算给出的允许范围。
+
+直接运行
+python 就近接入计算.py 算法参数.json
+CLI在该JSON的nearest_result中保存计算结果。
+API只返回结果，调用方自行保存或组包。

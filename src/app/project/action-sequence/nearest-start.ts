@@ -22,10 +22,10 @@ import type { ModelPose } from "./types";
 
 /**
  * 启动接入：选出接入帧，并算出各成员的准备 Move 与共同准备时间。
- * - 强制：python/新就近算法 的停稳同步准备（nearest-entry），准备速度上限用物体默认速度
- *   （算法读 max_velocity_HPY，只在传入前替换）。
+ * - 强制：python/强制就近算法 的停稳同步准备（nearest-entry），准备速度上限用物体默认速度
+ *   （算法读 max_velocity_HPY，只在传入前替换）。传入前改成算法类型：2 单点、3 多级升降、7 多点摆、9 XY 多点。
  * - 非强制：python/非强制就近接入.py（nonforced-entry，四模型实轴核对）。每台设备 H/P/Y 各一条准备 Move，
- *   GO 时一起下发，接入帧时位置和速度都接上帧表。传入前改成算法类型：2 单点、3 多级升降、7 多点摆、9 多点倾斜。
+ *   GO 时一起下发，接入帧时位置和速度都接上帧表。模型类型与强制相同。
  */
 
 export type { AxisVad } from "./nearest-start-motion";
@@ -363,7 +363,7 @@ export const planNearestStart = (input: NearestStartInput): NearestStartPlan => 
         loop_count: input.loopCount,
       },
       settings: ALGORITHM_SETTINGS,
-      models: modelsAtDefaultSpeed,
+      models: modelsAtDefaultSpeed.map((model) => withNonforcedModelType(model, input.objects)),
       runtime: { models: runtime },
     });
     plan = toNearestStartPlan(result, input);

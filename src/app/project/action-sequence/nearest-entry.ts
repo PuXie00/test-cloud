@@ -1,4 +1,3 @@
-import { solveMultiPointForward, type Vec3 } from "@/app/kinematics/multi-point-forward";
 import {
   AXIS_NAMES,
   axesOf,
@@ -22,30 +21,29 @@ import {
   type NearestParameters,
   type RuntimeModelState,
 } from "./algorithm-params";
+import { minimumMotionProfile, scaleMotionParameters, type AxisVad } from "./nearest-start-motion";
 import {
-  fourPointForward,
-  minimumMotionProfile,
-  scaleMotionParameters,
-  twoPointForward,
-  type AxisVad,
-} from "./nearest-start-motion";
+  forcedPrepareMotorBound,
+  prepareEntryGeometry,
+  type MotorGeometry,
+} from "./nonforced-motor";
 
 /**
- * 逐项移植 python/新就近算法/就近接入计算.py 的停稳同步准备（_calculate_nearest_entry_v4）：
- * 指定帧（use_specified_time）强制直接接入；就近时以 stopped_time_ms 为方向边界，
- * 强制按 PLC 规则粗细搜索位置最近的帧，非强制沿运行方向取最近的原动作关键帧；
- * 两种都按最大 V/A/D 规划零速起止 Move，所有模型同时到达，实轴超速时共同降速。
- * 非强制带速接入（v8）不移植：它的结果要 PLC 支持按时刻覆盖的轴队列才能执行。
+ * 逐项移植 python/强制就近算法/就近接入计算.py 的停稳同步准备：
+ * 业务模型 2 单点、3 多级升降、7 普通多点、9 XY 多点。
+ * 指定帧直接接入；有停止参考时先在当前原段找可执行最近点。
+ * 按最大 V/A/D 规划零速起止 Move，所有模型同时到达。
+ * 真实电机速度用正解的整路径区间上界检查，超限后全组乘同一个比例。
+ * 非强制带速接入不在这里：trajectory_run=false 交给 nonforced-entry。
  */
 
-export const NEAREST_ALGORITHM_VERSION = "v5_max_capability_common_prepare";
+export const NEAREST_ALGORITHM_VERSION = "v6_four_models_max_capability_20261118";
 export const FRAME_SELECTION_VERSION = "current_original_segment_first_20261029";
 
 const UINT32_MAX = 4294967295;
 const MAX_PREPARE_TIME_MS = UINT32_MAX;
-const RAD = Math.PI / 180;
 
-type GeometryKind = 1 | 2 | 4 | 8;
+type GeometryKind = 1 | 8 | 9;
 
 type FlatPiece = {
   segment_id: number;
@@ -69,9 +67,8 @@ type EntryModel = {
   boundaries: number[];
   supported: readonly AxisName[];
   maxMotorVelocity: number;
-  geometry: Partial<Record<(typeof GEOMETRY_NUMBER_FIELDS)[number], number>>;
-  moveWhat: unknown;
-  pointInitPos: Hpy[] | undefined;
+  /** 7/9 的凸包几何；单点与多级升降没有 */
+  motorGeometry: MotorGeometry | null;
   current: Hpy;
   /** Python 的 active_axes_by_model：准备轴 */
   prepare: AxisName[];
@@ -204,25 +201,13 @@ export type NearestEntryResult = {
   algorithm_version: string;
 };
 
-const GEOMETRY_KIND_BY_BUSINESS: Record<number, GeometryKind> = { 2: 1, 6: 2, 7: 4, 8: 8 };
+const GEOMETRY_KIND_BY_BUSINESS: Record<number, GeometryKind> = { 2: 1, 3: 1, 7: 8, 9: 9 };
 
 const SUPPORTED_AXES: Record<GeometryKind, readonly AxisName[]> = {
   1: ["H"],
-  2: ["H", "P"],
-  4: ["H", "P", "Y"],
   8: ["H", "P", "Y"],
+  9: ["H", "P", "Y"],
 };
-
-const GEOMETRY_NUMBER_FIELDS = [
-  "BaseHight1",
-  "BaseHight2",
-  "Baseheight1",
-  "Baseheight2",
-  "lLenth_inside",
-  "wLenth_inside",
-  "maxheight",
-  "betainit",
-] as const;
 
 const isInteger = (value: unknown): value is number =>
   typeof value === "number" && Number.isInteger(value);
@@ -479,23 +464,42 @@ const normalizeInputs = (parameters: NearestParameters): EntryInputs => {
     let kind: GeometryKind;
     if (scheme === "business") {
       const mapped = GEOMETRY_KIND_BY_BUSINESS[businessKind];
-      if (!mapped) throw new Error("业务模型类型仅支持2单点、6两点、7四点、8多点");
+      if (!mapped) throw new Error("业务模型类型仅支持2单点、3多级升降、7多点摆、9XY多点摆");
       kind = mapped;
+    } else if (businessKind === 1 || businessKind === 8 || businessKind === 9) {
+      kind = businessKind;
     } else {
-      if (![1, 2, 4, 8].includes(businessKind)) throw new Error("几何模型类型仅支持1、2、4、8");
-      kind = businessKind as GeometryKind;
+      throw new Error("几何模型类型仅支持1(H)、8(普通多点)、9(XY多点)");
     }
-    const geometry: EntryModel["geometry"] = {};
-    for (const name of GEOMETRY_NUMBER_FIELDS) {
-      if (original[name] !== undefined) geometry[name] = finiteNumber(original[name], name);
-    }
-    let pointInitPos: Hpy[] | undefined;
+    let pointInitPos: Array<[number, number, number]> | undefined;
     if (original.point_init_pos !== undefined) {
       if (!Array.isArray(original.point_init_pos)) throw new Error("point_init_pos必须是XYZ吊点列表");
-      pointInitPos = original.point_init_pos.map((point) => hpyOf(point, "point_init_pos XYZ"));
+      pointInitPos = original.point_init_pos.map((point) => {
+        if (!Array.isArray(point) || (point.length !== 2 && point.length !== 3)) {
+          throw new Error("吊点须为[x,y]或[x,y,z]");
+        }
+        const values = point.map((value) => finiteNumber(value, "point_init_pos XYZ"));
+        return (
+          values.length === 2 ? [values[0]!, values[1]!, 0] : [values[0]!, values[1]!, values[2]!]
+        ) as [number, number, number];
+      });
     }
-    const motorNum = original.motor_num ?? (kind === 8 ? (pointInitPos?.length ?? 0) : kind);
+    const motorNum = original.motor_num ?? (kind === 1 ? 1 : (pointInitPos?.length ?? 0));
     if (!isInteger(motorNum) || motorNum <= 0) throw new Error("motor_num必须为正整数");
+    const motorGeometry =
+      kind === 1
+        ? null
+        : prepareEntryGeometry({
+            model_type: kind === 9 ? 9 : 7,
+            Baseheight1: original.Baseheight1,
+            Baseheight2: original.Baseheight2,
+            maxheight: original.maxheight,
+            betainit: original.betainit ?? 0,
+            point_init_pos: pointInitPos,
+          });
+    if (motorGeometry && motorNum !== motorGeometry.points.length) {
+      throw new Error("motor_num须与原吊点数量一致");
+    }
 
     const state = states.get(modelId)!;
     const current = hpyOf(state.position_HPY, "current_HPY");
@@ -511,9 +515,6 @@ const normalizeInputs = (parameters: NearestParameters): EntryInputs => {
     const supported = SUPPORTED_AXES[kind];
     if (!follow.every((axis) => prepare.includes(axis)) || !prepare.every((axis) => supported.includes(axis))) {
       throw new Error("prepare_axes须包含follow_axes，且不得加入模型不存在的轴");
-    }
-    if (kind === 4 && prepare.includes("P") && prepare.includes("Y")) {
-      throw new Error("当前四点正解只支持单一倾斜方向，不能同时准备P/Y");
     }
     const defaults: VadHpy = {
       velocity: hpyOf(original.default_velocity_HPY, "default_velocity_HPY", true),
@@ -561,9 +562,7 @@ const normalizeInputs = (parameters: NearestParameters): EntryInputs => {
       boundaries,
       supported,
       maxMotorVelocity,
-      geometry,
-      moveWhat: original.moveWhat,
-      pointInitPos,
+      motorGeometry,
       current,
       prepare,
       follow,
@@ -628,28 +627,6 @@ const forcedTargetAt = (model: EntryModel, globalFrame: number, inputs: EntryInp
   const piece = model.pieces[bisectRight(model.pieceStarts, frame) - 1]!;
   if (frame >= piece.end_frame) return [...piece.target_HPY];
   return evaluatePiece(piece, frame).positions;
-};
-
-/** 非强制 positions_at：段前保持初始位置，段间/段后保持最近一个已结束段的终点 */
-const nonForcedTargetAt = (model: EntryModel, globalFrame: number, inputs: EntryInputs): Hpy => {
-  const pieces = model.pieces;
-  const frame = mapPrepareFrame(
-    globalFrame,
-    pieces[0]!.start_frame,
-    lastOf(pieces).end_frame,
-    inputs.direction,
-    inputs.loopCount,
-  );
-  const index = bisectRight(model.pieceStarts, frame) - 1;
-  let target: Hpy = [...pieces[0]!.start_HPY];
-  if (index >= 0) {
-    const piece = pieces[index]!;
-    target = frame >= piece.end_frame ? [...piece.target_HPY] : evaluatePiece(piece, frame).positions;
-  }
-  if (!target.every(Number.isFinite)) {
-    throw new Error(`模型${model.route.model_id}在${globalFrame}ms的位置计算非有限`);
-  }
-  return target;
 };
 
 /** 全组最大 |目标-当前|/速度；静止轴代价为 0，需要位移但速度为 0 时为无穷 */
@@ -1258,139 +1235,6 @@ const directionalSearch = (
   };
 };
 
-type Candidate = { frame: number; positions: Map<number, Hpy> };
-
-/** calculate_non_forced_candidate_positions：沿运行方向的原关键帧，按最近程度依次给出 */
-const nonForcedCandidates = (
-  inputs: EntryInputs,
-): {
-  startMode: NearestEntryStartMode;
-  candidates: Iterable<Candidate>;
-  /** 实际搜索起点与沿方向允许的关键帧，只用于结果说明 */
-  origin: number;
-  allowed: number[];
-} => {
-  const { models, direction } = inputs;
-  const stopped = inputs.stoppedTimeMs;
-  const boundarySet = new Set<number>();
-  for (const model of models) for (const frame of model.boundaries) boundarySet.add(frame);
-  const boundaries = [...boundarySet].sort((left, right) => left - right);
-  const globalStart = boundaries[0]!;
-  const globalEnd = lastOf(boundaries);
-  if (stopped !== null && stopped > globalEnd) {
-    throw new Error(`stopped_time_ms必须在0到${globalEnd}之间`);
-  }
-  const positionsAt = (frame: number) =>
-    new Map(models.map((model) => [model.index, nonForcedTargetAt(model, frame, inputs)]));
-
-  if (!inputs.nearestStart) {
-    const frame = direction > 0 ? globalStart : globalEnd;
-    return {
-      startMode: "action_boundary",
-      candidates: [{ frame, positions: positionsAt(frame) }],
-      origin: frame,
-      allowed: [frame],
-    };
-  }
-
-  // 未传停止帧时，所有模型一起搜索同一个曲线时间；关键帧也加入，避免漏掉短段
-  let searchOrigin: number | null = stopped;
-  if (searchOrigin === null) {
-    let bestScore = Number.POSITIVE_INFINITY;
-    const passes: Array<[number, number | null]> = [
-      [inputs.coarseStep, null],
-      [inputs.fineStep, inputs.coarseStep],
-    ];
-    for (const [step, radius] of passes) {
-      const center: number | null = searchOrigin;
-      const left: number = radius === null || center === null ? 0 : Math.max(0, center - radius);
-      const right: number =
-        radius === null || center === null ? globalEnd : Math.min(globalEnd, center + radius);
-      const frames = new Set<number>([left, right]);
-      for (const frame of boundaries) if (left <= frame && frame <= right) frames.add(frame);
-      const count = Math.trunc((right - left) / step) + 1;
-      for (let index = 0; index < count; index += 1) frames.add(left + index * step);
-      const ordered: number[] = [...frames].sort((a, b) => (direction < 0 ? b - a : a - b));
-      for (const frame of ordered) {
-        const positions = positionsAt(frame);
-        let score = 0;
-        for (const model of models) {
-          const target = positions.get(model.index)!;
-          for (const name of model.prepare) {
-            const axis = axisIndex(name);
-            score = Math.max(
-              score,
-              axisCost(Math.abs(target[axis] - model.current[axis]), model.defaults.velocity[axis]),
-            );
-          }
-        }
-        if (score < bestScore) {
-          bestScore = score;
-          searchOrigin = frame;
-        }
-      }
-      if (searchOrigin === null) {
-        throw new Error("无法搜索最近曲线时间：正常速度为0或定位计算超出数值范围");
-      }
-    }
-  }
-  const origin = searchOrigin!;
-
-  // 给定停止帧恰好在公共关键帧上时先用当前帧；否则沿方向取下一帧
-  const givenFrameIsBoundary =
-    stopped !== null && boundaries.some((frame) => Math.abs(frame - origin) <= 1e-9);
-  let ordered = boundaries
-    .filter((frame) => (frame - origin) * direction >= -1e-9)
-    .filter((frame) => givenFrameIsBoundary || Math.abs(frame - origin) > 1e-9)
-    .sort((a, b) => (direction < 0 ? b - a : a - b));
-  if (ordered.length === 0) {
-    const terminal = direction > 0 ? globalEnd : globalStart;
-    if (Math.abs(origin - terminal) > 1e-9) throw new Error("当前方向没有候选关键帧，不选择反方向帧");
-    ordered = [terminal];
-  }
-
-  const candidateScore = (frame: number, cutoff: number): number => {
-    let score = 0;
-    for (const model of models) {
-      const target = nonForcedTargetAt(model, frame, inputs);
-      for (const name of model.prepare) {
-        const axis = axisIndex(name);
-        score = Math.max(
-          score,
-          axisCost(Math.abs(target[axis] - model.current[axis]), model.defaults.velocity[axis]),
-        );
-      }
-      // 后续模型只能增大 max 代价，不可能严格优于当前最优
-      if (score >= cutoff) break;
-    }
-    return score;
-  };
-
-  /** 方向允许的关键帧中先选最近；不可执行时再选剩余帧里最近的 */
-  function* nearestCandidates(): Generator<Candidate> {
-    const remaining = [...ordered];
-    while (remaining.length > 0) {
-      let bestFrame: number | null = null;
-      let bestScore = Number.POSITIVE_INFINITY;
-      for (const frame of remaining) {
-        const score = candidateScore(frame, bestScore);
-        if (bestFrame === null || score < bestScore) {
-          bestFrame = frame;
-          bestScore = score;
-        }
-        if (bestScore === 0) break;
-      }
-      if (!Number.isFinite(bestScore)) {
-        throw new Error("最近关键帧评分无有效值：需要位移的准备轴默认速度不能为0");
-      }
-      yield { frame: bestFrame!, positions: positionsAt(bestFrame!) };
-      remaining.splice(remaining.indexOf(bestFrame!), 1);
-    }
-  }
-
-  return { startMode: "nearest", candidates: nearestCandidates(), origin, allowed: ordered };
-};
-
 /** _prepare_targets：非准备轴保持当前；可动固定轴不一致时要求显式加入准备 */
 const prepareTargets = (inputs: EntryInputs, posSet: Map<number, Hpy>): Map<number, Hpy> => {
   const result = new Map<number, Hpy>();
@@ -1406,142 +1250,6 @@ const prepareTargets = (inputs: EntryInputs, posSet: Map<number, Hpy>): Map<numb
     result.set(model.index, target);
   }
   return result;
-};
-
-/** 过渡路径上实际电机速度的保守上界；两点/四点/多点各自用几何导数上界 */
-const motorUpperBound = (model: EntryModel, current: Hpy, target: Hpy, velocity: Hpy): number => {
-  const id = model.route.model_id;
-  const [vh, vp, vy] = velocity;
-  let count: number;
-  let bound: number;
-  let endpoints: Array<readonly number[] | null>;
-  if (model.kind === 1) {
-    if (vp > 0 || vy > 0) throw new Error(`单点模型${id}只支持H轴位移`);
-    count = model.motorNum;
-    bound = vh;
-    endpoints = [current, target].map((pose) => Array.from({ length: count }, () => pose[0]));
-  } else {
-    const [base1Name, base2Name] =
-      model.kind === 8 ? (["Baseheight1", "Baseheight2"] as const) : (["BaseHight1", "BaseHight2"] as const);
-    const fields: Array<keyof EntryModel["geometry"]> = [base1Name, base2Name, "maxheight"];
-    if (model.kind === 8) fields.push("betainit");
-    else fields.push("lLenth_inside", ...(model.kind === 4 ? (["wLenth_inside"] as const) : []));
-    if (fields.some((name) => !Number.isFinite(model.geometry[name]))) {
-      throw new Error(`模型${id}的几何参数缺失或非有限`);
-    }
-    const base1 = model.geometry[base1Name]!;
-    const base2 = model.geometry[base2Name]!;
-    const maxHeight = model.geometry.maxheight!;
-    if (!((base1 > 0 && base2 === 0) || (base1 === 0 && base2 > 0)) || maxHeight <= 0) {
-      throw new Error(`模型${id}必须恰有一个正基准高度，且maxheight大于0`);
-    }
-    if (model.kind === 2 || model.kind === 4) {
-      const length = model.geometry.lLenth_inside!;
-      const width = model.kind === 4 ? model.geometry.wLenth_inside! : length;
-      if (Math.min(length, width) <= 0) throw new Error(`模型${id}吊点间距必须大于0`);
-      let tiltAxis: 1 | 2 = 1;
-      if (model.kind === 2) {
-        if (vy > 0) throw new Error(`两点模型${id}不支持Y轴位移`);
-        endpoints = [current, target].map((pose) =>
-          twoPointForward(pose[0], pose[1], base1, base2, length, maxHeight),
-        );
-      } else {
-        const pTilt = [current, target].some((pose) => Math.abs(pose[1]) > 1e-10);
-        const yTilt = [current, target].some((pose) => Math.abs(pose[2]) > 1e-10);
-        if (pTilt && yTilt) throw new Error(`四点模型${id}当前正解不支持P/Y混合倾斜过渡`);
-        const inferred = pTilt ? 1 : yTilt ? 2 : 0;
-        const moveWhat = model.moveWhat === undefined ? inferred : model.moveWhat;
-        if (!isInteger(moveWhat) || ![0, 1, 2].includes(moveWhat)) {
-          throw new Error("四点moveWhat只能为0、1、2");
-        }
-        if (inferred && moveWhat !== inferred) throw new Error("四点moveWhat与实际准备姿态方向不一致");
-        if (
-          (moveWhat === 1 && model.prepare.includes("Y")) ||
-          (moveWhat === 2 && model.prepare.includes("P"))
-        ) {
-          throw new Error("四点prepare_axes与PLC的moveWhat方向不一致");
-        }
-        tiltAxis = moveWhat === 2 ? 2 : 1;
-        endpoints = [current, target].map((pose) =>
-          fourPointForward(pose[0], pose[1], pose[2], base1, base2, length, width, maxHeight, moveWhat),
-        );
-      }
-      count = model.kind;
-      if (model.motorNum !== count) throw new Error(`模型${id}的motor_num与模型类型不一致`);
-      const halfSpan = (tiltAxis === 1 ? length : width) / 2;
-      const angle = Math.max(Math.abs(current[tiltAxis]), Math.abs(target[tiltAxis]));
-      const angularSpeed = tiltAxis === 1 ? vp : vy;
-      bound = vh + (halfSpan * RAD + (3 * halfSpan * angle ** 2) / 90 ** 3) * angularSpeed;
-    } else {
-      const points = model.pointInitPos;
-      if (!points || points.length < 3) throw new Error(`多点模型${id}需要至少三个有限XYZ吊点`);
-      count = points.length;
-      if (model.motorNum !== count) throw new Error(`模型${id}的motor_num与吊点数不一致`);
-      const radius = Math.max(...points.map((point) => Math.hypot(point[0], point[1])));
-      const uniqueXy = new Set(points.map((point) => `${point[0]},${point[1]}`));
-      if (radius <= 1e-12 || uniqueXy.size !== count) throw new Error(`多点模型${id}吊点平面退化或重复`);
-      let area = 0;
-      points.forEach((p, index) => {
-        const q = points[(index + 1) % count]!;
-        area += p[0] * q[1] - p[1] * q[0];
-      });
-      const orientation = area > 0 ? 1 : -1;
-      let minRadius = Number.POSITIVE_INFINITY;
-      points.forEach((p, index) => {
-        const q = points[(index + 1) % count]!;
-        const dx = q[0] - p[0];
-        const dy = q[1] - p[1];
-        const edge = Math.hypot(dx, dy);
-        const originDistance = (orientation * (p[0] * q[1] - p[1] * q[0])) / edge;
-        const concave = points.some(
-          (r) => orientation * (dx * (r[1] - p[1]) - dy * (r[0] - p[0])) < -radius * edge * 1e-10,
-        );
-        if (originDistance <= radius * 1e-10 || concave) {
-          throw new Error(`多点模型${id}吊点必须组成包含原点的有序凸多边形`);
-        }
-        minRadius = Math.min(minRadius, originDistance);
-      });
-      const effectiveHeights = [current, target].map((pose) =>
-        base1 > 0 ? pose[0] + base1 : base2 + maxHeight - pose[0],
-      );
-      if (Math.min(...effectiveHeights) < 0) throw new Error(`多点模型${id}过渡的有效高度不能为负`);
-      const nMin = Math.min(100, 1.73 + (0.52 * Math.min(...effectiveHeights)) / radius);
-      const nMax = Math.min(100, 1.73 + (0.52 * Math.max(...effectiveHeights)) / minRadius);
-      // 旧正解不改；提前排除可能在路径中途令旧 pow 溢出的极端数值
-      const maxPitchRad = Math.max(Math.abs(current[1]), Math.abs(target[1])) * RAD;
-      if (Math.log(radius) + nMax * Math.max(0, Math.log(Math.max(maxPitchRad, 1e-300))) > 700) {
-        throw new Error("多点角度/尺寸使旧正解的中途幂运算可能溢出");
-      }
-      const cH = 0.52 / (Math.E * nMin);
-      const cP = (radius * nMax * RAD) / 1.5707963;
-      const cR = 1 + (nMax - 1.73) / (Math.E * nMin);
-      bound =
-        (1 + cH) * vh +
-        (radius * RAD + cP) * vp +
-        (3 * radius + (cR * radius ** 2) / minRadius) * RAD * vy;
-      const betaInit = model.geometry.betainit!;
-      endpoints = [current, target].map((pose) =>
-        solveMultiPointForward({
-          height: pose[0],
-          pitch: pose[1],
-          roll: pose[2],
-          pointInitPos: points as Vec3[],
-          baseHeight1: base1,
-          baseHeight2: base2,
-          maxHeight,
-          betaInit,
-        }),
-      );
-    }
-  }
-  if (
-    count <= 0 ||
-    endpoints.some((values) => !values || values.length !== count || !values.every(Number.isFinite))
-  ) {
-    throw new Error(`模型${id}端点正解未返回有效电机位置`);
-  }
-  if (!Number.isFinite(bound) || bound < 0) throw new Error(`模型${id}的电机速度上界无效`);
-  return bound;
 };
 
 type EntryMotion = {
@@ -1635,12 +1343,19 @@ const synchronizedEntryMove = (
     if (!Number.isFinite(limit) || limit <= 0) {
       throw new Error(`模型${model.route.model_id}的最大电机速度必须为有限正数`);
     }
-    const bound = motorUpperBound(
-      model,
-      model.current,
-      targets.get(model.index)!,
-      velSet.get(model.index)!.velocity,
-    );
+    const params = velSet.get(model.index)!;
+    const bound = forcedPrepareMotorBound({
+      kind: model.kind,
+      motorNum: model.motorNum,
+      modelId: model.route.model_id,
+      geometry: model.motorGeometry,
+      current: model.current,
+      target: targets.get(model.index)!,
+      velocity: params.velocity,
+      acceleration: params.acceleration,
+      deceleration: params.deceleration,
+      totalTime: synchronizedTime,
+    });
     if (bound > 0) motorScale = Math.min(motorScale, limit / (bound * (1 + 1e-9)));
     motorChecks.set(model.index, { limit, upperBound: bound });
   }
@@ -1751,33 +1466,7 @@ export const calculateNearestEntry = (parameters: NearestParameters): NearestEnt
     curveTargets = selected.targets;
     motion = selected.validatedMotion ?? validateFrame(selected.frame, selected.targets, selected.startMode);
   } else {
-    // 非强制指定帧只作搜索起点；仍沿方向接入原动作关键帧
-    if (inputs.useSpecifiedTime) inputs.stoppedTimeMs = inputs.specifiedTimeMs;
-    const { startMode, candidates, origin, allowed } = nonForcedCandidates(inputs);
-    for (const candidate of candidates) {
-      try {
-        curveTargets = new Map([...candidate.positions].map(([key, value]) => [key, [...value] as Hpy]));
-        motion = synchronizedEntryMove(
-          inputs,
-          candidate.frame,
-          startMode,
-          prepareTargets(inputs, candidate.positions),
-        );
-        break;
-      } catch (error) {
-        skipped.push({ frame_ms: candidate.frame, reason: errorMessage(error) });
-      }
-    }
-    if (!motion) throw new Error(`沿当前方向没有可执行的共同关键帧：${JSON.stringify(skipped)}`);
-    selection = {
-      mode: inputs.nearestStart ? "directional_nearest" : "action_boundary",
-      referenceFrameMs: inputs.stoppedTimeMs,
-      searchOriginMs: origin,
-      searchRange:
-        allowed.length > 0
-          ? [Math.min(...allowed), Math.max(...allowed)]
-          : [motion.frame, motion.frame],
-    };
+    throw new Error("非强制就近请调用非强制就近接入");
   }
 
   // 1006 原帧须为整数，所有目标都按该整数帧求出

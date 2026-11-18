@@ -709,7 +709,7 @@ def _command_of(parameters):
     if not isinstance(command, dict):
         raise ValueError("缺少command")
     if command.get("trajectory_run") is True:
-        raise ValueError("强制轨迹请用 新就近算法/就近接入计算.py；本算法只处理非强制（trajectory_run=false）")
+       raise ValueError("强制轨迹请用 强制就近算法/就近接入计算.py；本算法只处理非强制（trajectory_run=false）")
     reverse = command.get("reverse", False)
     nearest = command.get("nearest_start", True)
     specified = command.get("use_specified_time", False)

@@ -188,7 +188,7 @@ describe("buildAlgorithmModels", () => {
     // 曲线仍在精确的位姿时间到达
     expect(stateAt(single!, third).positions[0]).toBeCloseTo(300, 6);
     const result = calculateNearestEntry({
-      command: { trajectory_run: false, nearest_start: true, reverse: false, loop_count: 1 },
+      command: { trajectory_run: true, nearest_start: true, reverse: false, loop_count: 1 },
       settings: ALGORITHM_SETTINGS,
       models,
       runtime: { models: runtime },

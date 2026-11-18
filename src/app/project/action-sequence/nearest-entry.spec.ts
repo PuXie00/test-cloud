@@ -4,10 +4,10 @@ import { describe, expect, it } from "vitest";
 import type { Hpy, NearestParameters } from "./algorithm-params";
 import { calculateNearestEntry, type NearestEntryResult } from "./nearest-entry";
 
-/** 期望值由 python/就近计算/就近接入计算.py（停稳同步准备）对同一份 算法参数.json 计算得到。 */
+/** 期望值由 python/强制就近算法/就近接入计算.py 对同一份 算法参数.json 计算得到。 */
 const example = JSON.parse(
-  readFileSync(path.resolve(__dirname, "../../../../python/就近计算/算法参数.json"), "utf-8").replace(
-    /^﻿/,
+  readFileSync(path.resolve(__dirname, "../../../../python/强制就近算法/算法参数.json"), "utf-8").replace(
+    /^\uFEFF/,
     "",
   ),
 ) as NearestParameters;
@@ -25,70 +25,45 @@ const deviceOf = (result: NearestEntryResult, deviceId: number) =>
 const expectHpy = (actual: Hpy, expected: Hpy) =>
   expected.forEach((value, axis) => expect(actual[axis]).toBeCloseTo(value, 9));
 
-const STEADY: Record<number, Hpy> = { 100: [150, 0, 0], 200: [150, 0, 0], 300: [150, 0, 0], 400: [150, 0, 0] };
-const STEADY_A: Hpy = [2000, 0, 0];
-const START_TARGETS: Record<number, Hpy> = {
-  100: [2000, 0, 0],
-  200: [2020, 0, 0],
-  300: [2040, 0, 0],
-  400: [2060, 0, 0],
-};
-
 describe("calculateNearestEntry", () => {
-  it.each([
-    [true, false],
-    [false, false],
-    [true, true],
-  ])("starts forward from frame 0 (forced=%s, nearest=%s)", (forced, nearest) => {
-    const result = run({ trajectory_run: forced, nearest_start: nearest, reverse: false });
+  it("starts forward from frame 0 when nearest is off", () => {
+    const result = run({ trajectory_run: true, nearest_start: false, reverse: false });
     expect(result.selected_curve_time_ms).toBe(0);
-    expect(result.prepare_time_ms).toBeCloseTo(208.33333333333331, 9);
-    expect(result.prepare_time_ms_ceil).toBe(209);
+    expect(result.prepare_time_ms).toBeCloseTo(2741.666666666667, 9);
+    expect(result.prepare_time_ms_ceil).toBe(2742);
     expect(result.motor_limit_scale).toBe(1);
-    expect(result.start_mode).toBe(nearest ? "nearest" : "action_boundary");
-    for (const deviceId of [100, 200, 300, 400]) {
-      const device = deviceOf(result, deviceId);
-      expectHpy(device.velocity_HPY, STEADY[deviceId]!);
-      expectHpy(device.acceleration_HPY, STEADY_A);
-      expectHpy(device.target_HPY, START_TARGETS[deviceId]!);
-    }
+    expect(result.start_mode).toBe("action_boundary");
+    expectHpy(deviceOf(result, 100).velocity_HPY, [150, 0, 0]);
+    expectHpy(deviceOf(result, 100).acceleration_HPY, [2000, 0, 0]);
+    expectHpy(deviceOf(result, 100).target_HPY, [2000, 0, 0]);
+    expectHpy(deviceOf(result, 400).velocity_HPY, [150, 2.9244984802431597, 2.9244984802431597]);
+    expectHpy(deviceOf(result, 400).target_HPY, [2060, 0, 0]);
   });
 
-  it.each([true, false])("slows every model by one motor factor from the last frame (forced=%s)", (forced) => {
-    const result = run({ trajectory_run: forced, nearest_start: false, reverse: true });
+  it("joins the last frame with the shared virtual-axis time", () => {
+    const result = run({ trajectory_run: true, nearest_start: false, reverse: true });
     expect(result.selected_curve_time_ms).toBe(8000);
-    expect(result.prepare_time_ms).toBeCloseTo(4292.321298981101, 8);
-    expect(result.prepare_time_ms_ceil).toBe(4293);
-    expect(result.motor_limit_scale).toBeCloseTo(0.9804329732567543, 12);
-    const h = 147.06494598851313;
-    const p = 2.7998835974494263;
-    const ah = 1922.4976300981589;
-    const ap = 435.51934218146346;
-    expectHpy(deviceOf(result, 100).velocity_HPY, [h, 0, 0]);
-    expectHpy(deviceOf(result, 200).velocity_HPY, [h, p, 0]);
-    expectHpy(deviceOf(result, 400).velocity_HPY, [h, p, p]);
-    expectHpy(deviceOf(result, 400).acceleration_HPY, [ah, ap, ap]);
-    // 强制取 min(A, D)，PLC D=A
-    expectHpy(deviceOf(result, 400).deceleration_HPY, [ah, ap, ap]);
-    expectHpy(deviceOf(result, 300).target_HPY, [2640, 12, 0]);
+    expect(result.prepare_time_ms).toBeCloseTo(4005.9999999999995, 8);
+    expect(result.prepare_time_ms_ceil).toBe(4006);
+    expect(result.motor_limit_scale).toBe(1);
+    expectHpy(deviceOf(result, 100).velocity_HPY, [52.73339990014978, 0, 0]);
+    expectHpy(deviceOf(result, 400).velocity_HPY, [52.73339990014978, 1.0029955067398904, 1.0029955067398904]);
+    expectHpy(deviceOf(result, 400).acceleration_HPY, [247.18324133592148, 55.888888141133876, 55.888888141133876]);
+    expectHpy(deviceOf(result, 400).deceleration_HPY, [247.18324133592148, 55.888888141133876, 55.888888141133876]);
+    expectHpy(deviceOf(result, 300).target_HPY, [2660, 12, 12]);
   });
 
-  it("takes the nearest original keyframe in the running direction when not forced", () => {
-    const result = run({ trajectory_run: false, nearest_start: true, reverse: false });
-    expect(result.selected_curve_time_ms).toBe(2000);
-    expect(result.prepare_time_ms).toBeCloseTo(874.9999999999999, 9);
-    expect(result.prepare_time_ms_ceil).toBe(875);
-    expectHpy(deviceOf(result, 200).velocity_HPY, [150, 2.306285714285715, 0]);
-    expectHpy(deviceOf(result, 400).acceleration_HPY, [2000, 295.4974331065761, 295.4974331065761]);
-    expectHpy(deviceOf(result, 400).target_HPY, [2160, 2, 2]);
-    expect(run({ trajectory_run: false, nearest_start: true, reverse: true }).selected_curve_time_ms).toBe(0);
+  it("rejects a non-forced request", () => {
+    expect(() => run({ trajectory_run: false, nearest_start: true, reverse: false })).toThrow(
+      "非强制就近请调用非强制就近接入",
+    );
   });
 
   it("builds one 1006 payload with the shared prepare time and per-device V/A", () => {
     const result = run({ trajectory_run: true, nearest_start: false, reverse: true });
     expect(result["1006_payloads"]).toHaveLength(1);
     const [payload] = result["1006_payloads"];
-    expect(payload).toMatchObject({ plc_id: "1", selectedCurveTimeMs: 8000, loopCount: 1, prepareTimeMs: 4293 });
+    expect(payload).toMatchObject({ plc_id: "1", selectedCurveTimeMs: 8000, loopCount: 1, prepareTimeMs: 4006 });
     expect(payload!.devices.map((device) => device.deviceID)).toEqual([100, 200, 300, 400]);
     expect(payload!.devices[0]!.execute_HPY).toEqual([true, false, false]);
   });
@@ -100,9 +75,9 @@ describe("calculateNearestEntry", () => {
     expect(result.loop_fallback.map((item) => [item.model_id, item.axis])).toEqual([
       [100, "H"],
       [101, "H"],
-      [101, "P"],
       [102, "H"],
       [102, "P"],
+      [102, "Y"],
       [103, "H"],
       [103, "P"],
       [103, "Y"],
@@ -117,10 +92,7 @@ describe("calculateNearestEntry", () => {
       specified_time_ms: 3000,
     });
     expect(specified.selected_curve_time_ms).toBe(3000);
-    expect(specified.prepare_time_ms).toBeCloseTo(1541.6666666666665, 9);
-    const stopped = run({ trajectory_run: false, nearest_start: true, stopped_time_ms: 3000 });
-    expect(stopped.selected_curve_time_ms).toBe(6000);
-    expect(stopped.prepare_time_ms).toBeCloseTo(3565.463207204749, 8);
+    expect(specified.prepare_time_ms).toBeCloseTo(1408.3333333333333, 9);
   });
 
   it("rejects a model that has not stopped", () => {
@@ -149,12 +121,11 @@ describe("calculateNearestEntry", () => {
 });
 
 /**
- * 两种选帧（python/新就近算法，2026-10-28）：期望值由该目录的就近接入计算.py 的 _calculate_nearest_entry_v4
- * 对同一份 算法参数.json 计算得到。示例当前位置在原曲线 5000ms 处，已停稳。
+ * 当前原段优先（python/强制就近算法）。示例停在 3500ms 所在段，最近可执行点在 3000ms。
  */
 describe("calculateNearestEntry frame selection (指定帧 / 从参考帧按方向就近)", () => {
   const current = JSON.parse(
-    readFileSync(path.resolve(__dirname, "../../../../python/新就近算法/算法参数.json"), "utf-8").replace(
+    readFileSync(path.resolve(__dirname, "../../../../python/强制就近算法/算法参数.json"), "utf-8").replace(
       /^\uFEFF/,
       "",
     ),
@@ -167,8 +138,8 @@ describe("calculateNearestEntry frame selection (指定帧 / 从参考帧按方�
 
   it("searches the whole original segment of the reference frame and joins at the nearest position", () => {
     const result = runCurrent({ trajectory_run: true, nearest_start: true, use_specified_time: false, stopped_time_ms: 3500 });
-    expect(result.selected_curve_time_ms).toBe(5000);
-    expect(result.prepare_time_ms).toBe(0);
+    expect(result.selected_curve_time_ms).toBe(3000);
+    expect(result.prepare_time_ms).toBeCloseTo(1408.3333333333333, 9);
     expect(result).toMatchObject({
       frame_selection_mode: "current_segment_first",
       reference_frame_ms: 3500,
@@ -178,27 +149,27 @@ describe("calculateNearestEntry frame selection (指定帧 / 从参考帧按方�
       selected_segment_range_ms: [2000, 6000],
       segment_search_phase: "current_segment",
     });
-    expect(deviceOf(result, 400).execute_HPY).toEqual([false, false, false]);
+    expect(deviceOf(result, 400).execute_HPY).toEqual([true, true, true]);
   });
 
   it("stays in the current segment even when another segment is nearer, and lets reverse join after the reference", () => {
     // 当前位置在 5000ms 处；参考 6500 所在原段是 [6000, 8000]，只在这段里找
     const current = runCurrent({ trajectory_run: true, nearest_start: true, reverse: true, stopped_time_ms: 6500 });
     expect(current.selected_curve_time_ms).toBe(6000);
-    expect(current.prepare_time_ms).toBeCloseTo(741.6666666666666, 9);
+    expect(current.prepare_time_ms).toBeCloseTo(3339.333333333333, 9);
     expect(current.selected_segment_range_ms).toEqual([6000, 8000]);
     // 反向也可以选在参考帧之后
     expect(
       runCurrent({ trajectory_run: true, nearest_start: true, reverse: true, stopped_time_ms: 3500 }).selected_curve_time_ms,
-    ).toBe(5000);
+    ).toBe(3000);
   });
 
   it("assigns a reference on a segment boundary to the right segment forward and the left one in reverse", () => {
     const forward = runCurrent({ trajectory_run: true, nearest_start: true, stopped_time_ms: 2000 });
-    expect(forward).toMatchObject({ selected_curve_time_ms: 5000, selected_segment_range_ms: [2000, 6000] });
+    expect(forward).toMatchObject({ selected_curve_time_ms: 3000, selected_segment_range_ms: [2000, 6000] });
     const reverse = runCurrent({ trajectory_run: true, nearest_start: true, reverse: true, stopped_time_ms: 2000 });
     expect(reverse).toMatchObject({ selected_curve_time_ms: 2000, selected_segment_range_ms: [0, 2000] });
-    expect(reverse.prepare_time_ms).toBeCloseTo(2108.2526606410656, 9);
+    expect(reverse.prepare_time_ms).toBeCloseTo(2075, 9);
   });
 
   it("falls back to the next segment in the running direction only when the whole current one cannot be prepared", () => {
@@ -215,7 +186,7 @@ describe("calculateNearestEntry frame selection (指定帧 / 从参考帧按方�
       loop_count: 1,
     });
     const result = calculateNearestEntry(parameters);
-    expect(result.selected_curve_time_ms).toBe(3400);
+    expect(result.selected_curve_time_ms).toBe(3000);
     expect(result.segment_search_phase).toBe("directional_fallback");
     expect(result.segment_search_attempts).toEqual([
       {
@@ -232,7 +203,7 @@ describe("calculateNearestEntry frame selection (指定帧 / 从参考帧按方�
 
   it("searches the whole action from the direction boundary without a reference frame", () => {
     const result = runCurrent({ trajectory_run: true, nearest_start: true, stopped_time_ms: null });
-    expect(result.selected_curve_time_ms).toBe(5000);
+    expect(result.selected_curve_time_ms).toBe(3000);
     expect(result).toMatchObject({ reference_frame_ms: null, search_origin_frame_ms: 0, search_range_ms: [0, 8000] });
   });
 
@@ -245,7 +216,7 @@ describe("calculateNearestEntry frame selection (指定帧 / 从参考帧按方�
         specified_time_ms: 3500,
       });
       expect(result.selected_curve_time_ms).toBe(3500);
-      expect(result.prepare_time_ms).toBe(1075);
+      expect(result.prepare_time_ms).toBeCloseTo(1672.6666666666665, 9);
       expect(result.frame_selection_mode).toBe("specified_frame");
       expect(result.search_range_ms).toEqual([3500, 3500]);
     }
@@ -257,17 +228,10 @@ describe("calculateNearestEntry frame selection (指定帧 / 从参考帧按方�
     );
   });
 
-  it("takes the next keyframe after the reference frame when not forced", () => {
-    const result = runCurrent({ trajectory_run: false, nearest_start: true, stopped_time_ms: 3500 });
-    expect(result.selected_curve_time_ms).toBe(6000);
-    expect(result.prepare_time_ms).toBeCloseTo(741.6666666666666, 9);
-    expect(result).toMatchObject({ frame_selection_mode: "directional_nearest", search_range_ms: [6000, 8000] });
-  });
 });
 
 /**
- * 往返曲线同一位置有两个时刻（python/新就近算法 接入说明第 7 节的例子，两段线性插值）：
- * 期望值由 _calculate_nearest_entry_v4 计算得到。
+ * 往返曲线同一位置有两个时刻（两段线性插值）。选帧规则与强制包一致。
  */
 describe("calculateNearestEntry on a round trip that repeats a position", () => {
   const roundTrip = (

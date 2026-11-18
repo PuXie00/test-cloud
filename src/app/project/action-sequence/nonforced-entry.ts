@@ -578,7 +578,7 @@ const commandOf = (parameters: Json): Command => {
   const command = parameters.command;
   if (!isRecord(command)) throw new InvalidInput("缺少command");
   if (command.trajectory_run === true) {
-    throw new InvalidInput("强制轨迹请用 新就近算法/就近接入计算.py；本算法只处理非强制（trajectory_run=false）");
+    throw new InvalidInput("强制轨迹请用 强制就近算法/就近接入计算.py；本算法只处理非强制（trajectory_run=false）");
   }
   const reverse = "reverse" in command ? command.reverse : false;
   const nearest = "nearest_start" in command ? command.nearest_start : true;

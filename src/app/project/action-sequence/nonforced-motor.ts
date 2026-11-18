@@ -1065,4 +1065,393 @@ export const verifyMotorPlan = (
   return result;
 };
 
-void pythonSum;
+/**
+ * 强制准备的实轴速度上界，对应 python/强制就近算法/就近接入计算.py
+ * 的 _prepare_motor_speed_bound 与方向域检查。几何区间与非强制核对共用。
+ */
+export type ForcedPrepareMotorInput = {
+  /** 几何类型：1 单点/多级升降，8 普通多点，9 XY 多点 */
+  kind: 1 | 8 | 9;
+  motorNum: number;
+  modelId: number;
+  geometry: MotorGeometry | null;
+  current: readonly number[];
+  target: readonly number[];
+  velocity: readonly number[];
+  acceleration: readonly number[];
+  deceleration: readonly number[];
+  totalTime: number;
+};
+
+const copySign = (magnitude: number, signSource: number): number =>
+  signSource < 0 || Object.is(signSource, -0) ? -Math.abs(magnitude) : Math.abs(magnitude);
+
+const radialDistance = (geometry: MotorGeometry, beta: number): number => {
+  const sine = Math.sin(beta);
+  const cosine = Math.cos(beta);
+  let minimum = Number.POSITIVE_INFINITY;
+  for (const edge of geometry.edges) {
+    const dx = (edge.dx.lo + edge.dx.hi) / 2;
+    const dy = (edge.dy.lo + edge.dy.hi) / 2;
+    const denominator = sine * dy - cosine * dx;
+    if (Math.abs(denominator) <= 1e-12) continue;
+    const radius = (edge.x * dy - edge.y * dx) / denominator;
+    const fraction = (edge.x * cosine - edge.y * sine) / denominator;
+    if (radius > 0 && -1e-12 <= fraction && fraction <= 1 + 1e-12) minimum = Math.min(minimum, radius);
+  }
+  if (!Number.isFinite(minimum)) throw new Error("当前倾斜方向无法求得有效凸包边距，请检查吊点与原点");
+  return minimum;
+};
+
+const ordinaryForwardPosition = (
+  height: number,
+  argXDeg: number,
+  argYDeg: number,
+  geometry: MotorGeometry,
+): number[] => {
+  const beta = -((argYDeg + geometry.beta) * Math.PI) / 180;
+  const angle = -(argXDeg * Math.PI) / 180;
+  const cb = Math.cos(beta);
+  const sb = Math.sin(beta);
+  const ca = Math.cos(angle);
+  const sa = Math.sin(angle);
+  const vertical = geometry.base1 > 0 ? height + geometry.base1 : geometry.base2 + geometry.maxHeight - height;
+  let offset = 0;
+  if (angle !== 0) {
+    const radius = radialDistance(geometry, beta);
+    const power = Math.min(100, 1.73 + (0.52 * vertical) / radius);
+    offset = copySign(Math.min(radius, radius * (Math.abs(angle) / 1.5707963) ** power), angle);
+  }
+  return geometry.points.map(([x, y]) => {
+    const x1 = cb * x - sb * y;
+    const y1 = sb * x + cb * y;
+    const rx = cb * x1 + sb * ca * y1 - x + sb * offset;
+    const ry = -sb * x1 + cb * ca * y1 - y + cb * offset;
+    const rz = sa * y1 - vertical;
+    const length = Math.sqrt(rx * rx + ry * ry + rz * rz);
+    return geometry.base1 > 0 ? length - geometry.base1 : geometry.base2 + geometry.maxHeight - length;
+  });
+};
+
+/** _xy_point_motion 在零速度下的第一组绳长，只用于端点正解是否有限 */
+const xyRopeLengths = (pose: readonly number[], geometry: MotorGeometry): number[] => {
+  if (geometry.beta !== 0) throw new Error("XY多点摆betainit必须为0");
+  const height = pose[0]!;
+  const angleX = pose[1]!;
+  const angleY = pose[2]!;
+  if (Math.abs(angleX) >= 90 || Math.abs(angleY) >= 90) throw new Error("XY多点摆X/Y角须在(-90,90)内");
+  const radians = Math.PI / 180;
+  const pitch = -angleX * radians;
+  const roll = -angleY * radians;
+  const sp = Math.sin(pitch);
+  const cp = Math.cos(pitch);
+  const sr = Math.sin(roll);
+  const cr = Math.cos(roll);
+  const tilt = Math.acos(Math.max(-1, Math.min(1, cp * cr)));
+  const vertical = geometry.base1 > 0 ? height + geometry.base1 : geometry.base2 + geometry.maxHeight - height;
+  let offsetX = 0;
+  let offsetY = 0;
+  if (tilt > 1e-8) {
+    let beta = Math.acos(Math.max(-1, Math.min(1, sp / Math.sin(tilt))));
+    if (-sr * cp < 0) beta = -beta;
+    const dx = Math.sin(beta);
+    const dy = Math.cos(beta);
+    const [radius] = xyRadiusCandidates(dx, dy, 0, geometry)[0]!;
+    const power = Math.min(100, 1.73 + 0.52 * (vertical / radius));
+    const ratio = tilt / 1.5707963;
+    const weight = ratio ** power;
+    const offset = weight >= 1 ? radius : radius * weight;
+    offsetX = dx * offset;
+    offsetY = dy * offset;
+  }
+  return geometry.points.map(([x, y, z]) => {
+    const y1 = cp * y - sp * z;
+    const z1 = sp * y + cp * z;
+    const relative = [cr * x + sr * z1 - x + offsetX, y1 - y + offsetY, -sr * x + cr * z1 - z - vertical];
+    const length = Math.sqrt(pythonSum(relative.map((value) => value * value)));
+    return geometry.base1 > 0 ? length - geometry.base1 : geometry.base2 + geometry.maxHeight - length;
+  });
+};
+
+const prepareMotorPositions = (pose: readonly number[], geometry: MotorGeometry, xy: boolean): number[] =>
+  xy ? xyRopeLengths(pose, geometry) : ordinaryForwardPosition(pose[0]!, pose[1]!, pose[2]!, geometry);
+
+const prepareAxisPosition = (
+  start: number,
+  finish: number,
+  velocity: number,
+  acceleration: number,
+  deceleration: number,
+  timeS: number,
+): number => {
+  const distance = Math.abs(finish - start);
+  if (distance === 0) return start;
+  const accelerateS = velocity / acceleration;
+  const decelerateS = velocity / deceleration;
+  const cruiseS = Math.max(0, distance / velocity - (accelerateS + decelerateS) / 2);
+  const totalS = accelerateS + cruiseS + decelerateS;
+  const clamped = Math.min(totalS, Math.max(0, timeS));
+  const travelled =
+    clamped < accelerateS
+      ? (acceleration * clamped * clamped) / 2
+      : clamped < accelerateS + cruiseS
+        ? velocity * (clamped - accelerateS / 2)
+        : distance - (deceleration * (totalS - clamped) ** 2) / 2;
+  return start + copySign(Math.min(distance, Math.max(0, travelled)), finish - start);
+};
+
+const prepareMotorSpeedBound = (
+  current: readonly number[],
+  target: readonly number[],
+  velocity: readonly number[],
+  acceleration: readonly number[],
+  deceleration: readonly number[],
+  totalTime: number,
+  geometry: MotorGeometry,
+  xy: boolean,
+): number => {
+  const speed = [0, 1, 2].map((axis) => {
+    const peak = velocity[axis]!;
+    return target[axis]! > current[axis]! ? I(0, peak) : I(-peak, 0);
+  });
+  const upperOf = xy ? xyMotorSpeedUpper : multiPointMotorSpeedUpper;
+  const instantaneousOf = xy ? xyInstantaneousSpeed : multiPointInstantaneousSpeed;
+  const signed = [0, 1, 2].map((axis) =>
+    target[axis] === current[axis] ? 0 : copySign(velocity[axis]!, target[axis]! - current[axis]!),
+  );
+  const pending: Array<[number, number, number]> = [[0, totalTime, 0]];
+  let maximum = 0;
+  while (pending.length > 0) {
+    const [left, right, depth] = pending.pop()!;
+    const box = [0, 1, 2].map((axis) => {
+      const values = [left, right].map((timeS) =>
+        prepareAxisPosition(current[axis]!, target[axis]!, velocity[axis]!, acceleration[axis]!, deceleration[axis]!, timeS),
+      );
+      return I(Math.min(...values), Math.max(...values));
+    });
+    const bound = upperOf(box, speed, geometry);
+    if (Number.isFinite(bound) && depth < 4) {
+      const middlePosition = [0, 1, 2].map((axis) =>
+        prepareAxisPosition(
+          current[axis]!,
+          target[axis]!,
+          velocity[axis]!,
+          acceleration[axis]!,
+          deceleration[axis]!,
+          (left + right) / 2,
+        ),
+      );
+      const estimate = instantaneousOf(middlePosition, signed, geometry);
+      if (bound > 4 * Math.max(estimate, 1e-6)) {
+        const middle = (left + right) / 2;
+        pending.push([left, middle, depth + 1], [middle, right, depth + 1]);
+        continue;
+      }
+    }
+    if (Number.isFinite(bound)) maximum = Math.max(maximum, bound);
+    else if (depth < 16) {
+      const middle = (left + right) / 2;
+      pending.push([left, middle, depth + 1], [middle, right, depth + 1]);
+    } else {
+      throw new Error("准备路径无法得到有限的实轴速度上界，请检查几何与姿态");
+    }
+  }
+  return maximum;
+};
+
+type DirectionProfile = {
+  start: number;
+  finish: number;
+  sign: number;
+  peak: number;
+  acceleration: number;
+  deceleration: number;
+  accelerateS: number;
+  decelerateAt: number;
+  end: number;
+};
+
+const prepareDirectionProfile = (
+  start: number,
+  finish: number,
+  velocity: number,
+  acceleration: number,
+  deceleration: number,
+): DirectionProfile => {
+  const distance = Math.abs(finish - start);
+  if (distance === 0) {
+    return { start, finish, sign: 0, peak: 0, acceleration: 0, deceleration: 0, accelerateS: 0, decelerateAt: 0, end: 0 };
+  }
+  if (Math.min(velocity, acceleration, deceleration) <= 0) {
+    throw new Error("有位移的准备轴须使用正速度与正加减速度");
+  }
+  const peak = Math.min(
+    velocity,
+    Math.sqrt((2 * acceleration * deceleration * distance) / (acceleration + deceleration)),
+  );
+  const accelerateS = peak / acceleration;
+  const decelerateS = peak / deceleration;
+  const cruiseS = Math.max(0, distance / peak - (accelerateS + decelerateS) / 2);
+  return {
+    start,
+    finish,
+    sign: copySign(1, finish - start),
+    peak,
+    acceleration,
+    deceleration,
+    accelerateS,
+    decelerateAt: accelerateS + cruiseS,
+    end: accelerateS + cruiseS + decelerateS,
+  };
+};
+
+const prepareDirectionPosition = (profile: DirectionProfile, timeS: number): number => {
+  if (timeS >= profile.end) return profile.finish;
+  const clamped = Math.max(0, timeS);
+  const travelled =
+    clamped < profile.accelerateS
+      ? (profile.acceleration * clamped * clamped) / 2
+      : clamped < profile.decelerateAt
+        ? profile.peak * (clamped - profile.accelerateS / 2)
+        : Math.abs(profile.finish - profile.start) - (profile.deceleration * (profile.end - clamped) ** 2) / 2;
+  return profile.start + profile.sign * Math.min(Math.abs(profile.finish - profile.start), Math.max(0, travelled));
+};
+
+const checkPrepareDirectionDomain = (
+  current: readonly number[],
+  target: readonly number[],
+  velocity: readonly number[],
+  acceleration: readonly number[],
+  deceleration: readonly number[],
+  totalTime: number,
+  geometry: MotorGeometry,
+  xy: boolean,
+): void => {
+  if (!xy && current[1] === 0 && target[1] === 0) return;
+  const domain = prepareDirectionDomain(geometry);
+  if (domain === null) return;
+  const [left, right] = domain;
+  if (!xy) {
+    const values = [current, target].map((position) => -((position[2]! + geometry.beta) * Math.PI) / 180);
+    const start = Math.min(...values);
+    const finish = Math.max(...values);
+    const shift = Math.floor((start - left) / TAU);
+    const inside = [shift - 1, shift, shift + 1].some(
+      (turn) => start >= left + turn * TAU - 1e-12 && finish <= right + turn * TAU + 1e-12,
+    );
+    if (!inside) throw new Error("普通多点摆准备路径中存在无法求得凸包边距的倾斜方向");
+    return;
+  }
+  if ([current, target].some((position) => Math.abs(position[1]!) >= 90 || Math.abs(position[2]!) >= 90)) {
+    throw new Error("XY多点摆X/Y角须在(-90,90)内");
+  }
+  const sineLeft = I(left).trig();
+  const cosineLeft = I(left).trig(true);
+  const sineRight = I(right).trig();
+  const cosineRight = I(right).trig(true);
+  const profiles = [1, 2].map((axis) =>
+    prepareDirectionProfile(current[axis]!, target[axis]!, velocity[axis]!, acceleration[axis]!, deceleration[axis]!),
+  );
+  const end = Math.max(totalTime, ...profiles.map((profile) => profile.end));
+  const marks = new Set<number>([0, end]);
+  for (const profile of profiles) {
+    for (const timeS of [profile.accelerateS, profile.decelerateAt, profile.end]) {
+      if (timeS > 0 && timeS < end) marks.add(timeS);
+    }
+  }
+  const times = [...marks].sort((leftTime, rightTime) => leftTime - rightTime);
+  const pending: Array<[number, number, number]> =
+    end > 0 ? times.slice(0, -1).map((start, index) => [start, times[index + 1]!, 0]) : [[0, 0, 0]];
+  while (pending.length > 0) {
+    const [start, finish, depth] = pending.pop()!;
+    const samples = profiles.map((profile) => [start, finish].map((timeS) => prepareDirectionPosition(profile, timeS)));
+    const maxAngles = samples.map((row) => (Math.max(...row.map((value) => Math.abs(value))) * Math.PI) / 180);
+    if (Math.acos(Math.min(1, Math.cos(maxAngles[0]!) * Math.cos(maxAngles[1]!))) <= 1e-8) continue;
+    const pitch = I(Math.min(...samples[0]!), Math.max(...samples[0]!))
+      .neg()
+      .mul(Math.PI / 180);
+    const roll = I(Math.min(...samples[1]!), Math.max(...samples[1]!))
+      .neg()
+      .mul(Math.PI / 180);
+    const nx = roll.neg().trig().mul(pitch.trig(true));
+    const ny = pitch.trig();
+    const tolerance = 1e-12 * Math.hypot(nx.maxAbs(), ny.maxAbs());
+    const crossLeft = sineLeft.mul(ny).sub(cosineLeft.mul(nx));
+    const crossRight = nx.mul(cosineRight).sub(ny.mul(sineRight));
+    if (crossLeft.hi <= tolerance && crossRight.hi <= tolerance) continue;
+    const middle = (start + finish) / 2;
+    for (const timeS of [start, middle, finish]) {
+      const samplePitch = -(prepareDirectionPosition(profiles[0]!, timeS) * Math.PI) / 180;
+      const sampleRoll = -(prepareDirectionPosition(profiles[1]!, timeS) * Math.PI) / 180;
+      if (Math.acos(Math.max(-1, Math.min(1, Math.cos(samplePitch) * Math.cos(sampleRoll)))) <= 1e-8) continue;
+      const sampleNx = -Math.sin(sampleRoll) * Math.cos(samplePitch);
+      const sampleNy = Math.sin(samplePitch);
+      const sampleTolerance = 1e-12 * Math.hypot(sampleNx, sampleNy);
+      if (
+        Math.sin(left) * sampleNy - Math.cos(left) * sampleNx > sampleTolerance ||
+        sampleNx * Math.cos(right) - sampleNy * Math.sin(right) > sampleTolerance
+      ) {
+        throw new Error("XY多点摆准备路径中存在无法求得凸包边距的倾斜方向");
+      }
+    }
+    if (depth >= 32 || middle === start || middle === finish) {
+      throw new Error("XY多点摆准备方向接近凸包边界，无法可靠包围整段运动");
+    }
+    pending.push([start, middle, depth + 1], [middle, finish, depth + 1]);
+  }
+};
+
+export const forcedPrepareMotorBound = (input: ForcedPrepareMotorInput): number => {
+  const { kind, motorNum, modelId, current, target } = input;
+  if (kind === 1) {
+    const endpoints = [current, target].map((pose) => Array.from({ length: motorNum }, () => pose[0]!));
+    if (endpoints.some((values) => values.length !== motorNum || values.some((value) => !Number.isFinite(value)))) {
+      throw new Error(`模型${modelId}端点正解未返回有效电机位置`);
+    }
+    const bound = input.velocity[0]!;
+    if (!Number.isFinite(bound) || bound < 0) throw new Error(`模型${modelId}的电机速度上界无效`);
+    return bound;
+  }
+  const geometry = input.geometry;
+  if (!geometry) throw new Error(`模型${modelId}的几何参数缺失或非有限`);
+  const xy = kind === 9;
+  const effective = [current, target].map((pose) =>
+    geometry.base1 > 0 ? pose[0]! + geometry.base1 : geometry.base2 + geometry.maxHeight - pose[0]!,
+  );
+  if (Math.min(...effective) < 0) throw new Error(`模型${modelId}准备路径的有效高度不能为负`);
+  const tiltAxes = xy ? [1, 2] : [1];
+  if (tiltAxes.some((axis) => [current, target].some((pose) => Math.abs(pose[axis]!) >= 90))) {
+    throw new Error(`模型${modelId}准备倾角须在(-90,90)内`);
+  }
+  const endpoints = [current, target].map((pose) => prepareMotorPositions(pose, geometry, xy));
+  if (endpoints.some((values) => values.length !== motorNum || values.some((value) => !Number.isFinite(value)))) {
+    throw new Error(`模型${modelId}端点正解未返回有效电机位置`);
+  }
+  checkPrepareDirectionDomain(
+    current,
+    target,
+    input.velocity,
+    input.acceleration,
+    input.deceleration,
+    input.totalTime,
+    geometry,
+    xy,
+  );
+  const bound = tiltAxes.every((axis) => current[axis] === 0 && target[axis] === 0)
+    ? input.velocity[0]!
+    : prepareMotorSpeedBound(
+        current,
+        target,
+        input.velocity,
+        input.acceleration,
+        input.deceleration,
+        input.totalTime,
+        geometry,
+        xy,
+      );
+  if (!Number.isFinite(bound) || bound < 0) throw new Error(`模型${modelId}的电机速度上界无效`);
+  return bound;
+};
+
+/** 归一化时建立 7/9 几何；modelType 为业务编号，XY 必须 betainit 为 0 */
+export const prepareEntryGeometry = (model: Record<string, unknown>): MotorGeometry => prepareMultiPointGeometry(model);
