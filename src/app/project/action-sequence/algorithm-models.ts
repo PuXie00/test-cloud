@@ -361,7 +361,14 @@ export const buildAlgorithmModels = (source: AlgorithmModelSource): AlgorithmMod
     if (modelType === 7) {
       model.BaseHight1 = base1;
       model.BaseHight2 = base2;
+      model.Baseheight1 = base1;
+      model.Baseheight2 = base2;
       model.maxheight = maxHeightFor(object);
+      model.betainit = 0;
+      model.point_init_pos = object.driveAxes.map((axis) => {
+        const mount = mountOf(axis);
+        return [mount.x, mount.z, 0];
+      });
       const [length, width] = fourPointSpans(object);
       model.lLenth_inside = length;
       model.wLenth_inside = width;

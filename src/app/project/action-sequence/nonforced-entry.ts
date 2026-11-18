@@ -11,9 +11,12 @@ import {
   type CoefficientName,
 } from "./algorithm-params";
 import { runMoveCommands, type AxisMoveCommand, type AxisMoveRun } from "./move-commands";
+import { configureMotorGeometry, verifyMotorPlan } from "./nonforced-motor";
 
 /**
  * 非强制就近接入：python/非强制就近接入.py 的逐函数移植（入口 calculate_nonforced_entry）。
+ * 版本 nonforced_single_move_four_models_skip_limit_20261118：单 Move 准备通过后，再按
+ * 单点 / 多级升降 / 多点摆 / XY 多点倾斜核对真实电机速度。
  *
  * 每台设备 H/P/Y 各一条准备 Move，GO 时一起下发（一条三轴准备 Move），接入帧时位置和有符号速度
  * 都与帧表回放一致，之后照原帧表运行。帧表从 models 的曲线系数按 move-commands 的规则还原。
@@ -23,7 +26,7 @@ import { runMoveCommands, type AxisMoveCommand, type AxisMoveRun } from "./move-
  * （pythonRound、pythonSum、pythonRoundInt）。Python 改了就照 diff 改这里，再跑 nonforced-entry.spec 对数。
  */
 
-export const NONFORCED_ALGORITHM_VERSION = "nonforced_single_move_join_20261110_fast_5s_skip_limit";
+export const NONFORCED_ALGORITHM_VERSION = "nonforced_single_move_four_models_skip_limit_20261118";
 
 type AxisIndex = 0 | 1 | 2;
 
@@ -735,6 +738,15 @@ class Device {
   readonly commands: AxisMoveCommand[][];
   readonly tracks: AxisTrack[] = [];
   readonly moves: boolean;
+  motorType: number | null = null;
+  motorLimit = 0;
+  motorGeometry: import("./nonforced-motor").MotorGeometry | null = null;
+  motorDomain: [number, number] | null = null;
+  motorGeometrySignature: unknown = null;
+  motorBoxCache?: Map<string, number>;
+  motorReferenceSignature?: string;
+  motorMotionCertificates?: Map<string, true>;
+  motorSharedBoxCache?: Map<string, number>;
   readonly tableLimitU: number[] = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
   readonly tableLimitReasons: (string | null)[] = [null, null, null];
   // 搜索过程中的启发式状态（Python 挂在 devices[0] / device 上的同名属性）
@@ -823,6 +835,7 @@ class Device {
       this.tracks.push(track);
     }
     this.moves = AXES.some((axis) => this.active[axis] && this.tracks[axis]!.sends.length > 0);
+    configureMotorGeometry(this, model, settings.entry_quantize_protocol);
     // 帧表能力预检：接入后要执行的原表Move超能力/超行程时，与准备方式无关，verify 必然失败。
     // 记下每轴最后一条这样的Move（运行时刻），在它之前或同时的接入点直接判不可行。
     this.tracks.forEach((track, axis) => {
@@ -965,7 +978,9 @@ const axisRequest = (device: Device, index: AxisIndex, u0: number, settings: Set
   if (Math.min(V, A, D) <= 0) throw new EntryInfeasible([`${label}需要运动，但可编码最大V/A/D为0`]);
   if (
     command !== null &&
-    (command.vel > V + 1e-8 || command.accVel > A + 1e-8 || command.decVel > D + 1e-8)
+    (command.vel > device.repositionVelocity[index]! + 1e-8 ||
+      command.accVel > device.repositionAcceleration[index]! + 1e-8 ||
+      command.decVel > device.repositionDeceleration[index]! + 1e-8)
   ) {
     throw new EntryInfeasible([`${label}原Move超过真实最大V/A/D，不能用默认值代替最大能力`]);
   }
@@ -1060,7 +1075,7 @@ function* candidateMoves(request: AxisRequest, seconds: number, settings: Settin
     return;
   }
   if (family === "acceleration") {
-    yield { ...request.command! };
+    yield { ...request.command!, vel: Math.min(request.command!.vel, V) };
     return;
   }
   if (seconds <= 0) return;
@@ -1188,7 +1203,14 @@ type Entry = {
   certificate?: [string, VerifyResult];
 };
 
-type Plan = { u0: number; lead_ms: number; entries: [Device, Entry][]; clock_start_u: number };
+type Plan = {
+  u0: number;
+  lead_ms: number;
+  entries: [Device, Entry][];
+  clock_start_u: number;
+  motorTimeHintScale?: number;
+  motorVerificationCertificate?: [string, [boolean, string]];
+};
 
 const entryForTime = (request: AxisRequest, seconds: number, u0: number, settings: Settings): Entry | null => {
   const { device, index, family } = request;
@@ -1287,8 +1309,49 @@ const planAt = (devices: readonly Device[], u0: number, settings: Settings, requ
   const slots = new Map(all.map((request, slot) => [slotKey(request), slot]));
   const preferred = priority.filter((key) => slots.has(key)).map((key) => slots.get(key)!);
   const order = [...preferred, ...all.map((_, slot) => slot).filter((slot) => !preferred.includes(slot))];
-  const candidates = [...times].filter((t) => lower - 1e-9 <= t && t <= upper + 1e-9).sort((left, right) => left - right);
-  for (const seconds of candidates) {
+  let motorReason: string | null = null;
+  let motorTimesExpanded = false;
+  const heap: number[] = [];
+  const siftUp = (index: number) => {
+    while (index > 0) {
+      const parent = (index - 1) >> 1;
+      if (heap[parent]! <= heap[index]!) break;
+      [heap[parent], heap[index]] = [heap[index]!, heap[parent]!];
+      index = parent;
+    }
+  };
+  const siftDown = (index: number) => {
+    for (;;) {
+      const left = index * 2 + 1;
+      const right = left + 1;
+      let smallest = index;
+      if (left < heap.length && heap[left]! < heap[smallest]!) smallest = left;
+      if (right < heap.length && heap[right]! < heap[smallest]!) smallest = right;
+      if (smallest === index) break;
+      [heap[smallest], heap[index]] = [heap[index]!, heap[smallest]!];
+      index = smallest;
+    }
+  };
+  const push = (value: number) => {
+    heap.push(value);
+    siftUp(heap.length - 1);
+  };
+  const pop = () => {
+    const top = heap[0]!;
+    const last = heap.pop()!;
+    if (heap.length > 0) {
+      heap[0] = last;
+      siftDown(0);
+    }
+    return top;
+  };
+  for (const value of times) {
+    if (lower - 1e-9 <= value && value <= upper + 1e-9) push(value);
+  }
+  const timeTick = 10 ** -settings.entry_send_time_decimals / 1000;
+  const scheduled = new Set(heap.map((value) => pythonRoundInt(value / timeTick)));
+  while (heap.length > 0) {
+    const seconds = pop();
     checkDeadline();
     const entries: ([Device, Entry] | null)[] = all.map(() => null);
     let failed = false;
@@ -1314,9 +1377,28 @@ const planAt = (devices: readonly Device[], u0: number, settings: Settings, requ
       { u0, lead_ms: seconds * 1000, entries: entries as [Device, Entry][], clock_start_u: 0 },
       settings,
     );
-    if (verify(plan, settings).passed) return plan;
+    if (!verify(plan, settings).passed) continue;
+    const [motorOk, reason] = verifyMotorPlan(plan, AxisTrack, checkDeadline);
+    if (motorOk) return plan;
+    motorReason = reason;
+    const extra: number[] = [];
+    if (!motorTimesExpanded && Number.isFinite(upper)) {
+      for (let k = 1; k < 64; k += 1) extra.push(lower + ((upper - lower) * k) / 64);
+      motorTimesExpanded = true;
+    }
+    if (plan.motorTimeHintScale !== undefined) {
+      const hint = Math.min(upper, Math.max(lower, seconds * plan.motorTimeHintScale));
+      extra.push(hint - timeTick, hint, hint + timeTick);
+    }
+    for (const value of extra) {
+      const key = pythonRoundInt(value / timeTick);
+      if (lower - 1e-9 <= value && value <= upper + 1e-9 && !scheduled.has(key)) {
+        scheduled.add(key);
+        push(value);
+      }
+    }
   }
-  throw new EntryInfeasible(["该帧无可编码的同时起步单Move自然接续方案"]);
+  throw new EntryInfeasible([motorReason ?? "该帧无可编码的同时起步单Move自然接续方案"]);
 };
 
 // ---------------------------------------------------------------------------
@@ -2258,7 +2340,25 @@ const calculate = (parameters: unknown): NonforcedEntryResult => {
       return infeasible(reverse, mode, reference, message, attempts, reasons);
     }
   }
-  return planned(devices, plan, reverse, settings, mode, reference, clamped, referenceWindow, selectedWindow, attempts, evaluated, toCurve);
+  try {
+    return planned(
+      devices,
+      plan,
+      reverse,
+      settings,
+      mode,
+      reference,
+      clamped,
+      referenceWindow,
+      selectedWindow,
+      attempts,
+      evaluated,
+      toCurve,
+    );
+  } catch (error) {
+    if (!(error instanceof EntryInfeasible)) throw error;
+    return infeasible(reverse, mode, reference, `最终下发时序实轴校验失败：${error.message}`, attempts, error.reasons);
+  }
 };
 
 const route = (device: Device) => ({ plc_id: device.plcId, model_id: device.modelId, device_id: device.deviceId });
@@ -2288,6 +2388,8 @@ const planned = (
     }
   }
   const verification = verify(plan, settings);
+  const [motorOk, motorReason] = verifyMotorPlan(plan, AxisTrack, checkDeadline);
+  if (!motorOk) throw new EntryInfeasible([motorReason]);
   const entryMoves: NonforcedEntryMove[] = [];
   const byDevice = new Map<Device, Entry[]>();
   for (const [device, entry] of plan.entries) {

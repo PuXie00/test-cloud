@@ -19,7 +19,7 @@ from time import perf_counter as _clock
 from pathlib import Path
 from collections import OrderedDict
 
-ALGORITHM_VERSION = "nonforced_single_move_join_20261110_fast_5s_skip_limit"
+ALGORITHM_VERSION = "nonforced_single_move_four_models_skip_limit_20261118"
 AXIS_NAMES = ("H", "P", "Y")
 COEFFICIENT_NAMES = ("a", "b", "c", "d", "e", "f")
 _EPS = 1e-9
@@ -780,6 +780,902 @@ def _compiled_curve(pieces, unit, direction, run_origin, loop, settings):
     return all_commands,all_tracks
 
 
+class _SpeedInterval:
+    """内部双精度区间：每次运算向外扩一格，避免把计算范围向内舍入。"""
+    __slots__ = ("lo", "hi")
+
+    def __init__(self, lo, hi=None):
+        self.lo = float(lo)
+        self.hi = self.lo if hi is None else float(hi)
+
+    @staticmethod
+    def outward(lo, hi):
+        return _SpeedInterval(math.nextafter(lo, -math.inf), math.nextafter(hi, math.inf))
+
+    def __add__(self, other):
+        if not isinstance(other, _SpeedInterval):
+            other = _SpeedInterval(other)
+        if self.lo == self.hi == 0:
+            return other
+        if other.lo == other.hi == 0:
+            return self
+        return self.outward(self.lo + other.lo, self.hi + other.hi)
+
+    __radd__ = __add__
+
+    def __neg__(self):
+        return _SpeedInterval(-self.hi, -self.lo)
+
+    def __sub__(self, other):
+        return self + (-other if isinstance(other, _SpeedInterval) else -float(other))
+
+    def __mul__(self, other):
+        if not isinstance(other, _SpeedInterval):
+            other = _SpeedInterval(other)
+        if self.lo == self.hi == 0 or other.lo == other.hi == 0:
+            return _SpeedInterval(0)
+        values = (self.lo*other.lo, self.lo*other.hi, self.hi*other.lo, self.hi*other.hi)
+        return self.outward(min(values), max(values))
+
+    __rmul__ = __mul__
+
+    def __truediv__(self, other):
+        if not isinstance(other, _SpeedInterval):
+            other = _SpeedInterval(other)
+        if other.lo <= 0 <= other.hi:
+            raise ValueError("速度上界的区间除数包含0")
+        if self.lo == self.hi == 0:
+            return _SpeedInterval(0)
+        # 直接相除，避免先取倒数时小尺寸溢出；也减少中间区间对象。
+        values = (self.lo/other.lo, self.lo/other.hi, self.hi/other.lo, self.hi/other.hi)
+        return self.outward(min(values), max(values))
+
+    def square(self):
+        lower = 0.0 if self.lo <= 0 <= self.hi else min(self.lo*self.lo, self.hi*self.hi)
+        upper = max(self.lo*self.lo, self.hi*self.hi)
+        result = self.outward(lower, upper)
+        result.lo = max(0.0, result.lo)
+        return result
+
+    def sqrt(self):
+        result = self.outward(math.sqrt(max(0.0, self.lo)), math.sqrt(max(0.0, self.hi)))
+        result.lo = max(0.0, result.lo)
+        return result
+
+    def max_abs(self):
+        return max(abs(self.lo), abs(self.hi))
+
+    def trig(self, cosine=False):
+        # 扫描端点和区间内的三角函数极值；大角度直接用[-1,1]保守包围。
+        if self.hi-self.lo >= 2*math.pi or max(abs(self.lo), abs(self.hi)) > 1e6:
+            return _SpeedInterval(-1, 1)
+        function = math.cos if cosine else math.sin
+        values = [function(self.lo), function(self.hi)]
+        first = math.floor(self.lo/(math.pi/2))-1
+        last = math.ceil(self.hi/(math.pi/2))+1
+        pi_range = _SpeedInterval(math.pi)
+        # 对libm三角函数端点和pi常量外扩8 ulp；这是本平台数值包围策略。
+        for _ in range(8):
+            pi_range = pi_range.outward(pi_range.lo, pi_range.hi)
+        for k in range(first, last+1):
+            critical = pi_range * (k/2)
+            if critical.lo <= self.hi and critical.hi >= self.lo:
+                values.append((1, 0, -1, 0)[k % 4] if cosine else (0, 1, 0, -1)[k % 4])
+        lo, hi = min(values), max(values)
+        for _ in range(8):
+            lo, hi = math.nextafter(lo, -math.inf), math.nextafter(hi, math.inf)
+        return _SpeedInterval(max(-1.0, lo), min(1.0, hi))
+
+def _motor_direction_interval(component, other):
+    """包围component/hypot(component,other)，保留分子分母的几何关联。"""
+    minimum_other = 0.0 if other.lo <= 0 <= other.hi else min(abs(other.lo), abs(other.hi))
+    maximum_other = max(abs(other.lo), abs(other.hi))
+
+    def corner(value, perpendicular, lower):
+        if value == perpendicular == 0:
+            return -1.0 if lower else 1.0
+        # 先归一化再平方，防止很大/很小的有效几何尺寸溢出或下溢。
+        scale = max(abs(value), abs(perpendicular))
+        numerator = _SpeedInterval(value) / scale
+        denominator_component = _SpeedInterval(perpendicular) / scale
+        distance = (numerator.square() + denominator_component.square()).sqrt()
+        if distance.lo == 0:
+            return -1.0 if lower else 1.0
+        ratio = numerator / distance
+        return max(-1.0, ratio.lo) if lower else min(1.0, ratio.hi)
+
+    low_other = maximum_other if component.lo >= 0 else minimum_other
+    high_other = maximum_other if component.hi <= 0 else minimum_other
+    return _SpeedInterval(corner(component.lo, low_other, True), corner(component.hi, high_other, False))
+
+def _prepare_multi_point_geometry(model):
+    """按参考文件生成凸包，保留全部原吊点及实轴顺序。"""
+    points = []
+    for point in model["point_init_pos"]:
+        values = tuple(float(value) for value in point)
+        if len(values) not in (2, 3) or not all(math.isfinite(value) for value in values):
+            raise ValueError("吊点须为有限的[x,y]或[x,y,z]坐标")
+        points.append(values if len(values) == 3 else values + (0.,))
+    if len(points) < 3:
+        raise ValueError("至少需要3个吊点")
+    ordered = sorted(set((point[0], point[1]) for point in points))
+    def turn(a, b, c):
+        return (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])
+    lower, upper = [], []
+    for point in ordered:
+        while len(lower) >= 2 and turn(lower[-2], lower[-1], point) <= 0:
+            lower.pop()
+        lower.append(point)
+    for point in reversed(ordered):
+        while len(upper) >= 2 and turn(upper[-2], upper[-1], point) <= 0:
+            upper.pop()
+        upper.append(point)
+    hull = lower[:-1] + upper[:-1]
+    if len(hull) < 3:
+        raise ValueError("吊点不能全部共线")
+    base1, base2, height = (float(model[name]) for name in ("Baseheight1", "Baseheight2", "maxheight"))
+    beta = float(model.get("betainit", 0))
+    if not all(math.isfinite(value) for value in (base1, base2, height, beta)):
+        raise ValueError("多点几何参数必须是有限数值")
+    if not ((base1 > 0 and base2 == 0) or (base1 == 0 and base2 > 0)) or height <= 0:
+        raise ValueError("两项原点距离须一项大于0、另一项为0，最大高度须大于0")
+    if model.get("model_type") == 9 and beta != 0:
+        raise ValueError("XY多点摆betainit必须为0")
+    edges = []
+    I = _SpeedInterval
+    for p, q in zip(hull, hull[1:] + hull[:1]):
+        x, y = p
+        if x*q[1]-y*q[0] == 0:
+            continue
+        cross = I(x)*q[1]-I(y)*q[0]
+        if cross.lo <= 0 <= cross.hi:
+            raise ValueError("凸包边与原点过近，边距数值精度不足")
+        dx, dy = I(q[0])-x, I(q[1])-y
+        length = (dx.square()+dy.square()).sqrt()
+        absolute_cross = cross if cross.lo > 0 else -cross
+        radius_min = (absolute_cross/length).lo
+        radius_max = max((I(x).square()+I(y).square()).sqrt().hi,
+                         (I(q[0]).square()+I(q[1]).square()).sqrt().hi)
+        edges.append((x, y, dx, dy, cross, radius_min, radius_max))
+    if not edges:
+        raise ValueError("当前吊点无法形成有效边距")
+    return tuple(points), tuple(edges), base1, base2, height, beta
+
+def _radial_distance(geometry, beta):
+    sine, cosine = math.sin(beta), math.cos(beta)
+    minimum = math.inf
+    for x, y, edge_x, edge_y, _, _, _ in geometry[1]:
+        dx, dy = (edge_x.lo+edge_x.hi)/2, (edge_y.lo+edge_y.hi)/2
+        denominator = sine*dy-cosine*dx
+        if abs(denominator) <= 1e-12:
+            continue
+        radius = (x*dy-y*dx)/denominator
+        fraction = (x*cosine-y*sine)/denominator
+        if radius > 0 and -1e-12 <= fraction <= 1+1e-12:
+            minimum = min(minimum, radius)
+    if not math.isfinite(minimum):
+        raise ValueError("当前倾斜方向无法求得有效凸包边距，请检查吊点与原点")
+    return minimum
+
+def _multi_point_motor_speed_upper(q, v, geometry):
+    """包围原多点正解在位置/速度区间内的实轴峰速，包含边切换及偏移限幅。"""
+    I = _SpeedInterval
+    points, edges, base1, base2, maxheight, beta_init = geometry
+    h, pitch, yaw = q; vh, vp, vy = v
+    radians = I(math.pi)/180.0
+    p, dp = -pitch*radians, -vp*radians
+    beta, dbeta = -(yaw+beta_init)*radians, -vy*radians
+    sine, cosine = beta.trig(), beta.trig(True)
+    sp, cp = p.trig(), p.trig(True)
+    distance_h = h+base1 if base1 != 0 else I(base2)+maxheight-h
+    distance_v = vh if base1 != 0 else -vh
+    # 参考文件的有效射线为(+sin(beta),+cos(beta))。
+    # 将可能命中的边分别包围；切换到相邻边时同时包含两侧导数。
+    radial_candidates = []
+    for x,y,dx,dy,cross,rmin,rmax in edges:
+        den = sine*dy-cosine*dx
+        sign = 1 if cross.lo > 0 else -1
+        positive_cross = cross if sign > 0 else -cross
+        positive_den = den if sign > 0 else -den
+        possible_den = positive_cross / I(rmin, rmax)
+        lo, hi = max(positive_den.lo, possible_den.lo), min(positive_den.hi, possible_den.hi)
+        if lo > hi:
+            continue
+        den = I(lo, hi)*sign
+        u = (cosine*x-sine*y)/den
+        if u.hi < 0 or u.lo > 1:
+            continue
+        radius = cross/den
+        radius = I(max(rmin, radius.lo), min(rmax, radius.hi))
+        if radius.lo > radius.hi:
+            continue
+        den_velocity = (cosine*dy+sine*dx)*dbeta
+        radius_velocity = -(radius.square()/cross)*den_velocity
+        radial_candidates.append((radius, radius_velocity))
+    if not radial_candidates:
+        raise ValueError("多点射线未找到边界，请检查吊点坐标及角度数值范围")
+
+    # pow_val=min(100,1.73+0.52*参考高度/射线长度)。物理参考面内n>=1.73。
+    # 原偏移等价于 sign(p)*R*min(1,(abs(p)/1.5707963)**n)。
+    # 直接在[0,1]上求幂，避免先算大幂再相除的溢出，也处理p=0。
+    abs_p = I(0 if p.lo <= 0 <= p.hi else min(abs(p.lo),abs(p.hi)), p.max_abs())
+    sign_p = I(-1,1) if p.lo < 0 < p.hi else I(-1 if p.hi <= 0 else 1)
+    ratio = abs_p / 1.5707963
+    upper = 0.0
+    for radius, radius_velocity in radial_candidates:
+        exponent_raw = I(1.73)+(distance_h/radius)*0.52
+        if exponent_raw.lo <= 1:
+            # 范围太宽时继续细分；不把无界导数当作0，最终仍保留保守上界。
+            return math.inf
+        exponent = I(min(100, exponent_raw.lo), min(100, exponent_raw.hi))
+        exponent_velocity = (distance_v/radius-distance_h*radius_velocity/radius.square())*0.52
+        if exponent_raw.lo >= 100:
+            exponent_velocity = I(0)
+        elif exponent_raw.hi >= 100:
+            exponent_velocity = I(min(0,exponent_velocity.lo), max(0,exponent_velocity.hi))
+        if ratio.lo >= 1:
+            offset, offset_velocity = sign_p*radius, sign_p*radius_velocity
+        else:
+            rho = I(max(0,ratio.lo), min(1,ratio.hi))
+            def power_range(n):
+                result = I.outward(rho.lo**n.hi, rho.hi**n.lo)
+                # pow的libm结果外扩8ulp；与三角函数相同的本平台数值包围策略。
+                for _ in range(7):
+                    result = result.outward(result.lo,result.hi)
+                return I(max(0,result.lo), min(1,result.hi))
+            weight = power_range(exponent)
+            slope_weight = power_range(exponent-I(1))
+            # |rho**n*log(rho)|的最大值：端点及rho=exp(-1/n_min)。
+            n_min = exponent.lo
+            def log_weight(r):
+                return 0.0 if r == 0 else -(r**n_min)*math.log(r)
+            log_max = max(log_weight(rho.lo), log_weight(rho.hi))
+            if rho.lo <= math.exp(-1/n_min) <= rho.hi:
+                log_max = max(log_max, 1/(math.e*n_min))
+            for _ in range(16):
+                log_max = math.nextafter(log_max, math.inf)
+            log_min = min(0.0 if r==0 else -(r**exponent.hi)*math.log(r) for r in (rho.lo,rho.hi))
+            for _ in range(16):
+                log_min = math.nextafter(log_min,-math.inf)
+            weight_log = I(-log_max,-max(0,log_min))
+            offset = sign_p*radius*weight
+            offset_velocity = (sign_p*(radius_velocity*weight+radius*weight_log*exponent_velocity)
+                               +radius*exponent*slope_weight*(dp/1.5707963))
+            if ratio.hi >= 1:
+                saturated = sign_p*radius_velocity
+                offset_velocity = I(min(offset_velocity.lo,saturated.lo), max(offset_velocity.hi,saturated.hi))
+        for point in points:
+            x,y = point[:2]
+            t = sine*x+cosine*y
+            dt = (cosine*x-sine*y)*dbeta
+            # Rz(-beta) Rx(p) Rz(beta)的水平位移始终沿e=(sin beta,cos beta)。
+            # 距离只需sqrt(horizontal**2+vertical**2)，避免三次四元数旋转。
+            horizontal = (cp-I(1))*t+offset
+            horizontal_v = -sp*dp*t+(cp-I(1))*dt+offset_velocity
+            vertical = sp*t-distance_h
+            vertical_v = cp*dp*t+sp*dt-distance_v
+            if vertical.lo > 0 or vertical.hi < 0:
+                # 先求水平/垂直比，消去大参考高度；比逐分量单位方向包围更省运算。
+                direction_ratio = horizontal/vertical
+                projected = (vertical_v+direction_ratio*horizontal_v)/(I(1)+direction_ratio.square()).sqrt()
+            else:
+                projected = (_motor_direction_interval(horizontal,vertical)*horizontal_v
+                             +_motor_direction_interval(vertical,horizontal)*vertical_v)
+            norm_upper = math.hypot(horizontal_v.max_abs(),vertical_v.max_abs())
+            for _ in range(4):
+                norm_upper = math.nextafter(norm_upper, math.inf)
+            upper = max(upper,min(projected.max_abs(),norm_upper))
+    if not math.isfinite(upper):
+        raise ValueError("多点速度区间计算溢出，请检查原轨迹和几何参数")
+    return math.nextafter(upper,math.inf)
+
+def _multi_point_instantaneous_speed(q, v, geometry):
+    """原多点正解的解析瞬时峰速，用作区间搜索的候选值（不是整段上界）。"""
+    points, edges, base1, base2, maxheight, beta_init = geometry
+    h,pitch,yaw = q; vh,vp,vy = v
+    p,dp = -pitch*math.pi/180.0,-vp*math.pi/180.0
+    beta,dbeta = -(yaw+beta_init)*math.pi/180.0,-vy*math.pi/180.0
+    sine,cosine = math.sin(beta),math.cos(beta)
+    sp,cp = math.sin(p),math.cos(p)
+    height = h+base1 if base1 != 0 else base2+maxheight-h
+    height_v = vh if base1 != 0 else -vh
+    candidates = []
+    for x,y,dx,dy,cross,rmin,rmax in edges:
+        # 用原始顶点计算标量；边界处允许两个相邻边的单侧速度。
+        dx,dy = (dx.lo+dx.hi)*0.5,(dy.lo+dy.hi)*0.5
+        den = sine*dy-cosine*dx
+        if den == 0:
+            continue
+        radius = (x*dy-y*dx)/den
+        u = (cosine*x-sine*y)/den
+        if radius > 0 and -1e-12 <= u <= 1+1e-12:
+            radius_v = -radius*(cosine*dy+sine*dx)*dbeta/den
+            candidates.append((radius,radius_v))
+    if not candidates:
+        # 极端舍入/角度数值用单点区间包围；不退回平均速度。
+        return _multi_point_motor_speed_upper([_SpeedInterval(z) for z in q],[_SpeedInterval(z) for z in v],geometry)
+    minimum = min(r for r,rv in candidates)
+    upper = 0.0
+    for radius,radius_v in candidates:
+        if radius > minimum*(1+1e-10):
+            continue
+        n_raw = 1.73+0.52*height/radius
+        if n_raw <= 1:
+            raise ValueError("多点偏移幂需大于1，当前原轨迹可能在P=0处不可导，请检查参考高度")
+        n = min(100,n_raw)
+        n_v = 0 if n_raw>=100 else 0.52*(height_v/radius-height*radius_v/radius**2)
+        rho = abs(p)/1.5707963
+        sign = -1 if p<0 else 1
+        if rho>=1:
+            offset,offset_v = sign*radius,sign*radius_v
+        elif rho==0:
+            offset,offset_v = 0.0,0.0
+        else:
+            weight = rho**n
+            offset = sign*radius*weight
+            offset_v = (sign*(radius_v*weight+radius*weight*math.log(rho)*n_v)
+                        +radius*n*rho**(n-1)*dp/1.5707963)
+        for x,y,_ in points:
+            t = sine*x+cosine*y
+            dt = (cosine*x-sine*y)*dbeta
+            horizontal = (cp-1)*t+offset
+            horizontal_v = -sp*dp*t+(cp-1)*dt+offset_v
+            vertical = sp*t-height
+            vertical_v = cp*dp*t+sp*dt-height_v
+            length = math.hypot(horizontal,vertical)
+            speed = math.hypot(horizontal_v,vertical_v) if length==0 else abs((horizontal/length)*horizontal_v+(vertical/length)*vertical_v)
+            upper = max(upper,speed)
+    if not math.isfinite(upper):
+        raise ValueError("多点瞬时速度计算溢出")
+    return upper
+
+def _xy_radius_candidates(direction_x, direction_y, beta_velocity, geometry):
+    candidates = []
+    for x, y, edge_x, edge_y, cross, radius_min, radius_max in geometry[1]:
+        edge_x = (edge_x.lo + edge_x.hi) / 2
+        edge_y = (edge_y.lo + edge_y.hi) / 2
+        denominator = direction_x * edge_y - direction_y * edge_x
+        if denominator == 0:
+            continue
+        radius = (x * edge_y - y * edge_x) / denominator
+        edge_fraction = (direction_y * x - direction_x * y) / denominator
+        if radius > 0 and -1e-12 <= edge_fraction <= 1 + 1e-12:
+            denominator_velocity = (direction_y * edge_y + direction_x * edge_x) * beta_velocity
+            candidates.append((radius, -radius * denominator_velocity / denominator))
+    if not candidates:
+        raise ValueError("XY倾斜方向无法求得有效凸包边距，请检查吊点与原点")
+    minimum = min(radius for radius, _ in candidates)
+    return [(radius, velocity) for radius, velocity in candidates
+            if radius <= minimum * (1 + 1e-10)]
+
+def _xy_point_motion(q, v, geometry):
+    points, edges, base1, base2, maxheight, beta_init = geometry
+    if beta_init != 0:
+        raise ValueError("XY多点摆betainit必须为0")
+    height, angle_x, angle_y = q
+    velocity_h, velocity_x, velocity_y = v
+    if abs(angle_x) >= 90 or abs(angle_y) >= 90:
+        raise ValueError("XY多点摆X/Y角须在(-90,90)内")
+    radians = math.pi / 180
+    pitch, roll = -angle_x * radians, -angle_y * radians
+    pitch_v, roll_v = -velocity_x * radians, -velocity_y * radians
+    sp, cp = math.sin(pitch), math.cos(pitch)
+    sr, cr = math.sin(roll), math.cos(roll)
+    tilt = math.acos(max(-1., min(1., cp * cr)))
+    vertical = height + base1 if base1 > 0 else base2 + maxheight - height
+    vertical_v = velocity_h if base1 > 0 else -velocity_h
+    offsets = [(0., 0., 0., 0.)]
+    if tilt > 1e-8:
+        # beta is measured from +Y. Its direction follows the supplied YXZ_new.py.
+        beta = math.acos(max(-1., min(1., sp / math.sin(tilt))))
+        if -sr * cp < 0:
+            beta = -beta
+        dx, dy = math.sin(beta), math.cos(beta)
+        nx, ny = -sr * cp, sp
+        nx_v = -cr * roll_v * cp + sr * sp * pitch_v
+        ny_v = cp * pitch_v
+        sine_squared = nx * nx + ny * ny
+        beta_v = (ny * nx_v - nx * ny_v) / sine_squared
+        tilt_v = (sp * cr * pitch_v + cp * sr * roll_v) / math.sqrt(sine_squared)
+        offsets = []
+        for radius, radius_v in _xy_radius_candidates(dx, dy, beta_v, geometry):
+            raw_power = 1.73 + .52 * vertical / radius
+            power = min(100., raw_power)
+            power_v = (0. if raw_power >= 100 else
+                       .52 * (vertical_v / radius - vertical * radius_v / radius**2))
+            ratio = tilt / 1.5707963
+            weight = ratio**power
+            if weight >= 1:
+                offset, offset_v = radius, radius_v
+            else:
+                offset = radius * weight
+                offset_v = (radius_v * weight + radius * weight * math.log(ratio) * power_v
+                            + radius * power * ratio**(power - 1) * tilt_v / 1.5707963)
+            offsets.append((dx * offset, dy * offset,
+                            dy * beta_v * offset + dx * offset_v,
+                            -dx * beta_v * offset + dy * offset_v))
+    motions = []
+    for offset_x, offset_y, offset_x_v, offset_y_v in offsets:
+        row = []
+        for x, y, z in points:
+            y1, z1 = cp * y - sp * z, sp * y + cp * z
+            rotated_x = cr * x + sr * z1
+            rotated_y = y1
+            rotated_z = -sr * x + cr * z1
+            rotated_x_v = (-sr * x + cr * z1) * roll_v + sr * y1 * pitch_v
+            rotated_y_v = -z1 * pitch_v
+            rotated_z_v = (-cr * x - sr * z1) * roll_v + cr * y1 * pitch_v
+            relative = (rotated_x - x + offset_x, rotated_y - y + offset_y,
+                        rotated_z - z - vertical)
+            velocity = (rotated_x_v + offset_x_v, rotated_y_v + offset_y_v,
+                        rotated_z_v - vertical_v)
+            row.append((relative, velocity))
+        motions.append(row)
+    return motions
+
+def _xy_instantaneous_speed(q, v, geometry):
+    maximum = 0.
+    for row in _xy_point_motion(q, v, geometry):
+        for relative, velocity in row:
+            length = math.sqrt(sum(value * value for value in relative))
+            speed = (math.sqrt(sum(value * value for value in velocity)) if length == 0 else
+                     abs(sum(a / length * b for a, b in zip(relative, velocity))))
+            maximum = max(maximum, speed)
+    if not math.isfinite(maximum):
+        raise ValueError("XY多点摆瞬时速度计算溢出")
+    return maximum
+
+def _xy_power_interval(ratio, power):
+    I = _SpeedInterval
+    values = [value**exponent for value in (ratio.lo, ratio.hi)
+              for exponent in (power.lo, power.hi)]
+    result = I.outward(min(values), max(values))
+    for _ in range(7):
+        result = result.outward(result.lo, result.hi)
+    return I(max(0., result.lo), min(1., result.hi))
+
+def _xy_offset_bounds(q, v, geometry, sp, cp, sr, cr, dp, dr):
+    I = _SpeedInterval
+    _, edges, base1, base2, maxheight, beta_init = geometry
+    if beta_init != 0:
+        raise ValueError("XY多点摆betainit必须为0")
+    h, _, _ = q
+    vh, _, _ = v
+    vertical = h + base1 if base1 > 0 else I(base2) + maxheight - h
+    vertical_v = vh if base1 > 0 else -vh
+    nx, ny = -sr * cp, sp
+    nx_v, ny_v = -cr * dr * cp + sr * sp * dp, cp * dp
+    sine = (nx.square() + ny.square()).sqrt()
+    cosine = cp * cr
+    tilt = I(math.acos(min(1., max(0., cosine.hi))),
+             math.acos(min(1., max(0., cosine.lo))))
+    if sine.lo <= 0:
+        # The offset scales as tilt**power with power>1, so its derivative remains
+        # bounded at zero tilt even though beta's derivative itself is singular.
+        rmin = min(edge[5] for edge in edges)
+        rmax = max(edge[6] for edge in edges)
+        radius_slope = 0.
+        for x, y, ex, ey, cross, _, edge_rmax in edges:
+            cross_abs = min(abs(cross.lo), abs(cross.hi))
+            slope = edge_rmax**2 * math.hypot(ex.max_abs(), ey.max_abs()) / cross_abs
+            radius_slope = max(radius_slope, slope)
+        raw_power = I(1.73) + (vertical / I(rmin, rmax)) * .52
+        low_power = raw_power.lo
+        if low_power <= 1 or cosine.lo <= 0:
+            return None
+        low_power = min(100., low_power)
+        high_power = min(100., raw_power.hi)
+        rho = min(1., tilt.hi / 1.5707963)
+        derivative_norm = math.hypot(nx_v.max_abs(), ny_v.max_abs())
+        weight = rho**low_power
+        slope_weight = rho**(low_power - 1)
+        direction_scale = math.pi / (2 * 1.5707963)
+        weight_over_sine = direction_scale * slope_weight
+        def max_log_weight(exponent):
+            if rho == 0:
+                return 0.
+            values = [-rho**exponent * math.log(rho)]
+            if math.exp(-1 / exponent) <= rho:
+                values.append(1 / (math.e * exponent))
+            return max(values)
+        weight_log = max_log_weight(low_power)
+        log_over_sine = direction_scale * max_log_weight(low_power - 1)
+        offset_max = rmax * weight
+        speed_max = ((radius_slope + rmax) * derivative_norm * weight_over_sine
+                     + .52 * vertical_v.max_abs() * weight_log
+                     + .52 * vertical.max_abs() * radius_slope / rmin * derivative_norm * log_over_sine
+                     + rmax * high_power * slope_weight * derivative_norm / (cosine.lo * 1.5707963))
+        for _ in range(32):
+            offset_max = math.nextafter(offset_max, math.inf)
+            speed_max = math.nextafter(speed_max, math.inf)
+        return (I(-offset_max, offset_max), I(-offset_max, offset_max),
+                I(-speed_max, speed_max), I(-speed_max, speed_max))
+    dx, dy = nx / sine, ny / sine
+    beta_v = (ny * nx_v - nx * ny_v) / sine.square()
+    tilt_v = (sp * cr * dp + cp * sr * dr) / sine
+    candidates = []
+    for x, y, ex, ey, cross, radius_min, radius_max in edges:
+        denominator = dx * ey - dy * ex
+        sign = 1 if cross.lo > 0 else -1
+        positive_cross = cross if sign > 0 else -cross
+        positive_den = denominator if sign > 0 else -denominator
+        possible_den = positive_cross / I(radius_min, radius_max)
+        lo, hi = max(positive_den.lo, possible_den.lo), min(positive_den.hi, possible_den.hi)
+        if lo > hi:
+            continue
+        denominator = I(lo, hi) * sign
+        edge_fraction = (dy * x - dx * y) / denominator
+        if edge_fraction.hi < 0 or edge_fraction.lo > 1:
+            continue
+        radius = cross / denominator
+        radius = I(max(radius_min, radius.lo), min(radius_max, radius.hi))
+        if radius.lo > radius.hi:
+            continue
+        radius_v = -(radius.square() / cross) * (dy * ey + dx * ex) * beta_v
+        raw_power = I(1.73) + (vertical / radius) * .52
+        if raw_power.lo <= 1:
+            return None
+        power = I(min(100., raw_power.lo), min(100., raw_power.hi))
+        power_v = (vertical_v / radius - vertical * radius_v / radius.square()) * .52
+        if raw_power.lo >= 100:
+            power_v = I(0.)
+        elif raw_power.hi >= 100:
+            power_v = I(min(0., power_v.lo), max(0., power_v.hi))
+        ratio = tilt / 1.5707963
+        if ratio.lo >= 1:
+            offset, offset_v = radius, radius_v
+        else:
+            rho = I(max(0., ratio.lo), min(1., ratio.hi))
+            weight = _xy_power_interval(rho, power)
+            slope_weight = _xy_power_interval(rho, power - I(1.))
+            def log_weight(value):
+                return 0. if value == 0 else -value**power.lo * math.log(value)
+            log_max = max(log_weight(rho.lo), log_weight(rho.hi))
+            if rho.lo <= math.exp(-1 / power.lo) <= rho.hi:
+                log_max = max(log_max, 1 / (math.e * power.lo))
+            for _ in range(16):
+                log_max = math.nextafter(log_max, math.inf)
+            weight_log = I(-log_max, 0.)
+            offset = radius * weight
+            offset_v = (radius_v * weight + radius * weight_log * power_v
+                        + radius * power * slope_weight * tilt_v / 1.5707963)
+            if ratio.hi >= 1:
+                offset_v = I(min(offset_v.lo, radius_v.lo), max(offset_v.hi, radius_v.hi))
+        candidates.append((dx * offset, dy * offset,
+                           dy * beta_v * offset + dx * offset_v,
+                           -dx * beta_v * offset + dy * offset_v))
+    if not candidates:
+        raise ValueError("XY倾斜方向无法求得有效凸包边距")
+    # The supplied implementation disables the offset at its small-angle guard.
+    if tilt.lo <= 1e-8:
+        candidates.append((I(0.), I(0.), I(0.), I(0.)))
+    return tuple(I(min(row[i].lo for row in candidates), max(row[i].hi for row in candidates))
+                 for i in range(4))
+
+def _xy_motor_speed_upper(q, v, geometry):
+    I = _SpeedInterval
+    points, edges, base1, base2, maxheight, beta_init = geometry
+    radians = I(math.pi) / 180.
+    p, r = -q[1] * radians, -q[2] * radians
+    dp, dr = -v[1] * radians, -v[2] * radians
+    if p.lo <= -math.pi / 2 or p.hi >= math.pi / 2 or r.lo <= -math.pi / 2 or r.hi >= math.pi / 2:
+        return math.inf
+    sp, cp, sr, cr = p.trig(), p.trig(True), r.trig(), r.trig(True)
+    offset = _xy_offset_bounds(q, v, geometry, sp, cp, sr, cr, dp, dr)
+    if offset is None:
+        return math.inf
+    ox, oy, vox, voy = offset
+    vertical = q[0] + base1 if base1 > 0 else I(base2) + maxheight - q[0]
+    vertical_v = v[0] if base1 > 0 else -v[0]
+    upper = 0.
+    for x, y, z in points:
+        y1, z1 = cp * y - sp * z, sp * y + cp * z
+        rx = cr * x + sr * z1 - x + ox
+        ry = y1 - y + oy
+        rz = -sr * x + cr * z1 - z - vertical
+        vx = (-sr * x + cr * z1) * dr + sr * y1 * dp + vox
+        vy = -z1 * dp + voy
+        vz = (-cr * x - sr * z1) * dr + cr * y1 * dp - vertical_v
+        horizontal = (rx.square() + ry.square()).sqrt()
+        projected = (_motor_direction_interval(rx, (ry.square() + rz.square()).sqrt()) * vx
+                     + _motor_direction_interval(ry, (rx.square() + rz.square()).sqrt()) * vy
+                     + _motor_direction_interval(rz, horizontal) * vz)
+        norm = math.sqrt(vx.max_abs()**2 + vy.max_abs()**2 + vz.max_abs()**2)
+        for _ in range(8):
+            norm = math.nextafter(norm, math.inf)
+        upper = max(upper, min(projected.max_abs(), norm))
+    if not math.isfinite(upper):
+        raise ValueError("XY速度区间计算溢出")
+    return math.nextafter(upper, math.inf)
+
+def _prepare_direction_domain(geometry):
+    """原点严格在凸包内时返回None，否则返回从+Y计角的有效闭圆锥。"""
+    points = sorted(set((point[0], point[1]) for point in geometry[0]))
+
+    def turn(a, b, c):
+        return (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])
+
+    lower, upper = [], []
+    for chain, ordered in ((lower, points), (upper, reversed(points))):
+        for point in ordered:
+            while len(chain) >= 2 and turn(chain[-2], chain[-1], point) <= 0:
+                chain.pop()
+            chain.append(point)
+    hull = lower[:-1] + upper[:-1]
+    if all((_SpeedInterval(x)*q[1]-_SpeedInterval(y)*q[0]).lo > 0
+           for (x, y), q in zip(hull, hull[1:]+hull[:1])):
+        return None
+    angles = sorted(math.atan2(x, y) % math.tau for x, y in hull if x or y)
+    gaps = [(angles[(i+1) % len(angles)]-angle) % math.tau
+            for i, angle in enumerate(angles)]
+    gap_index = max(range(len(gaps)), key=gaps.__getitem__)
+    start = angles[(gap_index+1) % len(angles)]
+    width = math.tau-gaps[gap_index]
+    if width > math.pi:
+        raise ValueError('吊点原点接近凸包边界，准备方向域数值精度不足')
+    return start, start+width
+
+def _configure_motor_geometry(device, model, settings):
+    """Attach immutable four-model geometry to a virtual-axis device."""
+    kind = model.get('model_type')
+    device._motor_type = kind
+    device._motor_geometry = None
+    device._motor_domain = None
+    if kind is None:
+        return
+    if type(kind) is not int or kind not in (2, 3, 7, 9):
+        raise ValueError('model_type只支持2单点、3多级升降、7多点摆、9XY多点摆')
+    device._motor_limit = _number(model.get('max_motor_velocity'), 'max_motor_velocity')
+    if device._motor_limit <= 0:
+        raise ValueError('max_motor_velocity须大于0')
+    if kind in (2, 3):
+        if any(device.commands[index] for index in (1, 2)):
+            raise ValueError('单点/多级升降仅支持H轴动作曲线')
+        velocity, acceleration, deceleration = device.prepare_caps[0]
+        limit = min(velocity, device._motor_limit)
+        device.prepare_caps[0] = (_floor_rate(limit, settings['entry_quantize_protocol']),
+                                 acceleration, deceleration)
+        return
+    nested = model.get('geometry', {})
+    if not isinstance(nested, dict):
+        raise ValueError('geometry须为对象')
+    fields = ('Baseheight1', 'Baseheight2', 'maxheight', 'betainit', 'point_init_pos', 'motor_num')
+    configuration = {'model_type': kind}
+    for name in fields:
+        if name in model and name in nested and model[name] != nested[name]:
+            raise ValueError(f'{name}平铺字段与geometry配置冲突')
+        value = nested.get(name, model.get(name, 0 if name == 'betainit' else None))
+        if name not in ('point_init_pos', 'motor_num'):
+            value = _number(value, name)
+        configuration[name] = value
+    points = configuration['point_init_pos']
+    if not isinstance(points, list):
+        raise ValueError('point_init_pos须为吊点列表')
+    coordinates = []
+    for point in points:
+        if not isinstance(point, (list, tuple)) or len(point) not in (2, 3):
+            raise ValueError('吊点须为[x,y]或[x,y,z]')
+        coordinates.append(tuple(_number(value, '吊点坐标') for value in point))
+    configuration['point_init_pos'] = coordinates
+    count = configuration.get('motor_num')
+    if count is not None and (type(count) is not int or count != len(coordinates)):
+        raise ValueError('motor_num须等于原吊点数量')
+    device._motor_geometry = _prepare_multi_point_geometry(configuration)
+    device._motor_domain = _prepare_direction_domain(device._motor_geometry)
+    device._motor_geometry_signature = (kind, device._motor_geometry[0], *device._motor_geometry[2:])
+
+
+def _motor_direction_box_valid(device, positions):
+    """Prove that all nonzero-tilt directions in a pose box meet the hull."""
+    domain = device._motor_domain
+    if domain is None:
+        return True
+    if device._motor_type == 7 and positions[1].lo == positions[1].hi == 0:
+        return True
+    left, right = domain
+    radians = math.pi / 180
+    if device._motor_type == 7:
+        yaw = positions[2]
+        first, last = -(yaw.hi + device._motor_geometry[5]) * radians, -(yaw.lo + device._motor_geometry[5]) * radians
+        shift = math.floor((first - left) / math.tau)
+        return any(first >= left + turn * math.tau - 1e-12
+                   and last <= right + turn * math.tau + 1e-12
+                   for turn in (shift - 1, shift, shift + 1))
+    pitch, roll = -positions[1] * radians, -positions[2] * radians
+    largest_pitch = max(abs(pitch.lo), abs(pitch.hi))
+    largest_roll = max(abs(roll.lo), abs(roll.hi))
+    if math.acos(min(1., math.cos(largest_pitch) * math.cos(largest_roll))) <= 1e-8:
+        return True
+    nx, ny = -roll.trig() * pitch.trig(True), pitch.trig()
+    interval = _SpeedInterval
+    cross_left = interval(left).trig() * ny - interval(left).trig(True) * nx
+    cross_right = nx * interval(right).trig(True) - ny * interval(right).trig()
+    tolerance = 1e-12 * math.hypot(nx.max_abs(), ny.max_abs())
+    return cross_left.hi <= tolerance and cross_right.hi <= tolerance
+
+
+def _motor_state_speed(device, position, velocity):
+    if device._motor_type in (2, 3):
+        return abs(velocity[0])
+    geometry = device._motor_geometry
+    if device._motor_type == 7:
+        if position[1] == 0:
+            beta = -math.radians(position[2] + geometry[5])
+            sine, cosine = math.sin(beta), math.cos(beta)
+            height_velocity = velocity[0] if geometry[2] > 0 else -velocity[0]
+            return max(abs(-math.radians(velocity[1]) * (sine * x + cosine * y) - height_velocity)
+                       for x, y, _ in geometry[0])
+        return _multi_point_instantaneous_speed(position, velocity, geometry)
+    return _xy_instantaneous_speed(position, velocity, geometry)
+
+
+def _motor_speed_box_upper(device, positions, velocities):
+    if device._motor_type in (2, 3):
+        return velocities[0].max_abs()
+    key = (device._motor_geometry_signature,
+           tuple((value.lo, value.hi) for value in positions + velocities))
+    cache = device._motor_box_cache
+    if key not in cache:
+        upper = _motor_speed_box_upper_uncached(device, positions, velocities)
+        if len(cache) >= 8192:
+            cache.pop(next(iter(cache)))
+        cache[key] = upper
+    return cache[key]
+
+
+def _motor_speed_box_upper_uncached(device, positions, velocities):
+    if device._motor_type in (2, 3):
+        return velocities[0].max_abs()
+    if device._motor_type == 7:
+        if positions[1].lo == positions[1].hi == 0:
+            beta = -(positions[2] + device._motor_geometry[5]) * (math.pi / 180)
+            pitch_velocity = -velocities[1] * (math.pi / 180)
+            height_velocity = velocities[0] if device._motor_geometry[2] > 0 else -velocities[0]
+            return max((pitch_velocity * (beta.trig() * x + beta.trig(True) * y) - height_velocity).max_abs()
+                       for x, y, _ in device._motor_geometry[0])
+        return _multi_point_motor_speed_upper(positions, velocities, device._motor_geometry)
+    if (positions[1].lo == positions[1].hi == 0
+            and positions[2].lo == positions[2].hi == 0
+            and velocities[1].lo == velocities[1].hi == 0
+            and velocities[2].lo == velocities[2].hi == 0):
+        return velocities[0].max_abs()
+    return _xy_motor_speed_upper(positions, velocities, device._motor_geometry)
+
+
+def _motor_phase_boxes(tracks, left, right):
+    positions, velocities = [], []
+    for track in tracks:
+        segment = track.segment_containing((left + right) / 2)
+        samples = [segment.state(left), segment.state(right)]
+        position_values = [value[0] for value in samples]
+        if segment.a:
+            zero = segment.u0 - segment.v0 / segment.a * 1000
+            if left < zero < right:
+                position_values.append(segment.state(zero)[0])
+        positions.append(_SpeedInterval(min(position_values), max(position_values)))
+        velocities.append(_SpeedInterval(min(value[1] for value in samples), max(value[1] for value in samples)))
+    return positions, velocities
+
+
+def _motor_box_pose_error(device, positions):
+    if device._motor_type in (2, 3):
+        return None
+    geometry = device._motor_geometry
+    axes = (1, 2) if device._motor_type == 9 else (1,)
+    if any(positions[axis].lo <= -90 or positions[axis].hi >= 90 for axis in axes):
+        return '准备或后续曲线倾角超出(-90,90)'
+    vertical = (positions[0] + geometry[2] if geometry[2] > 0 else
+                _SpeedInterval(geometry[3] + geometry[4]) - positions[0])
+    height_tolerance = max(1e-8, 64 * math.ulp(max(1., abs(geometry[2]), abs(geometry[3] + geometry[4]), positions[0].max_abs())))
+    if vertical.lo < -height_tolerance:
+        return '准备或后续曲线的有效几何高度为负'
+    return None
+
+
+def _verify_motor_device(device, entries, plan):
+    label = f'模型{device.model_id}'
+    if set(entries) != {0, 1, 2}:
+        return False, f'{label}真实电机联合核对缺少虚轴计划'
+    tracks = []
+    for index in range(3):
+        sends = [(move['send_u'], move['move']) for move in entries[index]['moves']]
+        sends.extend((u, command) for u, command in device.tracks[index].sends if u >= plan['u0'] - 1e-9)
+        sends.sort(key=lambda item: item[0])
+        tracks.append(AxisTrack(device.current[index], sends))
+    begin = min(plan['clock_start_u'], *(move['send_u'] for entry in entries.values() for move in entry['moves']))
+    points = {begin}
+    for track in tracks:
+        for segment in track.segments:
+            for boundary in (segment.u0, segment.u1):
+                if math.isfinite(boundary) and boundary > begin:
+                    points.add(boundary)
+    points = sorted(points)
+    pending = [(left, right, 0) for left, right in zip(points, points[1:])] or [(begin, begin, 0)]
+    tolerance = max(1e-8, device._motor_limit * 1e-9)
+    while pending:
+        _check_deadline()
+        left, right, depth = pending.pop()
+        positions, velocities = _motor_phase_boxes(tracks, left, right)
+        error = _motor_box_pose_error(device, positions)
+        if error:
+            return False, f'{label}{error}'
+        direction_valid = _motor_direction_box_valid(device, positions)
+        try:
+            upper = _motor_speed_box_upper(device, positions, velocities) if direction_valid else math.inf
+        except (ValueError, ArithmeticError):
+            upper = math.inf
+        if math.isfinite(upper) and upper <= device._motor_limit + tolerance:
+            continue
+        middle = (left + right) / 2
+        for stamp in (left, middle, right):
+            _check_deadline()
+            states = [track.state(stamp) for track in tracks]
+            q = [state[0] for state in states]
+            v = [state[1] for state in states]
+            exact_positions = [_SpeedInterval(value) for value in q]
+            if not _motor_direction_box_valid(device, exact_positions):
+                return False, f'{label}实际运动在{stamp:.6f}ms没有有效几何边距'
+            try:
+                speed = _motor_state_speed(device, q, v)
+            except (ValueError, ArithmeticError) as error:
+                return False, f'{label}实际运动几何正解失败，{error}'
+            if not math.isfinite(speed) or speed > device._motor_limit + tolerance:
+                if math.isfinite(speed) and stamp <= plan['u0'] + 1e-8:
+                    plan['_motor_time_hint_scale'] = max(1.2, speed / device._motor_limit)
+                return False, f'{label}实际电机速度{speed:.6f}超过上限{device._motor_limit:.6f}'
+        if depth >= 24 or middle in (left, right):
+            return False, f'{label}运动区间无法可靠包围在真实电机速度上限内'
+        pending.extend(((left, middle, depth + 1), (middle, right, depth + 1)))
+    return True, ''
+
+
+def _verify_motor_plan(plan, settings):
+    """Validate a complete three-axis-per-device plan after final send-time encoding."""
+    grouped = {}
+    key_parts = []
+    for device, entry in plan['entries']:
+        if getattr(device, '_motor_type', None) is None:
+            continue
+        grouped.setdefault(id(device), (device, {}))[1][entry['index']] = entry
+        key_parts.append((id(device), entry['index'], id(device.tracks[entry['index']]),
+                          tuple((move['send_u'], *(move['move'][name] for name in ('pos', 'vel', 'accVel', 'decVel')))
+                                for move in entry['moves'])))
+    key = (plan['u0'], plan['clock_start_u'], tuple(key_parts))
+    cached = plan.get('_motor_verification_certificate')
+    if cached is not None and cached[0] == key:
+        return cached[1]
+    result = (True, '')
+    owner = plan['entries'][0][0]
+    if not hasattr(owner, '_motor_motion_certificates'):
+        owner._motor_motion_certificates = {}
+        owner._motor_shared_box_cache = {}
+    shared = owner._motor_motion_certificates
+    for device, entries in grouped.values():
+        _check_deadline()
+        device._motor_box_cache = owner._motor_shared_box_cache
+        reference = getattr(device, '_motor_reference_signature', None)
+        if reference is None:
+            reference = tuple(tuple((u, *(command[name] for name in ('pos', 'vel', 'accVel', 'decVel')))
+                                    for u, command in track.sends) for track in device.tracks)
+            device._motor_reference_signature = reference
+        motion_key = (device._motor_type, device._motor_limit,
+                      getattr(device, '_motor_geometry_signature', None), tuple(device.current),
+                      plan['u0'], plan['clock_start_u'], reference,
+                      tuple(tuple((move['send_u'], *(move['move'][name]
+                                  for name in ('pos', 'vel', 'accVel', 'decVel')))
+                                  for move in entries[index]['moves']) for index in range(3)))
+        if motion_key in shared:
+            continue
+        result = _verify_motor_device(device, entries, plan)
+        if not result[0]:
+            break
+        if len(shared) >= 4096:
+            shared.pop(next(iter(shared)))
+        shared[motion_key] = True
+    plan['_motor_verification_certificate'] = (key, result)
+    return result
+
+
 class _Device:
     """一个模型：当前状态、能力参数、原动作段，以及按帧表回放出的各轴轨迹。"""
 
@@ -836,6 +1732,7 @@ class _Device:
                 track = AxisTrack(self.current[axis],[])
             self.tracks.append(track)
         self.moves = any(self.active[axis] and self.tracks[axis].sends for axis in range(3))
+        _configure_motor_geometry(self, model, settings)
         # 帧表能力预检：接入后要执行的原表Move超能力/超行程时，与准备方式无关，_verify必然失败。
         # 记下每轴最后一条这样的Move（运行时刻），在它之前或同时的接入点直接判不可行。
         self.table_limit_u = [-math.inf]*3
@@ -955,7 +1852,9 @@ def _axis_request(device, index, u0, settings):
     if min(V, A, D) <= 0:
         raise EntryInfeasible([f"{label}需要运动，但可编码最大V/A/D为0"])
     if command is not None and any(command[key] > limit + 1e-8 for key, limit in
-                                  (("vel", V), ("accVel", A), ("decVel", D))):
+                                  (("vel", device.reposition_velocity[index]),
+                                   ("accVel", device.reposition_acceleration[index]),
+                                   ("decVel", device.reposition_deceleration[index]))):
         raise EntryInfeasible([f"{label}原Move超过真实最大V/A/D，不能用默认值代替最大能力"])
     send_index = bisect.bisect_left(track.send_times, u0)
     at_original_send = ((send_index < len(track.send_times) and abs(track.send_times[send_index]-u0) <= 1e-8)
@@ -1027,7 +1926,7 @@ def _candidate_moves(request, seconds, settings):
                "vel": V or .1, "accVel": A or .1, "decVel": D or .1}
         return
     if family == "acceleration":
-        yield dict(request["command"])
+        yield {**request["command"], "vel": min(request["command"]["vel"], V)}
         return
     if seconds <= 0:
         return
@@ -1197,7 +2096,14 @@ def _plan_at(devices, u0, settings, allow_two_step=False, requests=None):
     slots = {(id(request["device"]),request["index"]):slot for slot,request in enumerate(requests)}
     preferred = [slots[key] for key in priority if key in slots]
     order = preferred+[slot for slot in order if slot not in preferred]
-    for seconds in sorted(t for t in times if lower-1e-9 <= t <= upper+1e-9):
+    motor_reason = None
+    motor_times_expanded = False
+    candidates = [t for t in times if lower-1e-9 <= t <= upper+1e-9]
+    heapq.heapify(candidates)
+    time_tick = 10 ** (-settings["entry_send_time_decimals"]) / 1000
+    scheduled = {round(value / time_tick) for value in candidates}
+    while candidates:
+        seconds = heapq.heappop(candidates)
         _check_deadline()
         entries = [None]*len(requests)
         for slot in order:
@@ -1217,8 +2123,23 @@ def _plan_at(devices, u0, settings, allow_two_step=False, requests=None):
         else:
             plan = _materialize({"u0": u0, "lead_ms": seconds*1000, "entries": entries}, settings)
             if _verify(plan, settings)["passed"]:
-                return plan
-    raise EntryInfeasible(["该帧无可编码的同时起步单Move自然接续方案"])
+                motor_ok, motor_reason = _verify_motor_plan(plan, settings)
+                if motor_ok:
+                    return plan
+                extra_times = []
+                if not motor_times_expanded and math.isfinite(upper):
+                    extra_times.extend(lower + (upper - lower) * k / 64 for k in range(1, 64))
+                    motor_times_expanded = True
+                scale = plan.get("_motor_time_hint_scale")
+                if scale is not None:
+                    hint = min(upper, max(lower, seconds * scale))
+                    extra_times.extend((hint - time_tick, hint, hint + time_tick))
+                for value in extra_times:
+                    key = round(value / time_tick)
+                    if lower-1e-9 <= value <= upper+1e-9 and key not in scheduled:
+                        scheduled.add(key)
+                        heapq.heappush(candidates, value)
+    raise EntryInfeasible([motor_reason or "该帧无可编码的同时起步单Move自然接续方案"])
 
 
 ###############################################################################
@@ -1871,8 +2792,11 @@ def _calculate(parameters):
                 message += f"（接入帧最多比参考帧靠后{_ms_text(max_skip)}ms）"
             return _infeasible(command, mode, reference, message, attempts, reasons)
 
-    return _planned(devices, plan, command, settings, mode, reference, clamped, reference_window,
-                    selected_window, attempts, evaluated, to_curve)
+    try:
+        return _planned(devices, plan, command, settings, mode, reference, clamped, reference_window,
+                        selected_window, attempts, evaluated, to_curve)
+    except EntryInfeasible as error:
+        return _infeasible(command, mode, reference, f"最终下发时序实轴校验失败：{error}", attempts, error.reasons)
 
 
 def _infeasible(command, mode, reference, message, attempts, reasons):
@@ -1897,6 +2821,9 @@ def _planned(devices, plan, command, settings, mode, reference, clamped, referen
             curve_time = round(to_curve(clock_start), decimals)
             move["send_u"] = u0 + (curve_time-to_curve(u0)) * (-1 if command["reverse"] else 1)
     verification = _verify(plan, settings)
+    motor_ok, motor_reason = _verify_motor_plan(plan, settings)
+    if not motor_ok:
+        raise EntryInfeasible([motor_reason])
     entry_moves, by_device = [], {}
     for device, entry in plan["entries"]:
         _check_deadline()
