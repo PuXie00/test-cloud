@@ -4,7 +4,10 @@ import {
   ARRIVAL_TOLERANCE,
   applyGoBindings,
   buildMoveTargetItem,
+  GO_ARRIVE_SETTLE_MS,
+  GO_START_GRACE_MS,
   goEntriesForObjectIds,
+  goEntryProgress,
   goPhaseFromEntries,
   isArrived,
   markGoDispatched,
@@ -250,5 +253,67 @@ describe("pose bindings", () => {
       { objectId: "1", target: { v1: 400, v2: 3 }, current: { v1: 0, v2: 3 }, dispatched: false },
       entry("3", 8),
     ]);
+  });
+});
+
+describe("goEntryProgress", () => {
+  const dispatched: GoReadyEntry = {
+    objectId: "1",
+    target: { v1: 410 },
+    current: { v1: 100 },
+    dispatched: true,
+    dispatchedAt: 10_000,
+  };
+  const live = (h: number, modelStatus: number | null): ControlledObjectSnapshot =>
+    ({
+      descriptor: { id: 1, name: "obj1", status: modelStatus === 17 ? "running" : "ready" },
+      positions: { h },
+      modelStatus,
+    }) as ControlledObjectSnapshot;
+  const afterGrace = 10_000 + GO_START_GRACE_MS;
+
+  it("过了起步宽限期、遥测报不在运动：到位、停在半路、报警都算走完", () => {
+    expect(goEntryProgress(dispatched, live(410, 16), afterGrace, undefined)).toEqual({ done: true });
+    expect(goEntryProgress(dispatched, live(262, 16), afterGrace, undefined)).toEqual({ done: true });
+    expect(goEntryProgress(dispatched, live(262, 171), afterGrace, undefined)).toEqual({ done: true });
+  });
+
+  it("起步宽限期内报静止不算走完，给出宽限期结束时刻补判", () => {
+    expect(goEntryProgress(dispatched, live(100, 16), 10_400, undefined)).toEqual({
+      done: false,
+      arrivedSince: undefined,
+      recheckAt: afterGrace,
+    });
+  });
+
+  it("还在运动且没到位：不算走完，也不需要补判", () => {
+    expect(goEntryProgress(dispatched, live(300, 17), afterGrace + 60_000, undefined)).toEqual({
+      done: false,
+      arrivedSince: undefined,
+      recheckAt: undefined,
+    });
+  });
+
+  it("没有 modelStatus 时只看位置：在容差内停够 GO_ARRIVE_SETTLE_MS 才算走完", () => {
+    expect(goEntryProgress(dispatched, live(409.5, null), 20_000, undefined)).toEqual({
+      done: false,
+      arrivedSince: 20_000,
+      recheckAt: 20_000 + GO_ARRIVE_SETTLE_MS,
+    });
+    expect(
+      goEntryProgress(dispatched, live(409.5, null), 20_000 + GO_ARRIVE_SETTLE_MS, 20_000),
+    ).toEqual({ done: true });
+    // 中途离开容差就重新计
+    expect(goEntryProgress(dispatched, live(380, null), 20_500, 20_000)).toEqual({
+      done: false,
+      arrivedSince: undefined,
+      recheckAt: undefined,
+    });
+  });
+
+  it("没有遥测时不判断", () => {
+    expect(goEntryProgress(dispatched, undefined, afterGrace + 60_000, undefined)).toEqual({
+      done: false,
+    });
   });
 });

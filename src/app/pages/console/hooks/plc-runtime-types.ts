@@ -10,6 +10,24 @@ export type ScannedMaster = {
   axis: ScannedAxis[];
 };
 
+/** 最近一次扫描主控（Info|scan）；工程结构的「在线」只看它 */
+export type MasterScanState = {
+  /** 还没扫描过（或切换工程后）为 null */
+  masters: ScannedMaster[] | null;
+  /** 最近一次扫描成功的时间（ms） */
+  at: number | null;
+  scanning: boolean;
+  /** 最近一次扫描失败的原因；成功后清空 */
+  error: string | null;
+};
+
+export const INITIAL_MASTER_SCAN_STATE: MasterScanState = {
+  masters: null,
+  at: null,
+  scanning: false,
+  error: null,
+};
+
 export type PlcConnectionState = "disconnected" | "connecting" | "connected" | "abnormal";
 
 export type PlcAbnormalReason = "timeout" | "authentication" | "countMismatch" | "scanFailed";
@@ -41,10 +59,6 @@ export type PlcRuntimeState = {
   /** 挂起 / 配置失败说明 */
   lifecycleReason?: string;
   discoveredMotors: DiscoveredMotor[];
-  /** 型号不匹配（扫描 plcNo 映射 != 配置 masterTypeId） */
-  modelMismatch?: boolean;
-  /** 顺序对账用的扫描轴列表 */
-  scannedAxes?: ScannedAxis[];
   /** Last CONFIG\|Pro\|verify protocol version for this PLC */
   protocolVersion?: number;
   /** Last CONFIG\|Pro\|verify result: 0 match, 1 mismatch */

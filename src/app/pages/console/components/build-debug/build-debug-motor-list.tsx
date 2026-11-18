@@ -11,7 +11,6 @@ import {
 import { idsInRange, resolveSelectionMode } from "@/app/pages/console/hooks/selection-range";
 import { useProjectStore } from "@/app/pages/console/hooks/use-project-store";
 import { useSessionDisplayLengthUnit } from "@/app/project/display-length-unit-provider";
-import { formatLengthFamilyValue } from "@/app/project/display-length-units";
 import { BuildDebugBar } from "./build-debug-bar";
 import { evaluateMotorAlarms, telemetryStateValue, type MotorAlarmFlags } from "./build-debug-logic";
 import { useBuildDebug } from "./build-debug-context";
@@ -22,28 +21,47 @@ import {
   variablevariableStateAttri,
 } from "./build-debug-state-attrs";
 import { MOCK_STATE_IDS, type BuildMotorTelemetry } from "./build-debug-types";
+import {
+  DEBUG_FIXED_READOUT_IDS,
+  DebugReadout,
+  POSITION_READOUT,
+  SPEED_READOUT,
+  TEMPERATURE_READOUT,
+  TORQUE_READOUT,
+  debugReadoutMeta,
+  formatDebugPositionReadout,
+  formatDebugSpeedReadout,
+} from "./debug-readout";
 import { MotorStatusBadge, resolveMotorStatusBadge } from "./motor-status-badge";
 
 const toolbarBtn =
   "shrink-0 rounded-md px-2 py-1.5 text-body-sm text-primary hover:bg-accent disabled:pointer-events-none disabled:opacity-40";
 
-/** checkbox | name | 位置 | 温度 | 力矩 | …variable | 运行态 */
+/**
+ * checkbox | name | p: 位置 | s: 速度 | t: 温度 | m: 力矩 | …variable | 运行态
+ * 数值列按 11px 等宽字放得下「前缀: 值」（如 p: -12345.6）
+ */
 const rowGridStyle = (dynamicCount: number): CSSProperties => ({
   gridTemplateColumns: [
     "1.25rem",
     "minmax(0,1fr)",
+    "4.75rem",
+    "4.25rem",
+    "3rem",
     "3.25rem",
-    "2.75rem",
-    "2.75rem",
-    ...(dynamicCount > 0 ? [`repeat(${dynamicCount}, minmax(2.5rem,auto))`] : []),
+    ...(dynamicCount > 0 ? [`repeat(${dynamicCount}, minmax(3rem,auto))`] : []),
     "4.5rem",
   ].join(" "),
 });
 
-const FIXED_VALUE_COLS = 3;
+const FIXED_VALUE_COLS = 4;
+
+const readoutCell = "text-left";
 
 const variableAttrsForModel = (productModel: string): DisplayAttribute[] =>
-  variablevariableStateAttri(getCachedMotorModelConfig(productModel)?.variableStateAttri ?? []);
+  variablevariableStateAttri(
+    getCachedMotorModelConfig(productModel)?.variableStateAttri ?? [],
+  ).filter((attr) => !DEBUG_FIXED_READOUT_IDS.has(attr.id));
 
 type MotorListRow = {
   motor: Motor;
@@ -381,41 +399,46 @@ export const BuildDebugMotorList = () => {
 
                         {online ? (
                           <>
-                            <span className="text-right font-mono text-mono-sm tabular-nums text-foreground">
-                              {formatLengthFamilyValue(row.displayP, "mm", displayUnit, {
-                                canonicalPrecision: 1,
-                              })}
-                            </span>
-                            <span
-                              className={cn(
-                                "text-right font-mono text-mono-sm tabular-nums",
-                                row.alarms.temperature ? "text-warning" : "text-muted-foreground",
-                              )}
-                            >
-                              {(
+                            <DebugReadout
+                              meta={POSITION_READOUT}
+                              value={formatDebugPositionReadout(row.displayP, displayUnit)}
+                              valueClassName="text-foreground"
+                              className={readoutCell}
+                            />
+                            <DebugReadout
+                              meta={SPEED_READOUT}
+                              value={formatDebugSpeedReadout(row.telemetry, displayUnit)}
+                              valueClassName="text-foreground"
+                              className={readoutCell}
+                            />
+                            <DebugReadout
+                              meta={TEMPERATURE_READOUT}
+                              value={`${(
                                 telemetryStateValue(
                                   row.telemetry,
                                   MOCK_STATE_IDS.actualTemperature,
                                 ) ?? 0
-                              ).toFixed(0)}
-                              °
-                            </span>
-                            <span
-                              className={cn(
-                                "text-right font-mono text-mono-sm tabular-nums",
-                                row.alarms.torqueImbalance
-                                  ? "text-warning"
-                                  : "text-muted-foreground",
-                              )}
-                            >
-                              {(
+                              ).toFixed(0)}°`}
+                              valueClassName={
+                                row.alarms.temperature ? "text-warning" : "text-muted-foreground"
+                              }
+                              className={readoutCell}
+                            />
+                            <DebugReadout
+                              meta={TORQUE_READOUT}
+                              value={`${(
                                 telemetryStateValue(
                                   row.telemetry,
                                   MOCK_STATE_IDS.actualTorque,
                                 ) ?? 0
-                              ).toFixed(0)}
-                              %
-                            </span>
+                              ).toFixed(0)}%`}
+                              valueClassName={
+                                row.alarms.torqueImbalance
+                                  ? "text-warning"
+                                  : "text-muted-foreground"
+                              }
+                              className={readoutCell}
+                            />
                             {row.variableAttrs.map((attr) => {
                               const pos = row.telemetry.values[MOCK_STATE_IDS.actualPosition];
                               const originOffset =
@@ -426,16 +449,13 @@ export const BuildDebugMotorList = () => {
                                 originOffset,
                               );
                               return (
-                                <span
+                                <DebugReadout
                                   key={attr.id}
-                                  title={attr.label}
-                                  className={cn(
-                                    "text-right font-mono text-mono-sm tabular-nums",
-                                    stateAttrToneClass(attr.id, row.alarms),
-                                  )}
-                                >
-                                  {formatStateAttrDisplay(attr, raw, displayUnit)}
-                                </span>
+                                  meta={debugReadoutMeta(attr)}
+                                  value={formatStateAttrDisplay(attr, raw, displayUnit)}
+                                  valueClassName={stateAttrToneClass(attr.id, row.alarms)}
+                                  className={readoutCell}
+                                />
                               );
                             })}
                             <MotorStatusBadge
@@ -444,20 +464,20 @@ export const BuildDebugMotorList = () => {
                                 blockedByCouple,
                                 status: row.telemetry.status,
                               })}
-                              className="justify-self-end"
+                              className="justify-self-start"
                             />
                           </>
                         ) : (
                           <>
                             <span
-                              className="text-right font-mono text-mono-sm tabular-nums text-muted-foreground"
+                              className="font-mono text-mono-sm tabular-nums text-muted-foreground"
                               style={{
                                 gridColumn: `span ${FIXED_VALUE_COLS + row.variableAttrs.length}`,
                               }}
                             />
                             <MotorStatusBadge
                               kind={{ type: "runtime", status: "powerOff" }}
-                              className="justify-self-end"
+                              className="justify-self-start"
                             />
                           </>
                         )}

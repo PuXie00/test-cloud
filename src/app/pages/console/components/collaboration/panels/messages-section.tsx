@@ -79,6 +79,7 @@ export const MessagesSection = ({ messages, onChange }: MessagesSectionProps) =>
                 placeholder="输入快捷消息…"
                 className="min-w-0 flex-1 bg-input-background"
                 aria-label="消息内容"
+                revertOnEscape={false}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") handleSendMessage();
                 }}
