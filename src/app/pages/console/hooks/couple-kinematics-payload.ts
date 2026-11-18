@@ -54,12 +54,6 @@ const motorsForObject = (object: ControlledObject, motors: readonly Motor[]): Mo
       },
   );
 
-const mountBBoxSpan = (object: ControlledObject): [number, number] => {
-  const xs = object.axes.map((axis) => axis.mount.x);
-  const zs = object.axes.map((axis) => axis.mount.z);
-  return [Math.max(...xs) - Math.min(...xs), Math.max(...zs) - Math.min(...zs)];
-};
-
 const originDistances = (object: ControlledObject): { origin_distance1: number; origin_distance2: number } =>
   object.modelRunDirection === 2
     ? { origin_distance1: 0, origin_distance2: object.pulleyDistance }
@@ -75,13 +69,13 @@ const solverAxisParams = (
   return object.motionParams?.[id];
 };
 
-const paramsForType = (object: ControlledObject, type: SolverTypeCode): number[][] => {
-  if (type === 9) return [mountBBoxSpan(object)];
-  return object.axes.map((axis) => [axis.mount.x, axis.mount.z, 0]);
-};
+/** 吊点按 PLC 平面坐标 [x, z, 0]，与 hangingPointArray 同序 */
+const hoistPoints = (object: ControlledObject): number[][] =>
+  object.axes.map((axis) => [axis.mount.x, axis.mount.z, 0]);
 
+/** 安全半径：多点摆取配置值；多点倾斜没有该配置，取物体底面外接圆半径 */
 const rimForType = (object: ControlledObject, type: SolverTypeCode): number[] => {
-  if (type === 9) return [object.dimensions.w, object.dimensions.d];
+  if (type === 9) return [Math.hypot(object.dimensions.w, object.dimensions.d) / 2];
   return [object.safetyRadius ?? 0];
 };
 
@@ -107,7 +101,7 @@ export const buildSolverCallItem = (input: {
     index: input.index,
     type,
     ...origins,
-    params: paramsForType(input.object, type),
+    params: hoistPoints(input.object),
     motor_H: bound.map((motor) => input.motorPositions.get(motor.id) ?? 0),
     // motor_H: bound.map((motor) => 0),
     limit_data: [

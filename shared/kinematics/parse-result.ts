@@ -8,15 +8,6 @@ const fail = (
   message: string,
 ): KinematicsSolveResult => ({ ok: false, code, message })
 
-/** YXZ_call.json: `{ path, data }` — path is an existing output directory. */
-export const buildKinematicsCallFile = (
-  items: unknown[],
-  outputDir: string,
-): { path: string; data: unknown[] } => ({
-  path: outputDir,
-  data: items,
-})
-
 export const validateKinematicsResults = (
   items: unknown[],
   expectedCount: number,
@@ -43,7 +34,7 @@ export const validateKinematicsResults = (
   return { ok: true, data: items }
 }
 
-/** Parse YXZ.json. Latest exe: `{ version, errPrintStr, data }`. Legacy: result array. */
+/** Parse YXZ.json. YXZ_new: result array. YXZ_2819: `{ version, errPrintStr, data }`. */
 export const parseKinematicsResultFile = (
   parsed: unknown,
   expectedCount: number,

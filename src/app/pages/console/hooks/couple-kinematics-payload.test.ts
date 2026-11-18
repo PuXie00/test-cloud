@@ -113,7 +113,7 @@ describe("assignSolverIndexes", () => {
 });
 
 describe("buildSolverCallItem", () => {
-  it("builds a four-point request with bbox spans and two rim values", () => {
+  it("builds an XY multi-point request with hoist xyz and footprint circumradius", () => {
     const item = buildSolverCallItem({
       object: fourPoint,
       motors: [
@@ -132,8 +132,15 @@ describe("buildSolverCallItem", () => {
       index: 1,
     });
     expect(item.type).toBe(9);
-    expect(item.params).toEqual([[800, 400]]);
-    expect(item.limit_rim).toEqual([1800, 900]);
+    expect(item.params).toEqual([
+      [-400, -200, 0],
+      [400, -200, 0],
+      [400, 200, 0],
+      [-400, 200, 0],
+    ]);
+    expect(item.limit_rim).toHaveLength(1);
+    expect(item.limit_rim[0]).toBeCloseTo(Math.hypot(1800, 900) / 2);
+    expect(item.betainit).toBe(0);
     expect(item.motor_H).toEqual([10, 20, 30, 40]);
   });
 

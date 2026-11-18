@@ -9,10 +9,7 @@ import {
   KINEMATICS_SOLVE_TIMEOUT_MS,
   KINEMATICS_START_TIMEOUT_MS,
 } from '../../../shared/kinematics/protocol'
-import {
-  buildKinematicsCallFile,
-  parseKinematicsResultFile,
-} from '../../../shared/kinematics/parse-result'
+import { parseKinematicsResultFile } from '../../../shared/kinematics/parse-result'
 import type { KinematicsSolveResult } from '../../../shared/kinematics/types'
 import {
   isKinematicsRunning,
@@ -173,13 +170,13 @@ const ensureSocket = async (): Promise<KinematicsSolveResult | null> => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
 
+/** YXZ_call.json 顶层就是请求数组；程序从当前目录读它，并把 YXZ.json 写回当前目录 */
 const writeCallFile = async (items: unknown[]): Promise<string> => {
   const cwd = ensureKinematicsCwd()
   const callPath = path.join(cwd, KINEMATICS_CALL_FILE)
-  const body = buildKinematicsCallFile(items, cwd)
   const handle = await fs.open(callPath, 'w')
   try {
-    await handle.writeFile(`${JSON.stringify(body, null, 2)}\n`, 'utf8')
+    await handle.writeFile(`${JSON.stringify(items, null, 2)}\n`, 'utf8')
     await handle.sync()
   } finally {
     await handle.close()
