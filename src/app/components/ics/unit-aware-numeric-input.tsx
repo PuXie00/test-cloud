@@ -37,15 +37,16 @@ export const UnitAwareNumericInput = (props: UnitAwareNumericInputProps) => {
   const cPrec = resolveCanonicalPrecision(precision, step);
   const dPrec = resolveDisplayPrecision(cPrec, display);
 
-  // Snap to the canonical step like a plain mm NumericInput; display-side snapping is only
-  // for the scrub readout and is re-done here to drop the display→mm round-trip error.
+  // NumericInput already snapped drags / − + to the (display) step; typed values are only
+  // rounded to precision. Re-snapping to the canonical step here would turn a typed 12.5 into 13,
+  // so only clamp and round to the canonical precision — that also drops the display→mm
+  // round-trip error (display precision carries ≥ log10(factor) extra digits).
   const toCanonical = (v: number) =>
     normalizeNumeric(toCanonicalLengthValue(v, display), {
       min,
       max,
-      step: canonicalStep,
       precision: cPrec,
-      snapToStep,
+      snapToStep: false,
     });
 
   return (
