@@ -13,7 +13,7 @@
   },
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --mode development",
     "build": "vite build && electron-builder",
     "build:staging": "vite build --mode staging && electron-builder --config electron-builder.dev.json",
     "build:linux:deb": "vite build && electron-builder --linux deb",

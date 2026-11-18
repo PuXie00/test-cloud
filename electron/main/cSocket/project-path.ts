@@ -5,5 +5,10 @@
  */
 export const toCppRelativeProjectPath = (projectPath: string, platform: string = process.platform): string => {
   const name = projectPath.trim().split(/[\\/]+/).filter(Boolean).pop() ?? ''
-  return platform === 'win32' ? `.\\Project\\${name}` : `./Project/${name}`
+  return platform === 'win32' ? `..\\Project\\${name}` : `../Project/${name}`
 }
+
+// export const toCppRelativeProjectPath = (projectPath: string, platform: string = process.platform): string => {
+//   const name = projectPath.trim().split(/[\\/]+/).filter(Boolean).pop() ?? ''
+//   return platform === 'win32' ? `.\\Project\\${name}` : `./Project/${name}`
+// }
