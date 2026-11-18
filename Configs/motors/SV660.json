@@ -103,7 +103,7 @@
         "dataType": "enum",
         "byteLength": 1,
         "unit": "",
-        "DefaultValue": 1,
+        "DefaultValue": 0,
         "scale": 1,
         "display": true,
         "values": [

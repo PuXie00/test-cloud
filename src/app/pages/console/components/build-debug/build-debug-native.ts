@@ -201,6 +201,16 @@ export const applyResetAlarmMotor = async (motorIds: number[]): Promise<void> =>
   }
 };
 
+export const applyLightSlaveMotor = async (motorIds: number[]): Promise<void> => {
+  if (motorIds.length === 0) return;
+  const api = window.csocketApi;
+  if (!api?.lightSlaveMotor) throw new Error("csocketApi 不可用");
+  const result = await api.lightSlaveMotor(motorIds.map((deviceId) => ({ deviceId })));
+  if (isCppAckFailed(result)) {
+    throw new Error(String(result.message || "点亮灯失败"));
+  }
+};
+
 export const applyClear731AlarmMotor = async (motorIds: number[]): Promise<void> => {
   if (motorIds.length === 0) return;
   const api = window.csocketApi;

@@ -95,6 +95,7 @@ export default defineConfig(({ command, mode }) => {
       }),
     ],
     server: {
+      host: '127.0.0.1',
       // 开发态工程目录在 APP_ROOT/Project；保存写盘不得触发 Vite 整页刷新
       watch: {
         ignored: ['**/Project/**'],

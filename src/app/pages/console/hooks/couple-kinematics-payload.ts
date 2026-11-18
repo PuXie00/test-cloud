@@ -76,12 +76,12 @@ const solverAxisParams = (
 };
 
 const paramsForType = (object: ControlledObject, type: SolverTypeCode): number[][] => {
-  if (type === 64) return [mountBBoxSpan(object)];
+  if (type === 9) return [mountBBoxSpan(object)];
   return object.axes.map((axis) => [axis.mount.x, axis.mount.z, 0]);
 };
 
 const rimForType = (object: ControlledObject, type: SolverTypeCode): number[] => {
-  if (type === 64) return [object.dimensions.w, object.dimensions.d];
+  if (type === 9) return [object.dimensions.w, object.dimensions.d];
   return [object.safetyRadius ?? 0];
 };
 
@@ -116,7 +116,7 @@ export const buildSolverCallItem = (input: {
       axisLimit(solverAxisParams(input.object, "y")),
     ],
     limit_rim: rimForType(input.object, type),
-    betainit: type === 63 ? (input.object.initialTiltDirection ?? 0) : 0,
+    betainit: type === 7 ? (input.object.initialTiltDirection ?? 0) : 0,
     HPY: [input.hpy[0], input.hpy[1], input.hpy[2]],
     // HPY: [0, 0, 0],
   };

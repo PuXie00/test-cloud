@@ -1,12 +1,13 @@
 import type { ControlType } from "@/app/project/configuration-types";
 
-/** Python sidecar type codes from YXZ_2819: 31 单点 / 64 四点 / 63 多点. */
-export type SolverTypeCode = 31 | 64 | 63;
+/** 求解器 type：2 单点 / 3 多级升降 / 7 多点摆 / 9 XY 多点摆 */
+export type SolverTypeCode = 2 | 3 | 7 | 9;
 
 const SOLVER_TYPE_BY_CONTROL: Partial<Record<ControlType, SolverTypeCode>> = {
-  singlePointMove: 31,
-  dualTiltFourPointSwing: 64,
-  multiPointSwing: 63,
+  singlePointMove: 2,
+  multiLevelHoist: 3,
+  multiPointSwing: 7,
+  dualTiltFourPointSwing: 9,
 };
 
 export const encodeSolverType = (controlType: ControlType): SolverTypeCode | null =>

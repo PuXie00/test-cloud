@@ -776,7 +776,7 @@ export class CsocketApiService {
     return this.sendBuilt('Opera|clear731Alarm', '0x0004', items, opts)
   }
   // 点亮从站灯带
-  lightSlaveMotor(items: { lightFlag: number }[], opts?: CsocketSendOpts) {
+  lightSlaveMotor(items: { deviceId: number }[], opts?: CsocketSendOpts) {
     return this.sendBuilt('Opera|lightSlave', '0x0005', items, opts)
   }
   // 轴设定位移,position为0时为设原点
