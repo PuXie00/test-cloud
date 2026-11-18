@@ -7,13 +7,7 @@ import { useSessionDisplayLengthUnit } from "@/app/project/display-length-unit-p
 import { evaluateMotorAlarms } from "./build-debug-logic";
 import { useBuildDebugOptional } from "@/app/pages/console/components/build-debug/build-debug-context";
 import { motorStatusDotClass } from "./motor-status-badge";
-import {
-  DebugReadout,
-  POSITION_READOUT,
-  SPEED_READOUT,
-  formatDebugPositionReadout,
-  formatDebugSpeedReadout,
-} from "./debug-readout";
+import { POSITION_READOUT, formatDebugPositionReadout } from "./debug-readout";
 
 type ScreenAnchor = {
   motorId: string;
@@ -147,7 +141,6 @@ export const MotorTelemetryOverlay = () => {
         const selected = selectedMotorIds.has(motorId);
         const online = isMotorOnline(motorId);
 
-        // 名称在左，p: / s: 两行叠在右侧，徽章比单行窄，挤在一起的吊点少压一些
         return (
           <div
             key={anchor.motorId}
@@ -178,19 +171,8 @@ export const MotorTelemetryOverlay = () => {
               </span>
             </span>
             {online ? (
-              <span className="flex flex-col">
-                <DebugReadout
-                  meta={POSITION_READOUT}
-                  value={formatDebugPositionReadout(displayPositionOf(motorId), displayUnit)}
-                  valueClassName="text-foreground"
-                  className="flex justify-between gap-1"
-                />
-                <DebugReadout
-                  meta={SPEED_READOUT}
-                  value={formatDebugSpeedReadout(telemetry, displayUnit)}
-                  valueClassName="text-foreground"
-                  className="flex justify-between gap-1"
-                />
+              <span className="text-foreground" title={POSITION_READOUT.label}>
+                {formatDebugPositionReadout(displayPositionOf(motorId), displayUnit)}
               </span>
             ) : (
               <span className="text-muted-foreground">离线</span>

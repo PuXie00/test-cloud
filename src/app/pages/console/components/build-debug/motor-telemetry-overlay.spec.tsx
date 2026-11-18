@@ -71,15 +71,18 @@ const renderOverlay = () =>
     </DisplayLengthUnitProvider>,
   );
 
-describe("3D 吊点徽章 · 短前缀", () => {
-  it("在线电机：名称旁叠两行 p: 位置 / s: 速度", () => {
+describe("3D 吊点徽章", () => {
+  it("在线电机：名称旁只显示位置数值，不带前缀、不显示速度", () => {
     const { container } = renderOverlay();
     const badge = container.querySelector<HTMLElement>('[data-motor-badge="11"]')!;
     expect(badge).not.toBeNull();
-    const lines = [...badge.querySelectorAll<HTMLElement>("[data-readout]")];
-    expect(lines.map((el) => el.textContent)).toEqual(["p: 1234.5", "s: -25"]);
-    expect(lines.map((el) => el.title)).toEqual(["位置", "速度"]);
+    expect(badge.querySelectorAll("[data-readout]")).toHaveLength(0);
     expect(badge.textContent).toContain("M11");
+    expect(badge.textContent).toContain("1234.5");
+    expect(badge.textContent).not.toContain("p:");
+    expect(badge.textContent).not.toContain("s:");
+    expect(badge.textContent).not.toContain("-25");
+    expect(badge.querySelector("[title='位置']")).not.toBeNull();
   });
 
   it("离线电机只写离线，不出数据", () => {

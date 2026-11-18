@@ -526,7 +526,7 @@ export class CsocketApiService {
         isTMapedHeadPrepare.push(toActionSyncPrepareHead(item))
         isTMapedHeadRelease.push({
           actionId: item.actionId,
-          startFlag: 1,
+          startFlag: 2,
           startTimestamp: Date.now() + 100,
           deviceCount: item.deviceId.length,
         })

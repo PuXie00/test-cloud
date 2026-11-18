@@ -59,6 +59,8 @@ export const resolveMasterTypeIdByPlcModel = (plcModel: number): string =>
 /** 产品型号索引映射：gourdNo → productModel（暂用，后续换正式型号表） */
 export const GOURD_NO_TO_PRODUCT_MODEL: Record<number, string> = {
   253: "YZ_AXIS_HOIST_500KG",
+  0: "YZ_AXIS_HOIST_500KG",
+  3: "YZ_AXIS_HOIST_500KG"
 };
 
 export const resolveProductModelByGourdNo = (gourdNo: number): string =>
