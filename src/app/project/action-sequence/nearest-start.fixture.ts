@@ -31,7 +31,7 @@ export const fourPointFixture = (): ControlledObjectConfig =>
     id: 3,
     name: "四点",
     // 多点倾斜按四点正解（业务模型 7）
-    controlType: 8,
+    controlType: 9,
     enabledVirtualAxes: ["v1", "v2", "v3"],
     pulleyDistance: 100,
     maxAxisVelocity: 500,

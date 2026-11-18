@@ -131,7 +131,7 @@ const GZ_SETUP = {
     {
       id: 8,
       name: "升降摆动架-01",
-      controlType: 8 as const,
+      controlType: 9 as const,
       enabledVirtualAxes: ["v1" as const, "v2" as const, "v3" as const],
       shapePreset: "cube" as const,
       shapeDimensions: { width: 2000, height: 500, depth: 1200 },
@@ -159,7 +159,7 @@ const GZ_SETUP = {
     {
       id: 9,
       name: "飘摆架-01",
-      controlType: 8 as const,
+      controlType: 9 as const,
       enabledVirtualAxes: ["v1" as const, "v2" as const, "v3" as const],
       shapePreset: "ring" as const,
       shapeDimensions: { outerDiameter: 1200, innerDiameter: 720, thickness: 200 },
