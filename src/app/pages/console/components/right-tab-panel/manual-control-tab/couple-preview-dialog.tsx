@@ -23,6 +23,8 @@ type CouplePreviewDialogProps = {
 };
 
 const cellClass = "border border-border/60 px-3 py-2";
+/** 列头钉在滚动区顶部，耦合轴很多时滚到下面也知道每列是什么 */
+const headCellClass = cn(cellClass, "sticky top-0 z-10 bg-muted font-medium");
 
 export const CouplePreviewDialog = ({
   open,
@@ -44,24 +46,28 @@ export const CouplePreviewDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onCancel(); }}>
-      <DialogContent className="max-w-3xl overflow-hidden border-0 bg-card p-0 shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
-        <DialogHeader className="bg-muted px-4 py-3 text-left">
+      {/* 高度限制在窗口内：标题、底部按钮固定，只有对照表滚动（一次耦合很多轴时确认按钮也一直可见） */}
+      <DialogContent className="flex max-h-[min(640px,calc(100vh-2rem))] max-w-3xl flex-col gap-0 overflow-hidden border-0 bg-card p-0 shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
+        <DialogHeader className="shrink-0 bg-muted px-4 py-3 text-left">
           <DialogTitle className="text-heading-md">耦合对照</DialogTitle>
           <DialogDescription className="text-body-sm text-muted-foreground">
             确认后才向设备下发耦合指令
           </DialogDescription>
         </DialogHeader>
 
-        <div className="bg-background p-4">
-          <div className="bg-muted">
+        <div className="flex min-h-0 flex-auto flex-col bg-background p-4">
+          <div
+            data-slot="couple-preview-scroll"
+            className="min-h-0 overflow-auto overscroll-contain bg-muted"
+          >
             <table className="w-full border-collapse text-body-sm">
               <thead>
                 <tr className="text-left text-label-caps text-muted-foreground">
-                  <th className={cn(cellClass, "font-medium")}>物体</th>
-                  <th className={cn(cellClass, "font-medium")}>电机索引</th>
-                  <th className={cn(cellClass, "font-medium")}>当前位置</th>
-                  <th className={cn(cellClass, "font-medium")}>目标位置</th>
-                  <th className={cn(cellClass, "font-medium")}>偏差</th>
+                  <th className={headCellClass}>物体</th>
+                  <th className={headCellClass}>电机索引</th>
+                  <th className={headCellClass}>当前位置</th>
+                  <th className={headCellClass}>目标位置</th>
+                  <th className={headCellClass}>偏差</th>
                 </tr>
               </thead>
               <tbody>
@@ -100,7 +106,7 @@ export const CouplePreviewDialog = ({
           </div>
         </div>
 
-        <DialogFooter className="flex flex-row items-center justify-between gap-3 bg-muted px-4 py-3 sm:flex-row sm:justify-between sm:space-x-0">
+        <DialogFooter className="flex shrink-0 flex-row items-center justify-between gap-3 bg-muted px-4 py-3 sm:flex-row sm:justify-between sm:space-x-0">
           <div className="min-w-0 flex-1 space-y-1">
             {preview?.timedOut ? (
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
