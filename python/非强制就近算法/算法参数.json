@@ -269,10 +269,7 @@
       ],
       "model_type": 3,
       "motor_num": 2,
-      "max_motor_velocity": 500,
-      "nSections": 0,
-      "AdjustDistance": [],
-      "deceleration_ratio": 20
+      "max_motor_velocity": 500
     },
     {
       "model_id": 500,
@@ -857,8 +854,8 @@
     "models[].point_init_pos": "7/9的全部原始吊点，按真实电机顺序。每点[x,y]或[x,y,z]，mm。XY9为两个吊点时必须在同一X轴或Y轴上、Z=0、线段包含原点且两点不重合，允许一个点正好为原点。至少3点时保留原凸包要求，可含内部吊点及重复XY点。",
     "settings.entry_max_skip_ms": "就近且提供停止参考帧时，沿运行方向最多跳过的原曲线毫秒数，默认3000。null为不限距离；搜索仍遵循当前段及运行方向后续段规则。参考帧之前的本段候选不受距离限制。",
     "models[].workingStroke": "4号真实旋转周期，对应PLC实轴config.workingStroke。单位与H相同，须提供真实软行程。",
-    "models[].AdjustDistance": "3号实际内部段点列表，最多10项，使用物理H坐标，严格递增且位于H软行程内。空列表表示无内部段点。",
-    "models[].nSections": "3号内部段点数量，可由AdjustDistance长度推得，传入时须一致。",
-    "models[].deceleration_ratio": "3号段点速度比例，0到100，对应PLC deceleration_ratio。"
+    "models[].AdjustDistance": "3号可选内部段点列表，最多10槽，使用物理H坐标。无段点可省略、null或[]；有段点时提供真实配置。仅前nSections项参与计算，须严格递增且位于H软行程内，固定数组尾部不参与校验与运动。",
+    "models[].nSections": "3号可选启用段点数量，整数0至10。省略时按AdjustDistance长度推导，均省略时为0；显式传入时仅启用前nSections项，列表长度须足够。为0时按普通H Move准备。",
+    "models[].deceleration_ratio": "3号存在启用段点时必填PLC实际段点速度比例，0至100。无段点时可省略或null并按0处理；传入数值时仍须位于0至100。"
   }
 }

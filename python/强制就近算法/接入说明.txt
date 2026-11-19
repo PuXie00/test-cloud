@@ -9,6 +9,12 @@ command.trajectory_run=true。
 模型分支
 2单点的H对应每根真实电机位置。
 3多级升降在强制准备中由PLC curveSetReady置入曲线模式，runningDof走H标准准备轨迹。
+3支持无内部段点。nSections、AdjustDistance、deceleration_ratio均可省略，主示例已省略这些字段。
+也可传nSections=0、AdjustDistance=[]，或nSections=0配固定10槽占位数组；0个有效段点均可计算。
+AdjustDistance=null和deceleration_ratio=null按省略处理；nSections提供时仍须为整数，不能为null。
+显式nSections须为0到10的整数，提供AdjustDistance时仅前count项有效，尾部占位忽略；省略count则按列表长度推导。
+强制准备不依赖段点列表，nSections大于0时也可只传count元数据。列表实际提供时，有效点须有限、严格递增且位于给定H软行程内部。
+deceleration_ratio为可选元数据，提供时须为0到100；准备运动仍按H最大能力规划。
 4无极旋转使用第一虚轴H，H、V/A/D及max_motor_velocity采用旋转轴技术单位。
 4必填workingStroke，取实轴config.workingStroke，关联实轴周期须一致。
 min_position_HPY和max_position_HPY提供真实软行程。完整范围为0到workingStroke。

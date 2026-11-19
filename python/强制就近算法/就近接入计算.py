@@ -2271,19 +2271,30 @@ def _normalize_inputs(parameters):
             raise ValueError("平铺字段与geometry中的同名配置冲突")
         # 配置放geometry或保留旧平铺字段均可；核心只使用归一化副本。
         item.update(geometry)
+        for name in ("AdjustDistance", "deceleration_ratio"):
+            if item.get(name) is None:
+                item.pop(name, None)
         for name in geometry_fields-{"motor_num", "moveWhat", "point_init_pos", "nSections", "AdjustDistance"}:
             if name in item:
                 item[name] = _number(item[name], name)
+        if "nSections" in item and (type(item["nSections"]) is not int or not 0 <= item["nSections"] <= 10):
+            raise ValueError("nSections须为0到10的整数")
         if "AdjustDistance" in item:
             points = item["AdjustDistance"]
             if not isinstance(points, list) or len(points) > 10:
                 raise ValueError("AdjustDistance须为最多10个内部段点列表")
-            item["AdjustDistance"] = [_number(value, "AdjustDistance") for value in points]
+            count = item.get("nSections", len(points))
+            if count > len(points):
+                raise ValueError("AdjustDistance有效段点数量不能少于nSections")
+            # PLC仅复制前nSections个点，固定数组尾部占位不参与校验和计算。
+            item["AdjustDistance"] = [_number(value, "AdjustDistance") for value in points[:count]]
             if any(a >= b for a, b in zip(item["AdjustDistance"], item["AdjustDistance"][1:])):
                 raise ValueError("多级升降内部段点须严格递增")
-            count = item.get("nSections", len(points))
-            if type(count) is not int or count != len(points):
-                raise ValueError("nSections须与AdjustDistance数量一致")
+            if scheme == "business" and kind == 3 and count:
+                lower = _hpy(item["min_position_HPY"], "min_position_HPY")[0] if "min_position_HPY" in item else -math.inf
+                upper = _hpy(item["max_position_HPY"], "max_position_HPY")[0] if "max_position_HPY" in item else math.inf
+                if any(not lower < value < upper for value in item["AdjustDistance"]):
+                    raise ValueError("多级升降有效内部段点须位于H软行程内部")
         if "deceleration_ratio" in item and not 0 <= item["deceleration_ratio"] <= 100:
             raise ValueError("deceleration_ratio须为0到100的百分数")
         if "point_init_pos" in item:

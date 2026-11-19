@@ -17,15 +17,18 @@ XY9双吊点配置
 三点及以上继续使用原凸包和偏移计算；普通多点摆7至少三个非共线吊点。
 
 多级3配置
-每模型提供实际AdjustDistance内部段点列表及deceleration_ratio百分数。
-nSections可省略并取列表长度，提供时须一致，内部段点最多10个。
-段点为物理位置，严格递增且在H软行程内。
+没有启用内部段点时，AdjustDistance、nSections、deceleration_ratio均可省略，直接按普通H Move计算。
+也可只传nSections=0或AdjustDistance=[]；无段点时可选AdjustDistance和deceleration_ratio的null按省略处理。
+存在内部段点时提供真实AdjustDistance及deceleration_ratio百分数，启用段点最多10个。
+nSections为可选0至10整数，省略时取列表长度；显式传入时仅使用前nSections项，列表须至少有该数量，最多10槽。
+启用段点须为物理位置、严格递增且在H软行程内，固定数组尾部旧值或0占位不参与计算。
+deceleration_ratio传入数值时始终校验0至100，无段点省略时按0处理。
 原PLC配置uiStagePointCount对应nSections，alrStagePointPosition对应AdjustDistance，uiStageSpeedRatio对应deceleration_ratio。
 算法回放PLC普通Move的内部覆盖动作，准备输出仍为每模型一条外部Move。
 例0到1000，段点300/700，V=A=D200，比例20%，内部停车目标依次304、704、1000。
 理想连续模型总耗时7.28秒，在6秒时H=844、V=200。
 准备候选和原Move后续都按这套实际分段控制回放。
-本包主输入示例的3号模型使用空段点，实际有段点时传真实配置。
+本包主输入示例的3号模型省略段点字段；案例“多级跨段接入”展示有段点时的真实配置。
 
 无极4配置
 使用第一虚轴H，提供真实workingStroke周期及H软行程。

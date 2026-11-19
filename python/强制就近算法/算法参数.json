@@ -1,5 +1,5 @@
 {
-  "_使用说明": "五模型强制轨迹就近准备示例。XY9示例绑定两个X轴吊点，默认H速度300、真实最大500，真实最大X/Y角速3.9。调用calculate_nearest_entry(parameters)。",
+  "_使用说明": "五模型强制轨迹就近准备示例。XY9示例绑定两个X轴吊点，默认H速度300、真实最大500，真实最大X/Y角速3.9。调用calculate_nearest_entry(parameters)。 多级3示例省略全部可选分段字段，展示无内部段点也能计算。",
   "_字段说明": {
     "command.operation": "操作名，nearest。",
     "command.trajectory_run": "本包为true，强制轨迹按原曲线帧准备。",
@@ -61,9 +61,9 @@
     "runtime.models[].velocity_HPY": "停稳反馈速度，当前准备要求三项为0。",
     "runtime.models[].standstill": "确认已经停稳。",
     "models[].workingStroke": "4号模型的真实旋转周期，取PLC实轴config.workingStroke，使用H的技术单位。支持平铺或geometry。",
-    "models[].nSections": "多级3的内部段点个数。强制准备按PLC曲线模式执行H标准Move。",
-    "models[].AdjustDistance": "多级3的内部物理段点列表，对应PLC AdjustDistance配置。",
-    "models[].deceleration_ratio": "多级3段点速度比例，0到100，与PLC配置一致。"
+    "models[].nSections": "多级3的可选内部段点数量，0到10的整数，提供时不能为null。0表示无内部段点，可完全省略多级专属字段，也可只传count元数据。显式count只令AdjustDistance前count项生效；未传count时按所给列表长度推导。强制准备走PLC曲线模式的H标准Move。",
+    "models[].AdjustDistance": "可省略的多级内部段点列表，物理H位置，null按省略处理。允许空列表或固定10槽数组；显式nSections时只校验前count项，尾部占位忽略。有效点须有限、严格递增且在给定H软行程内。强制准备无需该列表，nSections大于0时也可只传count元数据。",
+    "models[].deceleration_ratio": "可省略的多级段点速度比例，null按省略处理，提供有效值时须为0到100。强制准备走曲线模式，不依赖此字段计算准备运动。"
   },
   "_输出字段说明": {
     "nearest_result": "CLI保存的结果对象，API直接返回其内容。",
@@ -600,13 +600,7 @@
         2000,
         0.0,
         0.0
-      ],
-      "nSections": 2,
-      "AdjustDistance": [
-        1000,
-        2000
-      ],
-      "deceleration_ratio": 20
+      ]
     },
     {
       "plc_id": "1",

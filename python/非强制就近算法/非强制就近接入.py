@@ -958,23 +958,32 @@ def _stage_parameters_of(model, lower, upper):
             raise ValueError(f'多级升降{name}平铺字段与geometry配置冲突')
         if name in model or name in nested:
             values[name] = model.get(name, nested.get(name))
-    if 'AdjustDistance' not in values or 'deceleration_ratio' not in values:
-        raise ValueError('模型3须提供PLC实际AdjustDistance和deceleration_ratio')
-    points = values['AdjustDistance']
+    points = values.get('AdjustDistance', ())
+    if points is None:
+        points = ()
     if not isinstance(points, (list, tuple)) or len(points) > 10:
-        raise ValueError('多级升降AdjustDistance须为最多10个内部段点的位置列表')
-    points = tuple(_number(value, 'AdjustDistance') for value in points)
+        raise ValueError('多级升降AdjustDistance须为最多10槽的内部段点位置列表')
     count = values.get('nSections', len(points))
-    if type(count) is not int or count != len(points):
-        raise ValueError('多级升降nSections须等于AdjustDistance内部段点数量')
+    if type(count) is not int or not 0 <= count <= 10:
+        raise ValueError('多级升降nSections须为0至10的整数')
+    if len(points) < count:
+        raise ValueError(f'多级升降nSections启用{count}个段点，须提供至少{count}项AdjustDistance')
+    if values.get('deceleration_ratio') is not None:
+        ratio = _number(values['deceleration_ratio'], 'deceleration_ratio')
+        if not 0 <= ratio <= 100:
+            raise ValueError('多级升降deceleration_ratio须为0至100百分数')
+    elif count:
+        raise ValueError('多级升降启用内部段点时须提供PLC实际deceleration_ratio')
+    else:
+        ratio = 0.
+    if not count:
+        return None
+    points = tuple(_number(value, 'AdjustDistance') for value in points[:count])
     if not math.isfinite(lower) or not math.isfinite(upper) or lower >= upper:
         raise ValueError('多级升降须提供有限且有序的H软行程')
     if any(not lower < point < upper for point in points) or any(
             left >= right for left, right in zip(points, points[1:])):
         raise ValueError('多级升降内部段点须严格递增且位于H软行程内')
-    ratio = _number(values['deceleration_ratio'], 'deceleration_ratio')
-    if not 0 <= ratio <= 100:
-        raise ValueError('多级升降deceleration_ratio须为0至100百分数')
     return points, ratio / 100., lower, upper
 
 
