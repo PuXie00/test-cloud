@@ -1,62 +1,62 @@
-四模型非强制就近接入，单Move版
-2026-11-18
+非强制就近算法，五模型接入
+2026-11-19
 
-调用 calculate_nonforced_entry(parameters)。输入示例和字段说明在算法参数.json。
-只有status=planned且verification.passed=true时使用计算结果。
+调用 calculate_nonforced_entry(parameters)，输入为command/settings/models/runtime。
+只有status=planned且verification.passed=true时采用结果。
+当前XML编号为2单点、3多级升降、4无极旋转、7多点摆、9XY多点摆。
+所有参与模型一次计算，共同启步并在共同时间接回目标位置与有符号速度。
 
-四模型输入
-在每个models对象中提供model_type及max_motor_velocity。
-2为单点，3为多级升降，其每根真实电机位置等于H。
-7为普通多点摆，HPY=[高度,倾角,方向角]。
-9为XY多点摆，HPY=[高度,X倾角,Y倾角]。
-7/9还提供Baseheight1、Baseheight2、maxheight、point_init_pos、betainit及motor_num。
-这些几何字段可平铺或置于geometry对象，同名配置须一致。
-吊点支持[x,y]和[x,y,z]，按原吊点顺序保留全部真实电机。
-普通多点与XY使用用户提供YXZ_new.py中的对应正解约定，XY的betainit为0。
-多级升降输入实际保存的分段H曲线，分段规划体现在输入系数中。
-未填写model_type的历史输入按虚轴兼容路径计算；接入四模型实轴检查时按本示例填写上述字段。
+XY9双吊点配置
+支持两个吊点，motor_num须与point_init_pos条数一致。
+双点须位于同一X轴或Y轴，Z为0，线段包含原点且两点不重合，允许一个端点恰好是原点。
+双点按PLC的零水平偏移、先X后Y旋转和绳长换算计算实际电机速度。
+两个实轴仍使用H/X/Y三根虚轴，同一模型的三条轴记录组装成一条三轴准备Move。
+主输入示例的400号XY模型使用两个吊点，与其他四类模型共同准备接入。
+该例最大速度为[500,3.9,3.9]、默认速度为[300,3,3]，当前姿态取原曲线2000ms的[200,7.75,4]，共同接入2250ms，准备500ms。
+这里的7.75是示例实际位置，现场输入仍使用停稳后的真实反馈位置。
+三点及以上继续使用原凸包和偏移计算；普通多点摆7至少三个非共线吊点。
 
-准备规划
-整个动作的全部模型一次传入，包含每个模型停稳后的真实位置、最大虚轴V/A/D和行程。
-从停止参考帧所在的整个原动作段搜索连续曲线候选，该原段有方案时优先采用。
-有停止参考帧时，当前段全部无可执行候选则继续搜索运行方向的后续原段。
-settings.entry_max_skip_ms默认3000，限制沿运行方向相对参考帧的最大跳过距离。
-null解除跳过距离限制。有参考帧时均按当前段及运行方向后续段搜索。
-当前原段内位于参考帧之前的候选不受该距离上限限制。
-无停止参考帧时按整动作范围搜索。
-非就近时选择正向首帧或反向末帧，指定帧模式只求指定原曲线时刻。
-每个候选分别计算各轴单Move的共同准备时间，所有运动轴同时起步，按共同时间接入目标位置和有符号速度。
-以真实max_velocity_HPY、max_acceleration_HPY、max_deceleration_HPY作为能力上限。
-按最终0.1编码参数回放准备、接入及后续真实Move。
-按设备联合H/P/Y核对真实电机速度上界及几何方向域，覆盖准备与本轮后续实际运动。
-实轴检查失败时尝试其他准备时间或其他候选帧，每个新方案重新计算和完整核验。
-搜索受编码候选和5秒预算约束，可能返回保守失败或超时。
-不同模型相同实际运动和几何的通过证书可在本次计算内共享，缓存键包括完整运动、几何和上限。
+多级3配置
+每模型提供实际AdjustDistance内部段点列表及deceleration_ratio百分数。
+nSections可省略并取列表长度，提供时须一致，内部段点最多10个。
+段点为物理位置，严格递增且在H软行程内。
+原PLC配置uiStagePointCount对应nSections，alrStagePointPosition对应AdjustDistance，uiStageSpeedRatio对应deceleration_ratio。
+算法回放PLC普通Move的内部覆盖动作，准备输出仍为每模型一条外部Move。
+例0到1000，段点300/700，V=A=D200，比例20%，内部停车目标依次304、704、1000。
+理想连续模型总耗时7.28秒，在6秒时H=844、V=200。
+准备候选和原Move后续都按这套实际分段控制回放。
+本包主输入示例的3号模型使用空段点，实际有段点时传真实配置。
 
-上位机发送
-selected_curve_time_ms对应startPlan.targetFrameMs，是原曲线接入帧。
-entry_lead_ms/1000对应startPlan.transitionSec，是共同准备耗时。
-按plc_id/model_id或device_id分组entry_moves，用axisIndex=0/1/2填写virtualAxis。
-逐轴复制pos、vel、accVel、decVel，三轴共用一个准备发送时刻，组装成每模型一条准备Move。
-pos为算法规划的最终停车目标，接入处位置和有符号速度在devices[].join_HPY与join_velocity_HPY中。
-上位机直接采用输出pos。准备Move执行到共同时间后，从selected_curve_time_ms继续原Move表。
-GO后经过entry_lead_ms进入所选原曲线时刻，原表在该帧本来存在的Move照常发送。
-未参与轴采用真实当前位置的0.1编码保持参数。
-单点/多级升降的P/Y为不存在轴的占位，不能填入P/Y运动曲线。
-sendTime及clock_start_ms使用原曲线坐标，可能在动作首帧之外。
+无极4配置
+使用第一虚轴H，提供真实workingStroke周期及H软行程。
+H及V/A/D均使用旋转轴技术单位，max_motor_velocity同单位/s。
+按当前PLC MC_MoveAbsolute默认shortest，将每次Move在内部连续展开并回放。
+360周期的350到10实际展开为350到370，发给PLC的目标按周期规范编码为10。
+原曲线帧和正反方向含义见command.reverse，算法选择相应参考位置分支。
+多个中间目标可表达整圈路线，单个同余目标对应零位移。
+部分软范围需要整条最短路在允许区间内。方向不明的半周期等距候选返回原因。
 
-协议与超时
-位置、V/A/D以物理单位输出，发送端按0.1精度编码。
-V/A/D为uint16，位置为int32，010A/010B的PLC与描述文件精度须匹配。
-calculate_nonforced_entry从调用开始固定计时5秒，覆盖解析、搜索、完整回放及结果整理。
-超时返回status=infeasible和message，结果无entry_moves、devices和move_table。
-一般失败的原因见message及reasons。
-max_skip_ms表示本次就近参考帧模式采用的跳过上限，其他模式为null。
-segment_search_attempts包含原段range_ms、搜索阶段phase和状态status。
-原段被距离上限截断时附searched_range_ms，整段超过上限时status为beyond_max_skip。
-原表Move超虚轴能力或行程时，该Move之前及同一帧的候选由预检查排除，原因写入message/reasons。
-本轮离线验证，测试数据、计算耗时和范围在本次测试报告.txt中。
+速度及协议
+max_velocity_HPY、max_acceleration_HPY、max_deceleration_HPY填真实能力上限。
+XY角度最大速度按PLC实际REAL值填写，例如3.9直接填3.9；H默认300、实际最大500时，H最大速度填500。
+7使用[高度,倾角,方向角]，9使用[高度,X倾角,Y倾角]，提供吊点及基准几何进行实轴联合限速。
+按用户选定的当前XML协议，位置与速度为0.1精度，A/D为整数。
+发送端位置、速度乘10编码，加速度、减速度直接按整数编码。
+V物理上限6553.5，A/D物理上限65535；有效运动的可编码V/A/D须为正。
+每个候选先编码，再回放准备、交接状态和后续原Move。
+PLC按扫描周期检测多级过点，离线模型为连续事件规划，现场有扫描级误差。
+
+选帧和发送
+先查停止参考帧所在整个原段，再按运行方向后续原段搜索。
+settings.entry_max_skip_ms默认3000，null解除相对参考帧的向后跳过距离上限。
+输出max_skip_ms及segment_search_attempts中的searched_range_ms/beyond_max_skip记录。
+selected_curve_time_ms对应startPlan.targetFrameMs，entry_lead_ms/1000对应transitionSec。
+entry_moves按模型分组，axisIndex=0/1/2填入虚轴参数，三轴共用一个准备发送时刻。
+复制pos、vel、accVel、decVel，pos为最终停车目标。
+到共同时间后，从selected_curve_time_ms继续原Move表。
+接口里的三轴记录包含未参与轴的位置保持参数。
+5秒预算覆盖解析、搜索、编码回放和实轴检查，超时返回失败原因及空准备方案。
+有限编码候选可能返回保守失败，失败原因供上位机显示。
 
 文件调用
 python 非强制就近接入.py 算法参数.json 算法参数-结果.json
-API输入为字典，输出为结果字典。CLI分别读取输入JSON并写入结果JSON。

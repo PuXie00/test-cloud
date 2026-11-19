@@ -2,7 +2,7 @@
 每模型完整H/P/Y三行entry_moves共用同一发送时刻，组装为一条三轴准备Move。
 无中间换速、无退回助跑、无额外交接指令；后面只有原表本来存在的Move。
 搜索连续曲线候选，验证共同时间的位置/有符号速度以及其后整段自然续跑。
-使用真实最大V/A/D，不用默认值覆盖；最终参数0.1精度，未参与轴保留实际位置。
+使用真实最大V/A/D，不用默认值覆盖；最终位置/速度0.1精度，加减速度整数，未参与轴保留实际位置。
 并非每个指定帧都能用单Move自然接续，无方案时返回infeasible，不输出多Move补救。
 原帧表里超能力/超行程的Move之前（含）不接入（预检，不再逐帧回放）；有停止参考帧时，
 接入帧沿运行方向最多比参考帧靠后entry_max_skip_ms（默认3000ms，参考帧之前的接入点不受限）。
@@ -19,7 +19,7 @@ from time import perf_counter as _clock
 from pathlib import Path
 from collections import OrderedDict
 
-ALGORITHM_VERSION = "nonforced_single_move_four_models_skip_limit_20261118"
+ALGORITHM_VERSION = "nonforced_single_move_five_models_integer_ad_modulo_20261118"
 AXIS_NAMES = ("H", "P", "Y")
 COEFFICIENT_NAMES = ("a", "b", "c", "d", "e", "f")
 _EPS = 1e-9
@@ -574,13 +574,291 @@ def axis_move_commands(runs, reverse=False, loop=False):
 # 四、帧表回放：按 C++ 的下发规则，把每个轴的 Move 积分成分段轨迹
 ###############################################################################
 
+def _rotation_period_of(model):
+    if model.get('model_type') != 4:
+        return None
+    geometry = model.get('geometry', {})
+    if not isinstance(geometry, dict):
+        raise ValueError('geometry须为对象')
+    if 'workingStroke' in model and 'workingStroke' in geometry and model['workingStroke'] != geometry['workingStroke']:
+        raise ValueError('workingStroke平铺字段与geometry配置冲突')
+    period = _number(model.get('workingStroke', geometry.get('workingStroke')), '模型4 workingStroke')
+    if period <= 0:
+        raise ValueError('模型4 workingStroke须为真实PLC配置的正周期')
+    return period
+
+
+def _rotation_coordinate(value, period):
+    result = value % period
+    tolerance = max(1e-10, 16 * math.ulp(max(1., abs(value), period)))
+    return 0. if result <= tolerance or period - result <= tolerance else result
+
+
+def _rotation_lift(target, current, period):
+    delta = (target - current) % period
+    tolerance = max(1e-10, 32 * math.ulp(max(1., abs(target), abs(current), period)))
+    if abs(delta - period / 2) <= tolerance:
+        raise EntryInfeasible(['旋转目标恰好半周期，缺少PLC等距选向信息，无法唯一核验shortest路径'])
+    if delta > period / 2:
+        delta -= period
+    if abs(delta) <= tolerance or abs(abs(delta) - period) <= tolerance:
+        delta = 0.
+    return current + delta
+
+
+def _rotation_wire_goal(value, period, quantized):
+    position = _rotation_coordinate(value, period)
+    if quantized:
+        position = quantize(position)
+    if position >= period:
+        position = 0.
+    return position
+
+
+def _axis_period(device, index):
+    return device.position_period_H if index == 0 else None
+
+
+def _position_interval_allowed(device, index, lower, upper, tolerance=1e-8):
+    minimum, maximum = device.lower[index], device.upper[index]
+    period = _axis_period(device, index)
+    if period is None:
+        return lower >= minimum - tolerance and upper <= maximum + tolerance
+    if maximum - minimum >= period - tolerance:
+        return True
+    if not math.isfinite(minimum) or not math.isfinite(maximum) or maximum < minimum:
+        return False
+    cycle = math.floor((lower - minimum + tolerance) / period)
+    return lower >= minimum + cycle * period - tolerance and upper <= maximum + cycle * period + tolerance
+
+
+def _stage_move_profile(q0, v0, target, cap, acc, dec, points, ratio, lower, upper):
+    """理想连续事件模型，返回PLC多级普通Move的实际恒加速度阶段。
+
+    points为内部段点，ratio为0至1的过点速度比例。外部指令只有一条，
+    本函数还原runningDof在越过段点时发出的内部覆盖Move。
+    全局move_profile负责标准MC_MoveAbsolute的积分，_check_deadline负责预算。
+    """
+    values = (q0, v0, target, cap, acc, dec, ratio, lower, upper, *points)
+    if not all(math.isfinite(value) for value in values):
+        raise ValueError('多级升降参数须为有限数值')
+    if min(cap, acc, dec) <= 0 or not 0 <= ratio <= 1:
+        raise ValueError('多级升降须使用正V/A/D及0至1的过点比例')
+    if lower >= upper or len(points) > 10 or any(
+            not lower < point < upper for point in points) or any(
+            left >= right for left, right in zip(points, points[1:])):
+        raise ValueError('多级内部段点须严格递增并位于软行程内，数量不超过10')
+    tolerance = max(1e-8, 64 * math.ulp(max(1., abs(q0), abs(target), abs(lower), abs(upper))))
+    if not lower - tolerance <= q0 <= upper + tolerance:
+        raise ValueError('多级升降初始位置超出软行程')
+    target = min(upper, max(lower, target))
+    direction = 1 if target > q0 else -1 if target < q0 else 0
+    if not direction:
+        if abs(v0) <= 1e-9:
+            return []
+        raise ValueError('多级升降同位目标仍有初速，会越过目标后折返')
+
+    boundaries = [lower, *points, upper]
+    crossed = [point for point in points
+               if direction * (point - q0) > 1e-6 and direction * (target - point) > 1e-6]
+    if direction < 0:
+        crossed.reverse()
+    goals = []
+    for point in crossed:
+        speed = min(cap * ratio, math.sqrt(2 * acc * abs(point - q0)),
+                    math.sqrt(2 * dec * abs(target - point)))
+        # Calcute_time末段延长到零速后的停车位置，化简后消去局部峰速。
+        goal = point + direction * speed * speed / (2 * dec)
+        goals.append(min(goal, target) if direction > 0 else max(goal, target))
+    goals.append(target)
+
+    def choose_goal(position, velocity):
+        # 越过边界后的右极限，用于理想事件时刻。零速过点按指令方向续接。
+        side = velocity if abs(velocity) > 1e-9 else direction
+        position_side = math.nextafter(position, math.inf if side > 0 else -math.inf)
+        if abs(target - position_side) < 1.:
+            return target
+        index = (bisect.bisect_right(boundaries, position_side) - 1 if direction > 0 else
+                 bisect.bisect_left(boundaries, position_side) - 1)
+        if not 0 <= index < len(boundaries) - 1:
+            raise ValueError('多级升降运动离开有效分段行程')
+        next_boundary = boundaries[index + 1] if direction > 0 else boundaries[index]
+        eligible = [goal for goal in goals if direction * (goal - next_boundary) >= -1e-6
+                    or abs(goal - target) <= 1e-6]
+        return min(eligible, key=lambda goal: abs(goal - next_boundary))
+
+    def validate_phase(duration, position, velocity, acceleration):
+        positions = [position, position + velocity * duration + acceleration * duration * duration / 2]
+        if acceleration:
+            zero = -velocity / acceleration
+            if 0 < zero < duration:
+                positions.append(position + velocity * zero + acceleration * zero * zero / 2)
+        if min(positions) < lower - tolerance or max(positions) > upper + tolerance:
+            raise ValueError('多级升降实际Move超出软行程')
+        if any(direction * (position - target) > tolerance for position in positions):
+            raise ValueError('多级升降实际Move会越过最终目标后折返')
+
+    def first_event(duration, position, velocity, acceleration):
+        first = None
+        for boundary in events:
+            if abs(acceleration) <= 1e-14:
+                roots = [(boundary - position) / velocity] if velocity else []
+            else:
+                discriminant = velocity * velocity + 2 * acceleration * (boundary - position)
+                if discriminant < 0:
+                    continue
+                root = math.sqrt(discriminant)
+                term = -velocity - math.copysign(root, velocity)
+                roots = ([term / acceleration, 2 * (position - boundary) / term]
+                         if term else [0.])
+            for seconds in roots:
+                if 1e-11 < seconds <= duration + 1e-12 and (first is None or seconds < first[0]):
+                    first = min(duration, seconds), boundary
+        return first
+
+    # 1单位门槛只在阶段计划已存在时改回最终目标。起步就在该范围内时，
+    # 原始外部Move直接生效；若初速令其离开该范围，会产生新的规划状态。
+    if abs(target - q0) < 1.:
+        phases = move_profile(q0, v0, target, cap, acc, dec)
+        for phase in phases:
+            validate_phase(*phase)
+        if any(abs(phase[1] - target) >= 1. for phase in phases):
+            raise ValueError('近目标带初速的多级Move会重新进入分段规划，当前候选不采用')
+        return phases
+
+    events = list(points)
+    final_threshold = target - direction
+    if lower < final_threshold < upper:
+        events.append(final_threshold)
+    position, velocity = q0, v0
+    active_goal = choose_goal(position, velocity)
+    pending = list(move_profile(position, velocity, active_goal, cap, acc, dec))
+    result = []
+    for _ in range(256):
+        _check_deadline()
+        if not pending:
+            if abs(position - active_goal) <= tolerance and abs(velocity) <= 1e-7:
+                position, velocity = active_goal, 0.
+            if abs(position - target) <= tolerance and abs(velocity) <= 1e-7:
+                return result
+            new_goal = choose_goal(position, velocity)
+            if abs(new_goal - active_goal) <= 1e-6:
+                raise ValueError('多级升降内部停车后未能进入下一段')
+            active_goal = new_goal
+            pending = list(move_profile(position, velocity, active_goal, cap, acc, dec))
+            continue
+        duration, position, velocity, acceleration = pending.pop(0)
+        event = first_event(duration, position, velocity, acceleration)
+        used = duration if event is None else event[0]
+        validate_phase(used, position, velocity, acceleration)
+        if used > 1e-14:
+            result.append((used, position, velocity, acceleration))
+        position = position + velocity * used + acceleration * used * used / 2
+        velocity += acceleration * used
+        if event is not None:
+            position = event[1]
+            if duration - used > 1e-12:
+                pending.insert(0, (duration - used, position, velocity, acceleration))
+            elif not pending and abs(position - active_goal) <= tolerance and abs(velocity) <= 1e-7:
+                position, velocity = active_goal, 0.
+            new_goal = choose_goal(position, velocity)
+            if abs(new_goal - active_goal) > 1e-6:
+                active_goal = new_goal
+                pending = list(move_profile(position, velocity, active_goal, cap, acc, dec))
+    raise ValueError('多级升降内部事件规划未收敛')
+
+
+def _device_track(device, index, anchor, sends):
+    if _stage_axis(device, index):
+        return StageAxisTrack(anchor, sends, device.stage_parameters)
+    return AxisTrack(anchor, sends, period=_axis_period(device, index))
+
+
+def _reference_shift(device, index, u):
+    period = _axis_period(device, index)
+    if period is None:
+        return 0.
+    position = device.tracks[index].state(u)[0]
+    shift = _rotation_lift(position, device.current[index], period) - position
+    return round(shift / period) * period
+
+
+def _reference_track(device, index, u, shift=None):
+    base = device.tracks[index]
+    shift = _reference_shift(device, index, u) if shift is None else shift
+    if shift == 0:
+        return base
+    views = getattr(device, '_rotation_reference_views', None)
+    if views is None:
+        views = device._rotation_reference_views = {}
+    key = (index, shift)
+    if key not in views:
+        view = object.__new__(AxisTrack)
+        view.anchor = base.anchor + shift
+        view.period = base.period
+        view.sends, view.send_times, view.starts = base.sends, base.send_times, base.starts
+        view.segments = [Segment(segment.u0, segment.u1, segment.q0 + shift, segment.v0,
+                                 segment.a, segment.command, segment.target + shift)
+                         for segment in base.segments]
+        views[key] = view
+    return views[key]
+
+
+def _planning_profile(device, index, current, velocity, command):
+    target = command['pos']
+    if _stage_axis(device, index):
+        points, ratio, lower, upper = device.stage_parameters
+        try:
+            phases = _stage_move_profile(current, velocity, target, command['vel'], command['accVel'],
+                                         command['decVel'], points, ratio, lower, upper)
+        except ValueError as error:
+            raise EntryInfeasible([f'多级准备Move无法执行，{error}']) from error
+        return phases, target
+    period = _axis_period(device, index)
+    if period is not None:
+        target = _rotation_lift(target, current, period)
+    return move_profile(current, velocity, target, command['vel'], command['accVel'], command['decVel']), target
+
+
+def _rotation_branch_boundaries(device, lower, upper):
+    period = device.position_period_H
+    if period is None:
+        return []
+    result = []
+    current = device.current[0]
+    for segment in device.tracks[0].segments:
+        _check_deadline()
+        left, right = max(lower, segment.u0), min(upper, segment.u1)
+        if right <= left or not math.isfinite(left) or not math.isfinite(right):
+            continue
+        positions = [segment.state(left)[0], segment.state(right)[0]]
+        if segment.a:
+            zero = segment.u0 - segment.v0 / segment.a * 1000
+            if left < zero < right:
+                positions.append(segment.state(zero)[0])
+        first = math.ceil((min(positions) - current) / period - .5 - 1e-12)
+        last = math.floor((max(positions) - current) / period - .5 + 1e-12)
+        for cycle in range(first, last + 1):
+            _check_deadline()
+            target = current + (cycle + .5) * period
+            q, v = segment.state(left)
+            if abs(segment.a) <= 1e-14:
+                roots = [(target - q) / v] if abs(v) > 1e-14 else []
+            else:
+                discriminant = v * v + 2 * segment.a * (target - q)
+                roots = [] if discriminant < 0 else [(-v + sign * math.sqrt(discriminant)) / segment.a for sign in (-1, 1)]
+            result.extend(left + root * 1000 for root in roots if left < left + root * 1000 < right)
+    return result
+
+
 class Segment:
     """一段恒加速度运动；u0/u1 为运行方向上的毫秒，command 为当时生效的 Move（起步前为 None）。"""
 
-    __slots__ = ("u0", "u1", "q0", "v0", "a", "command")
+    __slots__ = ("u0", "u1", "q0", "v0", "a", "command", "target")
 
-    def __init__(self, u0, u1, q0, v0, a, command):
+    def __init__(self, u0, u1, q0, v0, a, command, target=None):
         self.u0, self.u1, self.q0, self.v0, self.a, self.command = u0, u1, q0, v0, a, command
+        self.target = q0 if target is None else target
 
     def state(self, u):
         if not self.v0 and not self.a:
@@ -592,8 +870,9 @@ class Segment:
 class AxisTrack:
     """一个轴从 anchor 静止开始、依次执行 sends 得到的轨迹。sends = [(u_ms, Move)] 按 u 递增。"""
 
-    def __init__(self, anchor, sends):
+    def __init__(self, anchor, sends, period=None):
         self.anchor = anchor
+        self.period = period
         self.sends = list(sends)
         self.send_times = [u for u, _ in self.sends]
         self.segments = []
@@ -602,8 +881,9 @@ class AxisTrack:
             _check_deadline()
             q, v = self._active_state(active_u, active_phases, active_target, u)
             self._emit(active_u, active_phases, active_target, active_command, u)
-            active_u, active_target, active_command = u, command["pos"], command
-            active_phases = move_profile(q, v, command["pos"], command["vel"], command["accVel"], command["decVel"])
+            target = _rotation_lift(command["pos"], q, period) if period is not None else command["pos"]
+            active_u, active_target, active_command = u, target, command
+            active_phases = move_profile(q, v, target, command["vel"], command["accVel"], command["decVel"])
         self._emit(active_u, active_phases, active_target, active_command, math.inf)
         self.starts = [segment.u0 for segment in self.segments]
 
@@ -619,7 +899,7 @@ class AxisTrack:
 
     def _emit(self, active_u, phases, target, command, until):
         if active_u == -math.inf:
-            self.segments.append(Segment(-math.inf, until, self.anchor, 0., 0., None))
+            self.segments.append(Segment(-math.inf, until, self.anchor, 0., 0., None, self.anchor))
             return
         u = active_u
         for duration, q, v, a in phases:
@@ -627,10 +907,10 @@ class AxisTrack:
             if u >= until:
                 return
             if end > u:
-                self.segments.append(Segment(u, min(end, until), q, v, a, command))
+                self.segments.append(Segment(u, min(end, until), q, v, a, command, target))
             u = end
         if u < until:
-            self.segments.append(Segment(u, until, target, 0., 0., command))
+            self.segments.append(Segment(u, until, target, 0., 0., command, target))
 
     def segment_containing(self, u):
         index = max(0, bisect.bisect_right(self.starts, u) - 1)
@@ -664,6 +944,226 @@ class AxisTrack:
         last = bisect.bisect_left(self.starts,upper)
         return [value for segment in self.segments[first:last] for value in (segment.u0,segment.u1)
                 if lower < value < upper and math.isfinite(value)]
+
+
+def _stage_parameters_of(model, lower, upper):
+    if model.get('model_type') != 3:
+        return None
+    nested = model.get('geometry', {})
+    if not isinstance(nested, dict):
+        raise ValueError('多级升降geometry须为对象')
+    values = {}
+    for name in ('AdjustDistance', 'deceleration_ratio', 'nSections'):
+        if name in model and name in nested and model[name] != nested[name]:
+            raise ValueError(f'多级升降{name}平铺字段与geometry配置冲突')
+        if name in model or name in nested:
+            values[name] = model.get(name, nested.get(name))
+    if 'AdjustDistance' not in values or 'deceleration_ratio' not in values:
+        raise ValueError('模型3须提供PLC实际AdjustDistance和deceleration_ratio')
+    points = values['AdjustDistance']
+    if not isinstance(points, (list, tuple)) or len(points) > 10:
+        raise ValueError('多级升降AdjustDistance须为最多10个内部段点的位置列表')
+    points = tuple(_number(value, 'AdjustDistance') for value in points)
+    count = values.get('nSections', len(points))
+    if type(count) is not int or count != len(points):
+        raise ValueError('多级升降nSections须等于AdjustDistance内部段点数量')
+    if not math.isfinite(lower) or not math.isfinite(upper) or lower >= upper:
+        raise ValueError('多级升降须提供有限且有序的H软行程')
+    if any(not lower < point < upper for point in points) or any(
+            left >= right for left, right in zip(points, points[1:])):
+        raise ValueError('多级升降内部段点须严格递增且位于H软行程内')
+    ratio = _number(values['deceleration_ratio'], 'deceleration_ratio')
+    if not 0 <= ratio <= 100:
+        raise ValueError('多级升降deceleration_ratio须为0至100百分数')
+    return points, ratio / 100., lower, upper
+
+
+def _stage_axis(device, index):
+    parameters = getattr(device, 'stage_parameters', None)
+    return index == 0 and parameters is not None and bool(parameters[0])
+
+
+class StageAxisTrack(AxisTrack):
+    def __init__(self, anchor, sends, parameters):
+        self.anchor, self.period, self.stage_parameters = anchor, None, parameters
+        self.sends = list(sends)
+        self.send_times = [u for u, _ in self.sends]
+        self.segments = []
+        active_u, phases, target, active_command = -math.inf, [], anchor, None
+        points, ratio, lower, upper = parameters
+        for u, command in self.sends:
+            _check_deadline()
+            q, v = self._active_state(active_u, phases, target, u)
+            self._emit(active_u, phases, target, active_command, u)
+            target, active_u, active_command = command['pos'], u, command
+            try:
+                phases = _stage_move_profile(q, v, target, command['vel'], command['accVel'],
+                                             command['decVel'], points, ratio, lower, upper)
+            except ValueError as error:
+                raise EntryInfeasible([f'多级升降实际Move无法执行，{error}']) from error
+        self._emit(active_u, phases, target, active_command, math.inf)
+        self.starts = [segment.u0 for segment in self.segments]
+
+
+def _acceleration_rates_near(value, limit, settings, radius=1):
+    return _rates_near(value, limit, settings, radius, 1.0)
+
+
+def _stage_state_times(phases, target, q, v, settings):
+    result, elapsed = [], 0.
+    for duration, position, velocity, acceleration in phases:
+        if abs(acceleration) <= 1e-14:
+            roots = [(q - position) / velocity] if abs(velocity) > 1e-14 else []
+        else:
+            discriminant = velocity * velocity + 2 * acceleration * (q - position)
+            roots = [] if discriminant < 0 else [(-velocity + sign * math.sqrt(discriminant)) / acceleration
+                                               for sign in (-1, 1)]
+        for seconds in roots:
+            if -1e-10 <= seconds <= duration + 1e-10:
+                seconds = min(duration, max(0., seconds))
+                if abs(velocity + acceleration * seconds - v) <= _ENTRY_MATCH_VELOCITY_TOLERANCE:
+                    result.append(elapsed + seconds)
+        elapsed += duration
+    if abs(q - target) <= settings['entry_position_tolerance'] and abs(v) <= settings['entry_velocity_tolerance']:
+        result.append(elapsed)
+    return result
+
+
+def _stage_axis_request(device, index, u0, segment, request, settings):
+    current, q, w = request['current'], request['q'], request['w']
+    V, A, D = request['V'], request['A'], request['D']
+    command = request['command']
+    if not w and abs(q-current) <= settings['entry_position_tolerance']:
+        request.update(family='hold', minimum=0., maximum=math.inf)
+        return request
+    target = _target_on_wire(q, device, index, settings) if not w else command['pos'] if command else q
+    direction = (1 if request['v'] > 0 else -1) if w else (1 if target > current else -1)
+    distance = direction * (q - current)
+    if w > V + 1e-8 or distance < w*w/(2*A) - 1e-9:
+        raise EntryInfeasible([f'{device.axis_labels[index]}多级准备距离或速度能力不足'])
+    minimum_acc = min(_acceleration_rates_near(.1, A, settings, 2) or [A])
+    minimum_dec = min(_acceleration_rates_near(.1, D, settings, 2) or [D])
+    minimum_vel = min(_rates_near(max(w, .1), V, settings, 2) or [V])
+    slow = dict(pos=target, vel=max(w, minimum_vel), accVel=minimum_acc, decVel=minimum_dec)
+    phases, lifted = _planning_profile(device, index, current, 0., slow)
+    maximum = profile_duration(phases)
+    time_seeds = []
+    seed_commands = [dict(pos=target, vel=V, accVel=A, decVel=D)]
+    if command is not None:
+        seed_commands.insert(0, {**command, 'pos': target})
+    for seed in seed_commands:
+        try:
+            phases, lifted = _planning_profile(device, index, current, 0., seed)
+        except EntryInfeasible:
+            continue
+        time_seeds.extend(_stage_state_times(phases, lifted, q, request['v'], settings))
+    if not w:
+        fastest = seed_commands[-1]
+        phases, lifted = _planning_profile(device, index, current, 0., fastest)
+        minimum = profile_duration(phases)
+        family = 'stage_rest'
+    else:
+        peak = min(V, math.sqrt((2*A*D*distance + A*w*w)/(A+D)))
+        minimum = (distance + peak*peak/(2*A) + (peak-w)*(peak-w)/(2*D))/peak
+        family = 'stage'
+    request.update(family=family, s=direction, L=abs(q-current), target=target,
+                   minimum=minimum, maximum=max(minimum, maximum),
+                   time_seeds=time_seeds, stage_seed_commands=seed_commands)
+    return request
+
+
+def _stage_candidate_moves(request, seconds, settings):
+    device, index = request['device'], request['index']
+    V, A, D = request['V'], request['A'], request['D']
+    current, target, q, v = request['current'], request['target'], request['q'], request['v']
+    if seconds <= 0:
+        return
+    q_tolerance = settings['entry_position_tolerance'] + 1e-9
+    v_tolerance = _ENTRY_MATCH_VELOCITY_TOLERANCE + 1e-9
+    minimum_acc = min(_acceleration_rates_near(.1, A, settings, 2) or [A])
+    minimum_dec = min(_acceleration_rates_near(.1, D, settings, 2) or [D])
+    minimum_vel = min(_rates_near(.1, V, settings, 2) or [V])
+    seeds = list(request['stage_seed_commands'])
+    if request['family'] == 'stage_rest':
+        scale = min(1., request['minimum'] / seconds)
+        seeds.append(dict(pos=target, vel=V*scale, accVel=A*scale*scale, decVel=D*scale*scale))
+    else:
+        seeds.append(dict(pos=target, vel=min(V, max(abs(v), minimum_vel)),
+                          accVel=min(A, max(minimum_acc, abs(v)/seconds)), decVel=D))
+    discoveries = []
+    seen = set()
+
+    def evaluate(cap, acc, dec):
+        _check_deadline()
+        command = dict(pos=target, vel=cap, accVel=acc, decVel=dec)
+        try:
+            phases, lifted = _planning_profile(device, index, current, 0., command)
+        except EntryInfeasible:
+            return None
+        state = _profile_at(phases, lifted, seconds)
+        return state, phases, lifted, command
+
+    def encoded(cap, acc, dec, radius=1):
+        for actual_cap in _rates_near(cap, V, settings, radius):
+            for actual_acc in _acceleration_rates_near(acc, A, settings, radius):
+                for actual_dec in _acceleration_rates_near(dec, D, settings, radius):
+                    key = actual_cap, actual_acc, actual_dec
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    answer = evaluate(*key)
+                    if answer is None:
+                        continue
+                    (actual_q, actual_v), phases, lifted, command = answer
+                    discoveries.extend(_stage_state_times(phases, lifted, q, v, settings))
+                    if abs(actual_q-q) <= q_tolerance and abs(actual_v-v) <= v_tolerance:
+                        if request['family'] != 'stage_rest' or seconds-profile_duration(phases) <= _ARRIVAL_TOLERANCE_MS/1000+1e-9:
+                            yield command
+
+    for seed in seeds:
+        yield from encoded(seed['vel'], seed['accVel'], seed['decVel'])
+
+    decelerations = {D, *(seed['decVel'] for seed in seeds)}
+    for dec_seed in decelerations:
+        for dec in _acceleration_rates_near(dec_seed, D, settings, 1):
+            if request['family'] == 'stage_rest':
+                scale = min(1., request['minimum']/seconds)
+                for acc in _acceleration_rates_near(A*scale*scale, A, settings, 2):
+                    left, right = minimum_vel, V
+                    for _ in range(24):
+                        cap = (left+right)/2
+                        answer = evaluate(cap, acc, dec)
+                        if answer is None:
+                            break
+                        duration = profile_duration(answer[1])
+                        if duration > seconds:
+                            left = cap
+                        else:
+                            right = cap
+                    yield from encoded((left+right)/2, acc, dec, 1)
+                continue
+            velocities = {V, min(V, max(abs(v), minimum_vel)), *(seed['vel'] for seed in seeds)}
+            for cap_seed in velocities:
+                cap = min(V, max(minimum_vel, cap_seed))
+                left, right = minimum_acc, A
+                low, high = evaluate(cap, left, dec), evaluate(cap, right, dec)
+                if low is None or high is None:
+                    continue
+                if (low[0][0]-q)*(high[0][0]-q) <= 0:
+                    for _ in range(24):
+                        acc = (left+right)/2
+                        answer = evaluate(cap, acc, dec)
+                        if answer is None:
+                            break
+                        if request['s']*(answer[0][0]-q) < 0:
+                            left = acc
+                        else:
+                            right = acc
+                    yield from encoded(cap, (left+right)/2, dec, 1)
+
+    # 时间提示来自同一编码参数的真实stage状态，下一次仍要重新完整求解和验证。
+    existing = request.get('_stage_time_hints', [])
+    request['_stage_time_hints'] = sorted(set(existing + discoveries), key=lambda value: abs(value-seconds))[:16]
 
 
 def _is_cruise(segment, velocity_tolerance):
@@ -709,7 +1209,7 @@ def _command_of(parameters):
     if not isinstance(command, dict):
         raise ValueError("缺少command")
     if command.get("trajectory_run") is True:
-       raise ValueError("强制轨迹请用 强制就近算法/就近接入计算.py；本算法只处理非强制（trajectory_run=false）")
+        raise ValueError("强制轨迹请用 新就近算法/就近接入计算.py；本算法只处理非强制（trajectory_run=false）")
     reverse = command.get("reverse", False)
     nearest = command.get("nearest_start", True)
     specified = command.get("use_specified_time", False)
@@ -747,10 +1247,10 @@ _COMPILED_CURVE_MAX_ENTRIES = 256
 _COMPILED_CURVE_MAX_PIECES = 100000
 
 
-def _compiled_curve(pieces, unit, direction, run_origin, loop, settings):
+def _compiled_curve(pieces, unit, direction, run_origin, loop, settings, period_h=None, stage_parameters=None):
     global _COMPILED_CURVE_PIECES
     _check_deadline()
-    signature = (unit,direction,run_origin,loop,settings["entry_quantize_protocol"],
+    signature = (unit,direction,run_origin,loop,period_h,stage_parameters,settings["entry_quantize_protocol"],
                  tuple((start,end,*(tuple(coefficients[name]) for name in COEFFICIENT_NAMES))
                        for start,end,coefficients in pieces))
     _check_deadline()
@@ -764,11 +1264,13 @@ def _compiled_curve(pieces, unit, direction, run_origin, loop, settings):
     for axis in range(3):
         _check_deadline()
         commands = axis_move_commands(_axis_runs(pieces,axis,unit),reverse=direction<0,loop=loop)
+        if axis == 0 and period_h is not None:
+            commands = [{**command, "target": _rotation_wire_goal(command["target"], period_h, settings["entry_quantize_protocol"])} for command in commands]
         ordered = list(reversed(commands)) if direction<0 else commands
         sends = [(direction*(command["atMs"]-run_origin),_wire_move(command,settings)) for command in ordered]
         anchor = end_positions[axis] if direction<0 else start_positions[axis]
         all_commands.append(commands)
-        all_tracks.append(AxisTrack(anchor,sends))
+        all_tracks.append(AxisTrack(anchor,sends,period=period_h if axis == 0 else None))
     weight = len(pieces)
     if weight <= _COMPILED_CURVE_MAX_PIECES:
         _COMPILED_CURVES[signature] = (weight,all_commands,all_tracks)
@@ -896,8 +1398,16 @@ def _prepare_multi_point_geometry(model):
         if len(values) not in (2, 3) or not all(math.isfinite(value) for value in values):
             raise ValueError("吊点须为有限的[x,y]或[x,y,z]坐标")
         points.append(values if len(values) == 3 else values + (0.,))
-    if len(points) < 3:
-        raise ValueError("至少需要3个吊点")
+    xy_two_points = model.get("model_type") == 9 and len(points) == 2
+    if len(points) < (2 if model.get("model_type") == 9 else 3):
+        raise ValueError("XY多点摆至少需要2个吊点" if model.get("model_type") == 9 else "至少需要3个吊点")
+    if xy_two_points:
+        (x0, y0, z0), (x1, y1, z1) = points
+        same_x_axis = y0 == y1 == z0 == z1 == 0
+        same_y_axis = x0 == x1 == z0 == z1 == 0
+        contains_origin = min(x0, x1) <= 0 <= max(x0, x1) and min(y0, y1) <= 0 <= max(y0, y1)
+        if points[0] == points[1] or not (same_x_axis or same_y_axis) or not contains_origin:
+            raise ValueError("XY双吊点须位于同一X轴或Y轴、线段包含原点、两点不重合且Z=0")
     ordered = sorted(set((point[0], point[1]) for point in points))
     def turn(a, b, c):
         return (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])
@@ -911,7 +1421,10 @@ def _prepare_multi_point_geometry(model):
             upper.pop()
         upper.append(point)
     hull = lower[:-1] + upper[:-1]
-    if len(hull) < 3:
+    if xy_two_points:
+        # PLC ConvexHull在pointNum<3时直接返回，paramInit预置hullNum=0。
+        hull = []
+    elif len(hull) < 3:
         raise ValueError("吊点不能全部共线")
     base1, base2, height = (float(model[name]) for name in ("Baseheight1", "Baseheight2", "maxheight"))
     beta = float(model.get("betainit", 0))
@@ -937,7 +1450,7 @@ def _prepare_multi_point_geometry(model):
         radius_max = max((I(x).square()+I(y).square()).sqrt().hi,
                          (I(q[0]).square()+I(q[1]).square()).sqrt().hi)
         edges.append((x, y, dx, dy, cross, radius_min, radius_max))
-    if not edges:
+    if not edges and not xy_two_points:
         raise ValueError("当前吊点无法形成有效边距")
     return tuple(points), tuple(edges), base1, base2, height, beta
 
@@ -1165,7 +1678,7 @@ def _xy_point_motion(q, v, geometry):
     vertical = height + base1 if base1 > 0 else base2 + maxheight - height
     vertical_v = velocity_h if base1 > 0 else -velocity_h
     offsets = [(0., 0., 0., 0.)]
-    if tilt > 1e-8:
+    if tilt > 1e-8 and edges:
         # beta is measured from +Y. Its direction follows the supplied YXZ_new.py.
         beta = math.acos(max(-1., min(1., sp / math.sin(tilt))))
         if -sr * cp < 0:
@@ -1239,6 +1752,8 @@ def _xy_offset_bounds(q, v, geometry, sp, cp, sr, cr, dp, dr):
     _, edges, base1, base2, maxheight, beta_init = geometry
     if beta_init != 0:
         raise ValueError("XY多点摆betainit必须为0")
+    if not edges:
+        return I(0.), I(0.), I(0.), I(0.)
     h, _, _ = q
     vh, _, _ = v
     vertical = h + base1 if base1 > 0 else I(base2) + maxheight - h
@@ -1390,6 +1905,8 @@ def _xy_motor_speed_upper(q, v, geometry):
 
 def _prepare_direction_domain(geometry):
     """原点严格在凸包内时返回None，否则返回从+Y计角的有效闭圆锥。"""
+    if not geometry[1]:
+        return None
     points = sorted(set((point[0], point[1]) for point in geometry[0]))
 
     def turn(a, b, c):
@@ -1423,14 +1940,14 @@ def _configure_motor_geometry(device, model, settings):
     device._motor_domain = None
     if kind is None:
         return
-    if type(kind) is not int or kind not in (2, 3, 7, 9):
-        raise ValueError('model_type只支持2单点、3多级升降、7多点摆、9XY多点摆')
+    if type(kind) is not int or kind not in (2, 3, 4, 7, 9):
+        raise ValueError('model_type只支持2单点、3多级升降、4旋转、7多点摆、9XY多点摆')
     device._motor_limit = _number(model.get('max_motor_velocity'), 'max_motor_velocity')
     if device._motor_limit <= 0:
         raise ValueError('max_motor_velocity须大于0')
-    if kind in (2, 3):
+    if kind in (2, 3, 4):
         if any(device.commands[index] for index in (1, 2)):
-            raise ValueError('单点/多级升降仅支持H轴动作曲线')
+            raise ValueError('单点/多级升降/旋转仅支持H轴动作曲线')
         velocity, acceleration, deceleration = device.prepare_caps[0]
         limit = min(velocity, device._motor_limit)
         device.prepare_caps[0] = (_floor_rate(limit, settings['entry_quantize_protocol']),
@@ -1495,7 +2012,7 @@ def _motor_direction_box_valid(device, positions):
 
 
 def _motor_state_speed(device, position, velocity):
-    if device._motor_type in (2, 3):
+    if device._motor_type in (2, 3, 4):
         return abs(velocity[0])
     geometry = device._motor_geometry
     if device._motor_type == 7:
@@ -1510,7 +2027,7 @@ def _motor_state_speed(device, position, velocity):
 
 
 def _motor_speed_box_upper(device, positions, velocities):
-    if device._motor_type in (2, 3):
+    if device._motor_type in (2, 3, 4):
         return velocities[0].max_abs()
     key = (device._motor_geometry_signature,
            tuple((value.lo, value.hi) for value in positions + velocities))
@@ -1524,7 +2041,7 @@ def _motor_speed_box_upper(device, positions, velocities):
 
 
 def _motor_speed_box_upper_uncached(device, positions, velocities):
-    if device._motor_type in (2, 3):
+    if device._motor_type in (2, 3, 4):
         return velocities[0].max_abs()
     if device._motor_type == 7:
         if positions[1].lo == positions[1].hi == 0:
@@ -1558,7 +2075,7 @@ def _motor_phase_boxes(tracks, left, right):
 
 
 def _motor_box_pose_error(device, positions):
-    if device._motor_type in (2, 3):
+    if device._motor_type in (2, 3, 4):
         return None
     geometry = device._motor_geometry
     axes = (1, 2) if device._motor_type == 9 else (1,)
@@ -1581,7 +2098,7 @@ def _verify_motor_device(device, entries, plan):
         sends = [(move['send_u'], move['move']) for move in entries[index]['moves']]
         sends.extend((u, command) for u, command in device.tracks[index].sends if u >= plan['u0'] - 1e-9)
         sends.sort(key=lambda item: item[0])
-        tracks.append(AxisTrack(device.current[index], sends))
+        tracks.append(_device_track(device, index, device.current[index], sends))
     begin = min(plan['clock_start_u'], *(move['send_u'] for entry in entries.values() for move in entry['moves']))
     points = {begin}
     for track in tracks:
@@ -1640,7 +2157,7 @@ def _verify_motor_plan(plan, settings):
         key_parts.append((id(device), entry['index'], id(device.tracks[entry['index']]),
                           tuple((move['send_u'], *(move['move'][name] for name in ('pos', 'vel', 'accVel', 'decVel')))
                                 for move in entry['moves'])))
-    key = (plan['u0'], plan['clock_start_u'], tuple(key_parts))
+    key = (plan['u0'], plan['clock_start_u'], tuple((id(device), device.position_period_H, device.stage_parameters) for device, _ in plan['entries']), tuple(key_parts))
     cached = plan.get('_motor_verification_certificate')
     if cached is not None and cached[0] == key:
         return cached[1]
@@ -1658,7 +2175,7 @@ def _verify_motor_plan(plan, settings):
             reference = tuple(tuple((u, *(command[name] for name in ('pos', 'vel', 'accVel', 'decVel')))
                                     for u, command in track.sends) for track in device.tracks)
             device._motor_reference_signature = reference
-        motion_key = (device._motor_type, device._motor_limit,
+        motion_key = (device._motor_type, device._motor_limit, device.position_period_H, device.stage_parameters,
                       getattr(device, '_motor_geometry_signature', None), tuple(device.current),
                       plan['u0'], plan['clock_start_u'], reference,
                       tuple(tuple((move['send_u'], *(move['move'][name]
@@ -1683,6 +2200,7 @@ class _Device:
         if not isinstance(model, dict) or type(model.get("model_id")) is not int:
             raise ValueError("models[].model_id须为整数")
         self.model_id = model["model_id"]
+        self.position_period_H = _rotation_period_of(model)
         self.plc_id = str(model.get("plc_id", ""))
         self.device_id = model.get("device_id", self.model_id)
         label = f"模型{self.model_id}"
@@ -1705,24 +2223,26 @@ class _Device:
                                                f"{label} max_deceleration_HPY", True)
         if settings["entry_quantize_protocol"]:
             for name in ("entry_acceleration", "reposition_velocity", "reposition_acceleration", "reposition_deceleration"):
-                setattr(self, name, [math.floor(value * 10 + 1e-8) / 10 for value in getattr(self, name)])
+                step = .1 if name == "reposition_velocity" else 1.0
+                setattr(self, name, [math.floor(value / step + 1e-8) * step for value in getattr(self, name)])
         self.lower = (_triple(model["min_position_HPY"], f"{label} min_position_HPY")
                       if "min_position_HPY" in model else [-math.inf] * 3)
         self.upper = (_triple(model["max_position_HPY"], f"{label} max_position_HPY")
                       if "max_position_HPY" in model else [math.inf] * 3)
+        self.stage_parameters = _stage_parameters_of(model, self.lower[0], self.upper[0])
         self.prepare_caps = [(_floor_rate(self.reposition_velocity[i], settings["entry_quantize_protocol"]),
-                              _floor_rate(self.reposition_acceleration[i], settings["entry_quantize_protocol"]),
-                              _floor_rate(self.reposition_deceleration[i], settings["entry_quantize_protocol"]))
+                              _floor_acceleration(self.reposition_acceleration[i], settings["entry_quantize_protocol"]),
+                              _floor_acceleration(self.reposition_deceleration[i], settings["entry_quantize_protocol"]))
                              for i in range(3)]
         self.axis_labels = [f"模型{self.model_id} {axis}" for axis in AXIS_NAMES]
-        self.current_in_range = [self.lower[i]-_EPS <= self.current[i] <= self.upper[i]+_EPS for i in range(3)]
+        self.current_in_range = [_position_interval_allowed(self, i, self.current[i], self.current[i], _EPS) for i in range(3)]
         self.rest_tail_failures = set()
         unit = settings["unit_ms"]
         pieces = _pieces_of(model, unit) if pieces is None else pieces
         self.first, self.last = pieces[0][0], pieces[-1][1]
         self.keyframes = sorted({_number(segment[name], name) for segment in model["segments"]
                                  for name in ("start_frame", "end_frame")})
-        self.commands, compiled_tracks = _compiled_curve(pieces,unit,direction,run_origin,loop,settings)
+        self.commands, compiled_tracks = _compiled_curve(pieces,unit,direction,run_origin,loop,settings,self.position_period_H,self.stage_parameters)
         self.tracks = []
         for axis,(commands,track) in enumerate(zip(self.commands,compiled_tracks)):
             if not self.active[axis] or (not commands and self.reposition_velocity[axis] == 0):
@@ -1731,6 +2251,8 @@ class _Device:
                 self.active[axis] = False
                 track = AxisTrack(self.current[axis],[])
             self.tracks.append(track)
+        if _stage_axis(self, 0) and self.active[0]:
+            self.tracks[0] = _device_track(self, 0, compiled_tracks[0].anchor, compiled_tracks[0].sends)
         self.moves = any(self.active[axis] and self.tracks[axis].sends for axis in range(3))
         _configure_motor_geometry(self, model, settings)
         # 帧表能力预检：接入后要执行的原表Move超能力/超行程时，与准备方式无关，_verify必然失败。
@@ -1754,15 +2276,16 @@ def _table_move_problem(command, device, index):
 
     能力为0的轴在原地保持时_verify另有放行，与准备方式有关，这里不判，仍交给_verify。
     """
-    if not device.lower[index]-1e-8 <= command["pos"] <= device.upper[index]+1e-8:
+    if not _position_interval_allowed(device, index, command["pos"], command["pos"]):
         return f"目标{_ms_text(command['pos'])}超出行程"
     if not -214748364.8 <= command["pos"] <= 214748364.7:
         return f"目标{_ms_text(command['pos'])}超出协议范围"
     for key, maximum in (("vel", device.reposition_velocity[index]),
                          ("accVel", device.reposition_acceleration[index]),
                          ("decVel", device.reposition_deceleration[index])):
-        if command[key] > _RATE_LIMIT+1e-8:
-            return f"{key}={_ms_text(command[key])}超出协议上限{_RATE_LIMIT}"
+        protocol_limit = _RATE_LIMIT if key == "vel" else _ACCELERATION_LIMIT
+        if command[key] > protocol_limit+1e-8:
+            return f"{key}={_ms_text(command[key])}超出协议上限{protocol_limit}"
         if maximum > 0 and command[key] > maximum+1e-8:
             return f"{key}={_ms_text(command[key])}超过最大能力{_ms_text(maximum)}"
     return None
@@ -1773,9 +2296,10 @@ def _wire_move(command, settings):
     move = {"pos": command["target"], "vel": command["velocity"], "accVel": command["acceleration"],
             "decVel": command["deceleration"]}
     if settings["entry_quantize_protocol"]:
-        move = {key: quantize(value) for key, value in move.items()}
+        move = {key: _quantize_acceleration(value) if key in ("accVel", "decVel") else quantize(value)
+                for key, value in move.items()}
     if min(move["vel"], move["accVel"], move["decVel"]) <= 0:
-        raise ValueError("曲线里有Move的V/A/D量化后为0（低于协议0.1精度）")
+        raise ValueError("曲线里有Move的V/A/D编码后为0（速度精度0.1，加减速度精度1）")
     return move
 
 
@@ -1785,6 +2309,7 @@ def _wire_move(command, settings):
 
 
 _RATE_LIMIT = 6553.5
+_ACCELERATION_LIMIT = 65535.0
 _ARRIVAL_TOLERANCE_MS = 1.0
 
 
@@ -1793,18 +2318,32 @@ def _floor_rate(value, quantized):
     return math.floor(value * 10 + 1e-8) / 10 if quantized else value
 
 
-def _rates_near(value, limit, settings, radius=1):
+def _quantize_acceleration(value):
+    return int(math.copysign(math.floor(abs(value) + .5 + 1e-10), value))
+
+
+def _floor_acceleration(value, quantized):
+    value = min(value, _ACCELERATION_LIMIT)
+    return int(math.floor(value + 1e-8)) if quantized else value
+
+
+def _rates_near(value, limit, settings, radius=1, resolution=.1):
     if not math.isfinite(value) or value <= 0 or limit <= 0:
         return []
     if not settings["entry_quantize_protocol"]:
         return [min(value, limit)]
-    center = quantize(value)
-    # 距离相同时取较小值，不依赖set的迭代顺序（TS移植可逐条对数）
-    return sorted({round(center + k / 10, 1) for k in range(-radius, radius + 1)
-                   if .1 - 1e-9 <= center + k / 10 <= limit + 1e-8}, key=lambda x: (abs(x-value), x))
+    center = quantize(value) if resolution == .1 else _quantize_acceleration(value)
+    values = {round(center + k * resolution, 1) if resolution == .1 else int(center + k)
+              for k in range(-radius, radius + 1)
+              if resolution - 1e-9 <= center + k * resolution <= limit + 1e-8}
+    return sorted(values, key=lambda item: (abs(item-value), item))
 
 
 def _target_on_wire(value, device, index, settings):
+    period = _axis_period(device, index)
+    if period is not None:
+        wire = _rotation_wire_goal(value, period, settings["entry_quantize_protocol"])
+        return _rotation_lift(wire, value, period)
     if not settings["entry_quantize_protocol"]:
         return value
     target = quantize(value)
@@ -1826,7 +2365,7 @@ def _profile_at(phases, target, seconds):
 
 
 def _axis_request(device, index, u0, settings):
-    track = device.tracks[index]
+    track = _reference_track(device, index, u0)
     segment = track.segment_containing(u0)
     q, v = segment.state(u0)
     current = device.current[index]
@@ -1836,11 +2375,13 @@ def _axis_request(device, index, u0, settings):
         raise EntryInfeasible([f"{label}{device.table_limit_reasons[index]}，只能在它之后接入"])
     if not device.current_in_range[index]:
         raise EntryInfeasible([f"{label}当前位置超出行程"])
-    if not device.lower[index] - _EPS <= q <= device.upper[index] + _EPS:
+    if not _position_interval_allowed(device, index, q, q, _EPS):
         raise EntryInfeasible([f"{label}接入位置超出行程"])
     quantized = settings["entry_quantize_protocol"]
     V, A, D = device.prepare_caps[index]
     command = segment.command
+    if command is not None and _axis_period(device, index) is not None:
+        command = {**command, "pos": segment.target}
     w = abs(v)
     request = {"device": device, "index": index, "u0": u0, "current": current,
                "q": q, "v": v, "w": w, "V": V, "A": A, "D": D, "command": command}
@@ -1856,6 +2397,8 @@ def _axis_request(device, index, u0, settings):
                                    ("accVel", device.reposition_acceleration[index]),
                                    ("decVel", device.reposition_deceleration[index]))):
         raise EntryInfeasible([f"{label}原Move超过真实最大V/A/D，不能用默认值代替最大能力"])
+    if _stage_axis(device, index):
+        return _stage_axis_request(device, index, u0, segment, request, settings)
     send_index = bisect.bisect_left(track.send_times, u0)
     at_original_send = ((send_index < len(track.send_times) and abs(track.send_times[send_index]-u0) <= 1e-8)
                         or (send_index > 0 and abs(track.send_times[send_index-1]-u0) <= 1e-8))
@@ -1869,7 +2412,7 @@ def _axis_request(device, index, u0, settings):
             return request
         minimum = profile_duration(move_profile(current, 0., target, V, A, D))
         smallest = .1 if quantized else 1e-9
-        maximum = profile_duration(move_profile(current, 0., target, smallest, smallest, smallest))
+        maximum = profile_duration(move_profile(current, 0., target, smallest, 1.0 if quantized else smallest, 1.0 if quantized else smallest))
         request.update(family="rest", L=distance, target=target, minimum=minimum, maximum=maximum,
                        s=1 if target > current else -1)
         return request
@@ -1920,10 +2463,13 @@ def _candidate_moves(request, seconds, settings):
     device, index = request["device"], request["index"]
     V, A, D = (request[key] for key in ("V", "A", "D"))
     q, current, w = (request[key] for key in ("q", "current", "w"))
+    if family in ("stage", "stage_rest"):
+        yield from _stage_candidate_moves(request, seconds, settings)
+        return
     if family == "hold":
         # 无运动/不存在的虚轴也填真实位置，不能用pos=0当跳过标志。
         yield {"pos": _target_on_wire(current, device, index, settings),
-               "vel": V or .1, "accVel": A or .1, "decVel": D or .1}
+               "vel": V or .1, "accVel": A or 1, "decVel": D or 1}
         return
     if family == "acceleration":
         yield {**request["command"], "vel": min(request["command"]["vel"], V)}
@@ -1933,7 +2479,7 @@ def _candidate_moves(request, seconds, settings):
     if family == "cruise":
         denominator = 2*(w*seconds-request["L"])
         if denominator > 0:
-            for acc in _rates_near(w*w/denominator, A, settings, 2):
+            for acc in _acceleration_rates_near(w*w/denominator, A, settings, 2):
                 yield {"pos": request["target"], "vel": w, "accVel": acc, "decVel": request["dec"]}
         return
     if family == "rest":
@@ -1941,8 +2487,8 @@ def _candidate_moves(request, seconds, settings):
         ratio = seconds/request["minimum"]
         fastest = min(V, math.sqrt(2*A*D*distance/(A+D)))
         for cap in _rates_near(fastest/ratio, V, settings, 1):
-            for acc in _rates_near(A/(ratio*ratio), A, settings, 1):
-                for dec in _rates_near(D/(ratio*ratio), D, settings, 1):
+            for acc in _acceleration_rates_near(A/(ratio*ratio), A, settings, 1):
+                for dec in _acceleration_rates_near(D/(ratio*ratio), D, settings, 1):
                     yield {"pos": target, "vel": cap, "accVel": acc, "decVel": dec}
         harmonic = seconds*seconds/(2*distance)
         triangle_acc = {A, min(A, 4*distance/(seconds*seconds)), min(A, A/(ratio*ratio))}
@@ -1951,19 +2497,19 @@ def _candidate_moves(request, seconds, settings):
         if low <= A:
             triangle_acc.update(low+(A-low)*k/32 for k in range(33))
         for ideal_acc in sorted(triangle_acc):
-            for acc in _rates_near(ideal_acc, A, settings, 1):
+            for acc in _acceleration_rates_near(ideal_acc, A, settings, 1):
                 remain = harmonic-1/acc
                 if remain <= 0:
                     continue
-                for dec in _rates_near(1/remain, D, settings, 1):
+                for dec in _acceleration_rates_near(1/remain, D, settings, 1):
                     yield {"pos": target, "vel": V, "accVel": acc, "decVel": dec}
         # 有匀速段的单Move：取编码A/D反求峰速。无中途发送。
         accelerations = {A, min(A, max(.1, A/(ratio*ratio))), min(A, max(.1, 8*distance/(seconds*seconds)))}
         decelerations = {D, min(D, max(.1, D/(ratio*ratio))), min(D, max(.1, 8*distance/(seconds*seconds)))}
         for a in sorted(accelerations):
-            for acc in _rates_near(a, A, settings, 1):
+            for acc in _acceleration_rates_near(a, A, settings, 1):
                 for d in sorted(decelerations):
-                    for dec in _rates_near(d, D, settings, 1):
+                    for dec in _acceleration_rates_near(d, D, settings, 1):
                         discriminant = seconds*seconds-2*distance*(1/acc+1/dec)
                         if discriminant < -1e-10:
                             continue
@@ -1979,7 +2525,7 @@ def _candidate_moves(request, seconds, settings):
         if command is not None:
             yield dict(command)
     for ideal_dec in decelerations:
-        for dec in _rates_near(ideal_dec, D, settings, 0):
+        for dec in _acceleration_rates_near(ideal_dec, D, settings, 0):
             if family != "endpoint" and abs(dec-request["dec"]) > 1e-8:
                 continue
             target = request.get("target", _target_on_wire(q+request["s"]*w*w/(2*dec), device, index, settings))
@@ -1997,13 +2543,13 @@ def _candidate_moves(request, seconds, settings):
                 denominator = 2*(cap*seconds-(cap-w)*(cap-w)/(2*dec)-effective)
                 if denominator <= 0:
                     continue
-                for acc in _rates_near(cap*cap/denominator, A, settings, 2):
+                for acc in _acceleration_rates_near(cap*cap/denominator, A, settings, 2):
                     yield {"pos": target, "vel": cap, "accVel": acc, "decVel": dec}
             # 接入时仍在加速：瞬时速度允许小于协议最小指令速度0.1。
             for cap in _rates_near(max(w, .1), V, settings, 1):
                 if cap < w-1e-9:
                     continue
-                for acc in _rates_near(w/seconds, A, settings, 1):
+                for acc in _acceleration_rates_near(w/seconds, A, settings, 1):
                     yield {"pos": target, "vel": cap, "accVel": acc, "decVel": dec}
 
 
@@ -2014,41 +2560,50 @@ def _entry_for_time(request, seconds, u0, settings):
     seen = set()
     for move in _candidate_moves(request, seconds, settings):
         _check_deadline()
+        if _axis_period(device, index) is not None:
+            move = {**move, "pos": _rotation_wire_goal(move["pos"], device.position_period_H, settings["entry_quantize_protocol"])}
         key = tuple(move[name] for name in ("pos", "vel", "accVel", "decVel"))
         if key in seen:
             continue
         seen.add(key)
-        if min(key[1:]) <= 0 or max(key[1:]) > _RATE_LIMIT+1e-8:
+        if min(key[1:]) <= 0 or key[1] > _RATE_LIMIT+1e-8 or max(key[2:]) > _ACCELERATION_LIMIT+1e-8:
             continue
-        if not device.lower[index]-_EPS <= move["pos"] <= device.upper[index]+_EPS:
+        if not _position_interval_allowed(device, index, move["pos"], move["pos"], _EPS):
             continue
         if family != "hold" and any(move[name] > request[cap]+1e-8 for name, cap in
                                     (("vel", "V"), ("accVel", "A"), ("decVel", "D"))):
             continue
-        phases = move_profile(request["current"], 0., *key)
-        q, v = _profile_at(phases, move["pos"], seconds)
+        try:
+            phases, lifted_target = _planning_profile(device, index, request["current"], 0., move)
+        except EntryInfeasible:
+            continue
+        q, v = _profile_at(phases, lifted_target, seconds)
         if (abs(q-request["q"]) > settings["entry_position_tolerance"]+1e-9
                 or abs(v-request["v"]) > _ENTRY_MATCH_VELOCITY_TOLERANCE+1e-9):
             continue
-        if family == "rest" and seconds-profile_duration(phases) > _ARRIVAL_TOLERANCE_MS/1000+1e-9:
+        if family in ("rest", "stage_rest") and seconds-profile_duration(phases) > _ARRIVAL_TOLERANCE_MS/1000+1e-9:
             continue
         # 同一接入帧若已停在同一停车点，后续与准备V/A/D无关。
         # 只复用已由完整回放证实的失败；非零速度或尚未停稳一律不能用这个缓存。
         actual_seconds = (u0-round(u0-seconds*1000, settings["entry_send_time_decimals"]))/1000
-        actual_q, actual_v = _profile_at(phases, move["pos"], actual_seconds)
+        actual_q, actual_v = _profile_at(phases, lifted_target, actual_seconds)
         if actual_v == 0. and actual_q == move["pos"] and (index, u0, actual_q) in device.rest_tail_failures:
             continue
         entry = {"axis": AXIS_NAMES[index], "index": index, "kind": kind,
                  "lead_ms": 0. if kind == "in_place" else seconds*1000,
                  "join": (request["q"], request["v"]),
+                 "_reference_shift": _reference_shift(device, index, u0),
                  "moves": [{"role": "run_up" if request["v"] else "reposition", "at": "clock_start", "move": move}]}
         if kind != "in_place":
             entry["distance"] = request["L"]
         if kind == "run_up":
             entry["run_up_distance"] = request["w"]*request["w"]/(2*move["accVel"])
         plan = _materialize({"u0": u0, "lead_ms": seconds*1000, "entries": [(device, entry)]}, settings)
-        if _verify(plan, settings, fail_fast=True)["passed"]:
-            return entry
+        try:
+            if _verify(plan, settings, fail_fast=True)["passed"]:
+                return entry
+        except EntryInfeasible:
+            continue
     return None
 
 
@@ -2071,11 +2626,12 @@ def _plan_at(devices, u0, settings, allow_two_step=False, requests=None):
     times = {lower}
     for request in requests:
         _check_deadline()
+        times.update(request.get("time_seeds", []))
         if request["family"] == "cruise":
             w, L = request["w"], request["L"]
             denominator = 2*(w*lower-L)
             if denominator > 0:
-                for acc in _rates_near(w*w/denominator, request["A"], settings, 3):
+                for acc in _acceleration_rates_near(w*w/denominator, request["A"], settings, 3):
                     times.add(L/w+w/(2*acc))
         if request["family"] in ("endpoint", "deceleration", "transient_deceleration"):
             L, w, A, D = (request[key] for key in ("L", "w", "A", "dec"))
@@ -2110,6 +2666,11 @@ def _plan_at(devices, u0, settings, allow_two_step=False, requests=None):
             request = requests[slot]
             entry = _entry_for_time(request, seconds, u0, settings)
             if entry is None:
+                for value in request.pop("_stage_time_hints", []):
+                    key = round(value / time_tick)
+                    if lower-1e-9 <= value <= upper+1e-9 and key not in scheduled:
+                        scheduled.add(key)
+                        heapq.heappush(candidates, value)
                 key = (id(request["device"]),request["index"])
                 if key in priority:
                     priority.remove(key)
@@ -2179,17 +2740,27 @@ def _requests_at(devices, u, settings, stop_on_empty=False, observer=None):
 
 def _phase_is_monotone(devices, first, last, settings):
     """只对可证明单调的开放phase使用二分；边界/容差疑点保守走原网格。"""
+    if any(_stage_axis(device, 0) and device.moves for device in devices):
+        return False
     middle = (first+last)/2
     tolerance = settings["entry_velocity_tolerance"]
     for device in devices:
         _check_deadline()
         for index, track in enumerate(device.tracks):
+            try:
+                first_shift = _reference_shift(device, index, first)
+                last_shift = _reference_shift(device, index, last)
+                if first_shift != last_shift:
+                    return False
+                track = _reference_track(device, index, middle)
+            except EntryInfeasible:
+                return False
             segment = track.segment_containing(middle)
             if first < segment.u0 or last >= segment.u1:
                 return False
             q1, v1 = segment.state(first)
             q2, v2 = segment.state(last)
-            if min(q1,q2) < device.lower[index]-_EPS or max(q1,q2) > device.upper[index]+_EPS:
+            if not _position_interval_allowed(device, index, min(q1,q2), max(q1,q2), _EPS):
                 return False
             if segment.a == 0 and v1 == 0. and v2 == 0.:
                 continue
@@ -2254,6 +2825,7 @@ def _search_window(devices, lower, upper, to_curve, to_run, settings):
         _check_deadline()
         for track in device.tracks:
             points.update(track.boundaries(lower,upper))
+        points.update(_rotation_branch_boundaries(device, lower, upper))
     points = sorted(points)
     boundary_frames = {to_curve(u) for u in points}
     # 子集只给保守下界，绝不用子集决定可执行；真正候选仍验证所有模型。
@@ -2317,8 +2889,8 @@ def _search_window(devices, lower, upper, to_curve, to_run, settings):
         if computed is None:
             return
         requests,_,_ = computed
-        moving = [r for r in requests if r["family"] not in ("hold","rest")]
-        resting = [r for r in requests if r["family"] in ("hold","rest")]
+        moving = [r for r in requests if r["family"] not in ("hold","rest","stage_rest")]
+        resting = [r for r in requests if r["family"] in ("hold","rest","stage_rest")]
         moving_min = max((r["minimum"] for r in moving),default=0.)
         fixed_max = min((r["maximum"] for r in moving if r["family"] == "acceleration"),default=math.inf)
         joint_guard = max(1e-12,64*math.ulp(max(1.,abs(moving_min),
@@ -2359,19 +2931,19 @@ def _search_window(devices, lower, upper, to_curve, to_run, settings):
             return None
         requests,lower_at_end,_ = computed
         moving_upper = min((r["maximum"] for r in requests
-                            if r["family"] not in ("hold","rest")),default=math.inf)
+                            if r["family"] not in ("hold","rest","stage_rest")),default=math.inf)
         guard_sec = max(1e-12,64*math.ulp(max(1.,abs(lower_at_end),
                           abs(moving_upper) if math.isfinite(moving_upper) else 1.)))
         # 安全phase中，运动轴的共同可行性只能由False变True；右端仍冲突则整段无解。
         if lower_at_end > moving_upper+1e-9+guard_sec:
             return None
-        bound = max((r["minimum"] if r["family"] in ("hold","rest")
+        bound = max((r["minimum"] if r["family"] in ("hold","rest","stage_rest")
                      else r["minimum"]-(last-first)/1000 for r in requests),default=0.)*1000
         rounding_guard = max([1e-4]+[64*math.ulp(max(1.,abs(r["minimum"])*1000,abs(last-first)))
                                     for r in requests])
         bound = max(0.,bound-rounding_guard)
         rest_max = min((r["maximum"] for r in requests
-                        if r["family"] in ("hold","rest")),default=math.inf)
+                        if r["family"] in ("hold","rest","stage_rest")),default=math.inf)
         if bound/1000 > rest_max+1e-9+guard_sec:
             return None
         return bound
@@ -2476,11 +3048,11 @@ def _candidate_witness_cache(device, index, entry, u0, settings):
     if groups is None:
         groups = [{}, {}, {}]
         device._trajectory_error_witnesses = groups
-    track = device.tracks[index]
+    track = _reference_track(device, index, u0, entry.get("_reference_shift", 0.))
     item = entry["moves"][0]
     move = item["move"]
     next_send = bisect.bisect_left(track.send_times, u0-1e-9)
-    key = (id(track), device.current[index], item["send_u"],
+    key = (id(track), device.stage_parameters, device.current[index], item["send_u"],
            move["pos"], move["vel"], move["accVel"], move["decVel"], next_send,
            settings["entry_position_tolerance"], _ENTRY_MATCH_VELOCITY_TOLERANCE)
     return groups[index], key
@@ -2574,7 +3146,7 @@ def _verify(plan, settings, fail_fast=False):
     key = (plan["u0"], plan["clock_start_u"], entry["kind"], entry["join"],
            tuple((m["send_u"], *(m["move"][n] for n in ("pos", "vel", "accVel", "decVel")))
                  for m in entry["moves"]), settings["entry_position_tolerance"],
-           _ENTRY_MATCH_VELOCITY_TOLERANCE, id(device.tracks[index]), device.current[index],
+           _ENTRY_MATCH_VELOCITY_TOLERANCE, id(device.tracks[index]), device.position_period_H, device.stage_parameters, entry.get("_reference_shift", 0.), device.current[index],
            device.lower[index], device.upper[index], *device.prepare_caps[index])
     cached = entry.get("_verification_certificate")
     if cached is not None and cached[0] == key:
@@ -2594,7 +3166,7 @@ def _verify_uncached(plan, settings, fail_fast=False):
     for device, entry in plan["entries"]:
         _check_deadline()
         index = entry["index"]
-        track = device.tracks[index]
+        track = _reference_track(device, index, u0, entry.get("_reference_shift", 0.))
         witness_cache, witness_key = _candidate_witness_cache(device,index,entry,u0,settings)
         cached_witness = witness_cache.get(witness_key) if witness_cache is not None else None
         if fail_fast and cached_witness is not None and u0 <= cached_witness[0]:
@@ -2605,7 +3177,7 @@ def _verify_uncached(plan, settings, fail_fast=False):
         sends = [(move["send_u"], move["move"]) for move in entry["moves"]]
         sends += [(u, command) for u, command in track.sends if u >= u0 - 1e-9]
         sends.sort(key=lambda item: item[0])
-        actual = AxisTrack(device.current[index], sends)
+        actual = _device_track(device, index, device.current[index], sends)
         preparation = entry["moves"]
         simultaneous &= len(preparation) == 1 and abs(preparation[0]["send_u"] - plan["clock_start_u"]) <= 1e-8
         if entry["kind"] != "in_place":
@@ -2650,8 +3222,7 @@ def _verify_uncached(plan, settings, fail_fast=False):
                 zero = segment.u0 - segment.v0 / segment.a * 1000
                 if left < zero < right:
                     positions.append(segment.state(zero)[0])
-            limits_ok &= (min(positions) >= device.lower[index] - 1e-8
-                          and max(positions) <= device.upper[index] + 1e-8
+            limits_ok &= (_position_interval_allowed(device, index, min(positions), max(positions))
                           and max(abs(value) for value in velocities) <= device.reposition_velocity[index] + 1e-8)
             limit = device.reposition_acceleration[index] if segment.a * sum(velocities) >= 0 else device.reposition_deceleration[index]
             limits_ok &= abs(segment.a) <= limit + 1e-8
@@ -2664,9 +3235,10 @@ def _verify_uncached(plan, settings, fail_fast=False):
                 simultaneous &= not (end > left + rounding_ms + 1e-7 and abs(segment.a) < 1e-10 and abs(segment.state(left)[1]) < 1e-10)
         for _, command in sends:
             _check_deadline()
-            limits_ok &= device.lower[index] - 1e-8 <= command["pos"] <= device.upper[index] + 1e-8
+            limits_ok &= _position_interval_allowed(device, index, command["pos"], command["pos"])
             limits_ok &= -214748364.8 <= command["pos"] <= 214748364.7
-            limits_ok &= max(command[key] for key in ("vel", "accVel", "decVel")) <= _RATE_LIMIT + 1e-8
+            limits_ok &= (command["vel"] <= _RATE_LIMIT + 1e-8
+                          and max(command["accVel"], command["decVel"]) <= _ACCELERATION_LIMIT + 1e-8)
             for key, maximum in (("vel", device.reposition_velocity[index]),
                                  ("accVel", device.reposition_acceleration[index]),
                                  ("decVel", device.reposition_deceleration[index])):
@@ -2699,6 +3271,10 @@ def calculate_nonforced_entry(parameters):
         return result
     except EntryCalculationTimeout:
         return _timeout_result(parameters)
+    except EntryInfeasible as error:
+        command = _command_of(parameters)
+        mode = "specified_frame" if command["use_specified_time"] else "action_boundary" if not command["nearest_start"] else "current_segment_first" if command["stopped_time_ms"] is not None else "nearest_whole_action"
+        return _infeasible(command, mode, command["stopped_time_ms"], str(error), [], error.reasons)
     except (ValueError, TypeError, KeyError, OverflowError) as error:
         return {"status": "invalid_input", "message": str(error), "algorithm_version": ALGORITHM_VERSION}
     finally:
@@ -2841,7 +3417,10 @@ def _planned(devices, plan, command, settings, mode, reference, clamped, referen
     for device, entries in by_device.values():
         join, join_velocity, axes = [None] * 3, [None] * 3, []
         for entry in entries:
-            join[entry["index"]] = round(entry["join"][0], 6)
+            join_position = entry["join"][0]
+            if _axis_period(device, entry["index"]) is not None:
+                join_position = _rotation_coordinate(join_position, device.position_period_H)
+            join[entry["index"]] = round(join_position, 6)
             join_velocity[entry["index"]] = round(entry["join"][1], 6)
             axes.append({key: (round(value, 6) if isinstance(value, float) else value)
                          for key, value in entry.items() if key in ("axis", "kind", "lead_ms", "distance", "run_up_distance")})

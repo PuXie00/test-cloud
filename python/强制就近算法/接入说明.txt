@@ -1,45 +1,45 @@
-四模型强制轨迹就近接入
-更新于2026-11-18
+强制就近算法，五模型接入
+2026-11-19
 
-公共调用为 calculate_nearest_entry(parameters)。
-输入示例为算法参数.json，每个字段的说明写在同一文件中。
+调用 calculate_nearest_entry(parameters)。输入示例及字段说明见算法参数.json。
+当前XML业务编号为2单点、3多级升降、4无极旋转、7多点摆、9XY多点摆。
+同一次输入整个动作所有PLC、所有模型，提供停稳位置及真实最大V/A/D和行程。
+command.trajectory_run=true。
 
-模型编号
-2为单点，3为多级升降，7为普通多点摆，9为XY多点摆。
-2与3每根真实电机位置等于H，多级升降分段策略已经体现在输入H曲线中。
-7使用HPY=[高度,倾角,方向角]，9使用HPY=[高度,X倾角,Y倾角]。
-7/9的吊点支持二维和三维坐标，保留原始吊点顺序及全部真实电机。
-几何取用户指定YXZ_new.py中的普通多点和XY正解约定。
+模型分支
+2单点的H对应每根真实电机位置。
+3多级升降在强制准备中由PLC curveSetReady置入曲线模式，runningDof走H标准准备轨迹。
+4无极旋转使用第一虚轴H，H、V/A/D及max_motor_velocity采用旋转轴技术单位。
+4必填workingStroke，取实轴config.workingStroke，关联实轴周期须一致。
+min_position_HPY和max_position_HPY提供真实软行程。完整范围为0到workingStroke。
+7使用[高度,倾角,方向角]，9使用[高度,X倾角,Y倾角]，按对应吊点正解检查实轴速度。
+9支持两个吊点。双吊点须位于XY平面同一条X轴或Y轴上，线段包含原点且两点不重合，允许一个端点为原点。
+例如[[-600,0],[600,0]]或[[0,0],[0,800]]，motor_num填写2。
+双吊点按PLC固定X/Y旋转计算两根实轴长度，水平偏移为0；三个及以上吊点保留原凸包偏移计算。
+7普通多点摆仍至少需要三个不共线吊点。全部吊点均按真实电机顺序传入。
+本版按最终XY配置、恢复、初始化与正解ST核对。XY初始化保存两个线段端点，双点正解使用零水平偏移。
+XY角度最大速度从PLC的REAL配置按原值传入max_velocity_HPY，例如3.9度/s；算法支持一位小数的真实角度上限。
+主示例XY绑定两个X轴吊点，默认H速度300、最大H速度500，最大X/Y角速均3.9；准备仍按真实最大能力求解并检查电机限速。
 
-调用流程
-1. 同一次输入整个动作的全部模型及停稳反馈位置，包含各PLC模型。
-2. 强制使用command.trajectory_run=true。
-3. 就近使用nearest_start=true、use_specified_time=false及stopped_time_ms。
-   停止帧所在的整个原动作段有可执行点时优先留在该段，按位置最近选帧。
-   只有整段不可执行时才按正向后续段、反向前序段继续。
-   反向仍传原曲线帧，不能再镜像一次。
-4. 非就近使用nearest_start=false，正向首帧、反向末帧。
-   固定原帧使用use_specified_time=true及specified_time_ms。
-5. 先按真实最大虚轴V/A/D计算零速起止准备，PLC A=D时取最大A/D中的较小值。
-   各移动轴同步启步、同时到达。真实电机速度上界超限时全组统一降速。
-6. 采用输出1006_payloads中的selectedCurveTimeMs、prepareTimeMs及各设备V/A。
-   全组1007使用同一个T0，以T0+prepareTimeMs为共同准备结束时间门。
-   整台静止PLC也按共同时间门等待。PLC仍按原帧取得目标位置。
+选帧和准备
+就近先查停止参考帧所属整个原动作段，按归一化位置距离选可执行原帧。
+正反向都传原曲线帧。当前段有方案时采用，整段无方案再按运行方向继续。
+4号位置距离、搜索包络和准备耗时统一按MODULO最短距离计算。
+例周期360时，359到1的准备距离为2，0和360为同一位置。
+部分软行程会核对最短路径全程，穿过禁用区时继续选点或返回失败原因。
+强制零速起止的半周期等距路径耗时相同；部分软范围方向无法确定时该候选失败。
+非就近按正向首帧、反向末帧；指定模式固定specified_time_ms。
+移动轴共同启步、共同计划到达，实轴限速时统一缩放全组参数。
 
-selected_curve_time_ms为原曲线时刻，prepare_time_ms为准备运动耗时。
-prepare_time_ms_ceil为向上取整后的共同等待毫秒数，三者不能混用。
-结果的target_HPY为强制准备停车位置，目标末速为0。
-V/A/D以浮点数输出，1006按0.1精度编码。
-本次实轴速度和同步验算使用未编码数值，0.1编码与PLC扫描会引入既有精度误差。
+接口
+selected_curve_time_ms为选中的原曲线帧，prepare_time_ms为共同准备耗时。
+prepare_time_ms_ceil为向上取整的共同等待毫秒数。
+按1006_payloads组包，全部PLC的1007使用共同T0。
+T0开始准备，T0+prepareTimeMs且本机准备完成停稳后进入动作曲线。
+强制1006的速度和加速度按现有0.1精度编码，PLC使用A=D。
+本次浮点同步验算与最终0.1协议、PLC扫描存在工程量化误差。
+API返回结果，CLI可使用 python 就近接入计算.py 算法参数.json。
 
-包的调用范围
-本包负责强制轨迹准备。非强制请使用同目录的非强制就近算法.zip。
-新版单Move包在models中提供model_type、max_motor_velocity及7/9几何字段后，
-会联合检查准备及后续真实电机速度。详见该包的输入JSON与接入说明。
-在线调速按虚轴执行表计算，四类模型均已做离线回归。
-在线调速倍率仍使用对应模型调速范围计算给出的允许范围。
-
-直接运行
-python 就近接入计算.py 算法参数.json
-CLI在该JSON的nearest_result中保存计算结果。
-API只返回结果，调用方自行保存或组包。
+旋转方向依据
+当前XML的MC_MoveAbsolute未显式赋Direction，SM3_Basic默认shortest。
+https://content.helpme-codesys.com/en/libs/SM3_Basic/Current/SM3_Basic/POUs/Movement/MC_MoveAbsolute.html

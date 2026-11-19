@@ -1,5 +1,5 @@
 {
-  "_使用说明": "四模型强制轨迹就近准备示例。调用calculate_nearest_entry(parameters)。非强制调用另包单Move版。",
+  "_使用说明": "五模型强制轨迹就近准备示例。XY9示例绑定两个X轴吊点，默认H速度300、真实最大500，真实最大X/Y角速3.9。调用calculate_nearest_entry(parameters)。",
   "_字段说明": {
     "command.operation": "操作名，nearest。",
     "command.trajectory_run": "本包为true，强制轨迹按原曲线帧准备。",
@@ -11,31 +11,31 @@
     "command.specified_time_ms": "指定的原曲线整数毫秒帧，是曲线坐标。",
     "command.stopped_time_ms": "停止时记录的原曲线帧，用于定位当前原动作段。当前段有可执行点即优先在整段内找最近点，当前段全部不可执行才按方向换段。",
     "command.speed_factor": "接回正式曲线的倍率，1为100%。准备V/A/D始终按最大能力求解。",
-    "settings.model_type_scheme": "business使用业务编号2/3/7/9。",
+    "settings.model_type_scheme": "business使用业务编号2/3/4/7/9。",
     "settings.forced_coefficient_time_unit_ms": "多项式自变量单位，示例100ms。",
     "settings.coarse_step_ms": "每个原段窗口内的粗搜种子步长，整数ms。",
     "settings.fine_step_ms": "最终搜索网格步长，整数ms，不能超过coarse_step_ms。",
     "models[].plc_id": "上位机PLC路由标识字符串。",
     "models[].model_id": "逻辑模型ID，与runtime.models关联。",
     "models[].device_id": "该PLC内的设备ID，1006组包使用。",
-    "models[].model_type": "2单点、3多级升降、7普通多点摆、9XY多点摆。编号不是吊点数量。",
+    "models[].model_type": "按当前租赁2.0版本XML，2单点、3多级升降、4无极旋转、7多点摆、9XY多点摆。",
     "models[].motor_num": "真实电机数，多点7/9须等于point_init_pos原始条数。",
     "models[].active_axes": "原曲线参与虚轴。2/3使用H，7/9可使用H/P/Y。",
     "models[].follow_axes": "需接回原曲线位置的虚轴。",
     "models[].prepare_axes": "准备允许移动的虚轴，必须包含follow_axes。",
-    "models[].max_motor_velocity": "每根真实电机的最大速度，mm/s。",
-    "models[].max_velocity_HPY": "真实虚轴最大速度，H为mm/s，P/Y为度/s。",
+    "models[].max_motor_velocity": "各真实电机速度上限，旋转4使用H技术单位/s，其余为mm/s。",
+    "models[].max_velocity_HPY": "真实虚轴最大速度，H为mm/s，P/Y为度/s。XY角度上限保留PLC实际一位小数，如3.9，按原值传入。",
     "models[].max_acceleration_HPY": "真实虚轴最大加速度，H为mm/s²，P/Y为度/s²。",
     "models[].max_deceleration_HPY": "真实虚轴最大减速度。强制准备PLC采用A=D，取两者较小上限。",
-    "models[].default_velocity_HPY": "兼容的默认速度，不能高于对应max，准备仍使用max。",
+    "models[].default_velocity_HPY": "默认速度，不能高于对应max。准备仍按真实max计算，示例XY9默认H300、最大H500。",
     "models[].default_acceleration_HPY": "兼容的默认加速度，不能高于对应max。",
     "models[].default_deceleration_HPY": "兼容的默认减速度，不能高于对应max。",
-    "models[].min_position_HPY": "虚轴行程下限，H为mm，P/Y为度。",
-    "models[].max_position_HPY": "虚轴行程上限，H为mm，P/Y为度。",
+    "models[].min_position_HPY": "真实虚轴软行程下限。旋转4的H下限须位于0到workingStroke内。",
+    "models[].max_position_HPY": "真实虚轴软行程上限。旋转4的H上限须不大于workingStroke。",
     "models[].Baseheight1": "7/9的第一基准高度，mm，须与Baseheight2恰有一项为正、另一项为0。可放在geometry对象中。",
     "models[].Baseheight2": "7/9的第二基准高度，mm。",
     "models[].maxheight": "7/9正解的最大高度参数，mm。",
-    "models[].point_init_pos": "7/9吊点列表，每点[x,y]或[x,y,z]，mm，保留全部吊点及真实电机顺序。",
+    "models[].point_init_pos": "7/9吊点列表，每点[x,y]或[x,y,z]，mm，保留全部吊点及真实电机顺序。7至少三个不共线吊点；9可绑定两个吊点，双点须为XY平面同X轴或同Y轴上包含原点的不重合线段，允许一个端点为原点。",
     "models[].betainit": "普通多点初始方向角，度。XY必须为0。",
     "models[].segments": "顶层原动作段，保留原关键帧之间的段边界。",
     "models[].segments[].segment_id": "该模型内的原动作段ID。",
@@ -59,7 +59,11 @@
     "runtime.models[].device_id": "对应静态models的设备ID。",
     "runtime.models[].position_HPY": "停稳后的真实位置。普通7为[高度,倾角,方向角]，XY9为[高度,X倾角,Y倾角]。",
     "runtime.models[].velocity_HPY": "停稳反馈速度，当前准备要求三项为0。",
-    "runtime.models[].standstill": "确认已经停稳。"
+    "runtime.models[].standstill": "确认已经停稳。",
+    "models[].workingStroke": "4号模型的真实旋转周期，取PLC实轴config.workingStroke，使用H的技术单位。支持平铺或geometry。",
+    "models[].nSections": "多级3的内部段点个数。强制准备按PLC曲线模式执行H标准Move。",
+    "models[].AdjustDistance": "多级3的内部物理段点列表，对应PLC AdjustDistance配置。",
+    "models[].deceleration_ratio": "多级3段点速度比例，0到100，与PLC配置一致。"
   },
   "_输出字段说明": {
     "nearest_result": "CLI保存的结果对象，API直接返回其内容。",
@@ -596,7 +600,107 @@
         2000,
         0.0,
         0.0
-      ]
+      ],
+      "nSections": 2,
+      "AdjustDistance": [
+        1000,
+        2000
+      ],
+      "deceleration_ratio": 20
+    },
+    {
+      "plc_id": "1",
+      "model_id": 104,
+      "device_id": 500,
+      "model_type": 4,
+      "motor_num": 2,
+      "active_axes": [
+        "H"
+      ],
+      "max_motor_velocity": 500,
+      "max_velocity_HPY": [
+        90,
+        0,
+        0
+      ],
+      "max_acceleration_HPY": [
+        180,
+        0,
+        0
+      ],
+      "max_deceleration_HPY": [
+        180,
+        0,
+        0
+      ],
+      "min_position_HPY": [
+        0,
+        0,
+        0
+      ],
+      "max_position_HPY": [
+        360,
+        0,
+        0
+      ],
+      "segments": [
+        {
+          "start_frame": 0,
+          "end_frame": 8000,
+          "a": [
+            350,
+            0,
+            0
+          ],
+          "b": [
+            0.075,
+            0,
+            0
+          ],
+          "c": [
+            0,
+            0,
+            0
+          ],
+          "d": [
+            0,
+            0,
+            0
+          ],
+          "e": [
+            0,
+            0,
+            0
+          ],
+          "f": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "follow_axes": [
+        "H"
+      ],
+      "prepare_axes": [
+        "H"
+      ],
+      "default_velocity_HPY": [
+        60,
+        0,
+        0
+      ],
+      "default_acceleration_HPY": [
+        120,
+        0,
+        0
+      ],
+      "default_deceleration_HPY": [
+        120,
+        0,
+        0
+      ],
+      "workingStroke": 360
     },
     {
       "plc_id": "1",
@@ -874,7 +978,7 @@
       "model_id": 103,
       "device_id": 400,
       "model_type": 9,
-      "motor_num": 4,
+      "motor_num": 2,
       "active_axes": [
         "H",
         "P",
@@ -883,9 +987,9 @@
       "maxheight": 8000,
       "max_motor_velocity": 500,
       "max_velocity_HPY": [
-        150.0,
-        3.0,
-        3.0
+        500,
+        3.9,
+        3.9
       ],
       "max_acceleration_HPY": [
         2000,
@@ -1094,22 +1198,12 @@
       "point_init_pos": [
         [
           -600,
-          -500,
+          0,
           0
         ],
         [
           600,
-          -500,
-          0
-        ],
-        [
-          600,
-          500,
-          0
-        ],
-        [
-          -600,
-          500,
+          0,
           0
         ]
       ],
@@ -1125,9 +1219,9 @@
         "Y"
       ],
       "default_velocity_HPY": [
-        150.0,
-        3.0,
-        3.0
+        300,
+        3,
+        3
       ],
       "default_acceleration_HPY": [
         2000,
@@ -1200,6 +1294,22 @@
           2460.0,
           8.0,
           8.0
+        ],
+        "velocity_HPY": [
+          0,
+          0,
+          0
+        ],
+        "standstill": true
+      },
+      {
+        "model_id": 104,
+        "plc_id": "1",
+        "device_id": 500,
+        "position_HPY": [
+          352,
+          0,
+          0
         ],
         "velocity_HPY": [
           0,

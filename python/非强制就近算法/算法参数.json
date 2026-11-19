@@ -269,7 +269,139 @@
       ],
       "model_type": 3,
       "motor_num": 2,
-      "max_motor_velocity": 500
+      "max_motor_velocity": 500,
+      "nSections": 0,
+      "AdjustDistance": [],
+      "deceleration_ratio": 20
+    },
+    {
+      "model_id": 500,
+      "plc_id": "1",
+      "device_id": 500,
+      "prepare_axes": [
+        "H"
+      ],
+      "max_velocity_HPY": [
+        90,
+        0,
+        0
+      ],
+      "max_acceleration_HPY": [
+        180,
+        0,
+        0
+      ],
+      "max_deceleration_HPY": [
+        180,
+        0,
+        0
+      ],
+      "min_position_HPY": [
+        0,
+        0,
+        0
+      ],
+      "max_position_HPY": [
+        360,
+        0,
+        0
+      ],
+      "segments": [
+        {
+          "start_frame": 0,
+          "end_frame": 2000,
+          "coefficient_segments": [
+            {
+              "start_frame": 0,
+              "end_frame": 2000,
+              "a": [
+                350.0,
+                0,
+                0
+              ],
+              "b": [
+                0.0,
+                0,
+                0
+              ],
+              "c": [
+                0.5,
+                0,
+                0
+              ]
+            }
+          ]
+        },
+        {
+          "start_frame": 2000,
+          "end_frame": 3000,
+          "coefficient_segments": [
+            {
+              "start_frame": 2000,
+              "end_frame": 3000,
+              "a": [
+                352.0,
+                0,
+                0
+              ],
+              "b": [
+                2.0,
+                0,
+                0
+              ],
+              "c": [
+                0.0,
+                0,
+                0
+              ]
+            }
+          ]
+        },
+        {
+          "start_frame": 3000,
+          "end_frame": 5000,
+          "coefficient_segments": [
+            {
+              "start_frame": 3000,
+              "end_frame": 5000,
+              "a": [
+                354.0,
+                0,
+                0
+              ],
+              "b": [
+                2.0,
+                0,
+                0
+              ],
+              "c": [
+                -0.5,
+                0,
+                0
+              ]
+            }
+          ]
+        }
+      ],
+      "default_velocity_HPY": [
+        300,
+        0,
+        0
+      ],
+      "default_acceleration_HPY": [
+        100,
+        0,
+        0
+      ],
+      "default_deceleration_HPY": [
+        100,
+        0,
+        0
+      ],
+      "model_type": 4,
+      "motor_num": 2,
+      "max_motor_velocity": 500,
+      "workingStroke": 360
     },
     {
       "model_id": 300,
@@ -315,8 +447,8 @@
               "end_frame": 2000,
               "a": [
                 100.0,
-                1.0,
-                0.5
+                4.0,
+                2.0
               ],
               "b": [
                 0,
@@ -325,8 +457,8 @@
               ],
               "c": [
                 25.0,
-                0.25,
-                0.125
+                1.0,
+                0.5
               ]
             }
           ]
@@ -340,13 +472,13 @@
               "end_frame": 3000,
               "a": [
                 200.0,
-                2.0,
-                1.0
+                8.0,
+                4.0
               ],
               "b": [
                 100,
-                1.0,
-                0.5
+                4.0,
+                2.0
               ],
               "c": [
                 0.0,
@@ -365,18 +497,18 @@
               "end_frame": 5000,
               "a": [
                 300.0,
-                3.0,
-                1.5
+                12.0,
+                6.0
               ],
               "b": [
                 100,
-                1.0,
-                0.5
+                4.0,
+                2.0
               ],
               "c": [
                 -25.0,
-                -0.25,
-                -0.125
+                -1.0,
+                -0.5
               ]
             }
           ]
@@ -434,8 +566,8 @@
       ],
       "max_velocity_HPY": [
         500,
-        5,
-        5
+        3.9,
+        3.9
       ],
       "max_acceleration_HPY": [
         200,
@@ -464,21 +596,40 @@
           "coefficient_segments": [
             {
               "start_frame": 0,
-              "end_frame": 2000,
+              "end_frame": 1500,
               "a": [
                 100.0,
-                1.0,
-                0.5
+                4.0,
+                2.0
               ],
               "b": [
-                0,
+                0.0,
                 0.0,
                 0.0
               ],
               "c": [
                 25.0,
-                0.25,
-                0.125
+                1.0,
+                0.5
+              ]
+            },
+            {
+              "start_frame": 1500,
+              "end_frame": 2000,
+              "a": [
+                156.25,
+                6.25,
+                3.125
+              ],
+              "b": [
+                75.0,
+                3.0,
+                1.5
+              ],
+              "c": [
+                25.0,
+                0.0,
+                0.5
               ]
             }
           ]
@@ -492,13 +643,13 @@
               "end_frame": 3000,
               "a": [
                 200.0,
-                2.0,
-                1.0
+                7.75,
+                4.0
               ],
               "b": [
-                100,
-                1.0,
-                0.5
+                100.0,
+                3.0,
+                2.0
               ],
               "c": [
                 0.0,
@@ -514,21 +665,40 @@
           "coefficient_segments": [
             {
               "start_frame": 3000,
-              "end_frame": 5000,
+              "end_frame": 3500,
               "a": [
                 300.0,
-                3.0,
-                1.5
+                10.75,
+                6.0
               ],
               "b": [
-                100,
-                1.0,
-                0.5
+                100.0,
+                3.0,
+                2.0
               ],
               "c": [
                 -25.0,
-                -0.25,
-                -0.125
+                0.0,
+                -0.5
+              ]
+            },
+            {
+              "start_frame": 3500,
+              "end_frame": 5000,
+              "a": [
+                343.75,
+                12.25,
+                6.875
+              ],
+              "b": [
+                75.0,
+                3.0,
+                1.5
+              ],
+              "c": [
+                -25.0,
+                -1.0,
+                -0.5
               ]
             }
           ]
@@ -536,8 +706,8 @@
       ],
       "default_velocity_HPY": [
         300,
-        5,
-        5
+        3,
+        3
       ],
       "default_acceleration_HPY": [
         100,
@@ -550,7 +720,7 @@
         50
       ],
       "model_type": 9,
-      "motor_num": 4,
+      "motor_num": 2,
       "max_motor_velocity": 500,
       "Baseheight1": 100,
       "Baseheight2": 0,
@@ -559,19 +729,11 @@
       "point_init_pos": [
         [
           -600,
-          -500
+          0
         ],
         [
           600,
-          -500
-        ],
-        [
-          600,
-          500
-        ],
-        [
-          -600,
-          500
+          0
         ]
       ]
     }
@@ -613,8 +775,8 @@
         "plc_id": "1",
         "position_HPY": [
           200,
-          2.0,
-          1.0
+          8.0,
+          4.0
         ],
         "velocity_HPY": [
           0,
@@ -628,8 +790,23 @@
         "plc_id": "1",
         "position_HPY": [
           200,
-          2.0,
-          1.0
+          7.75,
+          4.0
+        ],
+        "velocity_HPY": [
+          0,
+          0,
+          0
+        ],
+        "standstill": true
+      },
+      {
+        "model_id": 500,
+        "plc_id": "1",
+        "position_HPY": [
+          352,
+          0,
+          0
         ],
         "velocity_HPY": [
           0,
@@ -650,12 +827,12 @@
     "command.loop_count": "1单轮、0无限循环、大于1有限循环，loop_once=true时仅本轮。",
     "settings.forced_coefficient_time_unit_ms": "系数局部时间单位ms，本例1000，所以b是速度、c是加速度的一半。",
     "settings.nonforced_frame_step_ms": "就近连续候选帧步长，默认1ms，同时加入实际运动相位边界。",
-    "settings.entry_quantize_protocol": "默认true，按最终0.1参数求解和核对，不在发送时再次取整。",
+    "settings.entry_quantize_protocol": "true时按当前XML编码，位置和速度0.1，加速度与减速度整数；先编码后求解和回放。",
     "settings.include_move_table": "默认false，true时附原Move表供核对；日常接入不必附带。",
     "settings.entry_acceleration_source": "保留原格式兼容项；本版始终按真实max能力规划，不用default覆盖。",
     "models[].model_id/plc_id/device_id": "沿用上位机模型和PLC路由编号，runtime用同一标识关联。",
     "models[].prepare_axes": "实际参与接入的H/P/Y轴。未参与且没有运动曲线的轴保留其真实当前位置。",
-    "models[].max_velocity_HPY": "真实最大速度，H为mm/s，P/Y为degree/s。禁止用默认速度覆盖此字段。",
+    "models[].max_velocity_HPY": "真实最大速度，H为mm/s，P/Y为degree/s。XY角度按PLC保存的REAL最大速度填写，例如3.9仍填3.9。禁止用默认速度覆盖此字段。",
     "models[].max_acceleration_HPY": "真实最大加速度，单位mm/s²或degree/s²；实际可降低以同步。",
     "models[].max_deceleration_HPY": "真实最大减速度，省略时取max_acceleration_HPY；实际可降低以同步。",
     "models[].default_velocity_HPY/default_acceleration_HPY/default_deceleration_HPY": "原默认参数可保留，但不能用于覆盖真实max字段。",
@@ -670,14 +847,18 @@
     "runtime.models[].position_HPY": "停稳后真实位置。7为[高度,倾角,方向角]，9为[高度,X倾角,Y倾角]；2/3仅H参与模型运动。",
     "runtime.models[].velocity_HPY": "当前真实速度，本版要求已静止，默认[0,0,0]。",
     "runtime.models[].standstill": "真实停稳状态，false时拒绝准备。",
-    "models[].model_type": "业务编号2单点、3多级升降、7普通多点摆、9XY多点摆。填写后启用对应实轴检查，示例全部填写。",
-    "models[].max_motor_velocity": "每根真实电机允许的最大速度，mm/s。填写model_type时必须提供正值。",
-    "models[].motor_num": "真实电机数，7/9必须与原吊点条数一致。",
+    "models[].model_type": "当前XML编号2单点、3多级升降、4无极旋转、7多点摆、9XY多点摆。",
+    "models[].max_motor_velocity": "各实轴最大速度，4号为旋转技术单位/s，其余为mm/s。",
+    "models[].motor_num": "真实电机数，7/9必须与原吊点条数一致。7至少3个，9至少2个。",
     "models[].Baseheight1": "7/9第一基准高度，mm，与Baseheight2恰一项为正、另一项为0。支持平铺或geometry对象。",
     "models[].Baseheight2": "7/9第二基准高度，mm。",
     "models[].maxheight": "7/9几何正解使用的最大高度参数，mm。",
     "models[].betainit": "普通7初始方向角，度，可省略为0。XY9必须为0。",
-    "models[].point_init_pos": "7/9的全部原始吊点，按真实电机顺序。每点[x,y]或[x,y,z]，mm。可含内部吊点及重复XY点。",
-    "settings.entry_max_skip_ms": "就近且提供停止参考帧时，沿运行方向最多跳过的原曲线毫秒数，默认3000。null为不限距离；搜索仍遵循当前段及运行方向后续段规则。参考帧之前的本段候选不受距离限制。"
+    "models[].point_init_pos": "7/9的全部原始吊点，按真实电机顺序。每点[x,y]或[x,y,z]，mm。XY9为两个吊点时必须在同一X轴或Y轴上、Z=0、线段包含原点且两点不重合，允许一个点正好为原点。至少3点时保留原凸包要求，可含内部吊点及重复XY点。",
+    "settings.entry_max_skip_ms": "就近且提供停止参考帧时，沿运行方向最多跳过的原曲线毫秒数，默认3000。null为不限距离；搜索仍遵循当前段及运行方向后续段规则。参考帧之前的本段候选不受距离限制。",
+    "models[].workingStroke": "4号真实旋转周期，对应PLC实轴config.workingStroke。单位与H相同，须提供真实软行程。",
+    "models[].AdjustDistance": "3号实际内部段点列表，最多10项，使用物理H坐标，严格递增且位于H软行程内。空列表表示无内部段点。",
+    "models[].nSections": "3号内部段点数量，可由AdjustDistance长度推得，传入时须一致。",
+    "models[].deceleration_ratio": "3号段点速度比例，0到100，对应PLC deceleration_ratio。"
   }
 }

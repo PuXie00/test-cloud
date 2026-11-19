@@ -1,6 +1,6 @@
 """四模型强制轨迹就近准备，调用calculate_nearest_entry(parameters)。
 
-业务编号为2单点、3多级升降、7普通多点摆、9XY多点摆。
+业务编号为2单点、3多级升降、4无极旋转、7普通多点摆、9XY多点摆。
 停稳后按最大虚轴V/A/D规划零速起止准备，各移动轴同步到达。
 普通多点HPY为[高度,倾角,方向角]，XY为[高度,X倾角,Y倾角]。
 真实电机速度采用相应正解的整路径区间上界检查。
@@ -18,7 +18,7 @@ from pathlib import Path
 
 AXIS_NAMES = ("H", "P", "Y")
 CURVE_TICK_FRAME = 100.0
-ALGORITHM_VERSION = "v6_four_models_max_capability_20261118"
+ALGORITHM_VERSION = "v7_five_models_modulo_max_capability_20261118"
 FRAME_SELECTION_VERSION = "current_original_segment_first_20261029"
 MAX_PREPARE_TIME_MS = 4294967295
 
@@ -164,8 +164,16 @@ def _prepare_multi_point_geometry(model):
         if len(values) not in (2, 3) or not all(math.isfinite(value) for value in values):
             raise ValueError("吊点须为有限的[x,y]或[x,y,z]坐标")
         points.append(values if len(values) == 3 else values + (0.,))
-    if len(points) < 3:
-        raise ValueError("至少需要3个吊点")
+    xy = model.get("model_type") == 9
+    if len(points) < (2 if xy else 3):
+        raise ValueError("XY多点摆至少需要2个吊点" if xy else "普通多点摆至少需要3个吊点")
+    two_point_xy = xy and len(points) == 2
+    if two_point_xy:
+        (x0, y0, z0), (x1, y1, z1) = points
+        on_x = y0 == y1 == 0 and x0 != x1 and min(x0, x1) <= 0 <= max(x0, x1)
+        on_y = x0 == x1 == 0 and y0 != y1 and min(y0, y1) <= 0 <= max(y0, y1)
+        if z0 != 0 or z1 != 0 or not (on_x or on_y):
+            raise ValueError("XY双吊点须为XY平面内同X轴或同Y轴且包含原点的不重合线段")
     ordered = sorted(set((point[0], point[1]) for point in points))
     def turn(a, b, c):
         return (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])
@@ -178,8 +186,9 @@ def _prepare_multi_point_geometry(model):
         while len(upper) >= 2 and turn(upper[-2], upper[-1], point) <= 0:
             upper.pop()
         upper.append(point)
-    hull = lower[:-1] + upper[:-1]
-    if len(hull) < 3:
+    # PLC ConvexHull在pointNum<3时不生成凸包，XY正解的水平偏移为0。
+    hull = [] if two_point_xy else lower[:-1] + upper[:-1]
+    if len(hull) < 3 and not two_point_xy:
         raise ValueError("吊点不能全部共线")
     base1, base2, height = (float(model[name]) for name in ("Baseheight1", "Baseheight2", "maxheight"))
     beta = float(model.get("betainit", 0))
@@ -205,7 +214,7 @@ def _prepare_multi_point_geometry(model):
         radius_max = max((I(x).square()+I(y).square()).sqrt().hi,
                          (I(q[0]).square()+I(q[1]).square()).sqrt().hi)
         edges.append((x, y, dx, dy, cross, radius_min, radius_max))
-    if not edges:
+    if not edges and not two_point_xy:
         raise ValueError("当前吊点无法形成有效边距")
     return tuple(points), tuple(edges), base1, base2, height, beta
 
@@ -433,7 +442,7 @@ def _xy_point_motion(q, v, geometry):
     vertical = height + base1 if base1 > 0 else base2 + maxheight - height
     vertical_v = velocity_h if base1 > 0 else -velocity_h
     offsets = [(0., 0., 0., 0.)]
-    if tilt > 1e-8:
+    if edges and tilt > 1e-8:
         # beta is measured from +Y. Its direction follows the supplied YXZ_new.py.
         beta = math.acos(max(-1., min(1., sp / math.sin(tilt))))
         if -sr * cp < 0:
@@ -483,7 +492,7 @@ def _xy_point_motion(q, v, geometry):
 
 def xy_duodian_forward_model(height, angle_x, angle_y, point_init_pos,
                              Baseheight1, Baseheight2, maxheight, betainit=0):
-    model = dict(point_init_pos=point_init_pos, Baseheight1=Baseheight1,
+    model = dict(model_type=9, point_init_pos=point_init_pos, Baseheight1=Baseheight1,
                  Baseheight2=Baseheight2, maxheight=maxheight, betainit=betainit)
     geometry = _prepare_multi_point_geometry(model)
     motion = _xy_point_motion([height, angle_x, angle_y], [0., 0., 0.], geometry)[0]
@@ -517,6 +526,8 @@ def _xy_offset_bounds(q, v, geometry, sp, cp, sr, cr, dp, dr):
     _, edges, base1, base2, maxheight, beta_init = geometry
     if beta_init != 0:
         raise ValueError("XY多点摆betainit必须为0")
+    if not edges:
+        return I(0.), I(0.), I(0.), I(0.)
     h, _, _ = q
     vh, _, _ = v
     vertical = h + base1 if base1 > 0 else I(base2) + maxheight - h
@@ -932,6 +943,45 @@ class _EntryWindowInfeasible(ValueError):
     """窗口中的所有已覆盖候选均无可执行准备计划，允许按方向继续下一原段。"""
 
 
+def _rotation_delta(current, target, period):
+    delta = (target - current) % period
+    if delta > period / 2:
+        delta -= period
+    return delta
+
+
+def _entry_axis_delta(model, axis, current, target):
+    if axis == 0 and model.get("_rotation_period_H") is not None:
+        return _rotation_delta(current, target, model["_rotation_period_H"])
+    return target - current
+
+
+def _entry_interval_distance(model, axis, current, lower, upper):
+    period = model.get("_rotation_period_H") if axis == 0 else None
+    if period is None:
+        return max(0.0, lower - current, current - upper)
+    if upper - lower >= period:
+        return 0.0
+    first_image = current + math.ceil((lower - current) / period) * period
+    if first_image <= upper:
+        return 0.0
+    return min(abs(_rotation_delta(current, lower, period)),
+               abs(_rotation_delta(current, upper, period)))
+
+
+def _validate_rotation_prepare(model, current, target):
+    period = model["_rotation_period_H"]
+    lower, upper = model["min_position_HPY"][0], model["max_position_HPY"][0]
+    if lower <= 1e-9 and upper >= period - 1e-9:
+        return
+    delta = _rotation_delta(current, target, period)
+    if abs(abs(delta) - period / 2) <= max(1e-9, period * 1e-12):
+        raise _EntryWindowInfeasible("无极旋转半周期同距候选无法确定PLC方向，需改选可确定方向的帧")
+    end = current + delta
+    if min(current, end) < lower - 1e-9 or max(current, end) > upper + 1e-9:
+        raise _EntryWindowInfeasible("无极旋转的PLC最短路会穿越软行程禁用区")
+
+
 def calculate_forced_nearest_position(
     current_positions,
     default_velocities,
@@ -1203,7 +1253,7 @@ def calculate_forced_nearest_position(
                 normal_velocity = float(default_velocities[model_id][axis])
                 max_acceleration = float(max_accelerations[model_id][axis])
                 curve_velocity = float(curve_velocity_hpy[axis])
-                delta = abs(target-current)
+                delta = abs(_entry_axis_delta(model, axis, current, target))
                 move_time = 0.0 if delta <= 1e-12 else delta/normal_velocity if normal_velocity > 0 else math.inf
                 allowed_delta = curve_velocity*curve_velocity/(2.0*max_acceleration) if max_acceleration > 0 else 0.0
                 axis_safe = delta <= allowed_delta
@@ -1372,7 +1422,7 @@ def calculate_forced_nearest_position(
                 model_id = int(model["index"])
                 _, _, target, _ = evaluate_model(model, global_frame)
                 for axis in model_axes[model_id]:
-                    delta = abs(target[axis]-float(current_positions[model_id][axis]))
+                    delta = abs(_entry_axis_delta(model, axis, float(current_positions[model_id][axis]), target[axis]))
                     velocity = float(default_velocities[model_id][axis])
                     cost = 0.0 if delta <= 1e-12 else delta/velocity if velocity > 0 else math.inf
                     score = max(score, cost)
@@ -1445,7 +1495,7 @@ def calculate_forced_nearest_position(
                 key = int(model["index"])
                 for axis, (lower, upper) in model_position_bounds(model, left, right).items():
                     current = float(current_positions[key][axis])
-                    delta = max(0.0, lower-current, current-upper)
+                    delta = _entry_interval_distance(model, axis, current, lower, upper)
                     velocity = float(default_velocities[key][axis])
                     cost = 0.0 if delta <= 1e-12 else delta/velocity if velocity > 0.0 else math.inf
                     lower_score = max(lower_score, cost)
@@ -1680,7 +1730,9 @@ def _prepare_direction_position(profile, time_s):
 
 def _check_prepare_direction_domain(current, target, parameters, total_time, geometry, xy):
     """检查整个实际准备路径。边界容差为1e-12弧度，与射线判定同量级。"""
-    if not xy and current[1] == target[1] == 0:
+    if xy and any(abs(position[axis]) >= 90 for position in (current, target) for axis in (1, 2)):
+        raise ValueError('XY多点摆X/Y角须在(-90,90)内')
+    if (xy and len(geometry[0]) == 2) or (not xy and current[1] == target[1] == 0):
         return
     domain = _prepare_direction_domain(geometry)
     if domain is None:
@@ -1695,8 +1747,6 @@ def _check_prepare_direction_domain(current, target, parameters, total_time, geo
             return
         raise ValueError('普通多点摆准备路径中存在无法求得凸包边距的倾斜方向')
 
-    if any(abs(position[axis]) >= 90 for position in (current, target) for axis in (1, 2)):
-        raise ValueError('XY多点摆X/Y角须在(-90,90)内')
     interval = _SpeedInterval
     radians = math.pi/180
     sine_left, cosine_left = interval(left).trig(), interval(left).trig(True)
@@ -1757,6 +1807,7 @@ def calculate_synchronized_entry_move(nearest_position_result, inputs):
 
     # 第一步：根据当前实际位置和最大参数，为每个活动轴求最短零速起止运动。
     for model_id, target in nearest_position_result["PosSet"].items():
+        model = models[model_id]
         current = inputs["current_positions"][model_id]
         if len(current) != 3 or len(target) != 3 or not all(math.isfinite(float(value)) for value in (*current, *target)):
             raise ValueError(f"模型{model_id}的起终点必须是有限H/P/Y三项")
@@ -1768,8 +1819,10 @@ def calculate_synchronized_entry_move(nearest_position_result, inputs):
         acceleration_limits = inputs[parameter_prefix+"_accelerations"][model_id]
         deceleration_limits = inputs[parameter_prefix+"_decelerations"][model_id]
         axis_profiles = {}
+        if model["model_type"] == 4:
+            _validate_rotation_prepare(model, float(current[0]), float(target[0]))
         for axis in axes:
-            distance = abs(float(target[axis])-float(current[axis]))
+            distance = abs(_entry_axis_delta(model, axis, float(current[axis]), float(target[axis])))
             velocity_limit = float(velocity_limits[axis])
             acceleration = float(acceleration_limits[axis])
             deceleration = float(deceleration_limits[axis])
@@ -1833,7 +1886,7 @@ def calculate_synchronized_entry_move(nearest_position_result, inputs):
             "deceleration_HPY": decelerations,
         }
 
-    # 第三步：按最新四模型正解包围整条准备路径的真实电机速度。
+    # 第三步：按当前模型正解包围整条准备路径的真实电机速度。
     motor_checks = {}
     motor_scale = 1.0
     for model_id, model in models.items():
@@ -1845,7 +1898,7 @@ def calculate_synchronized_entry_move(nearest_position_result, inputs):
         count = int(model["motor_num"])
         if not math.isfinite(limit) or limit <= 0:
             raise ValueError(f"模型{model_id}的最大电机速度必须为有限正数")
-        if model_type == 1:
+        if model_type in (1, 4):
             bound = parameters["velocity_HPY"][0]
             endpoints = [dandian_forward_model(pose[0], count) for pose in (current, target)]
         elif model_type in (8, 9):
@@ -2199,28 +2252,40 @@ def _normalize_inputs(parameters):
         if type(kind) is not int:
             raise ValueError("model_type必须为整数")
         if scheme == "business":
-            if kind not in (2, 3, 7, 9):
-                raise ValueError("业务模型类型仅支持2单点、3多级升降、7多点摆、9XY多点摆")
-            geometry_kind = {2: 1, 3: 1, 7: 8, 9: 9}[kind]
+            if kind not in (2, 3, 4, 7, 9):
+                raise ValueError("业务模型类型仅支持2单点、3多级升降、4无极旋转、7多点摆、9XY多点摆")
+            geometry_kind = {2: 1, 3: 1, 4: 4, 7: 8, 9: 9}[kind]
         else:
             geometry_kind = kind
-            if kind not in (1, 8, 9):
-                raise ValueError("几何模型类型仅支持1(H)、8(普通多点)、9(XY多点)")
+            if kind not in (1, 4, 8, 9):
+                raise ValueError("几何模型类型仅支持1(H)、4(无极旋转)、8(普通多点)、9(XY多点)")
         geometry = item.get("geometry", {})
         if not isinstance(geometry, dict):
             raise ValueError("geometry必须是对象")
         # geometry只允许物理参数，不能覆盖反馈、停稳信息或PLC路由字段。
         geometry_fields = {"motor_num", "BaseHight1", "BaseHight2", "Baseheight1", "Baseheight2",
-            "lLenth_inside", "wLenth_inside", "maxheight", "moveWhat", "point_init_pos", "betainit"}
+            "lLenth_inside", "wLenth_inside", "maxheight", "moveWhat", "point_init_pos", "betainit", "workingStroke", "nSections", "AdjustDistance", "deceleration_ratio"}
         if set(geometry)-geometry_fields:
             raise ValueError("geometry含非几何字段，不能覆盖运行反馈或模型路由")
         if any(name in item and item[name] != value for name, value in geometry.items()):
             raise ValueError("平铺字段与geometry中的同名配置冲突")
         # 配置放geometry或保留旧平铺字段均可；核心只使用归一化副本。
         item.update(geometry)
-        for name in geometry_fields-{"motor_num", "moveWhat", "point_init_pos"}:
+        for name in geometry_fields-{"motor_num", "moveWhat", "point_init_pos", "nSections", "AdjustDistance"}:
             if name in item:
                 item[name] = _number(item[name], name)
+        if "AdjustDistance" in item:
+            points = item["AdjustDistance"]
+            if not isinstance(points, list) or len(points) > 10:
+                raise ValueError("AdjustDistance须为最多10个内部段点列表")
+            item["AdjustDistance"] = [_number(value, "AdjustDistance") for value in points]
+            if any(a >= b for a, b in zip(item["AdjustDistance"], item["AdjustDistance"][1:])):
+                raise ValueError("多级升降内部段点须严格递增")
+            count = item.get("nSections", len(points))
+            if type(count) is not int or count != len(points):
+                raise ValueError("nSections须与AdjustDistance数量一致")
+        if "deceleration_ratio" in item and not 0 <= item["deceleration_ratio"] <= 100:
+            raise ValueError("deceleration_ratio须为0到100的百分数")
         if "point_init_pos" in item:
             if not isinstance(item["point_init_pos"], list):
                 raise ValueError("point_init_pos必须是XYZ吊点列表")
@@ -2231,7 +2296,7 @@ def _normalize_inputs(parameters):
                 points.append(_hpy(list(point) + ([0] if len(point) == 2 else []), "point_init_pos XYZ"))
             item["point_init_pos"] = points
         item["index"], item["model_type"] = internal_id, geometry_kind
-        item.setdefault("motor_num", len(item.get("point_init_pos", [])) if geometry_kind in (8, 9) else geometry_kind)
+        item.setdefault("motor_num", len(item.get("point_init_pos", [])) if geometry_kind in (8, 9) else 1)
         if type(item["motor_num"]) is not int or item["motor_num"] <= 0:
             raise ValueError("motor_num必须为正整数")
         if geometry_kind in (8, 9):
@@ -2239,6 +2304,14 @@ def _normalize_inputs(parameters):
             item["_entry_geometry"] = _prepare_multi_point_geometry(item)
             if item["motor_num"] != len(item["_entry_geometry"][0]):
                 raise ValueError("motor_num须与原吊点数量一致")
+        if geometry_kind == 4:
+            period = _number(item.get("workingStroke"), "workingStroke")
+            lower = _hpy(item.get("min_position_HPY"), "min_position_HPY")
+            upper = _hpy(item.get("max_position_HPY"), "max_position_HPY")
+            if period <= 0 or not 0 <= lower[0] < upper[0] <= period:
+                raise ValueError("无极旋转workingStroke须为真实正周期，H软行程须位于0到周期内")
+            item["_rotation_period_H"] = period
+            item["min_position_HPY"], item["max_position_HPY"] = lower, upper
         current = _hpy(item.get("current_HPY"), "current_HPY")
         if "standstill" in item and type(item["standstill"]) is not bool:
             raise ValueError("standstill必须为bool")
@@ -2252,7 +2325,7 @@ def _normalize_inputs(parameters):
             raise ValueError("须提供current_velocity_HPY或明确standstill=true，不能默认已停稳")
         follow = _axes(item.get("follow_axes", item.get("active_axes")), "follow_axes")
         prepare = _axes(item.get("prepare_axes", follow), "prepare_axes")
-        supported = {1: {"H"}, 8: {"H", "P", "Y"}, 9: {"H", "P", "Y"}}[geometry_kind]
+        supported = {1: {"H"}, 4: {"H"}, 8: {"H", "P", "Y"}, 9: {"H", "P", "Y"}}[geometry_kind]
         if not set(follow).issubset(prepare) or not set(prepare).issubset(supported):
             raise ValueError("prepare_axes须包含follow_axes，且不得加入模型不存在的轴")
         inputs["current_positions"][internal_id] = current
@@ -2441,7 +2514,8 @@ def _calculate_forced_entry(parameters):
     for key, route in inputs["routes"].items():
         params = motion["VelSet"][key]
         current, target = inputs["current_positions"][key], motion["PosSet"][key]
-        execute = [abs(target[a]-current[a]) > 1e-12 for a in range(3)]
+        model = inputs["curve_action"]["models"][key - 1]
+        execute = [abs(_entry_axis_delta(model, a, current[a], target[a])) > 1e-12 for a in range(3)]
         result = {**route, "current_HPY": list(current), "curve_target_HPY": list(curve_targets[key]),
             "target_HPY": list(target), **params, "execute_HPY": execute,
             "expected_arrival_ms": duration_ms if any(execute) else 0.0,
@@ -2470,7 +2544,7 @@ def _calculate_forced_entry(parameters):
         "search_origin_frame_ms": selection_summary.get("SearchOriginFrame_ms"),
         "search_range_ms": selection_summary.get("search_range_ms", [frame, frame]),
         "selection_metric": "nearest_position",
-        "position_metric": "max(abs(target-current)/max_velocity_HPY)",
+        "position_metric": "max(distance(target,current)/max_velocity_HPY); type4 uses modulo distance",
         "search_statistics": selection_summary.get("search_statistics", {}),
         "reference_segment_range_ms": selection_summary.get("reference_segment_range_ms"),
         "selected_segment_range_ms": selection_summary.get("selected_segment_range_ms"),
