@@ -29,6 +29,7 @@ export type PlcCompileObject = {
   enabledVirtualAxes: readonly VirtualAxisId[];
   limits: SequenceValidationContext["objects"][number]["limits"];
   safetyRadius?: number;
+  xyTilt?: boolean;
 };
 
 export type PlcCompileContext = {
@@ -144,6 +145,7 @@ export const compilePlcAction = (
       enabledVirtualAxes: [...object.enabledVirtualAxes],
       limits: object.limits,
       ...(object.safetyRadius !== undefined ? { safetyRadius: object.safetyRadius } : {}),
+      ...(object.xyTilt ? { xyTilt: true } : {}),
     })),
     ...(context.hoistObjects ? { hoistObjects: context.hoistObjects } : {}),
   });

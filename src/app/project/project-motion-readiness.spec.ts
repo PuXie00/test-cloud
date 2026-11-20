@@ -107,5 +107,8 @@ describe("sequenceValidationContextFromSetup", () => {
     const ctx = sequenceValidationContextFromSetup(document as ProjectDocument);
     expect(ctx.objects[0]?.safetyRadius).toBe(1000);
     expect(ctx.objects[1]?.safetyRadius).toBe(1850);
+    expect(ctx.objects[0]?.xyTilt).toBe(true);
+    expect(ctx.objects[1]?.xyTilt).toBeUndefined();
+    expect(ctx.hoistObjects?.find((hoist) => hoist.objectId === 8)?.xyTilt).toBe(true);
   });
 });

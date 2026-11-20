@@ -42,15 +42,18 @@ const limitsFromObject = (
 export const sequenceValidationContextFromSetup = (
   document: ProjectDocument,
 ): SequenceValidationContext => ({
-  objects: document.setup.controlledObjects.map((object) => ({
-    id: object.id,
-    enabledVirtualAxes: [...object.enabledVirtualAxes],
-    limits: limitsFromObject(object, document.setup.motors),
-    ...(controlTypeHasMultiPointSwingParams(decodeControlType(object.controlType)) &&
-    object.safetyRadius !== undefined
-      ? { safetyRadius: object.safetyRadius }
-      : {}),
-  })),
+  objects: document.setup.controlledObjects.map((object) => {
+    const controlType = decodeControlType(object.controlType);
+    return {
+      id: object.id,
+      enabledVirtualAxes: [...object.enabledVirtualAxes],
+      limits: limitsFromObject(object, document.setup.motors),
+      ...(controlTypeHasMultiPointSwingParams(controlType) && object.safetyRadius !== undefined
+        ? { safetyRadius: object.safetyRadius }
+        : {}),
+      ...(controlType === "dualTiltFourPointSwing" ? { xyTilt: true } : {}),
+    };
+  }),
   hoistObjects: buildMotorOverspeedObjects(
     document.setup.controlledObjects,
     document.setup.motors,

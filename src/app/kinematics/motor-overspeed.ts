@@ -2,6 +2,7 @@ import { segmentPoseAt } from "@/app/project/action-sequence/evaluate-sequence";
 import type { ModelPose } from "@/app/project/action-sequence/types";
 import type { ResolvedMotionSegment } from "@/app/project/action-sequence/resolve-sequence";
 import { solveMultiPointForward, type Vec3 } from "./multi-point-forward";
+import { solveXyMultiPointForward } from "./xy-multi-point-forward";
 
 /** 稀疏采样步长（ms）。覆盖几何非线性峰值，避免 20ms 全量差分。 */
 export const MOTOR_OVERSPEED_SAMPLE_MS = 100;
@@ -10,6 +11,8 @@ export type MotorOverspeedMotor = {
   id: number;
   name: string;
   maxAxisVelocity: number;
+  /** 该电机驱动的吊点在 pointInitPos 中的序号；驱动轴可能未绑电机，不能用电机数组下标代替 */
+  ropeIndex: number;
 };
 
 export type MotorOverspeedObject = {
@@ -19,6 +22,8 @@ export type MotorOverspeedObject = {
   baseHeight2: number;
   maxHeight: number;
   betaInit: number;
+  /** XY 多点摆（多点倾斜）：v2、v3 是 X、Y 两个倾角，按 XY 正解算绳长 */
+  xyTilt?: boolean;
   motors: readonly MotorOverspeedMotor[];
 };
 
@@ -39,16 +44,26 @@ const poseAtProgress = (segment: ResolvedMotionSegment, progress: number): Model
   segmentPoseAt(segment, segment.startMs + progress * segment.durationMs);
 
 const ropeLengthsAt = (object: MotorOverspeedObject, pose: ModelPose): number[] =>
-  solveMultiPointForward({
-    height: pose.v1,
-    roll: pose.v3,
-    pitch: pose.v2,
-    pointInitPos: object.pointInitPos,
-    baseHeight1: object.baseHeight1,
-    baseHeight2: object.baseHeight2,
-    maxHeight: object.maxHeight,
-    betaInit: object.betaInit,
-  });
+  object.xyTilt
+    ? solveXyMultiPointForward({
+        height: pose.v1,
+        angleX: pose.v2,
+        angleY: pose.v3,
+        pointInitPos: object.pointInitPos,
+        baseHeight1: object.baseHeight1,
+        baseHeight2: object.baseHeight2,
+        maxHeight: object.maxHeight,
+      })
+    : solveMultiPointForward({
+        height: pose.v1,
+        roll: pose.v3,
+        pitch: pose.v2,
+        pointInitPos: object.pointInitPos,
+        baseHeight1: object.baseHeight1,
+        baseHeight2: object.baseHeight2,
+        maxHeight: object.maxHeight,
+        betaInit: object.betaInit,
+      });
 
 const sampleTimesMs = (startMs: number, endMs: number, stepMs: number): number[] => {
   const times: number[] = [];
@@ -96,12 +111,11 @@ const checkSegmentMotors = (
     if (previousLengths) {
       const dtSec = (timeMs - previousMs) / 1000;
       if (dtSec > 0) {
-        for (let index = 0; index < peaks.length; index += 1) {
-          const previous = previousLengths[index];
-          const current = lengths[index];
+        for (const peak of peaks) {
+          const previous = previousLengths[peak.motor.ropeIndex];
+          const current = lengths[peak.motor.ropeIndex];
           if (previous === undefined || current === undefined) continue;
           const speed = Math.abs(current - previous) / dtSec;
-          const peak = peaks[index]!;
           if (speed > peak.peakVelocity) {
             peak.peakVelocity = speed;
             peak.atMs = timeMs;

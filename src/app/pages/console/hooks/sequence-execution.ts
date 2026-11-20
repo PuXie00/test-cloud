@@ -30,6 +30,7 @@ export type SequenceExecutionObject = {
   enabledVirtualAxes: readonly VirtualAxisId[];
   limits: SequenceValidationContext["objects"][number]["limits"];
   safetyRadius?: number;
+  xyTilt?: boolean;
 };
 
 export type SequenceExecutionContext = {
@@ -125,6 +126,7 @@ const toValidationContext = (
     enabledVirtualAxes: [...object.enabledVirtualAxes],
     limits: cloneLimits(object.limits),
     ...(object.safetyRadius !== undefined ? { safetyRadius: object.safetyRadius } : {}),
+    ...(object.xyTilt ? { xyTilt: true } : {}),
   })),
   ...(context.hoistObjects ? { hoistObjects: context.hoistObjects } : {}),
 });
@@ -135,6 +137,7 @@ const toCompileContext = (context: SequenceExecutionContext): PlcCompileContext 
     enabledVirtualAxes: [...object.enabledVirtualAxes],
     limits: cloneLimits(object.limits),
     ...(object.safetyRadius !== undefined ? { safetyRadius: object.safetyRadius } : {}),
+    ...(object.xyTilt ? { xyTilt: true } : {}),
   })),
   ...(context.hoistObjects ? { hoistObjects: context.hoistObjects } : {}),
   ...(context.livePoseByObjectId ? { livePoseByObjectId: context.livePoseByObjectId } : {}),
