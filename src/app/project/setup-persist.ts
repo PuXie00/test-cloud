@@ -162,7 +162,6 @@ export const wizardControlledObjectToConfig = (
       ? {
           safetyRadius: roundProjectCoordinate(normalizeSafetyRadius(swingYaw.safetyRadius)),
           initialTiltDirection: swingYaw.initialTiltDirection,
-          mountRotation: swingYaw.mountRotation,
         }
       : {}),
     ...(mountLayout !== undefined ? { mountLayout } : {}),

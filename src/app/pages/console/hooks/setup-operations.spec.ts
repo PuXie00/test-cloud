@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { MOTION_DEFAULTS } from "@/app/project/configuration-rules";
 import type { WizardSetupState } from "@/app/project/setup-persist";
 import type { ControlledObject } from "../components/right-sidebar/config-wizard/config-wizard-types";
-import { changeObjectControlType } from "./setup-operations";
+import { applyMultiPointAxesConfiguration, changeObjectControlType } from "./setup-operations";
 
 const objectOf = (overrides: Partial<ControlledObject>): ControlledObject => ({
   id: 1,
@@ -105,5 +105,55 @@ describe("changeObjectControlType per-type params", () => {
     const withPoints = { ...hoist, multiLevel: { adjustDistances: [200], decelerationRatio: 30 } };
     expect(changed(withPoints, "singlePointMove")).not.toHaveProperty("multiLevel");
     expect(changed(withPoints, "staticProp")).not.toHaveProperty("multiLevel");
+  });
+});
+
+describe("multi-point swing params", () => {
+  const dualTilt = () =>
+    changed(objectOf({ shapeDimensions: { width: 3000, height: 1000, depth: 3000 }, dimensions: { w: 3000, h: 1000, d: 3000 } }), "dualTiltFourPointSwing");
+
+  const apply = (object: ControlledObject, mounts: Array<{ x: number; z: number }>) =>
+    applyMultiPointAxesConfiguration(stateOf(object), object.id, {
+      axes: mounts.map((mount, index) => ({ key: String(index), custom: false, mount })),
+      safetyRadius: 1200,
+      initialTiltDirection: 30,
+      mountLayout: { kind: "custom" },
+      unbindAxisKeys: [],
+      bindAxisMotors: [],
+    });
+
+  it("has no mount rotation and keeps the initial tilt of a dual tilt at 0", () => {
+    const object = dualTilt();
+    expect(object).not.toHaveProperty("mountRotation");
+    expect(object.initialTiltDirection).toBe(0);
+    expect(changed({ ...object, initialTiltDirection: 45 }, "dualTiltFourPointSwing").initialTiltDirection).toBe(0);
+  });
+
+  it("saves the safety radius of a dual tilt but not its initial tilt", () => {
+    const result = apply(dualTilt(), [
+      { x: -500, z: 0 },
+      { x: 500, z: 0 },
+    ]);
+    expect(result.applied).toBe(true);
+    expect(result.state.objects[0]).toMatchObject({ safetyRadius: 1200, initialTiltDirection: 0 });
+    expect(result.state.objects[0]).not.toHaveProperty("mountRotation");
+  });
+
+  it("needs two dual tilt hoists on one axis with the origin between them", () => {
+    for (const mounts of [
+      [{ x: 0, z: -300 }, { x: 0, z: 600 }],
+      [{ x: 0, z: 0 }, { x: 800, z: 0 }],
+    ]) {
+      expect(apply(dualTilt(), mounts).applied).toBe(true);
+    }
+    for (const mounts of [
+      [{ x: -500, z: 100 }, { x: 500, z: 100 }],
+      [{ x: 200, z: 0 }, { x: 500, z: 0 }],
+      [{ x: -500, z: -500 }, { x: 500, z: 500 }],
+    ]) {
+      const result = apply(dualTilt(), mounts);
+      expect(result.applied).toBe(false);
+      expect(result.reason).toContain("同一 X 或 Y 轴");
+    }
   });
 });

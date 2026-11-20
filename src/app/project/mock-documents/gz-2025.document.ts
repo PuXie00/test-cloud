@@ -144,7 +144,6 @@ const GZ_SETUP = {
       modelRunDirection: 1 as const,
       safetyRadius: 1850,
       initialTiltDirection: 0,
-      mountRotation: 0,
       driveAxes: [
         { key: "0", mount: { x: -700, z: -400 } },
         { key: "1", mount: { x: 700, z: -400 } },
@@ -175,7 +174,6 @@ const GZ_SETUP = {
       modelRunDirection: 1 as const,
       safetyRadius: 1850,
       initialTiltDirection: 0,
-      mountRotation: 0,
       driveAxes: [
         { key: "0", mount: { x: -400, z: -400 } },
         { key: "1", mount: { x: 400, z: -400 } },

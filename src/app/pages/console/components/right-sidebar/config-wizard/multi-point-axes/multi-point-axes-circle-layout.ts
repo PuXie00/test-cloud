@@ -43,15 +43,10 @@ export const averageMountRadius = (mounts: readonly AxisMount[]): number => {
   return sum / mounts.length;
 };
 
-export type ResolveCircleMountLayoutOptions = {
-  /** 吊1 起点方位角，deg；0 = +Z（下方），与画布极角一致 */
-  mountRotation?: number;
-};
-
+/** 吊1 从 +Z（画布下方）开始，与画布极角一致 */
 export const resolveCircleMountLayout = (
   radius: number | null | undefined,
   chordLengths: ReadonlyArray<number | null | undefined>,
-  options: ResolveCircleMountLayoutOptions = {},
 ): CircleMountLayoutResult => {
   if (typeof radius !== "number" || !Number.isFinite(radius) || radius <= 0) {
     return {
@@ -117,36 +112,14 @@ export const resolveCircleMountLayout = (
     };
   });
 
-  const startAngle =
-    typeof options.mountRotation === "number" && Number.isFinite(options.mountRotation)
-      ? (options.mountRotation * Math.PI) / 180
-      : 0;
-
   const mounts: AxisMount[] = [];
-  let angle = startAngle;
+  let angle = 0;
   for (let index = 0; index < measured.length; index += 1) {
     mounts.push(polarPoint(radius, angle));
     angle += compensatedAngles[index]!;
   }
 
   return { ok: true, mounts, segments };
-};
-
-/** 绕物体原点旋转 XZ 吊点；deltaDeg 与圆形极角同向（自 +Z 转向 +X） */
-export const rotateMountAroundOrigin = (
-  mount: AxisMount,
-  deltaDeg: number,
-): AxisMount => {
-  if (!Number.isFinite(deltaDeg) || deltaDeg === 0) {
-    return { x: mount.x, z: mount.z };
-  }
-  const rad = (deltaDeg * Math.PI) / 180;
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-  return {
-    x: mount.x * cos + mount.z * sin,
-    z: -mount.x * sin + mount.z * cos,
-  };
 };
 
 /** 各段绝对误差之和，单位 mm */

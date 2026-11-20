@@ -15,7 +15,6 @@ import {
 } from "./virtual-axis-max-velocity";
 import {
   normalizeInitialTiltDirection,
-  normalizeMountRotation,
   normalizeSafetyRadius,
   type AxisMount,
 } from "./hoist-point-defaults";
@@ -63,28 +62,31 @@ export const controlTypeHasNoDriveAxes = (controlType: ControlType): boolean =>
 export const maxDriveAxesForControlType = (controlType: ControlType): number | undefined =>
   (CONTROL_TYPE_RULES[controlType] as ControlTypeRule).maxDriveAxes;
 
-/** 安全范围半径、初始倾斜角度、吊点旋转：多点摆和多点倾斜 */
+/** 安全范围半径、初始倾斜角度：多点摆和多点倾斜 */
 export const controlTypeHasMultiPointSwingParams = (controlType: ControlType): boolean =>
   controlType === "multiPointSwing" || controlType === "dualTiltFourPointSwing";
 
-/** 按控制类型补齐/剥离摆动物体的安全半径、初始倾斜角度和吊点旋转 */
+/** 初始倾斜角度只有多点摆能设；多点倾斜（XY）固定 0 */
+export const controlTypeHasInitialTiltDirection = (controlType: ControlType): boolean =>
+  controlType === "multiPointSwing";
+
+/** 按控制类型补齐/剥离摆动物体的安全半径和初始倾斜角度 */
 export const resolveSwingYawModelParams = (
   controlType: ControlType,
   current?: {
     safetyRadius?: number;
     initialTiltDirection?: number;
-    mountRotation?: number;
   },
 ): {
   safetyRadius?: number;
   initialTiltDirection?: number;
-  mountRotation?: number;
 } =>
   controlTypeHasMultiPointSwingParams(controlType)
     ? {
         safetyRadius: normalizeSafetyRadius(current?.safetyRadius),
-        initialTiltDirection: normalizeInitialTiltDirection(current?.initialTiltDirection),
-        mountRotation: normalizeMountRotation(current?.mountRotation),
+        initialTiltDirection: controlTypeHasInitialTiltDirection(controlType)
+          ? normalizeInitialTiltDirection(current?.initialTiltDirection)
+          : 0,
       }
     : {};
 

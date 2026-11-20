@@ -4,13 +4,12 @@ import { describe, expect, it } from "vitest";
 import type { Hpy, NearestParameters } from "./algorithm-params";
 import { calculateNearestEntry, type NearestEntryResult } from "./nearest-entry";
 
-/** 期望值由 python/强制就近算法/就近接入计算.py 对同一份 算法参数.json 计算得到。 */
-const example = JSON.parse(
-  readFileSync(path.resolve(__dirname, "../../../../python/强制就近算法/算法参数.json"), "utf-8").replace(
-    /^\uFEFF/,
-    "",
-  ),
-) as NearestParameters;
+/**
+ * 期望值由 python/强制就近算法/就近接入计算.py 对 nearest-entry.example.json 计算得到。
+ * 该输入是 2026-11-18 版 算法参数.json（四模型）；含 4 无极旋转的新版示例见文件末尾，直接对 Python 的结果文件。
+ */
+const EXAMPLE_PATH = path.resolve(__dirname, "nearest-entry.example.json");
+const example = JSON.parse(readFileSync(EXAMPLE_PATH, "utf-8").replace(/^\uFEFF/, "")) as NearestParameters;
 
 const run = (command: Partial<NearestParameters["command"]>, edit?: (parameters: NearestParameters) => void) => {
   const parameters = structuredClone(example);
@@ -120,16 +119,58 @@ describe("calculateNearestEntry", () => {
   });
 });
 
+/** XY 多点摆两个吊点（2026-11-19 版算法）：期望值由 python/强制就近算法/就近接入计算.py 计算 */
+describe("calculateNearestEntry with a two-point XY model", () => {
+  const withXyPoints = (points: Array<[number, number]>) => (parameters: NearestParameters) => {
+    const model = parameters.models.find((item) => item.model_type === 9)!;
+    model.point_init_pos = points;
+    model.motor_num = points.length;
+  };
+  const stopAt3000 = { trajectory_run: true, nearest_start: true, use_specified_time: false, stopped_time_ms: 3000 };
+
+  it("plans with two hoist points on the X axis or the Y axis, bounding motor speed without hull offset", () => {
+    const layouts: Array<[Array<[number, number]>, number]> = [
+      [[[-400, 0], [400, 0]], 169.8738097194546],
+      [[[0, -500], [0, 300]], 164.87831753543415],
+    ];
+    for (const [points, bound] of layouts) {
+      const result = run(stopAt3000, withXyPoints(points));
+      expect(result.status).toBe("planned");
+      expect(result.selected_curve_time_ms).toBe(3000);
+      expect(result.prepare_time_ms).toBeCloseTo(1408.3333333333333, 9);
+      const xy = deviceOf(result, 400);
+      expectHpy(xy.target_HPY, [2260, 4, 4]);
+      expect(xy.motor_velocity_upper_bound).toBeCloseTo(bound, 9);
+    }
+  });
+
+  it("rejects two hoist points that are off the axes or do not straddle the origin", () => {
+    const layouts: Array<Array<[number, number]>> = [
+      [[-400, 100], [400, 100]],
+      [[100, 0], [400, 0]],
+      [[400, 0], [400, 0]],
+    ];
+    for (const points of layouts) {
+      expect(() => run(stopAt3000, withXyPoints(points))).toThrow(/XY双吊点/);
+    }
+  });
+
+  it("still needs three points for an ordinary multi-point swing", () => {
+    expect(() =>
+      run(stopAt3000, (parameters) => {
+        const model = parameters.models.find((item) => item.model_type === 7)!;
+        model.point_init_pos = [[-400, 0], [400, 0]];
+        model.motor_num = 2;
+      }),
+    ).toThrow(/普通多点摆至少需要3个吊点/);
+  });
+});
+
 /**
  * 当前原段优先（python/强制就近算法）。示例停在 3500ms 所在段，最近可执行点在 3000ms。
  */
 describe("calculateNearestEntry frame selection (指定帧 / 从参考帧按方向就近)", () => {
-  const current = JSON.parse(
-    readFileSync(path.resolve(__dirname, "../../../../python/强制就近算法/算法参数.json"), "utf-8").replace(
-      /^\uFEFF/,
-      "",
-    ),
-  ) as NearestParameters;
+  const current = example;
   const runCurrent = (command: Partial<NearestParameters["command"]>) => {
     const parameters = structuredClone(current);
     Object.assign(parameters.command, command);
@@ -341,5 +382,21 @@ describe("calculateNearestEntry on a round trip that repeats a position", () => 
     parameters.command.use_specified_time = true;
     parameters.command.specified_time_ms = 800;
     expect(calculateNearestEntry(parameters).search_statistics).toEqual({});
+  });
+});
+
+describe("bundled five-model example (with 4 无极旋转)", () => {
+  const read = (name: string) =>
+    JSON.parse(
+      readFileSync(path.resolve(__dirname, "../../../../python/强制就近算法", name), "utf-8").replace(/^\uFEFF/, ""),
+    ) as Record<string, unknown>;
+
+  it("matches python/强制就近算法/算法参数-结果.json field for field", () => {
+    const parameters = read("算法参数.json") as unknown as NearestParameters;
+    const expected = read("算法参数-结果.json");
+    const result = calculateNearestEntry(parameters);
+    // 结果文件里还有原样带回的输入与说明，只比较算法输出的字段
+    const picked = Object.fromEntries(Object.keys(result).map((key) => [key, expected[key]]));
+    expect(JSON.parse(JSON.stringify(result))).toEqual(picked);
   });
 });
