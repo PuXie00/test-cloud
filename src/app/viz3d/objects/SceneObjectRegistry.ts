@@ -20,6 +20,8 @@ export type SceneObjectHandle = {
   selectionBoundsTarget: TransformNode;
   getConfig: () => SceneObjectConfig;
   getTransformCenterWorldPosition: () => Vec3;
+  /** 虚轴标签锚点：第一个吊点，没有吊点时为变换中心（世界坐标，m） */
+  getLabelAnchorWorldPosition: () => Vec3;
   getVisualRoot: () => TransformNode;
   getVisualRevision: () => number;
   applyConfig: (config: SceneObjectConfig) => void;
