@@ -928,7 +928,7 @@ SUPPORTED_MODEL_TYPES = {2: "单点", 3: "多级升降", 4: "无极旋转", 7: "
 
 
 def _validate_rotation_curve(model, time_unit_ms):
-    """PLC旋转模型仅H有效；全周期由轴取模，部分范围不能越过软行程。"""
+    """无极纯姿态仅H有效，按真实周期检查整段是否落入允许姿态弧。"""
     period = model.get("workingStroke")
     if isinstance(period, bool) or not isinstance(period, (int, float)) or not math.isfinite(period) or period <= 0:
         raise ValueError("无极旋转workingStroke须为真实有限正周期")
@@ -944,27 +944,33 @@ def _validate_rotation_curve(model, time_unit_ms):
             raise ValueError(f"无极旋转{name}须提供H/P/Y三个有限数值")
         bounds.append(float(values[0]))
     lower, upper = bounds
-    if not 0 <= lower < upper <= period:
-        raise ValueError("无极旋转H软行程须满足0<=min<max<=workingStroke")
+    if not 0 <= lower < upper:
+        raise ValueError("无极旋转H软行程须满足0<=min<max，workingStroke仍为真实正周期")
     if not model["segments"]:
         raise ValueError("无极旋转至少需要一段动作")
-    full_period = abs(lower) <= 1e-6 and abs(upper-period) <= 1e-6
+    tolerance = 1e-8
+    full_period = upper-lower >= period-tolerance
     for segment in model["segments"]:
         calculate_virtual_state(segment, segment["start_frame"], time_unit_ms)
         for piece in segment.get("coefficient_segments", [segment]):
             if any(float(piece[name][axis]) != 0 for name in "bcdef" for axis in (1, 2)):
                 raise ValueError("无极旋转只支持H角度轴，P/Y不能包含运动")
             if full_period:
-                continue  # 实际位置由MODULO处理，不能把360附近的连续角度误判为超行程。
+                continue  # 区间覆盖整个姿态圆，不把宽度误当作真实周期。
             start, end = float(piece["start_frame"]), float(piece["end_frame"])
             duration = (end-start)/time_unit_ms
             velocity = [power*float(piece[name][0])*duration**(power-1)
                         for power, name in enumerate("bcdef", 1)]
             frames = [start, end] + [start+x*(end-start) for x in find_unit_interval_roots(velocity)]
-            for frame in frames:
-                position, _ = calculate_virtual_state(piece, frame, time_unit_ms)
-                if not lower-1e-6 <= position[0] <= upper+1e-6:
-                    raise ValueError("无极旋转原曲线越过H软行程；部分范围不能跨过禁用区")
+            positions = [calculate_virtual_state(piece, frame, time_unit_ms)[0][0] for frame in frames]
+            if not all(math.isfinite(value) for value in positions):
+                raise ValueError("无极旋转原曲线位置必须为有限数值")
+            minimum, maximum = min(positions), max(positions)
+            # 整段连续包络必须落在同一允许弧副本；不能只检查取模后的几个点。
+            cycle = math.floor((minimum-lower+tolerance)/period)
+            if (minimum < lower+cycle*period-tolerance
+                    or maximum > upper+cycle*period+tolerance):
+                raise ValueError("无极旋转原曲线越过允许姿态弧；部分范围不能跨过禁用区")
 
 
 def _virtual_peak_velocities(model, time_unit_ms):

@@ -182,7 +182,7 @@
     }
   ],
   "skipped_candidates": [],
-  "algorithm_version": "v8_five_models_period_reset_guard_20261120",
+  "algorithm_version": "v9_five_models_rotation_pose_20261120",
   "time_basis": "1007共同时间戳T0开始准备；全部PLC等待T0+prepareTimeMs且本机准备完成停稳后进入曲线",
   "protocol": {
     "1006_header_bytes": 17,

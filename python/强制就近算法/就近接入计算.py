@@ -18,7 +18,7 @@ from pathlib import Path
 
 AXIS_NAMES = ("H", "P", "Y")
 CURVE_TICK_FRAME = 100.0
-ALGORITHM_VERSION = "v8_five_models_period_reset_guard_20261120"
+ALGORITHM_VERSION = "v9_five_models_rotation_pose_20261120"
 FRAME_SELECTION_VERSION = "current_original_segment_first_20261029"
 MAX_PREPARE_TIME_MS = 4294967295
 
@@ -953,8 +953,13 @@ def _rotation_delta(current, target, period):
 def _rotation_full_period(model):
     if model.get("model_type") != 4 or model.get("_rotation_period_H") is None:
         return False
-    return (abs(model["min_position_HPY"][0]) <= 1e-6
-            and abs(model["max_position_HPY"][0]-model["_rotation_period_H"]) <= 1e-6)
+    return model["max_position_HPY"][0]-model["min_position_HPY"][0] >= model["_rotation_period_H"]
+
+
+def _rotation_position(model, value):
+    """纯姿态旋转H的允许区间代表值；不改原曲线系数、帧或导数。"""
+    lower = model["min_position_HPY"][0]
+    return lower + ((float(value)-lower) % model["_rotation_period_H"])
 
 
 def _entry_positions_equal(model, first, second, tolerance=1e-5):
@@ -2333,11 +2338,13 @@ def _normalize_inputs(parameters):
             period = _number(item.get("workingStroke"), "workingStroke")
             lower = _hpy(item.get("min_position_HPY"), "min_position_HPY")
             upper = _hpy(item.get("max_position_HPY"), "max_position_HPY")
-            if period <= 0 or not 0 <= lower[0] < upper[0] <= period:
-                raise ValueError("无极旋转workingStroke须为真实正周期，H软行程须位于0到周期内")
+            if period <= 0 or not 0 <= lower[0] < upper[0]:
+                raise ValueError("无极旋转workingStroke须为真实正周期，H软行程须满足0<=下限<上限")
             item["_rotation_period_H"] = period
             item["min_position_HPY"], item["max_position_HPY"] = lower, upper
         current = _hpy(item.get("current_HPY"), "current_HPY")
+        if geometry_kind == 4:
+            current[0] = _rotation_position(item, current[0])
         if "standstill" in item and type(item["standstill"]) is not bool:
             raise ValueError("standstill必须为bool")
         if item.get("standstill") is False:
@@ -2454,8 +2461,8 @@ def _prepare_targets(candidate, inputs):
     for model in inputs["curve_action"]["models"]:
         key = model["index"]
         current, target = inputs["current_positions"][key], candidate["PosSet"][key]
-        if _rotation_full_period(model):
-            target[0] %= model["_rotation_period_H"]
+        if model.get("_rotation_period_H") is not None:
+            target[0] = _rotation_position(model, target[0])
         for axis, name in enumerate(AXIS_NAMES):
             if name not in inputs["active_axes_by_model"][key]:
                 if name in model["_supported_axes"] and abs(target[axis]-current[axis]) > 1e-5:
@@ -2503,8 +2510,6 @@ def _calculate_forced_entry(parameters):
                  if "max_position_HPY" in model else [math.inf]*3)
         if any(a > b for a, b in zip(lower, upper)):
             raise ValueError("虚轴行程下限不能大于上限")
-        if _rotation_full_period(model):
-            lower[0], upper[0] = 0.0, model["_rotation_period_H"]
         axes = [AXIS_NAMES.index(name) for name in model["_supported_axes"]]
         for axis in axes:
             current = inputs["current_positions"][key][axis]

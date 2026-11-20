@@ -19,7 +19,7 @@ from time import perf_counter as _clock
 from pathlib import Path
 from collections import OrderedDict
 
-ALGORITHM_VERSION = "nonforced_single_move_five_models_decimal_ad_modulo_20261120"
+ALGORITHM_VERSION = "nonforced_single_move_five_models_decimal_ad_pose_modulo_20261120"
 AXIS_NAMES = ("H", "P", "Y")
 COEFFICIENT_NAMES = ("a", "b", "c", "d", "e", "f")
 _EPS = 1e-9
@@ -497,7 +497,7 @@ def _settle_rates(windows):
         previous = window["acceleration"]
 
 
-def _run_commands(phases, target):
+def _run_commands(phases, target, quantize_target=True):
     # 完整静止到静止梯形/三角形：原window合并过程必然得到同一条Move。
     # 仅严格匹配时走快路；带速多级曲线、接缝及任何疑点继续原算法。
     if len(phases) in (2,3):
@@ -515,7 +515,7 @@ def _run_commands(phases, target):
                 remaining += phase.distance
             if (0 < acceleration < math.inf and 0 < deceleration < math.inf
                     and deceleration >= needed*(1-_RATE_EPS)):
-                return [{"atMs": _round_coordinate(first.at_ms), "target": _round_coordinate(target),
+                return [{"atMs": _round_coordinate(first.at_ms), "target": _round_coordinate(target) if quantize_target else target,
                          "velocity": _round_speed(peak), "acceleration": _ceil_rate(acceleration),
                          "deceleration": _ceil_rate(deceleration), "passSpeed": _round_speed(first.from_speed),
                          "adjusted": False}]
@@ -526,7 +526,7 @@ def _run_commands(phases, target):
         first = window["phases"][0]
         commands.append({
             "atMs": _round_coordinate(first.at_ms + first.direction * (window["delay_ms"] or 0.)),
-            "target": _round_coordinate(target),
+            "target": _round_coordinate(target) if quantize_target else target,
             "velocity": _round_speed(window["velocity"]),
             "acceleration": _ceil_rate(window["acceleration"] or 0.),
             "deceleration": _ceil_rate(window["deceleration"] or 0.),
@@ -538,7 +538,7 @@ def _run_commands(phases, target):
             if index + 1 >= len(commands) or commands[index + 1]["atMs"] != command["atMs"]]
 
 
-def axis_move_commands(runs, reverse=False, loop=False):
+def axis_move_commands(runs, reverse=False, loop=False, quantize_target=True):
     """一个轴整条动作的 Move（原曲线时刻升序），与上位机 axisMoveCommands 相同。
 
     反向时按倒走的曲线生成：目标是每段连续运动的起点，时刻仍是原曲线时刻。
@@ -562,11 +562,11 @@ def axis_move_commands(runs, reverse=False, loop=False):
                 duration = (end - start) / 1000
                 phases.append(_Phase(start + duration * 1000, to_speed, from_speed, duration,
                                      index == seam_at - 1, -1))
-            commands.extend(_run_commands(phases, run["start_pos"]))
+            commands.extend(_run_commands(phases, run["start_pos"], quantize_target))
         else:
             phases = [_Phase(start, from_speed, to_speed, (end - start) / 1000, index == seam_at, 1)
                       for index, (start, end, from_speed, to_speed) in enumerate(run["phases"])]
-            commands.extend(_run_commands(phases, run["end_pos"]))
+            commands.extend(_run_commands(phases, run["end_pos"], quantize_target))
     return sorted(commands, key=lambda command: command["atMs"])
 
 
@@ -588,10 +588,10 @@ def _rotation_period_of(model):
     return period
 
 
-def _rotation_coordinate(value, period):
-    result = value % period
+def _rotation_coordinate(value, period, minimum=0.):
+    result = (value - minimum) % period
     tolerance = max(1e-10, 16 * math.ulp(max(1., abs(value), period)))
-    return 0. if result <= tolerance or period - result <= tolerance else result
+    return minimum if result <= tolerance or period - result <= tolerance else minimum + result
 
 
 def _rotation_lift(target, current, period):
@@ -606,13 +606,23 @@ def _rotation_lift(target, current, period):
     return current + delta
 
 
-def _rotation_wire_goal(value, period, quantized):
-    position = _rotation_coordinate(value, period)
-    if quantized:
-        position = quantize(position)
-    if position >= period:
-        position = 0.
-    return position
+def _rotation_wire_goal(value, period, quantized, minimum=0., maximum=None):
+    position = _rotation_coordinate(value, period, minimum)
+    if not quantized:
+        return position
+    maximum = minimum + period if maximum is None else min(maximum, minimum + period)
+    # 周期和软下限可以不是0.1的整数倍；先展开再分别编码，不能对编码值再取模。
+    candidates = {quantize(position + shift * period) for shift in (-1, 0, 1)}
+    candidates.update((math.ceil(minimum * 10 - 1e-8) / 10,
+                       math.floor(maximum * 10 + 1e-8) / 10))
+    allowed = []
+    for candidate in candidates:
+        error = abs((candidate - position + period / 2) % period - period / 2)
+        if minimum - 1e-9 <= candidate <= maximum + 1e-9 and error <= .05 + 1e-9:
+            allowed.append((error, candidate >= minimum + period, abs(candidate - position), candidate))
+    if allowed:
+        return min(allowed)[3]
+    raise EntryInfeasible(['旋转停车目标无法按0.1精度编码到允许软行程内'])
 
 
 def _axis_period(device, index):
@@ -624,6 +634,8 @@ def _position_interval_allowed(device, index, lower, upper, tolerance=1e-8):
     period = _axis_period(device, index)
     if period is None:
         return lower >= minimum - tolerance and upper <= maximum + tolerance
+    if maximum <= minimum:
+        return False
     if maximum - minimum >= period - tolerance:
         return True
     if not math.isfinite(minimum) or not math.isfinite(maximum) or maximum < minimum:
@@ -1249,17 +1261,17 @@ def _runtime_states(parameters):
     return states
 
 
-# 只缓存与反馈/能力/行程无关的原曲线编译结果。内容指纹覆盖原地修改，容量双重受限。
+# 缓存原曲线编译结果；旋转编码所用周期及软行程纳入指纹，容量双重受限。
 _COMPILED_CURVES = OrderedDict()
 _COMPILED_CURVE_PIECES = 0
 _COMPILED_CURVE_MAX_ENTRIES = 256
 _COMPILED_CURVE_MAX_PIECES = 100000
 
 
-def _compiled_curve(pieces, unit, direction, run_origin, loop, settings, period_h=None, stage_parameters=None):
+def _compiled_curve(pieces, unit, direction, run_origin, loop, settings, period_h=None, stage_parameters=None, rotation_origin_h=0., rotation_maximum_h=None):
     global _COMPILED_CURVE_PIECES
     _check_deadline()
-    signature = (unit,direction,run_origin,loop,period_h,stage_parameters,settings["entry_quantize_protocol"],
+    signature = (unit,direction,run_origin,loop,period_h,stage_parameters,rotation_origin_h,rotation_maximum_h,settings["entry_quantize_protocol"],
                  tuple((start,end,*(tuple(coefficients[name]) for name in COEFFICIENT_NAMES))
                        for start,end,coefficients in pieces))
     _check_deadline()
@@ -1272,9 +1284,18 @@ def _compiled_curve(pieces, unit, direction, run_origin, loop, settings, period_
     all_commands,all_tracks = [],[]
     for axis in range(3):
         _check_deadline()
-        commands = axis_move_commands(_axis_runs(pieces,axis,unit),reverse=direction<0,loop=loop)
+        commands = axis_move_commands(_axis_runs(pieces,axis,unit),reverse=direction<0,loop=loop,
+                                      quantize_target=not (axis == 0 and period_h is not None))
         if axis == 0 and period_h is not None:
-            commands = [{**command, "target": _rotation_wire_goal(command["target"], period_h, settings["entry_quantize_protocol"])} for command in commands]
+            encoded = []
+            for command in commands:
+                try:
+                    target = _rotation_wire_goal(command["target"], period_h, settings["entry_quantize_protocol"], rotation_origin_h, rotation_maximum_h)
+                except EntryInfeasible:
+                    # 保留原表超范围Move，交给table_limit判断能否在它之后接入。
+                    target = _rotation_wire_goal(command["target"], period_h, settings["entry_quantize_protocol"], rotation_origin_h)
+                encoded.append({**command, "target": target})
+            commands = encoded
         ordered = list(reversed(commands)) if direction<0 else commands
         sends = [(direction*(command["atMs"]-run_origin),_wire_move(command,settings)) for command in ordered]
         anchor = end_positions[axis] if direction<0 else start_positions[axis]
@@ -2238,6 +2259,15 @@ class _Device:
                       if "min_position_HPY" in model else [-math.inf] * 3)
         self.upper = (_triple(model["max_position_HPY"], f"{label} max_position_HPY")
                       if "max_position_HPY" in model else [math.inf] * 3)
+        self.rotation_origin_H = 0.
+        if self.position_period_H is not None:
+            if "min_position_HPY" in model and self.lower[0] < 0:
+                raise ValueError(f"{label}旋转H软行程下限须大于等于0")
+            if self.upper[0] <= self.lower[0]:
+                raise ValueError(f"{label}旋转H软行程上限须大于下限")
+            self.rotation_origin_H = self.lower[0] if math.isfinite(self.lower[0]) else 0.
+            self.current[0] = _rotation_coordinate(self.current[0], self.position_period_H,
+                                                   self.rotation_origin_H)
         self.stage_parameters = _stage_parameters_of(model, self.lower[0], self.upper[0])
         self.prepare_caps = [(_floor_rate(self.reposition_velocity[i], settings["entry_quantize_protocol"]),
                               _floor_acceleration(self.reposition_acceleration[i], settings["entry_quantize_protocol"]),
@@ -2251,7 +2281,7 @@ class _Device:
         self.first, self.last = pieces[0][0], pieces[-1][1]
         self.keyframes = sorted({_number(segment[name], name) for segment in model["segments"]
                                  for name in ("start_frame", "end_frame")})
-        self.commands, compiled_tracks = _compiled_curve(pieces,unit,direction,run_origin,loop,settings,self.position_period_H,self.stage_parameters)
+        self.commands, compiled_tracks = _compiled_curve(pieces,unit,direction,run_origin,loop,settings,self.position_period_H,self.stage_parameters,self.rotation_origin_H,self.upper[0] if self.position_period_H is not None else None)
         self.tracks = []
         for axis,(commands,track) in enumerate(zip(self.commands,compiled_tracks)):
             if not self.active[axis] or (not commands and self.reposition_velocity[axis] == 0):
@@ -2351,7 +2381,7 @@ def _rates_near(value, limit, settings, radius=1, resolution=.1):
 def _target_on_wire(value, device, index, settings):
     period = _axis_period(device, index)
     if period is not None:
-        wire = _rotation_wire_goal(value, period, settings["entry_quantize_protocol"])
+        wire = _rotation_wire_goal(value, period, settings["entry_quantize_protocol"], device.rotation_origin_H, device.upper[0])
         return _rotation_lift(wire, value, period)
     if not settings["entry_quantize_protocol"]:
         return value
@@ -2537,7 +2567,10 @@ def _candidate_moves(request, seconds, settings):
         for dec in _acceleration_rates_near(ideal_dec, D, settings, 0):
             if family != "endpoint" and abs(dec-request["dec"]) > 1e-8:
                 continue
-            target = request.get("target", _target_on_wire(q+request["s"]*w*w/(2*dec), device, index, settings))
+            try:
+                target = request["target"] if "target" in request else _target_on_wire(q+request["s"]*w*w/(2*dec), device, index, settings)
+            except EntryInfeasible:
+                continue
             B, C, K = seconds+w/dec, (1/A+1/dec)/2, L+w*w/(2*dec)
             discriminant = B*B-4*C*K
             if discriminant < -1e-8:
@@ -2570,7 +2603,10 @@ def _entry_for_time(request, seconds, u0, settings):
     for move in _candidate_moves(request, seconds, settings):
         _check_deadline()
         if _axis_period(device, index) is not None:
-            move = {**move, "pos": _rotation_wire_goal(move["pos"], device.position_period_H, settings["entry_quantize_protocol"])}
+            try:
+                move = {**move, "pos": _rotation_wire_goal(move["pos"], device.position_period_H, settings["entry_quantize_protocol"], device.rotation_origin_H, device.upper[0])}
+            except EntryInfeasible:
+                continue
         key = tuple(move[name] for name in ("pos", "vel", "accVel", "decVel"))
         if key in seen:
             continue
@@ -3428,7 +3464,7 @@ def _planned(devices, plan, command, settings, mode, reference, clamped, referen
         for entry in entries:
             join_position = entry["join"][0]
             if _axis_period(device, entry["index"]) is not None:
-                join_position = _rotation_coordinate(join_position, device.position_period_H)
+                join_position = _rotation_coordinate(join_position, device.position_period_H, device.rotation_origin_H)
             join[entry["index"]] = round(join_position, 6)
             join_velocity[entry["index"]] = round(entry["join"][1], 6)
             axes.append({key: (round(value, 6) if isinstance(value, float) else value)

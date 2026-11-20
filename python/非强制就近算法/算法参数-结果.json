@@ -1,7 +1,7 @@
 {
   "status": "planned",
   "message": "接入方案已生成，核对通过",
-  "algorithm_version": "nonforced_single_move_five_models_decimal_ad_modulo_20261120",
+  "algorithm_version": "nonforced_single_move_five_models_decimal_ad_pose_modulo_20261120",
   "trajectory_run": false,
   "reverse": false,
   "selected_curve_time_ms": 2250,
