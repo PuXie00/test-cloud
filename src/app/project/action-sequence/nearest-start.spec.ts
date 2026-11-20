@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 import { evaluateResolvedSequence } from "./evaluate-sequence";
 import { nearestStartPosesAt, planNearestStart, type NearestStartPlan } from "./nearest-start";
 import { resolveActionSequence } from "./resolve-sequence";
+import { MOTION_DEFAULTS } from "@/app/project/configuration-rules";
+import type { ActionSequenceConfig } from "./types";
 import {
   fixtureCurrent,
   fixtureNonforcedSequence,
   fixtureObjects,
   fixtureSequence,
+  singlePointFixture,
 } from "./nearest-start.fixture";
 import type { HpyPose } from "./nearest-start-motion";
 
@@ -210,5 +213,70 @@ describe("planNearestStart（非强制）", () => {
     below.set(1, { h: -0.5, p: 0, y: 0 });
     const result = nonforced({ nearest: false, reverse: false, telemetry: below });
     expect(moveOf(result, 1, "v1")).toMatchObject({ from: -0.5, to: 0 });
+  });
+});
+
+describe("无极旋转（模型 4）", () => {
+  // 转台：周期 360°（没绑电机时按一圈），软行程 0~360°；停在 355°，动作从 5° 转到 90°
+  const turntable = {
+    ...singlePointFixture(),
+    id: 7,
+    name: "转台",
+    controlType: 4 as const,
+    maxAxisVelocity: 60,
+    motionParams: { h: { ...MOTION_DEFAULTS.rotation } },
+  };
+  const sequenceOf = (trajectoryMode: boolean): ActionSequenceConfig => ({
+    id: 70,
+    name: "转台",
+    trajectoryMode,
+    blocks: [
+      { id: "r0", kind: "pose", objectId: 7, atMs: 0, pose: { v1: 5 }, passSpeeds: { v1: 0, v2: 0, v3: 0 } },
+      { id: "r1", kind: "pose", objectId: 7, atMs: 4000, pose: { v1: 90 }, passSpeeds: { v1: 0, v2: 0, v3: 0 } },
+    ],
+    segments: [],
+  });
+  const start = (forced: boolean, h = 355, maxAngle = 360) =>
+    planNearestStart({
+      resolved: resolveActionSequence(sequenceOf(forced)),
+      objects: [{ ...turntable, motionParams: { h: { ...MOTION_DEFAULTS.rotation, maxAngle } } }],
+      motors: [],
+      telemetryByObjectId: new Map([[7, { h, p: 0, y: 0 }]]),
+      forced,
+      nearest: false,
+      reverse: false,
+      loopCount: 1,
+    });
+
+  it.each([true, false])("turns the short way across zero to the first frame (forced %s)", (forced) => {
+    const result = start(forced);
+    expect(result.targetFrameMs).toBe(0);
+    // 355° → 5° 正转 10°，不是反转 350°
+    expect(memberOf(result, 7).target.v1).toBeCloseTo(365, 6);
+    expect(moveOf(result, 7, "v1")).toMatchObject({ from: 355 });
+    expect(moveOf(result, 7, "v1")!.to).toBeCloseTo(365, 6);
+    if (!forced) expect(moveOf(result, 7, "v1")!.entryMove!.pos).toBe(5);
+    const end = result.transitionSec * 1000;
+    const mid = nearestStartPosesAt(result, end / 2).get(7)!.v1;
+    expect(mid).toBeGreaterThan(355);
+    expect(mid).toBeLessThan(365);
+    expect(nearestStartPosesAt(result, end).get(7)!.v1).toBeCloseTo(365, 1);
+  });
+
+  // 算法按纯姿态把 715° 当作 355°；行程上限可以超过周期（0~720、周期 360）
+  it.each([
+    [true, 360],
+    [false, 360],
+    [true, 720],
+    [false, 720],
+  ])("starts from a raw reading past one turn (forced %s, stroke 0~%s)", (forced, maxAngle) => {
+    const result = start(forced, 715, maxAngle);
+    // 预览从实时读数 715° 出发，正转 10° 到 725°（≡5°）
+    expect(moveOf(result, 7, "v1")).toMatchObject({ from: 715 });
+    expect(moveOf(result, 7, "v1")!.to).toBeCloseTo(725, 6);
+    expect(memberOf(result, 7).from.v1).toBe(715);
+    if (!forced) expect(moveOf(result, 7, "v1")!.entryMove!.pos).toBe(5);
+    expect(nearestStartPosesAt(result, 0).get(7)!.v1).toBeCloseTo(715, 6);
+    expect(nearestStartPosesAt(result, result.transitionSec * 1000).get(7)!.v1).toBeCloseTo(725, 1);
   });
 });

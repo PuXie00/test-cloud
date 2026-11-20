@@ -35,6 +35,11 @@ export type AxisMoveCommandOptions = {
    * 只有 runMoveCommands 用（从 PLC 曲线还原，与 python 对数）；本软件解算的循环首尾总是停。
    */
   loop?: boolean;
+  /**
+   * 目标位置按项目坐标精度取整（默认是）。无极旋转的 H 传 false：目标先保留原值，
+   * 由非强制就近按周期和软行程编码后再取整（对应 python quantize_target）。
+   */
+  quantizeTarget?: boolean;
 };
 
 /** 运行方向上的一个变速 / 匀速阶段；atMs 是阶段开始的原曲线时刻 */
@@ -359,14 +364,14 @@ const settleRates = (windows: CommandWindow[]): void => {
   }
 };
 
-const runCommands = (phases: readonly Phase[], target: number): AxisMoveCommand[] => {
+const runCommands = (phases: readonly Phase[], target: number, quantizeTarget = true): AxisMoveCommand[] => {
   const windows = commandWindows(splitGentleSlowdowns(phases));
   settleRates(windows);
   const commands = windows.map((window) => {
     const first = window.phases[0]!;
     return {
       atMs: roundProjectCoordinate(first.atMs + first.direction * (window.delayMs ?? 0)),
-      target: roundProjectCoordinate(target),
+      target: quantizeTarget ? roundProjectCoordinate(target) : target,
       velocity: roundSpeed(window.velocity),
       acceleration: ceilRate(window.acceleration ?? 0),
       deceleration: ceilRate(window.deceleration ?? 0),
@@ -451,7 +456,7 @@ export const runMoveCommands = (
           direction: -1,
         });
       }
-      return runCommands(phases, run.startPos);
+      return runCommands(phases, run.startPos, options.quantizeTarget);
     }
     const phases = run.phases.map(({ startMs, endMs, fromSpeed, toSpeed }, index): Phase => {
       const durationSec = (endMs - startMs) / 1000;
@@ -465,7 +470,7 @@ export const runMoveCommands = (
         direction: 1,
       };
     });
-    return runCommands(phases, run.endPos);
+    return runCommands(phases, run.endPos, options.quantizeTarget);
   });
   return commands.sort((left, right) => left.atMs - right.atMs);
 };

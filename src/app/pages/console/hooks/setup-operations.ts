@@ -46,7 +46,6 @@ export type MultiPointAxesConfigurationInput = {
   axes: AxisDefinition[];
   safetyRadius: number;
   initialTiltDirection: number;
-  mountRotation: number;
   mountLayout: MountLayout;
   unbindAxisKeys: readonly string[];
   bindAxisMotors: ReadonlyArray<{ axisKey: string; motorId: number }>;
@@ -78,7 +77,6 @@ export const applyMultiPointAxesConfiguration = (
     {
       safetyRadius: input.safetyRadius,
       initialTiltDirection: input.initialTiltDirection,
-      mountRotation: input.mountRotation,
       mountLayout: toDraftMountLayout(input.mountLayout, input.axes.length),
       axes: input.axes,
       unbindAxisKeys: [...input.unbindAxisKeys],
@@ -86,6 +84,7 @@ export const applyMultiPointAxesConfiguration = (
     },
     footprint,
     CONTROL_TYPE_RULES[object.controlType].minimumDriveAxes,
+    object.controlType,
   );
   if (issues.length > 0) {
     return rejectMultiPointAxesConfiguration(state, issues[0]!.message);
@@ -98,13 +97,10 @@ export const applyMultiPointAxesConfiguration = (
       ? item
       : {
           ...item,
-          ...(object.controlType === "multiPointSwing"
-            ? {
-                safetyRadius: input.safetyRadius,
-                initialTiltDirection: input.initialTiltDirection,
-              }
-            : {}),
-          mountRotation: input.mountRotation,
+          ...resolveSwingYawModelParams(object.controlType, {
+            safetyRadius: input.safetyRadius,
+            initialTiltDirection: input.initialTiltDirection,
+          }),
           mountLayout: input.mountLayout,
           axes: input.axes.map((axis) => ({
             ...axis,
@@ -300,7 +296,6 @@ export const changeObjectControlType = (
         const {
           safetyRadius: _dropSafetyRadius,
           initialTiltDirection: _dropInitialTilt,
-          mountRotation: _dropMountRotation,
           mountLayout: _dropMountLayout,
           multiLevel: _dropMultiLevel,
           ...rest
@@ -352,7 +347,6 @@ export const changeObjectControlType = (
       const {
         safetyRadius: _dropSafetyRadius,
         initialTiltDirection: _dropInitialTilt,
-        mountRotation: _dropMountRotation,
         mountLayout: _dropMountLayout,
         multiLevel: _dropMultiLevel,
         ...rest

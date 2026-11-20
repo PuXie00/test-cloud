@@ -66,9 +66,13 @@ const mountOf = (axis: DriveAxisBinding): { x: number; z: number } => axis.mount
 const positive = (value: number | undefined, fallback: number): number =>
   typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
 
-/** 业务模型类型：2 单点、7 四点（多点倾斜）、8 多点；其余单轴物体都按单点 */
-const businessModelType = (object: ControlledObjectConfig): 2 | 7 | 8 => {
+type BusinessModelType = 2 | 4 | 7 | 8;
+
+/** 业务模型类型：2 单点、4 无极旋转、7 四点（多点倾斜）、8 多点；其余单轴物体都按单点 */
+const businessModelType = (object: ControlledObjectConfig): BusinessModelType => {
   switch (decodeControlType(object.controlType)) {
+    case "continuousRotation":
+      return 4;
     case "dualTiltFourPointSwing":
       return 7;
     case "multiPointSwing":
@@ -79,8 +83,44 @@ const businessModelType = (object: ControlledObjectConfig): 2 | 7 | 8 => {
 };
 
 /** 按实际吊点数；至少 1 个 */
-const motorCountOf = (_modelType: 2 | 7 | 8, object: ControlledObjectConfig): number =>
+const motorCountOf = (_modelType: BusinessModelType, object: ControlledObjectConfig): number =>
   Math.max(1, object.driveAxes.length);
+
+/** 协议能表示的位置范围（int32 × 0.1）：无极旋转的 P/Y 没有行程，用它占位 */
+const PROTOCOL_POSITION_LIMIT = 214748364.7;
+
+/** 没有绑定电机（未接 PLC）时按一圈 360° */
+const UNBOUND_ROTATION_PERIOD = 360;
+
+/**
+ * 无极旋转的周期 = 绑定电机的工作行程（PLC 的 workingStroke），所有电机必须相同；
+ * 不能用物体的软行程宽度代替。还没绑定电机时按一圈 360°
+ */
+const rotationPeriodFor = (object: ControlledObjectConfig, motors: readonly MotorConfig[]): number => {
+  const strokes = motors
+    .filter((motor) => motor.controlledObjectId === object.id)
+    .map((motor) => motor.params.workingStroke);
+  if (strokes.length === 0) return UNBOUND_ROTATION_PERIOD;
+  if (!strokes.every((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0)) {
+    throw new Error(`无极旋转物体${object.id}的绑定电机工作行程须为正数`);
+  }
+  if (strokes.some((value) => value !== strokes[0])) {
+    throw new Error(`无极旋转物体${object.id}的绑定电机工作行程须相同`);
+  }
+  return strokes[0]!;
+};
+
+/** 无极旋转的 H 软行程 = 旋转运动参数的最小 / 最大位置；没有参数时取整圈 */
+const rotationStrokeFor = (object: ControlledObjectConfig, period: number): [number, number] => {
+  const params = motionParamsOfKind(
+    CONTROL_TYPE_RULES[decodeControlType(object.controlType)].motionAxes,
+    object.motionParams,
+    "rotation",
+  );
+  return params && Number.isFinite(params.minAngle) && Number.isFinite(params.maxAngle)
+    ? [params.minAngle, params.maxAngle]
+    : [0, period];
+};
 
 const paramsFor = (object: ControlledObjectConfig, axis: VirtualAxisId) =>
   object.motionParams[motionAxisIdForVirtualAxis(axis)];
@@ -222,6 +262,24 @@ const isConstantAxis = (segments: readonly ActionSegment[], axis: number): boole
     });
     return variation <= CONSTANT_EPSILON;
   });
+};
+
+/**
+ * 业务模型类型换成三个 Python 算法（强制 / 非强制就近、调速范围）用的编号：
+ * 多级升降 2 → 3（只核 H 轴电机速度），多点摆 8 → 7，多点倾斜 7 → 9（XY，betainit 固定 0），
+ * 无极旋转 4 不变（buildAlgorithmModels 已带 workingStroke 与 H 软行程）。
+ */
+export const withAlgorithmModelType = (
+  model: AlgorithmModel,
+  objects: readonly ControlledObjectConfig[],
+): AlgorithmModel => {
+  const object = objects.find((item) => item.id === model.model_id);
+  if (object && decodeControlType(object.controlType) === "multiLevelHoist") {
+    return { ...model, model_type: 3 };
+  }
+  if (model.model_type === 8) return { ...model, model_type: 7 };
+  if (model.model_type === 7) return { ...model, model_type: 9, betainit: 0 };
+  return model;
 };
 
 export type AlgorithmModelSource = {
@@ -383,6 +441,12 @@ export const buildAlgorithmModels = (source: AlgorithmModelSource): AlgorithmMod
         return [mount.x, mount.z, 0];
       });
       model.betainit = object.initialTiltDirection ?? 0;
+    } else if (modelType === 4) {
+      const period = rotationPeriodFor(object, motors);
+      const [minAngle, maxAngle] = rotationStrokeFor(object, period);
+      model.workingStroke = period;
+      model.min_position_HPY = [minAngle, -PROTOCOL_POSITION_LIMIT, -PROTOCOL_POSITION_LIMIT];
+      model.max_position_HPY = [maxAngle, PROTOCOL_POSITION_LIMIT, PROTOCOL_POSITION_LIMIT];
     }
     models.push(model);
     runtime.push({

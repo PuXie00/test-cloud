@@ -8,7 +8,13 @@ import type { AxisTrack, EntryMove } from "./nonforced-entry";
 const RATE_LIMIT = 6553.5;
 const TAU = Math.PI * 2;
 
-export type TrackConstructor = new (anchor: number, sends: readonly [number, EntryMove][]) => AxisTrack;
+/** _device_track：按设备建一条实际轨迹（无极旋转的 H 按周期最短路回放） */
+export type TrackFactory = (
+  device: MotorHost,
+  index: number,
+  anchor: number,
+  sends: readonly [number, EntryMove][],
+) => AxisTrack;
 
 export type MotorEdge = {
   x: number;
@@ -31,6 +37,8 @@ export type MotorGeometry = {
 
 export type MotorHost = {
   modelId: number;
+  /** 无极旋转 H 的 workingStroke；其他模型为 null */
+  positionPeriodH: number | null;
   commands: { length: number }[];
   prepareCaps: [number, number, number][];
   current: number[];
@@ -224,9 +232,20 @@ const prepareMultiPointGeometry = (model: Record<string, unknown>): MotorGeometr
     if (values.some((value) => !Number.isFinite(value))) throw new Error("吊点须为有限的[x,y]或[x,y,z]坐标");
     points.push(values.length === 3 ? [values[0]!, values[1]!, values[2]!] : [values[0]!, values[1]!, 0]);
   }
-  if (points.length < 3) throw new Error("至少需要3个吊点");
-  const hull = convexHull(uniqueSorted(points.map((point) => [point[0], point[1]])));
-  if (hull.length < 3) throw new Error("吊点不能全部共线");
+  const xy = model.model_type === 9;
+  if (points.length < (xy ? 2 : 3)) throw new Error(xy ? "XY多点摆至少需要2个吊点" : "普通多点摆至少需要3个吊点");
+  const twoPointXy = xy && points.length === 2;
+  if (twoPointXy) {
+    const [[x0, y0, z0], [x1, y1, z1]] = points as [[number, number, number], [number, number, number]];
+    const onX = y0 === 0 && y1 === 0 && x0 !== x1 && Math.min(x0, x1) <= 0 && 0 <= Math.max(x0, x1);
+    const onY = x0 === 0 && x1 === 0 && y0 !== y1 && Math.min(y0, y1) <= 0 && 0 <= Math.max(y0, y1);
+    if (z0 !== 0 || z1 !== 0 || !(onX || onY)) {
+      throw new Error("XY双吊点须位于同一X轴或Y轴、线段包含原点、两点不重合且Z=0");
+    }
+  }
+  // PLC ConvexHull 在 pointNum<3 时不生成凸包，XY 双点正解的水平偏移为 0
+  const hull = twoPointXy ? [] : convexHull(uniqueSorted(points.map((point) => [point[0], point[1]])));
+  if (hull.length < 3 && !twoPointXy) throw new Error("吊点不能全部共线");
   const base1 = asFloat(model.Baseheight1);
   const base2 = asFloat(model.Baseheight2);
   const height = asFloat(model.maxheight);
@@ -252,7 +271,7 @@ const prepareMultiPointGeometry = (model: Record<string, unknown>): MotorGeometr
     const radiusMax = Math.max(I(x).square().add(I(y).square()).sqrt().hi, I(q[0]).square().add(I(q[1]).square()).sqrt().hi);
     edges.push({ x, y, dx, dy, cross, radiusMin, radiusMax });
   }
-  if (edges.length === 0) throw new Error("当前吊点无法形成有效边距");
+  if (edges.length === 0 && !twoPointXy) throw new Error("当前吊点无法形成有效边距");
   return { points, edges, base1, base2, maxHeight: height, beta };
 };
 
@@ -475,6 +494,7 @@ const xyOffsetBounds = (
   dr: Interval,
 ): [Interval, Interval, Interval, Interval] | null => {
   if (geometry.beta !== 0) throw new Error("XY多点摆betainit必须为0");
+  if (geometry.edges.length === 0) return [I(0), I(0), I(0), I(0)];
   const h = q[0]!;
   const vh = v[0]!;
   const vertical = geometry.base1 > 0 ? h.add(geometry.base1) : I(geometry.base2).add(geometry.maxHeight).sub(h);
@@ -647,7 +667,7 @@ const xyInstantaneousSpeed = (q: number[], v: number[], geometry: MotorGeometry)
   const vertical = geometry.base1 > 0 ? height + geometry.base1 : geometry.base2 + geometry.maxHeight - height;
   const verticalV = geometry.base1 > 0 ? velocityH : -velocityH;
   let offsets: [number, number, number, number][] = [[0, 0, 0, 0]];
-  if (tilt > 1e-8) {
+  if (tilt > 1e-8 && geometry.edges.length > 0) {
     let beta = Math.acos(Math.max(-1, Math.min(1, sp / Math.sin(tilt))));
     if (-sr * cp < 0) beta = -beta;
     const dx = Math.sin(beta);
@@ -661,7 +681,7 @@ const xyInstantaneousSpeed = (q: number[], v: number[], geometry: MotorGeometry)
     const tiltV = (sp * cr * pitchV + cp * sr * rollV) / Math.sqrt(sineSquared);
     offsets = [];
     for (const [radius, radiusV] of xyRadiusCandidates(dx, dy, betaV, geometry)) {
-      const rawPower = 1.73 + 0.52 * (vertical / radius);
+      const rawPower = 1.73 + (0.52 * vertical) / radius;
       const power = Math.min(100, rawPower);
       const powerV = rawPower >= 100 ? 0 : 0.52 * (verticalV / radius - (vertical * radiusV) / radius ** 2);
       const ratio = tilt / 1.5707963;
@@ -710,6 +730,7 @@ const xyInstantaneousSpeed = (q: number[], v: number[], geometry: MotorGeometry)
 };
 
 const prepareDirectionDomain = (geometry: MotorGeometry): [number, number] | null => {
+  if (geometry.edges.length === 0) return null;
   const points = uniqueSorted(geometry.points.map((point) => [point[0], point[1]]));
   const hull = convexHull(points);
   const closed = [...hull.slice(1), hull[0]!];
@@ -743,6 +764,9 @@ const floorRate = (value: number, quantized: boolean): number => {
 
 const sameValue = (left: unknown, right: unknown): boolean => JSON.stringify(left) === JSON.stringify(right);
 
+/** 单点、多级升降、无极旋转：实轴直接跟随 H，电机速度就是 H 速度 */
+const singleAxisMotor = (kind: number | null): boolean => kind === 2 || kind === 3 || kind === 4;
+
 export const configureMotorGeometry = (
   device: MotorHost,
   model: Record<string, unknown>,
@@ -756,14 +780,14 @@ export const configureMotorGeometry = (
     device.motorType = null;
     return;
   }
-  if (typeof kind !== "number" || !Number.isInteger(kind) || ![2, 3, 7, 9].includes(kind)) {
-    throw new Error("model_type只支持2单点、3多级升降、7多点摆、9XY多点摆");
+  if (typeof kind !== "number" || !Number.isInteger(kind) || ![2, 3, 4, 7, 9].includes(kind)) {
+    throw new Error("model_type只支持2单点、3多级升降、4旋转、7多点摆、9XY多点摆");
   }
   device.motorLimit = finite(model.max_motor_velocity, "max_motor_velocity");
   if (device.motorLimit <= 0) throw new Error("max_motor_velocity须大于0");
-  if (kind === 2 || kind === 3) {
+  if (singleAxisMotor(kind)) {
     if (device.commands[1]!.length > 0 || device.commands[2]!.length > 0) {
-      throw new Error("单点/多级升降仅支持H轴动作曲线");
+      throw new Error("单点/多级升降/旋转仅支持H轴动作曲线");
     }
     const [velocity, acceleration, deceleration] = device.prepareCaps[0]!;
     const limit = Math.min(velocity, device.motorLimit);
@@ -830,7 +854,7 @@ const directionBoxValid = (device: MotorHost, positions: Interval[]): boolean =>
 };
 
 const motorStateSpeed = (device: MotorHost, position: number[], velocity: number[]): number => {
-  if (device.motorType === 2 || device.motorType === 3) return Math.abs(velocity[0]!);
+  if (singleAxisMotor(device.motorType)) return Math.abs(velocity[0]!);
   const geometry = device.motorGeometry!;
   if (device.motorType === 7) {
     if (position[1] === 0) {
@@ -850,7 +874,7 @@ const motorStateSpeed = (device: MotorHost, position: number[], velocity: number
 const keyOf = (value: unknown): string => JSON.stringify(value);
 
 const motorSpeedBoxUpper = (device: MotorHost, positions: Interval[], velocities: Interval[]): number => {
-  if (device.motorType === 2 || device.motorType === 3) return velocities[0]!.maxAbs();
+  if (singleAxisMotor(device.motorType)) return velocities[0]!.maxAbs();
   const key = keyOf([
     device.motorGeometrySignature,
     [...positions, ...velocities].map((value) => [value.lo, value.hi]),
@@ -865,7 +889,7 @@ const motorSpeedBoxUpper = (device: MotorHost, positions: Interval[], velocities
 };
 
 const motorSpeedBoxUpperUncached = (device: MotorHost, positions: Interval[], velocities: Interval[]): number => {
-  if (device.motorType === 2 || device.motorType === 3) return velocities[0]!.maxAbs();
+  if (singleAxisMotor(device.motorType)) return velocities[0]!.maxAbs();
   const geometry = device.motorGeometry!;
   if (device.motorType === 7) {
     if (positions[1]!.lo === 0 && positions[1]!.hi === 0) {
@@ -913,7 +937,7 @@ const phaseBoxes = (tracks: AxisTrack[], left: number, right: number): [Interval
 };
 
 const boxPoseError = (device: MotorHost, positions: Interval[]): string | null => {
-  if (device.motorType === 2 || device.motorType === 3) return null;
+  if (singleAxisMotor(device.motorType)) return null;
   const geometry = device.motorGeometry!;
   const axes = device.motorType === 9 ? [1, 2] : [1];
   if (axes.some((axis) => positions[axis]!.lo <= -90 || positions[axis]!.hi >= 90)) return "准备或后续曲线倾角超出(-90,90)";
@@ -931,7 +955,7 @@ const verifyMotorDevice = (
   device: MotorHost,
   entries: Record<number, MotorEntry>,
   plan: MotorPlan,
-  AxisTrackCtor: TrackConstructor,
+  trackOf: TrackFactory,
   checkDeadline: () => void,
 ): [boolean, string] => {
   const label = `模型${device.modelId}`;
@@ -944,7 +968,7 @@ const verifyMotorDevice = (
       if (u >= plan.u0 - 1e-9) sends.push([u, command]);
     }
     sends.sort((left, right) => left[0] - right[0]);
-    return new AxisTrackCtor(device.current[index]!, sends);
+    return trackOf(device, index, device.current[index]!, sends);
   });
   const begin = Math.min(plan.clock_start_u, ...[0, 1, 2].flatMap((index) => entries[index]!.moves.map((move) => move.send_u)));
   const points = new Set<number>([begin]);
@@ -1007,7 +1031,7 @@ const verifyMotorDevice = (
 
 export const verifyMotorPlan = (
   plan: MotorPlan,
-  AxisTrackCtor: TrackConstructor,
+  trackOf: TrackFactory,
   checkDeadline: () => void,
 ): [boolean, string] => {
   const grouped = new Map<MotorHost, Record<number, MotorEntry>>();
@@ -1024,7 +1048,12 @@ export const verifyMotorPlan = (
       entry.moves.map((move) => [move.send_u, move.move.pos, move.move.vel, move.move.accVel, move.move.decVel]),
     ]);
   }
-  const key = keyOf([plan.u0, plan.clock_start_u, keyParts]);
+  const key = keyOf([
+    plan.u0,
+    plan.clock_start_u,
+    plan.entries.map(([device]) => [device.modelId, device.positionPeriodH]),
+    keyParts,
+  ]);
   if (plan.motorVerificationCertificate && plan.motorVerificationCertificate[0] === key) {
     return plan.motorVerificationCertificate[1];
   }
@@ -1046,6 +1075,7 @@ export const verifyMotorPlan = (
     const motionKey = keyOf([
       device.motorType,
       device.motorLimit,
+      device.positionPeriodH,
       device.motorGeometrySignature ?? null,
       device.current,
       plan.u0,
@@ -1056,7 +1086,7 @@ export const verifyMotorPlan = (
       ),
     ]);
     if (shared.has(motionKey)) continue;
-    result = verifyMotorDevice(device, entries, plan, AxisTrackCtor, checkDeadline);
+    result = verifyMotorDevice(device, entries, plan, trackOf, checkDeadline);
     if (!result[0]) break;
     if (shared.size >= 4096) shared.delete(shared.keys().next().value!);
     shared.set(motionKey, true);
@@ -1070,8 +1100,8 @@ export const verifyMotorPlan = (
  * 的 _prepare_motor_speed_bound 与方向域检查。几何区间与非强制核对共用。
  */
 export type ForcedPrepareMotorInput = {
-  /** 几何类型：1 单点/多级升降，8 普通多点，9 XY 多点 */
-  kind: 1 | 8 | 9;
+  /** 几何类型：1 单点/多级升降，4 无极旋转，8 普通多点，9 XY 多点 */
+  kind: 1 | 4 | 8 | 9;
   motorNum: number;
   modelId: number;
   geometry: MotorGeometry | null;
@@ -1151,7 +1181,7 @@ const xyRopeLengths = (pose: readonly number[], geometry: MotorGeometry): number
   const vertical = geometry.base1 > 0 ? height + geometry.base1 : geometry.base2 + geometry.maxHeight - height;
   let offsetX = 0;
   let offsetY = 0;
-  if (tilt > 1e-8) {
+  if (tilt > 1e-8 && geometry.edges.length > 0) {
     let beta = Math.acos(Math.max(-1, Math.min(1, sp / Math.sin(tilt))));
     if (-sr * cp < 0) beta = -beta;
     const dx = Math.sin(beta);
@@ -1327,7 +1357,10 @@ const checkPrepareDirectionDomain = (
   geometry: MotorGeometry,
   xy: boolean,
 ): void => {
-  if (!xy && current[1] === 0 && target[1] === 0) return;
+  if (xy && [current, target].some((position) => Math.abs(position[1]!) >= 90 || Math.abs(position[2]!) >= 90)) {
+    throw new Error("XY多点摆X/Y角须在(-90,90)内");
+  }
+  if ((xy && geometry.points.length === 2) || (!xy && current[1] === 0 && target[1] === 0)) return;
   const domain = prepareDirectionDomain(geometry);
   if (domain === null) return;
   const [left, right] = domain;
@@ -1341,9 +1374,6 @@ const checkPrepareDirectionDomain = (
     );
     if (!inside) throw new Error("普通多点摆准备路径中存在无法求得凸包边距的倾斜方向");
     return;
-  }
-  if ([current, target].some((position) => Math.abs(position[1]!) >= 90 || Math.abs(position[2]!) >= 90)) {
-    throw new Error("XY多点摆X/Y角须在(-90,90)内");
   }
   const sineLeft = I(left).trig();
   const cosineLeft = I(left).trig(true);
@@ -1403,7 +1433,8 @@ const checkPrepareDirectionDomain = (
 
 export const forcedPrepareMotorBound = (input: ForcedPrepareMotorInput): number => {
   const { kind, motorNum, modelId, current, target } = input;
-  if (kind === 1) {
+  // 无极旋转的实轴直接跟随 H（与单点相同），目标已按周期规范
+  if (kind === 1 || kind === 4) {
     const endpoints = [current, target].map((pose) => Array.from({ length: motorNum }, () => pose[0]!));
     if (endpoints.some((values) => values.length !== motorNum || values.some((value) => !Number.isFinite(value)))) {
       throw new Error(`模型${modelId}端点正解未返回有效电机位置`);
@@ -1455,3 +1486,31 @@ export const forcedPrepareMotorBound = (input: ForcedPrepareMotorInput): number 
 
 /** 归一化时建立 7/9 几何；modelType 为业务编号，XY 必须 betainit 为 0 */
 export const prepareEntryGeometry = (model: Record<string, unknown>): MotorGeometry => prepareMultiPointGeometry(model);
+
+type Bounds = { readonly lo: number; readonly hi: number };
+
+/**
+ * 调速范围（python/调速范围计算）与非强制共用同一套多点/XY 正解速度：
+ * 一个 H/P/Y 位置、速度区间盒内实轴速度的上界。7 普通多点摆，9 XY多点摆。
+ */
+export const motorSpeedUpperOf = (
+  positions: readonly Bounds[],
+  velocities: readonly Bounds[],
+  geometry: MotorGeometry,
+  xy: boolean,
+): number => {
+  const q = positions.map((value) => I(value.lo, value.hi));
+  const v = velocities.map((value) => I(value.lo, value.hi));
+  return xy ? xyMotorSpeedUpper(q, v, geometry) : multiPointMotorSpeedUpper(q, v, geometry);
+};
+
+/** 某一时刻实轴的解析瞬时峰速（区间搜索的候选值，不是上界） */
+export const motorInstantaneousSpeedOf = (
+  position: readonly number[],
+  velocity: readonly number[],
+  geometry: MotorGeometry,
+  xy: boolean,
+): number =>
+  xy
+    ? xyInstantaneousSpeed([...position], [...velocity], geometry)
+    : multiPointInstantaneousSpeed([...position], [...velocity], geometry);

@@ -939,7 +939,7 @@ describe("resolveSequenceSpeedCap", () => {
     expect(resolveSequenceSpeedCap(documentWithSequence(movingSequence), movingSequence.id, new Map())).toEqual({
       ok: false,
       maxPercent: 100,
-      message: expect.stringContaining("H轴最大速度为0，但原曲线包含该轴运动"),
+      message: expect.stringContaining("H最大速度为0，但原曲线包含运动"),
     });
   });
 

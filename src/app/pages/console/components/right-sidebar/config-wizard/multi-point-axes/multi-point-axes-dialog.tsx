@@ -26,12 +26,12 @@ import { Select } from "@/app/components/ui/select";
 import { cn } from "@/app/components/ui/utils";
 import {
   CONTROL_TYPE_RULES,
+  controlTypeHasInitialTiltDirection,
   controlTypeHasMultiPointSwingParams,
   maxDriveAxesForControlType,
 } from "@/app/project/configuration-rules";
 import {
   MAX_INITIAL_TILT_DIRECTION,
-  MAX_MOUNT_ROTATION,
   normalizeInitialTiltDirection,
   normalizeSafetyRadius,
 } from "@/app/project/hoist-point-defaults";
@@ -60,7 +60,6 @@ import {
   updateDraftCircleChord,
   updateDraftCircleRadius,
   updateDraftLineSpacing,
-  updateDraftMountRotation,
   validateMultiPointAxesDraft,
   type MultiPointAxesDraft,
 } from "./multi-point-axes-draft";
@@ -94,7 +93,6 @@ export type MultiPointAxesDialogProps = {
 const emptyDraft = (): MultiPointAxesDraft => ({
   safetyRadius: 0,
   initialTiltDirection: 0,
-  mountRotation: 0,
   mountLayout: { kind: "custom" },
   axes: [],
   unbindAxisKeys: [],
@@ -188,6 +186,7 @@ export const MultiPointAxesDialog = ({
 
   const footprint = useMemo(() => createShapeFootprint(object), [object]);
   const showSwingRigParams = controlTypeHasMultiPointSwingParams(object.controlType);
+  const showInitialTilt = controlTypeHasInitialTiltDirection(object.controlType);
   const minimumAxes = CONTROL_TYPE_RULES[object.controlType].minimumDriveAxes;
   const maximumAxes = maxDriveAxesForControlType(object.controlType);
   const canAddAxis = maximumAxes === undefined || draft.axes.length < maximumAxes;
@@ -198,12 +197,8 @@ export const MultiPointAxesDialog = ({
   );
   const circleLayoutResult = useMemo(() => {
     if (draft.mountLayout.kind !== "circle") return null;
-    return resolveCircleMountLayout(
-      draft.mountLayout.radius,
-      draft.mountLayout.chordLengths,
-      { mountRotation: draft.mountRotation },
-    );
-  }, [draft.mountLayout, draft.mountRotation]);
+    return resolveCircleMountLayout(draft.mountLayout.radius, draft.mountLayout.chordLengths);
+  }, [draft.mountLayout]);
   const layoutCircleRadiusMm =
     draft.mountLayout.kind === "circle" ? draft.mountLayout.radius : null;
   const totalChordErrorMm =
@@ -211,8 +206,8 @@ export const MultiPointAxesDialog = ({
       ? totalAbsoluteChordError(circleLayoutResult.segments)
       : null;
   const issues = useMemo(
-    () => validateMultiPointAxesDraft(draft, footprint, minimumAxes),
-    [draft, footprint, minimumAxes],
+    () => validateMultiPointAxesDraft(draft, footprint, minimumAxes, object.controlType),
+    [draft, footprint, minimumAxes, object.controlType],
   );
   const invalidAxisKeys = useMemo(
     () =>
@@ -255,8 +250,7 @@ export const MultiPointAxesDialog = ({
     const result = onApply({
       axes: draft.axes,
       safetyRadius: draft.safetyRadius,
-      initialTiltDirection: draft.initialTiltDirection,
-      mountRotation: draft.mountRotation,
+      initialTiltDirection: showInitialTilt ? draft.initialTiltDirection : 0,
       mountLayout: toPersistedMountLayout(draft.mountLayout),
       unbindAxisKeys: draft.unbindAxisKeys,
       bindAxisMotors: Object.entries(draft.pendingBinds).map(([axisKey, motorId]) => ({
@@ -326,12 +320,7 @@ export const MultiPointAxesDialog = ({
   const handleDistribute = (strategyId: DistributeStrategyId) => {
     setDraft((previous) => {
       if (previous.axes.length === 0) return previous;
-      const mounts = distributeMounts(
-        footprint,
-        strategyId,
-        previous.axes.length,
-        { initialTiltDirection: previous.mountRotation },
-      );
+      const mounts = distributeMounts(footprint, strategyId, previous.axes.length);
       return {
         ...previous,
         axes: applyDistributedMounts(previous.axes, mounts),
@@ -415,7 +404,7 @@ export const MultiPointAxesDialog = ({
                   object={object}
                   axes={draft.axes}
                   safetyRadius={draft.safetyRadius}
-                  initialTiltDirection={draft.initialTiltDirection}
+                  initialTiltDirection={showInitialTilt ? draft.initialTiltDirection : 0}
                   selectedAxisKey={selectedAxisKey}
                   boundAxisKeys={boundAxisKeys}
                   invalidAxisKeys={invalidAxisKeys}
@@ -451,27 +440,29 @@ export const MultiPointAxesDialog = ({
                           }
                         />
                       </div>
-                      <div className="space-y-1">
-                        <span className="text-body-sm text-muted-foreground">
-                          初始倾斜角度
-                        </span>
-                        <NumericInput
-                          value={draft.initialTiltDirection}
-                          min={0}
-                          max={MAX_INITIAL_TILT_DIRECTION}
-                          step={1}
-                          precision={0}
-                          unit="deg"
-                          aria-label="初始倾斜角度"
-                          onChange={(initialTiltDirection) =>
-                            setDraft((previous) => ({
-                              ...previous,
-                              initialTiltDirection:
-                                normalizeInitialTiltDirection(initialTiltDirection),
-                            }))
-                          }
-                        />
-                      </div>
+                      {showInitialTilt ? (
+                        <div className="space-y-1">
+                          <span className="text-body-sm text-muted-foreground">
+                            初始倾斜角度
+                          </span>
+                          <NumericInput
+                            value={draft.initialTiltDirection}
+                            min={0}
+                            max={MAX_INITIAL_TILT_DIRECTION}
+                            step={1}
+                            precision={0}
+                            unit="deg"
+                            aria-label="初始倾斜角度"
+                            onChange={(initialTiltDirection) =>
+                              setDraft((previous) => ({
+                                ...previous,
+                                initialTiltDirection:
+                                  normalizeInitialTiltDirection(initialTiltDirection),
+                              }))
+                            }
+                          />
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
 
@@ -497,46 +488,25 @@ export const MultiPointAxesDialog = ({
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <span className="text-body-sm text-muted-foreground">布局</span>
-                        <Select
-                          aria-label="吊点布局"
-                          value={draft.mountLayout.kind}
-                          options={[
-                            { value: "custom", label: "自定义" },
-                            { value: "line", label: "直线" },
-                            { value: "circle", label: "圆形" },
-                          ]}
-                          onValueChange={(value) => {
-                            if (value !== "custom" && value !== "line" && value !== "circle") {
-                              return;
-                            }
-                            setDraft((previous) =>
-                              setDraftMountLayoutKind(previous, value),
-                            );
-                          }}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <span className="text-body-sm text-muted-foreground">
-                          吊点旋转
-                        </span>
-                        <NumericInput
-                          value={draft.mountRotation}
-                          min={0}
-                          max={MAX_MOUNT_ROTATION}
-                          step={1}
-                          precision={0}
-                          unit="deg"
-                          aria-label="吊点旋转"
-                          onChange={(mountRotation) =>
-                            setDraft((previous) =>
-                              updateDraftMountRotation(previous, mountRotation),
-                            )
+                    <div className="space-y-1">
+                      <span className="text-body-sm text-muted-foreground">布局</span>
+                      <Select
+                        aria-label="吊点布局"
+                        value={draft.mountLayout.kind}
+                        options={[
+                          { value: "custom", label: "自定义" },
+                          { value: "line", label: "直线" },
+                          { value: "circle", label: "圆形" },
+                        ]}
+                        onValueChange={(value) => {
+                          if (value !== "custom" && value !== "line" && value !== "circle") {
+                            return;
                           }
-                        />
-                      </div>
+                          setDraft((previous) =>
+                            setDraftMountLayoutKind(previous, value),
+                          );
+                        }}
+                      />
                     </div>
 
                     {isCustomLayout && distributeStrategies.length > 0 ? (

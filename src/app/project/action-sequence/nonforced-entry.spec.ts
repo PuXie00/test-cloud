@@ -71,3 +71,50 @@ describe("Python 数值规则", () => {
     expect(pythonSum([])).toBe(0);
   });
 });
+
+/** XY 多点摆两个吊点（2026-11-19 版算法）：期望值由 python/非强制就近算法/非强制就近接入.py 的双吊点分支计算 */
+describe("calculateNonforcedEntry with a two-point XY model", () => {
+  const runWithXyPoints = (caseName: string, points: Array<[number, number]>) => {
+    const item = fixture.cases.find((entry) => entry.name === caseName)!;
+    const models = structuredClone(fixture.models[item.models]) as Array<Record<string, unknown>>;
+    for (const model of models) {
+      if (model.model_type !== 9) continue;
+      model.point_init_pos = points;
+      model.motor_num = points.length;
+    }
+    return calculateNonforcedEntry({ command: item.command, settings: item.settings, runtime: item.runtime, models }) as {
+      status: string;
+      message: string;
+      selected_curve_time_ms?: number;
+      entry_lead_ms?: number;
+      verification?: { passed: boolean };
+    };
+  };
+
+  it("plans with two hoist points on the X axis or the Y axis", () => {
+    for (const points of [
+      [[-400, 0], [400, 0]],
+      [[0, -500], [0, 300]],
+    ] as Array<Array<[number, number]>>) {
+      for (const [caseName, lead] of [
+        ["stop-mid-fwd-3000", 2602.105],
+        ["stop-fixture-fwd-none", 1154.701],
+      ] as const) {
+        const result = runWithXyPoints(caseName, points);
+        expect(result.status).toBe("planned");
+        expect(result.selected_curve_time_ms).toBe(0);
+        expect(result.entry_lead_ms).toBe(lead);
+        expect(result.verification?.passed).toBe(true);
+      }
+    }
+  });
+
+  it("rejects two hoist points that are off the axes", () => {
+    const result = runWithXyPoints("stop-mid-fwd-3000", [
+      [-400, 100],
+      [400, 100],
+    ]);
+    expect(result.status).toBe("invalid_input");
+    expect(result.message).toContain("XY双吊点须位于同一X轴或Y轴");
+  });
+});

@@ -1,5 +1,5 @@
 import type { ControlledObjectConfig, MotorConfig } from "../project-document-types";
-import { ALGORITHM_SETTINGS, buildAlgorithmModels } from "./algorithm-models";
+import { ALGORITHM_SETTINGS, buildAlgorithmModels, withAlgorithmModelType } from "./algorithm-models";
 import type { HpyPose } from "./nearest-start-motion";
 import type { ResolvedActionSequence } from "./resolve-sequence";
 import { calculateRangeResult } from "./speed-range";
@@ -25,7 +25,7 @@ export const evaluateSequenceSpeedRange = (input: {
   const result = calculateRangeResult({
     command: { trajectory_run: input.forced },
     settings: ALGORITHM_SETTINGS,
-    models,
+    models: models.map((model) => withAlgorithmModelType(model, input.objects)),
   });
   if (result.max_factor === null) {
     return { maxFactor: null, maxPercent: null, category: result.action_category };

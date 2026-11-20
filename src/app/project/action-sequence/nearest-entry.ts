@@ -30,20 +30,23 @@ import {
 
 /**
  * 逐项移植 python/强制就近算法/就近接入计算.py 的停稳同步准备：
- * 业务模型 2 单点、3 多级升降、7 普通多点、9 XY 多点。
+ * 业务模型 2 单点、3 多级升降、4 无极旋转、7 普通多点、9 XY 多点。
+ * 无极旋转的 H 是纯姿态：当前位置和准备目标取 L+((H-L)%P)（L 为软行程下限，P 为 workingStroke），
+ * 按周期取最短距离；软行程宽度 ≥ P 时覆盖整圈，允许曲线跨零（350→360→0），上限可以超过 P；
+ * 部分软行程不能借周期穿过禁用区。1006 只传原帧：原帧位置本身须在 PLC 准备软行程内。
  * 指定帧直接接入；有停止参考时先在当前原段找可执行最近点。
  * 按最大 V/A/D 规划零速起止 Move，所有模型同时到达。
  * 真实电机速度用正解的整路径区间上界检查，超限后全组乘同一个比例。
  * 非强制带速接入不在这里：trajectory_run=false 交给 nonforced-entry。
  */
 
-export const NEAREST_ALGORITHM_VERSION = "v6_four_models_max_capability_20261118";
+export const NEAREST_ALGORITHM_VERSION = "v9_five_models_rotation_pose_20261120";
 export const FRAME_SELECTION_VERSION = "current_original_segment_first_20261029";
 
 const UINT32_MAX = 4294967295;
 const MAX_PREPARE_TIME_MS = UINT32_MAX;
 
-type GeometryKind = 1 | 8 | 9;
+type GeometryKind = 1 | 4 | 8 | 9;
 
 type FlatPiece = {
   segment_id: number;
@@ -78,6 +81,12 @@ type EntryModel = {
   /** 虚轴行程；没给时不限 */
   minPosition: Hpy;
   maxPosition: Hpy;
+  /** 无极旋转 H 的周期（_rotation_period_H）；其他模型为 null */
+  rotationPeriod: number | null;
+  /** 无极旋转软行程正好是 [0, 周期]：位置由 PLC 轴 MODULO 处理 */
+  fullPeriod: boolean;
+  /** 全周期时 PLC 判断循环闭合用的原始首尾位置（显式端点优先，不取模） */
+  loopEndpoints: [Hpy, Hpy] | null;
 };
 
 type EntryInputs = {
@@ -201,10 +210,11 @@ export type NearestEntryResult = {
   algorithm_version: string;
 };
 
-const GEOMETRY_KIND_BY_BUSINESS: Record<number, GeometryKind> = { 2: 1, 3: 1, 7: 8, 9: 9 };
+const GEOMETRY_KIND_BY_BUSINESS: Record<number, GeometryKind> = { 2: 1, 3: 1, 4: 4, 7: 8, 9: 9 };
 
 const SUPPORTED_AXES: Record<GeometryKind, readonly AxisName[]> = {
   1: ["H"],
+  4: ["H"],
   8: ["H", "P", "Y"],
   9: ["H", "P", "Y"],
 };
@@ -290,6 +300,8 @@ const runtimeStatesOf = (parameters: NearestParameters): Map<number, RuntimeMode
 const flattenSegments = (
   model: AlgorithmModel,
   unit: number,
+  /** 全周期无极旋转的 H 周期：端点与连续性按周期同余比较（350→360 后 0→10） */
+  period: number | null,
 ): { pieces: FlatPiece[]; boundaries: number[] } => {
   const segments = model.segments;
   if (!Array.isArray(segments) || segments.length === 0) {
@@ -298,8 +310,13 @@ const flattenSegments = (
   const flat: FlatPiece[] = [];
   const boundaries = new Set<number>();
   let previous: number | null = null;
+  // _entry_positions_equal：只有 H 按周期比较，P/Y 仍要求原数值连续
   const closeTo = (left: Hpy, right: Hpy) =>
-    left.every((value, axis) => Math.abs(value - right[axis]!) <= 1e-5);
+    left.every(
+      (value, axis) =>
+        Math.abs(axis === 0 && period !== null ? rotationDelta(value, right[axis]!, period) : right[axis]! - value) <=
+        1e-5,
+    );
   for (const segment of segments) {
     if (typeof segment !== "object" || segment === null) {
       throw new Error("segments每一项必须是动作段对象");
@@ -385,6 +402,58 @@ const flattenSegments = (
   return { pieces: flat, boundaries: [...boundaries].sort((left, right) => left - right) };
 };
 
+/** _rotation_delta：周期内的最短有符号位移（半周期取正方向） */
+const rotationDelta = (current: number, target: number, period: number): number => {
+  let delta = pythonMod(target - current, period);
+  if (delta > period / 2) delta -= period;
+  return delta;
+};
+
+/** _rotation_position：纯姿态 H 在允许区间上的代表值 L+((H-L)%P)；不改原曲线 */
+const rotationPosition = (model: EntryModel, value: number): number => {
+  const lower = model.minPosition[0];
+  return lower + pythonMod(value - lower, model.rotationPeriod!);
+};
+
+/** _entry_axis_delta：无极旋转的 H 按最短周期距离，其余为普通差值 */
+const entryAxisDelta = (model: EntryModel, axis: number, current: number, target: number): number =>
+  axis === 0 && model.rotationPeriod !== null ? rotationDelta(current, target, model.rotationPeriod) : target - current;
+
+/** _entry_interval_distance：当前位置到 [lower, upper] 的距离；无极旋转看周期上的任一像 */
+const entryIntervalDistance = (
+  model: EntryModel,
+  axis: number,
+  current: number,
+  lower: number,
+  upper: number,
+): number => {
+  const period = axis === 0 ? model.rotationPeriod : null;
+  if (period === null) return Math.max(0, lower - current, current - upper);
+  if (upper - lower >= period) return 0;
+  const firstImage = current + Math.ceil((lower - current) / period) * period;
+  if (firstImage <= upper) return 0;
+  return Math.min(Math.abs(rotationDelta(current, lower, period)), Math.abs(rotationDelta(current, upper, period)));
+};
+
+/**
+ * _validate_rotation_prepare：部分软行程时 PLC 走最短路，半周期等距无法确定方向，
+ * 穿过禁用区也不行；两种都只让这个候选不可执行，可以继续找下一原段
+ */
+const validateRotationPrepare = (model: EntryModel, current: number, target: number): void => {
+  if (model.fullPeriod) return;
+  const period = model.rotationPeriod!;
+  const lower = model.minPosition[0];
+  const upper = model.maxPosition[0];
+  const delta = rotationDelta(current, target, period);
+  if (Math.abs(Math.abs(delta) - period / 2) <= Math.max(1e-9, period * 1e-12)) {
+    throw new EntryWindowInfeasibleError("无极旋转半周期同距候选无法确定PLC方向，需改选可确定方向的帧");
+  }
+  const end = current + delta;
+  if (Math.min(current, end) < lower - 1e-9 || Math.max(current, end) > upper + 1e-9) {
+    throw new EntryWindowInfeasibleError("无极旋转的PLC最短路会穿越软行程禁用区");
+  }
+};
+
 /** _normalize_inputs：建立内部编号，几何类型与业务类型在入口转换 */
 const normalizeInputs = (parameters: NearestParameters): EntryInputs => {
   if (typeof parameters !== "object" || parameters === null) throw new Error("parameters必须是对象");
@@ -464,12 +533,12 @@ const normalizeInputs = (parameters: NearestParameters): EntryInputs => {
     let kind: GeometryKind;
     if (scheme === "business") {
       const mapped = GEOMETRY_KIND_BY_BUSINESS[businessKind];
-      if (!mapped) throw new Error("业务模型类型仅支持2单点、3多级升降、7多点摆、9XY多点摆");
+      if (!mapped) throw new Error("业务模型类型仅支持2单点、3多级升降、4无极旋转、7多点摆、9XY多点摆");
       kind = mapped;
-    } else if (businessKind === 1 || businessKind === 8 || businessKind === 9) {
+    } else if (businessKind === 1 || businessKind === 4 || businessKind === 8 || businessKind === 9) {
       kind = businessKind;
     } else {
-      throw new Error("几何模型类型仅支持1(H)、8(普通多点)、9(XY多点)");
+      throw new Error("几何模型类型仅支持1(H)、4(无极旋转)、8(普通多点)、9(XY多点)");
     }
     let pointInitPos: Array<[number, number, number]> | undefined;
     if (original.point_init_pos !== undefined) {
@@ -484,12 +553,12 @@ const normalizeInputs = (parameters: NearestParameters): EntryInputs => {
         ) as [number, number, number];
       });
     }
-    const motorNum = original.motor_num ?? (kind === 1 ? 1 : (pointInitPos?.length ?? 0));
+    const multiPoint = kind === 8 || kind === 9;
+    const motorNum = original.motor_num ?? (multiPoint ? (pointInitPos?.length ?? 0) : 1);
     if (!isInteger(motorNum) || motorNum <= 0) throw new Error("motor_num必须为正整数");
-    const motorGeometry =
-      kind === 1
-        ? null
-        : prepareEntryGeometry({
+    const motorGeometry = !multiPoint
+      ? null
+      : prepareEntryGeometry({
             model_type: kind === 9 ? 9 : 7,
             Baseheight1: original.Baseheight1,
             Baseheight2: original.Baseheight2,
@@ -500,9 +569,32 @@ const normalizeInputs = (parameters: NearestParameters): EntryInputs => {
     if (motorGeometry && motorNum !== motorGeometry.points.length) {
       throw new Error("motor_num须与原吊点数量一致");
     }
+    let minPosition: Hpy =
+      original.min_position_HPY === undefined
+        ? [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY]
+        : hpyOf(original.min_position_HPY, "min_position_HPY");
+    let maxPosition: Hpy =
+      original.max_position_HPY === undefined
+        ? [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY]
+        : hpyOf(original.max_position_HPY, "max_position_HPY");
+    let rotationPeriod: number | null = null;
+    if (kind === 4) {
+      // 周期必须是 PLC 真实 workingStroke，不能硬写 360 或用软行程宽度代替
+      const period = finiteNumber(original.workingStroke, "workingStroke");
+      minPosition = hpyOf(original.min_position_HPY, "min_position_HPY");
+      maxPosition = hpyOf(original.max_position_HPY, "max_position_HPY");
+      if (period <= 0 || !(0 <= minPosition[0] && minPosition[0] < maxPosition[0])) {
+        throw new Error("无极旋转workingStroke须为真实正周期，H软行程须满足0<=下限<上限");
+      }
+      rotationPeriod = period;
+    }
+    // _rotation_full_period：软行程宽度至少一个真实周期即覆盖整圈（上限可超过周期）
+    const fullPeriod = rotationPeriod !== null && maxPosition[0] - minPosition[0] >= rotationPeriod;
 
     const state = states.get(modelId)!;
     const current = hpyOf(state.position_HPY, "current_HPY");
+    // 停稳反馈按纯姿态归一：周期 360、下限 0 时 725 与 5 是同一姿态
+    if (rotationPeriod !== null) current[0] = minPosition[0] + pythonMod(current[0] - minPosition[0], rotationPeriod);
     if (state.standstill === false) {
       throw new Error(`${plcId}/${modelId}尚未停稳，不能用零速准备规划`);
     }
@@ -535,7 +627,20 @@ const normalizeInputs = (parameters: NearestParameters): EntryInputs => {
     const maxMotorVelocity = finiteNumber(original.max_motor_velocity, "max_motor_velocity");
     if (maxMotorVelocity <= 0) throw new Error("max_motor_velocity必须大于0");
 
-    const { pieces, boundaries } = flattenSegments(original, unit);
+    const { pieces, boundaries } = flattenSegments(original, unit, fullPeriod ? rotationPeriod : null);
+    let loopEndpoints: [Hpy, Hpy] | null = null;
+    if (fullPeriod) {
+      // PLC 循环按保存的首尾位置原值判断，保留显式端点，不用取模值替代
+      const firstSegment = original.segments[0]!;
+      const lastSegment = lastOf(original.segments);
+      const firstPiece = (firstSegment.coefficient_segments ?? [firstSegment])[0]!;
+      const lastPieces: readonly { target_HPY?: Hpy }[] = lastSegment.coefficient_segments ?? [lastSegment];
+      const lastPiece = lastOf(lastPieces);
+      loopEndpoints = [
+        hpyOf(firstSegment.start_HPY ?? firstPiece.start_HPY ?? pieces[0]!.start_HPY, "start_HPY"),
+        hpyOf(lastSegment.target_HPY ?? lastPiece.target_HPY ?? lastOf(pieces).target_HPY, "target_HPY"),
+      ];
+    }
     // 非 follow 轴整条曲线必须固定；系数很小也可能在长段累积成位移，按全段变化上界判断
     for (let axis = 0; axis < 3; axis += 1) {
       if (follow.includes(AXIS_NAMES[axis]!)) continue;
@@ -568,14 +673,11 @@ const normalizeInputs = (parameters: NearestParameters): EntryInputs => {
       follow,
       defaults,
       max,
-      minPosition:
-        original.min_position_HPY === undefined
-          ? [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY]
-          : hpyOf(original.min_position_HPY, "min_position_HPY"),
-      maxPosition:
-        original.max_position_HPY === undefined
-          ? [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY]
-          : hpyOf(original.max_position_HPY, "max_position_HPY"),
+      minPosition,
+      maxPosition,
+      rotationPeriod,
+      fullPeriod,
+      loopEndpoints,
     });
   });
 
@@ -1107,7 +1209,7 @@ const directionalSearch = (
         const axis = axisIndex(name);
         score = Math.max(
           score,
-          axisCost(Math.abs(target[axis] - model.current[axis]), model.max.velocity[axis]),
+          axisCost(Math.abs(entryAxisDelta(model, axis, model.current[axis], target[axis])), model.max.velocity[axis]),
         );
       }
       if (score > cutoff) break;
@@ -1175,7 +1277,7 @@ const directionalSearch = (
     for (const model of models) {
       for (const [axis, [lower, upper]] of modelPositionBounds(model, Math.min(a, b), Math.max(a, b))) {
         const current = model.current[axis]!;
-        const delta = Math.max(0, lower - current, current - upper);
+        const delta = entryIntervalDistance(model, axis, current, lower, upper);
         lowerScore = Math.max(lowerScore, axisCost(delta, model.max.velocity[axis]!));
       }
     }
@@ -1240,6 +1342,7 @@ const prepareTargets = (inputs: EntryInputs, posSet: Map<number, Hpy>): Map<numb
   const result = new Map<number, Hpy>();
   for (const model of inputs.models) {
     const target = [...posSet.get(model.index)!] as Hpy;
+    if (model.rotationPeriod !== null) target[0] = rotationPosition(model, target[0]);
     AXIS_NAMES.forEach((name, axis) => {
       if (model.prepare.includes(name)) return;
       if (model.supported.includes(name) && Math.abs(target[axis] - model.current[axis]) > 1e-5) {
@@ -1287,8 +1390,9 @@ const synchronizedEntryMove = (
       }
     }
     const axisProfiles = new Map<number, AxisProfile>();
+    if (model.kind === 4) validateRotationPrepare(model, current[0], target[0]);
     for (const axis of axes) {
-      const distance = Math.abs(target[axis] - current[axis]);
+      const distance = Math.abs(entryAxisDelta(model, axis, current[axis], target[axis]));
       let acceleration = model.max.acceleration[axis];
       let deceleration = model.max.deceleration[axis];
       if (inputs.trajectoryRun) {
@@ -1406,8 +1510,7 @@ export const calculateNearestEntry = (parameters: NearestParameters): NearestEnt
   const loopFallback: NearestEntryResult["loop_fallback"] = [];
   if (!inputs.loopOnce) {
     for (const model of inputs.models) {
-      const first = model.pieces[0]!.start_HPY;
-      const last = lastOf(model.pieces).target_HPY;
+      const [first, last] = model.loopEndpoints ?? [model.pieces[0]!.start_HPY, lastOf(model.pieces).target_HPY];
       for (const name of model.follow) {
         const axis = axisIndex(name);
         if (Math.abs(first[axis] - last[axis]) > 0.001) {
@@ -1432,36 +1535,52 @@ export const calculateNearestEntry = (parameters: NearestParameters): NearestEnt
   const skipped: NearestEntryResult["skipped_candidates"] = [];
   if (inputs.trajectoryRun) {
     // 零速起止准备沿每个虚轴单调移动：当前点和目标点都在行程内才可执行
+    const limits = new Map<number, [Hpy, Hpy]>();
     for (const model of inputs.models) {
       if (model.minPosition.some((lower, axis) => lower > model.maxPosition[axis]!)) {
         throw new Error("虚轴行程下限不能大于上限");
       }
+      const lower = [...model.minPosition] as Hpy;
+      const upper = [...model.maxPosition] as Hpy;
       for (const name of model.supported) {
         const axis = axisIndex(name);
         const current = model.current[axis]!;
-        if (current < model.minPosition[axis]! - 1e-9 || current > model.maxPosition[axis]! + 1e-9) {
+        if (current < lower[axis]! - 1e-9 || current > upper[axis]! + 1e-9) {
           throw new Error(`模型${model.index}当前位置已超出${name}行程`);
         }
       }
+      limits.set(model.index, [lower, upper]);
     }
+    const outOfStroke = (model: EntryModel, target: Hpy): boolean => {
+      const [lower, upper] = limits.get(model.index)!;
+      return model.supported.some((name) => {
+        const axis = axisIndex(name);
+        return target[axis]! < lower[axis]! - 1e-9 || target[axis]! > upper[axis]! + 1e-9;
+      });
+    };
     const validateFrame = (
       frame: number,
       targets: Map<number, Hpy>,
       startMode: NearestEntryStartMode = "nearest",
     ): EntryMotion => {
+      // 1006 只传原帧，PLC 重新求值后夹到软限：原帧位置须先在软行程内，
+      // 不能把 365 先取模成 5 就当 PLC 会准备到 5
+      for (const model of inputs.models) {
+        if (outOfStroke(model, targets.get(model.index)!)) {
+          throw new Error(`模型${model.index}的原曲线候选目标超出PLC准备软行程`);
+        }
+      }
       const prepared = prepareTargets(inputs, targets);
       for (const model of inputs.models) {
-        const target = prepared.get(model.index)!;
-        const outOfStroke = model.supported.some((name) => {
-          const axis = axisIndex(name);
-          return target[axis]! < model.minPosition[axis]! - 1e-9 || target[axis]! > model.maxPosition[axis]! + 1e-9;
-        });
-        if (outOfStroke) throw new Error(`模型${model.index}的候选准备目标超出虚轴行程`);
+        if (outOfStroke(model, prepared.get(model.index)!)) {
+          throw new Error(`模型${model.index}的候选准备目标超出虚轴行程`);
+        }
       }
       return synchronizedEntryMove(inputs, frame, startMode, prepared);
     };
-    const segmentFirst = inputs.nearestStart && !inputs.useSpecifiedTime && inputs.stoppedTimeMs !== null;
-    const selected = selectForcedFrame(inputs, segmentFirst ? validateFrame : null);
+    // 就近（非指定帧）时只比较可执行的候选，没有停止参考帧也一样
+    const searchNearest = inputs.nearestStart && !inputs.useSpecifiedTime;
+    const selected = selectForcedFrame(inputs, searchNearest ? validateFrame : null);
     selection = selected.selection;
     curveTargets = selected.targets;
     motion = selected.validatedMotion ?? validateFrame(selected.frame, selected.targets, selected.startMode);
@@ -1484,7 +1603,7 @@ export const calculateNearestEntry = (parameters: NearestParameters): NearestEnt
     const target = motion.targets.get(model.index)!;
     const check = motion.motorChecks.get(model.index)!;
     const execute = [0, 1, 2].map(
-      (axis) => Math.abs(target[axis]! - model.current[axis]!) > 1e-12,
+      (axis) => Math.abs(entryAxisDelta(model, axis, model.current[axis]!, target[axis]!)) > 1e-12,
     ) as [boolean, boolean, boolean];
     const result: NearestEntryModelResult = {
       ...model.route,
@@ -1541,7 +1660,7 @@ export const calculateNearestEntry = (parameters: NearestParameters): NearestEnt
     search_origin_frame_ms: selection.searchOriginMs,
     search_range_ms: selection.searchRange,
     selection_metric: "nearest_position",
-    position_metric: "max(abs(target-current)/max_velocity_HPY)",
+    position_metric: "max(distance(target,current)/max_velocity_HPY); type4 uses modulo distance",
     search_statistics: selection.statistics ?? {},
     reference_segment_range_ms: selection.referenceSegmentRange ?? null,
     selected_segment_range_ms: selection.selectedSegmentRange ?? null,

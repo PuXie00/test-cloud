@@ -470,17 +470,10 @@ const validateCurrentObject = (value: unknown, path: string, a: StructuralAssert
     if (initialTiltDirection < 0 || initialTiltDirection > 360) {
       a.fail(`${path}.initialTiltDirection`, "expected a number in [0, 360]");
     }
-    const mountRotation = a.finite(object.mountRotation, `${path}.mountRotation`);
-    if (mountRotation < 0 || mountRotation > 360) {
-      a.fail(`${path}.mountRotation`, "expected a number in [0, 360]");
-    }
     validateMountLayout(object.mountLayout, `${path}.mountLayout`, driveAxes.length, a);
   } else {
     if (object.mountLayout !== undefined) {
       a.fail(`${path}.mountLayout`, "expected mountLayout only for multi-point swing and dual tilt");
-    }
-    if (object.mountRotation !== undefined) {
-      a.fail(`${path}.mountRotation`, "expected mountRotation only for multi-point swing and dual tilt");
     }
   }
   validateMultiLevel(object.multiLevel, controlType, `${path}.multiLevel`, a);

@@ -3,7 +3,9 @@ import { ALGORITHM_SETTINGS, buildAlgorithmModels } from "./algorithm-models";
 import { evaluatePiece, type AlgorithmModel } from "./algorithm-params";
 import { calculateNearestEntry } from "./nearest-entry";
 import type { HpyPose } from "./nearest-start-motion";
-import { fixtureObjects, fixtureSequence } from "./nearest-start.fixture";
+import { MOTION_DEFAULTS } from "@/app/project/configuration-rules";
+import type { MotorConfig } from "@/app/project/project-document-types";
+import { fixtureObjects, fixtureSequence, singlePointFixture } from "./nearest-start.fixture";
 import { resolveActionSequence } from "./resolve-sequence";
 import type { ActionSequenceConfig, KeyframePose } from "./types";
 
@@ -66,6 +68,44 @@ describe("buildAlgorithmModels", () => {
       max_acceleration_HPY: [500, 3, 3],
       max_motor_velocity: 475,
     });
+  });
+
+  it("maps a continuous rotation to model 4 with the motors' working stroke as its period", () => {
+    const turntable = {
+      ...singlePointFixture(),
+      id: 7,
+      controlType: 4 as const,
+      motionParams: { h: { ...MOTION_DEFAULTS.rotation, minAngle: 0, maxAngle: 360 } },
+    };
+    const motor = (id: number, workingStroke: number): MotorConfig => ({
+      id,
+      productModel: "M",
+      plcId: 1,
+      busNo: 0,
+      axisType: 1,
+      nodeAddress: null,
+      controlledObjectId: 7,
+      axisKey: String(id),
+      params: { maxAxisVelocity: 100, workingStroke },
+    });
+    const sequence = sequenceOf([pose(7, 0, { v1: 350 }), pose(7, 2000, { v1: 10 })]);
+    const modelsWith = (motors: MotorConfig[]) =>
+      buildAlgorithmModels({
+        resolved: resolveActionSequence(sequence),
+        objects: [turntable],
+        motors,
+        telemetryByObjectId: new Map(),
+      }).models;
+    expect(modelsWith([motor(1, 360), motor(2, 360)])[0]).toMatchObject({
+      model_type: 4,
+      motor_num: 1,
+      workingStroke: 360,
+      min_position_HPY: [0, -214748364.7, -214748364.7],
+      max_position_HPY: [360, 214748364.7, 214748364.7],
+    });
+    // 没绑电机（未接 PLC）时按一圈
+    expect(modelsWith([])[0]!.workingStroke).toBe(360);
+    expect(() => modelsWith([motor(1, 360), motor(2, 720)])).toThrow("无极旋转物体7的绑定电机工作行程须相同");
   });
 
   it("takes max velocity/acceleration from the virtual axis max velocity, never the running speed", () => {
