@@ -173,9 +173,10 @@ export class TelemetryController {
   }
 
   private syncLabelWorldPosition(handle: SceneObjectHandle, visuals: ObjectVisuals): void {
-    const center = handle.getTransformCenterWorldPosition();
+    // 标签挂在第一个吊点上（没有吊点的物体挂在变换中心）
+    const anchor = handle.getLabelAnchorWorldPosition();
     visuals.labels.setWorldPosition(
-      this.labelPositionScratch.set(center.x, center.y, center.z),
+      this.labelPositionScratch.set(anchor.x, anchor.y, anchor.z),
     );
   }
 

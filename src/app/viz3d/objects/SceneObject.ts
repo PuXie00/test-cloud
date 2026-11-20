@@ -116,6 +116,21 @@ export class SceneObject implements Disposable {
     return { x: world.x, y: world.y, z: world.z };
   }
 
+  /**
+   * 物体虚轴标签的锚点：第一个吊点在顶面的挂点，随运行姿态移动（吊点隐藏时也按它的位置）；
+   * 没有吊点的物体取变换中心
+   */
+  getLabelAnchorWorldPosition(): Vec3 {
+    const first = this.config.hoistAxes?.[0];
+    if (!first) return this.getTransformCenterWorldPosition();
+    const local = resolveHoistPointLocalPosition(this.config.dimensions, first.mount);
+    const world = Vector3.TransformCoordinates(
+      new Vector3(local.x, local.y, local.z),
+      this.runtimePivot.computeWorldMatrix(true),
+    );
+    return { x: world.x, y: world.y, z: world.z };
+  }
+
   applyConfig(config: SceneObjectConfig): void {
     const visualKindChanged = this.shouldRebuildVisual(config);
     const dimsChanged =
