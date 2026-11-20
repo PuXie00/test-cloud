@@ -1,4 +1,4 @@
-"""四模型强制轨迹就近准备，调用calculate_nearest_entry(parameters)。
+"""五模型强制轨迹就近准备，调用calculate_nearest_entry(parameters)。
 
 业务编号为2单点、3多级升降、4无极旋转、7普通多点摆、9XY多点摆。
 停稳后按最大虚轴V/A/D规划零速起止准备，各移动轴同步到达。
@@ -18,7 +18,7 @@ from pathlib import Path
 
 AXIS_NAMES = ("H", "P", "Y")
 CURVE_TICK_FRAME = 100.0
-ALGORITHM_VERSION = "v7_five_models_modulo_max_capability_20261118"
+ALGORITHM_VERSION = "v8_five_models_period_reset_guard_20261120"
 FRAME_SELECTION_VERSION = "current_original_segment_first_20261029"
 MAX_PREPARE_TIME_MS = 4294967295
 
@@ -950,6 +950,19 @@ def _rotation_delta(current, target, period):
     return delta
 
 
+def _rotation_full_period(model):
+    if model.get("model_type") != 4 or model.get("_rotation_period_H") is None:
+        return False
+    return (abs(model["min_position_HPY"][0]) <= 1e-6
+            and abs(model["max_position_HPY"][0]-model["_rotation_period_H"]) <= 1e-6)
+
+
+def _entry_positions_equal(model, first, second, tolerance=1e-5):
+    period = model["_rotation_period_H"] if _rotation_full_period(model) else None
+    return all(abs(_rotation_delta(a, b, period) if axis == 0 and period is not None else b-a) <= tolerance
+               for axis, (a, b) in enumerate(zip(first, second)))
+
+
 def _entry_axis_delta(model, axis, current, target):
     if axis == 0 and model.get("_rotation_period_H") is not None:
         return _rotation_delta(current, target, model["_rotation_period_H"])
@@ -972,7 +985,7 @@ def _entry_interval_distance(model, axis, current, lower, upper):
 def _validate_rotation_prepare(model, current, target):
     period = model["_rotation_period_H"]
     lower, upper = model["min_position_HPY"][0], model["max_position_HPY"][0]
-    if lower <= 1e-9 and upper >= period - 1e-9:
+    if _rotation_full_period(model):
         return
     delta = _rotation_delta(current, target, period)
     if abs(abs(delta) - period / 2) <= max(1e-9, period * 1e-12):
@@ -2237,6 +2250,7 @@ def _normalize_inputs(parameters):
             raise ValueError("models每项必须是对象")
         # 后续所有参与计算的数组均另建；浅复制避免把150段原数据再整套深拷贝。
         item = dict(original)
+        item.pop("_entry_loop_endpoints_HPY", None)
         plc_id, model_id = item.get("plc_id"), item.get("model_id")
         device_id = item.get("device_id", model_id)
         if not isinstance(plc_id, str) or not plc_id.strip():
@@ -2392,18 +2406,26 @@ def _normalize_inputs(parameters):
                     evaluated, _ = _evaluate_base_action_segment(p, frame)
                     if any(not math.isfinite(v) for v in evaluated):
                         raise ValueError("系数阶段端点计算超出浮点范围")
-                    if name in p and any(abs(a-b) > 1e-5 for a,b in zip(evaluated, _hpy(p[name], name))):
+                    if name in p and not _entry_positions_equal(item, evaluated, _hpy(p[name], name)):
                         raise ValueError("系数阶段端点与位置字段不一致")
                     p[name] = evaluated
                 # 首次归一化同时校验阶段/动作段/空档的位置连续性。
-                if flat and any(abs(a-b) > 1e-5 for a,b in zip(flat[-1]["target_HPY"], p["start_HPY"])):
+                if flat and not _entry_positions_equal(item, flat[-1]["target_HPY"], p["start_HPY"]):
                     raise ValueError("相邻系数阶段或原动作空档前后的位置不连续")
                 flat.append(p); cursor = p["end_frame"]
             if cursor != end:
                 raise ValueError("系数阶段没有覆盖到原动作末帧")
             for value, name in ((flat[-len(pieces)]["start_HPY"], "start_HPY"), (flat[-1]["target_HPY"], "target_HPY")):
-                if name in segment and any(abs(a-b) > 1e-5 for a,b in zip(value, _hpy(segment[name], name))):
+                if name in segment and not _entry_positions_equal(item, value, _hpy(segment[name], name)):
                     raise ValueError("原动作端点与abcdef/系数阶段不一致")
+        if _rotation_full_period(item):
+            # PLC循环按保存的首尾位置原值判断，保留用户显式端点，不用取模值替代。
+            first_segment, last_segment = segments[0], segments[-1]
+            first_piece = first_segment.get("coefficient_segments", [first_segment])[0]
+            last_piece = last_segment.get("coefficient_segments", [last_segment])[-1]
+            first = first_segment.get("start_HPY", first_piece.get("start_HPY", flat[0]["start_HPY"]))
+            last = last_segment.get("target_HPY", last_piece.get("target_HPY", flat[-1]["target_HPY"]))
+            item["_entry_loop_endpoints_HPY"] = (_hpy(first, "start_HPY"), _hpy(last, "target_HPY"))
         # 固定轴必须整条曲线保持同一个值；需要接到该值可在prepare_axes中显式加入。
         for axis in range(3):
             if AXIS_NAMES[axis] not in follow:
@@ -2432,6 +2454,8 @@ def _prepare_targets(candidate, inputs):
     for model in inputs["curve_action"]["models"]:
         key = model["index"]
         current, target = inputs["current_positions"][key], candidate["PosSet"][key]
+        if _rotation_full_period(model):
+            target[0] %= model["_rotation_period_H"]
         for axis, name in enumerate(AXIS_NAMES):
             if name not in inputs["active_axes_by_model"][key]:
                 if name in model["_supported_axes"] and abs(target[axis]-current[axis]) > 1e-5:
@@ -2457,7 +2481,8 @@ def _calculate_forced_entry(parameters):
     if not inputs["loop_once"]:
         for model in inputs["curve_action"]["models"]:
             key = model["index"]
-            first, last = model["segments"][0]["start_HPY"], model["segments"][-1]["target_HPY"]
+            first, last = model.get("_entry_loop_endpoints_HPY", (
+                model["segments"][0]["start_HPY"], model["segments"][-1]["target_HPY"]))
             for name in inputs["follow_axes_by_model"][key]:
                 axis = AXIS_NAMES.index(name)
                 if abs(first[axis]-last[axis]) > 0.001:
@@ -2478,6 +2503,8 @@ def _calculate_forced_entry(parameters):
                  if "max_position_HPY" in model else [math.inf]*3)
         if any(a > b for a, b in zip(lower, upper)):
             raise ValueError("虚轴行程下限不能大于上限")
+        if _rotation_full_period(model):
+            lower[0], upper[0] = 0.0, model["_rotation_period_H"]
         axes = [AXIS_NAMES.index(name) for name in model["_supported_axes"]]
         for axis in axes:
             current = inputs["current_positions"][key][axis]
@@ -2486,6 +2513,13 @@ def _calculate_forced_entry(parameters):
         position_limits[key] = lower, upper, axes
 
     def validate_selected_frame(candidate):
+        # 1006只传原帧，不传算法规范化后的准备位置；PLC会重新求值后夹到软限。
+        # 因此须先检查原帧位置，不能把365先取模为5后假定PLC也会准备到5。
+        for key, target in candidate["PosSet"].items():
+            lower, upper, axes = position_limits[key]
+            if any(target[axis] < lower[axis]-1e-9 or target[axis] > upper[axis]+1e-9
+                   for axis in axes):
+                raise ValueError(f"模型{key}的原曲线候选目标超出PLC准备软行程")
         prepared = _prepare_targets(candidate, inputs)
         for key, target in prepared["PosSet"].items():
             lower, upper, axes = position_limits[key]
@@ -2494,8 +2528,7 @@ def _calculate_forced_entry(parameters):
                 raise ValueError(f"模型{key}的候选准备目标超出虚轴行程")
         return calculate_synchronized_entry_move(prepared, inputs)
 
-    segment_first = (inputs["nearest_start"] and not inputs["use_specified_time"]
-                     and inputs["stopped_time_ms"] is not None)
+    search_nearest = inputs["nearest_start"] and not inputs["use_specified_time"]
     selected = calculate_forced_nearest_position(
         inputs["current_positions"], inputs["max_velocities"], inputs["curve_action"],
         inputs["max_accelerations"], direction=inputs["direction"], loop_once=inputs["loop_once"],
@@ -2503,11 +2536,10 @@ def _calculate_forced_entry(parameters):
         specified_time_ms=inputs["specified_time_ms"], active_axes_by_model=inputs["active_axes_by_model"],
         coarse_step=inputs["coarse_step"], fine_step=inputs["fine_step"], loop_count=inputs["loop_count"],
         stopped_time_ms=inputs["stopped_time_ms"],
-        frame_validator=validate_selected_frame if segment_first else None)
+        frame_validator=validate_selected_frame if search_nearest else None)
     selection_summary = selected
     curve_targets = {m["model_id"]: m["target_HPY"] for m in selected["models"]}
     validated_motion = selected.pop("_entry_validated_motion", None)
-    selected = _prepare_targets(selected, inputs)
     motion = validated_motion if validated_motion is not None else validate_selected_frame(selected)
     skipped = []
     # 1006原帧先确定为整数，所有目标都按该整数帧求出，不做帧/位置分别取整。
@@ -2574,7 +2606,7 @@ def _calculate_forced_entry(parameters):
 
 
 def calculate_nearest_entry(parameters):
-    """四模型强制准备入口，输入静态models与停稳runtime。"""
+    """五模型强制准备入口，输入静态models与停稳runtime。"""
     source=_adapt_shared_nearest_parameters(parameters)
     if source.get('command',{}).get('trajectory_run') is True:
         try:

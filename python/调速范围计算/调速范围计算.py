@@ -1,6 +1,7 @@
-"""四模型调速范围计算，参考YXZ_new.py的正解。
-模型编号为2单点、3多级升降、7普通多点摆、9XY多点摆。
+"""五模型调速范围计算，参考YXZ_new.py及PLC的正解。
+模型编号为2单点、3多级升降、4无极旋转、7普通多点摆、9XY多点摆。
 HPY普通多点为[高度,倾角,方向角]，XY为[高度,X倾角,Y倾角]。
+无极旋转只有H角度轴，实轴直接跟随H，周期使用真实workingStroke。
 """
 import json
 import hashlib
@@ -923,7 +924,47 @@ def calculate_multi_piece_max_velocity(piece, geometry, time_unit_ms, xy=False):
 
 
 
-SUPPORTED_MODEL_TYPES = {2: "单点", 3: "多级升降", 7: "多点摆", 9: "XY多点摆"}
+SUPPORTED_MODEL_TYPES = {2: "单点", 3: "多级升降", 4: "无极旋转", 7: "多点摆", 9: "XY多点摆"}
+
+
+def _validate_rotation_curve(model, time_unit_ms):
+    """PLC旋转模型仅H有效；全周期由轴取模，部分范围不能越过软行程。"""
+    period = model.get("workingStroke")
+    if isinstance(period, bool) or not isinstance(period, (int, float)) or not math.isfinite(period) or period <= 0:
+        raise ValueError("无极旋转workingStroke须为真实有限正周期")
+    count = model.get("motor_num", 1)
+    if type(count) is not int or not 1 <= count <= 32:
+        raise ValueError("无极旋转motor_num须为1到32的整数，全部绑定轴须使用相同workingStroke")
+    bounds = []
+    for name in ("min_position_HPY", "max_position_HPY"):
+        values = model.get(name)
+        if not isinstance(values, (list, tuple)) or len(values) != 3 or any(
+                isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)
+                for value in values):
+            raise ValueError(f"无极旋转{name}须提供H/P/Y三个有限数值")
+        bounds.append(float(values[0]))
+    lower, upper = bounds
+    if not 0 <= lower < upper <= period:
+        raise ValueError("无极旋转H软行程须满足0<=min<max<=workingStroke")
+    if not model["segments"]:
+        raise ValueError("无极旋转至少需要一段动作")
+    full_period = abs(lower) <= 1e-6 and abs(upper-period) <= 1e-6
+    for segment in model["segments"]:
+        calculate_virtual_state(segment, segment["start_frame"], time_unit_ms)
+        for piece in segment.get("coefficient_segments", [segment]):
+            if any(float(piece[name][axis]) != 0 for name in "bcdef" for axis in (1, 2)):
+                raise ValueError("无极旋转只支持H角度轴，P/Y不能包含运动")
+            if full_period:
+                continue  # 实际位置由MODULO处理，不能把360附近的连续角度误判为超行程。
+            start, end = float(piece["start_frame"]), float(piece["end_frame"])
+            duration = (end-start)/time_unit_ms
+            velocity = [power*float(piece[name][0])*duration**(power-1)
+                        for power, name in enumerate("bcdef", 1)]
+            frames = [start, end] + [start+x*(end-start) for x in find_unit_interval_roots(velocity)]
+            for frame in frames:
+                position, _ = calculate_virtual_state(piece, frame, time_unit_ms)
+                if not lower-1e-6 <= position[0] <= upper+1e-6:
+                    raise ValueError("无极旋转原曲线越过H软行程；部分范围不能跨过禁用区")
 
 
 def _virtual_peak_velocities(model, time_unit_ms):
@@ -998,8 +1039,10 @@ def calculate_velocity_adjust(models, time_unit_ms, classification_max_factor):
     for model in models:
         kind = model["model_type"]
         if kind not in SUPPORTED_MODEL_TYPES:
-            raise ValueError(f"不支持的模型类型：{kind}，目前只支持2、3、7、9")
+            raise ValueError(f"不支持的模型类型：{kind}，目前只支持2、3、4、7、9")
         label = f"模型{model.get('model_id','?')}"
+        if kind == 4:
+            _validate_rotation_curve(model, time_unit_ms)
         supplied = model.get("max_velocity_HPY")
         if not isinstance(supplied, (list, tuple)) or len(supplied) != 3:
             raise ValueError(f"{label}需要H/P/Y三个max_velocity_HPY最大速度")
@@ -1035,7 +1078,7 @@ def calculate_velocity_adjust(models, time_unit_ms, classification_max_factor):
         motor_limit = float(model["max_motor_velocity"])
         if not math.isfinite(motor_limit) or motor_limit <= 0:
             raise ValueError(f"{label}的max_motor_velocity须为有限正数")
-        if kind in (2, 3):
+        if kind in (2, 3, 4):
             motor_peak = peaks[0]
         else:
             geometry = _prepare_multi_point_geometry(model)
@@ -1142,10 +1185,10 @@ def calculate_range_result(parameters):
         for model in models:
             model_type = model["model_type"]
             if model_type not in model_names:
-                raise ValueError(f"不支持的模型类型：{model_type}，目前只支持2、3、7、9")
+                raise ValueError(f"不支持的模型类型：{model_type}，目前只支持2、3、4、7、9")
             if not model["segments"]:
                 raise ValueError("每个模型至少需要一段动作")
-            if model_type in (2, 3):
+            if model_type in (2, 3, 4):
                 continue                # 单点不需要比较多个虚轴的同步情况。
             all_single_point = False
 
@@ -1225,7 +1268,9 @@ def calculate_range_result(parameters):
 
         # 得到三类之一；分类上限不是最终安全倍率，后续还要计算本模型限速。
         if all_single_point:
-            action_category = "全部单点/多级升降：可升速、可降速"
+            action_category = ("全部单点/多级升降/无极旋转：可升速、可降速"
+                               if any(model["model_type"] == 4 for model in models)
+                               else "全部单点/多级升降：可升速、可降速")
             classification_max_factor = math.inf
         elif all_non_single_synchronized:
             action_category = "同步非单点：可升速、可降速"

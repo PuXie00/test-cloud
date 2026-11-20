@@ -1,7 +1,7 @@
 {
   "status": "planned",
   "message": "接入方案已生成，核对通过",
-  "algorithm_version": "nonforced_single_move_five_models_integer_ad_modulo_20261118",
+  "algorithm_version": "nonforced_single_move_five_models_decimal_ad_modulo_20261120",
   "trajectory_run": false,
   "reverse": false,
   "selected_curve_time_ms": 2250,
@@ -42,8 +42,8 @@
       "beforeJoinMs": 500.0,
       "pos": 400.0,
       "vel": 100.0,
-      "accVel": 200,
-      "decVel": 50
+      "accVel": 200.0,
+      "decVel": 50.0
     },
     {
       "plc_id": "1",
@@ -56,8 +56,8 @@
       "beforeJoinMs": 500.0,
       "pos": 0.0,
       "vel": 0.1,
-      "accVel": 1,
-      "decVel": 1
+      "accVel": 0.1,
+      "decVel": 0.1
     },
     {
       "plc_id": "1",
@@ -70,8 +70,8 @@
       "beforeJoinMs": 500.0,
       "pos": 0.0,
       "vel": 0.1,
-      "accVel": 1,
-      "decVel": 1
+      "accVel": 0.1,
+      "decVel": 0.1
     },
     {
       "plc_id": "1",
@@ -84,8 +84,8 @@
       "beforeJoinMs": 500.0,
       "pos": 800.0,
       "vel": 200.0,
-      "accVel": 400,
-      "decVel": 100
+      "accVel": 400.0,
+      "decVel": 100.0
     },
     {
       "plc_id": "1",
@@ -98,8 +98,8 @@
       "beforeJoinMs": 500.0,
       "pos": 0.0,
       "vel": 0.1,
-      "accVel": 1,
-      "decVel": 1
+      "accVel": 0.1,
+      "decVel": 0.1
     },
     {
       "plc_id": "1",
@@ -112,8 +112,8 @@
       "beforeJoinMs": 500.0,
       "pos": 0.0,
       "vel": 0.1,
-      "accVel": 1,
-      "decVel": 1
+      "accVel": 0.1,
+      "decVel": 0.1
     },
     {
       "plc_id": "1",
@@ -126,8 +126,8 @@
       "beforeJoinMs": 500.0,
       "pos": 400.0,
       "vel": 100.0,
-      "accVel": 200,
-      "decVel": 50
+      "accVel": 200.0,
+      "decVel": 50.0
     },
     {
       "plc_id": "1",
@@ -140,8 +140,8 @@
       "beforeJoinMs": 500.0,
       "pos": 16.0,
       "vel": 4.0,
-      "accVel": 8,
-      "decVel": 2
+      "accVel": 8.0,
+      "decVel": 2.0
     },
     {
       "plc_id": "1",
@@ -154,8 +154,8 @@
       "beforeJoinMs": 500.0,
       "pos": 8.0,
       "vel": 2.0,
-      "accVel": 4,
-      "decVel": 1
+      "accVel": 4.0,
+      "decVel": 1.0
     },
     {
       "plc_id": "1",
@@ -168,8 +168,8 @@
       "beforeJoinMs": 500.0,
       "pos": 400.0,
       "vel": 100.0,
-      "accVel": 200,
-      "decVel": 50
+      "accVel": 200.0,
+      "decVel": 50.0
     },
     {
       "plc_id": "1",
@@ -182,8 +182,8 @@
       "beforeJoinMs": 500.0,
       "pos": 14.5,
       "vel": 3.0,
-      "accVel": 6,
-      "decVel": 2
+      "accVel": 6.0,
+      "decVel": 2.0
     },
     {
       "plc_id": "1",
@@ -196,8 +196,8 @@
       "beforeJoinMs": 500.0,
       "pos": 8.0,
       "vel": 2.0,
-      "accVel": 4,
-      "decVel": 1
+      "accVel": 4.0,
+      "decVel": 1.0
     },
     {
       "plc_id": "1",
@@ -210,8 +210,8 @@
       "beforeJoinMs": 500.0,
       "pos": 356.0,
       "vel": 2.0,
-      "accVel": 4,
-      "decVel": 1
+      "accVel": 4.0,
+      "decVel": 1.0
     },
     {
       "plc_id": "1",
@@ -224,8 +224,8 @@
       "beforeJoinMs": 500.0,
       "pos": 0.0,
       "vel": 0.1,
-      "accVel": 1,
-      "decVel": 1
+      "accVel": 0.1,
+      "decVel": 0.1
     },
     {
       "plc_id": "1",
@@ -238,8 +238,8 @@
       "beforeJoinMs": 500.0,
       "pos": 0.0,
       "vel": 0.1,
-      "accVel": 1,
-      "decVel": 1
+      "accVel": 0.1,
+      "decVel": 0.1
     }
   ],
   "devices": [

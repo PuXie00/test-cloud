@@ -1,5 +1,5 @@
 {
-  "_使用说明": ["本包计算单点2、多级升降3、普通多点摆7、XY多点摆9的调速范围。", "HPY普通多点为[高度,倾角,方向角]，XY为[高度,X倾角,Y倾角]。", "示例包含四种模型，XY示例为两根实轴，两个角最大速度均为3.9degree/s。请按实际PLC路由、能力、吊点和原动作系数替换。", "本版range_version为shared_json_v2。上位机须重新计算旧range_result，缓存必须同时核对版本和action_signature。", "多级升降3的内部段点数为0时，nSections、AdjustDistance、deceleration_ratio可省略；按普通H曲线计算。"],
+  "_使用说明": ["本包计算单点2、多级升降3、无极旋转4、普通多点摆7、XY多点摆9的调速范围。", "HPY普通多点为[高度,倾角,方向角]，XY为[高度,X倾角,Y倾角]。", "示例包含五种模型。XY示例为两个吊点，两个角最大速度均为3.9degree/s；无极示例周期360，H从350连续经过360到370。请按真实PLC能力、周期、吊点和原动作系数替换。", "本版range_version为shared_json_v2。上位机须重新计算旧range_result，缓存必须同时核对版本和action_signature。", "多级升降3的内部段点数为0时，nSections、AdjustDistance、deceleration_ratio可省略；按普通H曲线计算。", "无极旋转4仅H有效，全部绑定实轴同角度跟随H；workingStroke传PLC真实共同周期，不能用max_position_HPY[0]-min_position_HPY[0]代替。全周期跨零使用真实连续H系数；部分软行程不允许经过禁用区。"],
   "_字段说明": {
     "command.operation": "本文件用途：range=调速范围，nearest=准备/就近接入，adjust=在线调速。分别运行对应Python文件。",
     "command.trajectory_run": "true=强制轨迹，false=非强制Move；改变后必须重新计算范围。在线Move算法处理false。",
@@ -7,15 +7,15 @@
     "models[].plc_id": "上位机PLC路由标识，必须是非空字符串，示例为\"1\"；对应硬件PLC ID仍为1，组报文时由上位机映射。",
     "models[].model_id": "全动作唯一的正整数逻辑模型ID；三份models及runtime.models用同一ID关联。",
     "models[].device_id": "本模型在对应PLC上的设备ID，1006/0105组包使用，按实际工程替换。",
-    "models[].model_type": "与YXZ_new.py一致的模型编号，2单点、3多级升降、7普通多点摆、9XY多点摆。",
-    "models[].motor_num": "模型实轴/吊点数量；须与实际绑定电机数一致。XY双吊点传2，point_init_pos也传两个点。",
-    "models[].active_axes": "原曲线的运动虚轴。单点/多级升降使用H，普通多点为H/P/Y，XY为H/X角/Y角；按实际非零系数校验限速。",
-    "models[].max_motor_velocity": "本模型每个实轴允许的最大速度，单位mm/s；范围算法与本模型峰值比较。",
-    "models[].max_velocity_HPY": "真实虚轴最大速度，按H/P/Y顺序，单位mm/s、degree/s、degree/s。XY两个角直接填写PLC REAL能力，例如3.9按3.9计算。逐轴与原曲线峰速比较，运动轴的能力必须大于0，静止轴允许0。",
+    "models[].model_type": "业务模型编号：2单点、3多级升降、4无极旋转、7普通多点摆、9XY多点摆。",
+    "models[].motor_num": "实际绑定电机数量；XY双吊点传2且point_init_pos传两个点。无极为1到32，与PLC的oneModelMaxAxisNum一致；全部绑定轴须axisType=1且workingStroke相同。",
+    "models[].active_axes": "单点/多级升降使用H；无极旋转只使用H角度，P/Y不得有运动；普通多点为H/P/Y，XY为H/X角/Y角。按实际非零系数校验限速。",
+    "models[].max_motor_velocity": "所有绑定实轴共同允许的最大速度；实轴能力不同时传最小值。线性模型单位mm/s，无极旋转为H技术单位/s（周期360度时为degree/s），与H峰值直接比较。",
+    "models[].max_velocity_HPY": "真实虚轴最大速度，按H/P/Y顺序。线性H为mm/s、角轴为degree/s；无极H为其PLC技术单位/s，P/Y填0。XY角度REAL能力如3.9直接传3.9。运动轴能力必须大于0，静止轴允许0。",
     "models[].max_acceleration_HPY": "可省略的真实虚轴最大加速度，H/P/Y顺序，单位mm/s²、degree/s²、degree/s²。原多项式按速度幅值增减求A/D峰值，本接口没有方向字段，逐轴以两者较大值约束正反双向，用sqrt(最大A/双向峰值)限制倍率。三个有限非负数，有加减速的轴必须大于0。缺少本字段时不追加A约束。",
     "models[].max_deceleration_HPY": "可省略的真实虚轴最大减速度，H/P/Y顺序，单位同加速度。与A能力分别提供，逐轴用sqrt(最大D/双向峰值)限制倍率；双向峰值为原表加速峰值与减速峰值的较大值，使同一范围适用正向和反向。三个有限非负数，有加减速的轴必须大于0。缺少本字段时不追加D约束。",
-    "models[].min_position_HPY": "HPY行程下限，单位mm、degree、degree。",
-    "models[].max_position_HPY": "HPY行程上限，单位mm、degree、degree。",
+    "models[].min_position_HPY": "H/P/Y软行程下限。线性H单位mm；角轴单位degree。无极H单位与workingStroke一致，须0<=H下限<H上限<=workingStroke；无极P/Y模板项填0。",
+    "models[].max_position_HPY": "H/P/Y软行程上限。无极H上限须不大于workingStroke；[0,workingStroke]为全周期，实际连续系数允许越过周期零点，输出限速不按取模后位置跳变求导。部分范围将校验整段H及内部极值均在软行程内。",
     "models[].segments[].segment_id": "本模型内唯一的原动作段编号；分段和编号始终保持原动作定义。",
     "models[].segments[].start_frame": "原动作段或系数阶段的起始时刻，单位ms。",
     "models[].segments[].end_frame": "原动作段或系数阶段的结束时刻，单位ms，须大于start_frame。",
@@ -24,7 +24,7 @@
     "models[].segments[].velocity_HPY": "segments内是旧完整梯形的原速度参数；runtime内是当前实际有符号反馈速度，HPY顺序。",
     "models[].segments[].acceleration_HPY": "原段Move加速度参数，H/P/Y顺序。范围的实际A峰值由abcdef系数求导获得。",
     "models[].segments[].deceleration_HPY": "原段Move减速度参数，H/P/Y顺序，可以与加速度不同。范围的实际D峰值由abcdef系数求导获得。",
-    "models[].segments[].a": "位置多项式q(u)=a+b*u+c*u²+d*u³+e*u⁴+f*u⁵的HPY常数项。普通多点HPY为高度/倾角/方向角，XY为高度/X倾角/Y倾角。",
+    "models[].segments[].a": "q(u)=a+b*u+c*u²+d*u³+e*u⁴+f*u⁵的HPY常数项。普通多点为高度/倾角/方向角，XY为高度/X倾角/Y倾角。无极H使用PLC实际连续角度系数，如350→370跨零，不改为350→10后按差值重建曲线。 全周期也可在阶段边界按整周期归零，例如359到360后下一阶段0到1，导数保留同向，不能视为反向。",
     "models[].segments[].b": "上述位置多项式的一次项系数，HPY三项；乘1000/系数时间单位得到阶段起始速度。",
     "models[].segments[].c": "上述位置多项式的二次项系数，HPY三项；恒A阶段加速度为2*c*(1000/系数时间单位)²。",
     "models[].segments[].d": "位置多项式三次项系数，HPY三项；非强制真实恒A Move必须为0。",
@@ -43,7 +43,8 @@
     "models[].segments[].coefficient_segments": "一个原动作段的连续系数阶段。有多级内部段点时填写最终PLC实际H执行曲线；0点时填写普通H曲线。",
     "models[].nSections": "多级升降PLC内部机械段点数。本包范围不依赖此字段，0点时可省略或传0；动作曲线由segments描述。",
     "models[].AdjustDistance": "多级内部段点列表，0点时可省略或传[]。存在段点时，范围输入的H系数须已经包含PLC实际执行的过点速度变化。",
-    "models[].deceleration_ratio": "PLC多级过点速度保留比例，0点时对范围计算可省略。本包直接依据最终实际H曲线系数求峰值。"
+    "models[].deceleration_ratio": "PLC多级过点速度保留比例，0点时对范围计算可省略。本包直接依据最终实际H曲线系数求峰值。",
+    "models[].workingStroke": "无极旋转4必填：PLC绑定实轴config.workingStroke的真实正周期，单位同H；常用360度，也可720或其它工程技术周期。不是动作时长，也不是H软行程宽度；全部绑定轴必须一致。其它类型无需此字段。"
   },
   "_输出字段说明": {
     "max_factor": "原动作100%对应的最大倍率，取动作分类、全部实轴和虚轴速度限制、已提供的虚轴A/D能力限制中的最小值。V乘倍率，A/D乘倍率平方。null与unlimited=true一起表示没有有限上限。",
@@ -353,13 +354,48 @@
       "default_velocity_HPY": [150.0, 3.9, 3.9],
       "default_acceleration_HPY": [2000, 500, 500],
       "default_deceleration_HPY": [2000, 500, 500]
+    },
+    {
+      "plc_id": "1",
+      "model_id": 400,
+      "device_id": 400,
+      "model_type": 4,
+      "motor_num": 2,
+      "active_axes": ["H"],
+      "workingStroke": 360,
+      "max_motor_velocity": 15,
+      "max_velocity_HPY": [20, 0, 0],
+      "max_acceleration_HPY": [100, 0, 0],
+      "max_deceleration_HPY": [100, 0, 0],
+      "min_position_HPY": [0, 0, 0],
+      "max_position_HPY": [360, 0, 0],
+      "segments": [
+        {
+          "segment_id": 0,
+          "start_frame": 0,
+          "end_frame": 2000,
+          "start_HPY": [350, 0, 0],
+          "target_HPY": [370, 0, 0],
+          "a": [350, 0, 0],
+          "b": [1, 0, 0],
+          "c": [0, 0, 0],
+          "d": [0, 0, 0],
+          "e": [0, 0, 0],
+          "f": [0, 0, 0]
+        }
+      ],
+      "follow_axes": ["H"],
+      "prepare_axes": ["H"],
+      "default_velocity_HPY": [10, 0, 0],
+      "default_acceleration_HPY": [100, 0, 0],
+      "default_deceleration_HPY": [100, 0, 0]
     }
   ],
   "range_result": {
     "max_factor": 1.5,
     "unlimited": false,
     "action_category": "同步非单点：可升速、可降速",
-    "action_signature": "03f203227e651070f184c265d1ebc6b627c2c236641e960410e110c680929a67",
+    "action_signature": "2903bd60583ac28fac68ab35e4527b73879e2c59b4d8ec3e3960bb14f6cd7836",
     "range_version": "shared_json_v2"
   }
 }

@@ -2,7 +2,7 @@
 每模型完整H/P/Y三行entry_moves共用同一发送时刻，组装为一条三轴准备Move。
 无中间换速、无退回助跑、无额外交接指令；后面只有原表本来存在的Move。
 搜索连续曲线候选，验证共同时间的位置/有符号速度以及其后整段自然续跑。
-使用真实最大V/A/D，不用默认值覆盖；最终位置/速度0.1精度，加减速度整数，未参与轴保留实际位置。
+使用真实最大V/A/D，不用默认值覆盖；最终位置、速度、加减速度均为0.1精度，未参与轴保留实际位置。
 并非每个指定帧都能用单Move自然接续，无方案时返回infeasible，不输出多Move补救。
 原帧表里超能力/超行程的Move之前（含）不接入（预检，不再逐帧回放）；有停止参考帧时，
 接入帧沿运行方向最多比参考帧靠后entry_max_skip_ms（默认3000ms，参考帧之前的接入点不受限）。
@@ -19,7 +19,7 @@ from time import perf_counter as _clock
 from pathlib import Path
 from collections import OrderedDict
 
-ALGORITHM_VERSION = "nonforced_single_move_five_models_integer_ad_modulo_20261118"
+ALGORITHM_VERSION = "nonforced_single_move_five_models_decimal_ad_modulo_20261120"
 AXIS_NAMES = ("H", "P", "Y")
 COEFFICIENT_NAMES = ("a", "b", "c", "d", "e", "f")
 _EPS = 1e-9
@@ -1015,7 +1015,7 @@ class StageAxisTrack(AxisTrack):
 
 
 def _acceleration_rates_near(value, limit, settings, radius=1):
-    return _rates_near(value, limit, settings, radius, 1.0)
+    return _rates_near(value, limit, settings, radius, .1)
 
 
 def _stage_state_times(phases, target, q, v, settings):
@@ -2232,7 +2232,7 @@ class _Device:
                                                f"{label} max_deceleration_HPY", True)
         if settings["entry_quantize_protocol"]:
             for name in ("entry_acceleration", "reposition_velocity", "reposition_acceleration", "reposition_deceleration"):
-                step = .1 if name == "reposition_velocity" else 1.0
+                step = .1
                 setattr(self, name, [math.floor(value / step + 1e-8) * step for value in getattr(self, name)])
         self.lower = (_triple(model["min_position_HPY"], f"{label} min_position_HPY")
                       if "min_position_HPY" in model else [-math.inf] * 3)
@@ -2308,7 +2308,7 @@ def _wire_move(command, settings):
         move = {key: _quantize_acceleration(value) if key in ("accVel", "decVel") else quantize(value)
                 for key, value in move.items()}
     if min(move["vel"], move["accVel"], move["decVel"]) <= 0:
-        raise ValueError("曲线里有Move的V/A/D编码后为0（速度精度0.1，加减速度精度1）")
+        raise ValueError("曲线里有Move的V/A/D编码后为0（速度和加减速度精度均为0.1）")
     return move
 
 
@@ -2318,7 +2318,7 @@ def _wire_move(command, settings):
 
 
 _RATE_LIMIT = 6553.5
-_ACCELERATION_LIMIT = 65535.0
+_ACCELERATION_LIMIT = 6553.5
 _ARRIVAL_TOLERANCE_MS = 1.0
 
 
@@ -2328,12 +2328,12 @@ def _floor_rate(value, quantized):
 
 
 def _quantize_acceleration(value):
-    return int(math.copysign(math.floor(abs(value) + .5 + 1e-10), value))
+    return quantize(value)
 
 
 def _floor_acceleration(value, quantized):
     value = min(value, _ACCELERATION_LIMIT)
-    return int(math.floor(value + 1e-8)) if quantized else value
+    return math.floor(value * 10 + 1e-8) / 10 if quantized else value
 
 
 def _rates_near(value, limit, settings, radius=1, resolution=.1):
@@ -2341,8 +2341,8 @@ def _rates_near(value, limit, settings, radius=1, resolution=.1):
         return []
     if not settings["entry_quantize_protocol"]:
         return [min(value, limit)]
-    center = quantize(value) if resolution == .1 else _quantize_acceleration(value)
-    values = {round(center + k * resolution, 1) if resolution == .1 else int(center + k)
+    center = math.floor(value / resolution + .5 + 1e-10) * resolution
+    values = {round(center + k * resolution, 1)
               for k in range(-radius, radius + 1)
               if resolution - 1e-9 <= center + k * resolution <= limit + 1e-8}
     return sorted(values, key=lambda item: (abs(item-value), item))
@@ -2421,7 +2421,7 @@ def _axis_request(device, index, u0, settings):
             return request
         minimum = profile_duration(move_profile(current, 0., target, V, A, D))
         smallest = .1 if quantized else 1e-9
-        maximum = profile_duration(move_profile(current, 0., target, smallest, 1.0 if quantized else smallest, 1.0 if quantized else smallest))
+        maximum = profile_duration(move_profile(current, 0., target, smallest, smallest, smallest))
         request.update(family="rest", L=distance, target=target, minimum=minimum, maximum=maximum,
                        s=1 if target > current else -1)
         return request
@@ -2478,7 +2478,7 @@ def _candidate_moves(request, seconds, settings):
     if family == "hold":
         # 无运动/不存在的虚轴也填真实位置，不能用pos=0当跳过标志。
         yield {"pos": _target_on_wire(current, device, index, settings),
-               "vel": V or .1, "accVel": A or 1, "decVel": D or 1}
+               "vel": V or .1, "accVel": A or .1, "decVel": D or .1}
         return
     if family == "acceleration":
         yield {**request["command"], "vel": min(request["command"]["vel"], V)}
