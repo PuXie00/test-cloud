@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft } from "lucide-react";
-import { CollapsePanel } from "@/app/components/ics/collapse-panel";
 import { clampNumeric } from "@/app/components/ics/numeric-input-utils";
 import { TabBar } from "@/app/components/ics/tab-bar";
 import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-input";
@@ -31,7 +30,8 @@ import { MultiSegmentEditor } from "./multi-segment-editor";
 import { PoseAlignTools, SegmentAlignTools } from "./segment-align-tools";
 import { PresetBlockFields, presetBlockTitle } from "./preset-block-panel";
 import { RepairBand } from "./repair-band";
-import { SegmentEditor, SegmentStatusBadge, segmentStatusOf } from "./segment-editor";
+import { SegmentStatusBadge, segmentStatusOf } from "./segment-editor";
+import { SegmentPanel } from "./segment-panel";
 import {
   lookupSequenceSelection,
   segmentEndpointBlockIds,
@@ -442,7 +442,7 @@ const PoseBlockFields = ({
           );
         }}
       />
-      <Field label="时间">
+      <Field label="时刻">
         <UnitAwareNumericInput
           aria-label="到达时间"
           value={msToSeconds(block.atMs)}
@@ -456,43 +456,6 @@ const PoseBlockFields = ({
     </>
   );
 };
-
-/** 运动区间的一端：是位姿就直接改；是预设的关键点时提示去点预设改 */
-const SegmentEndpointSection = ({
-  label,
-  atMs,
-  block,
-  resolved,
-  onReplaceBlock,
-}: {
-  label: string;
-  atMs: number;
-  block: TimelineBlock | undefined;
-  resolved: ResolvedActionSequence;
-  onReplaceBlock: (block: TimelineBlock) => void;
-}) => (
-  // 默认折叠，先看下面的运动曲线；要改两端位姿再展开
-  <section className="mb-2" aria-label={label}>
-    <CollapsePanel
-      title={label}
-      defaultOpen={false}
-      extra={
-        <span className="font-mono text-mono-sm tabular-nums text-muted-foreground">
-          {formatTime(atMs)} s
-        </span>
-      }
-      contentClassName="bg-muted pt-0"
-    >
-      {block?.kind === "pose" ? (
-        <PoseBlockFields block={block} resolved={resolved} onReplaceBlock={onReplaceBlock} />
-      ) : block?.kind === "static-preset" || block?.kind === "dynamic-preset" ? (
-        <p className="text-body-sm text-muted-foreground">
-          是预设「{presetBlockTitle(block)}」的关键点，单独点选预设修改
-        </p>
-      ) : null}
-    </CollapsePanel>
-  </section>
-);
 
 const MultiPoseAxesEditor = ({ poses }: { poses: PoseBlock[] }) => {
   const { getTimelineObject, handleApplyPoseAxisWrite } = useActionBuilder();
@@ -687,7 +650,7 @@ const MultiSelectionProperties = ({
   const handleDeleteSelected = () => onDeleteBlock(blocks.map((block) => block.id));
   const others = otherKindsSummary(blocks);
 
-  // 只选了一个运动区间（选中的正好是它两端的块）：两端的位姿和曲线放在一起改，不分页签
+  // 只选了一个运动区间（选中的正好是它两端的块）：两端的值和曲线放在一起改，不分页签
   const lone = segments.length === 1 ? segments[0] : undefined;
   const loneEnds = lone ? segmentEndpointBlockIds(resolved, lone) : [];
   if (
@@ -695,10 +658,6 @@ const MultiSelectionProperties = ({
     loneEnds.length === blocks.length &&
     blocks.every((block) => loneEnds.includes(block.id))
   ) {
-    const blockAt = (ref: string) => {
-      const blockId = resolved.poses.find((point) => point.sourceRef === ref)?.sourceBlockId;
-      return blocks.find((block) => block.id === blockId);
-    };
     return (
       <PropertiesShell
         title="运动区间"
@@ -709,21 +668,14 @@ const MultiSelectionProperties = ({
         onDelete={handleDeleteSelected}
         actions={explodeAction}
       >
-        <SegmentEndpointSection
-          label="起点位姿"
-          atMs={lone.startMs}
-          block={blockAt(lone.fromRef)}
+        <SegmentPanel
+          key={lone.key}
+          sequence={sequence}
           resolved={resolved}
+          segment={lone}
           onReplaceBlock={onReplaceBlock}
+          onUpdateSegment={onUpdateSegment}
         />
-        <SegmentEndpointSection
-          label="终点位姿"
-          atMs={lone.endMs}
-          block={blockAt(lone.toRef)}
-          resolved={resolved}
-          onReplaceBlock={onReplaceBlock}
-        />
-        <SegmentEditor sequence={sequence} segment={lone} onUpdateSegment={onUpdateSegment} />
       </PropertiesShell>
     );
   }
@@ -770,7 +722,14 @@ const MultiSelectionProperties = ({
         {tabBar}
         <SegmentAlignTools segments={segments} />
         {single ? (
-          <SegmentEditor sequence={sequence} segment={single} onUpdateSegment={onUpdateSegment} />
+          <SegmentPanel
+            key={single.key}
+            sequence={sequence}
+            resolved={resolved}
+            segment={single}
+            onReplaceBlock={onReplaceBlock}
+            onUpdateSegment={onUpdateSegment}
+          />
         ) : (
           <MultiSegmentEditor segments={segments} />
         )}

@@ -142,10 +142,13 @@ const ControlPanelToggles = () => {
   );
 };
 
-/** 动作页：开关显示设备实时位置，与右侧「手动控制」tab 同步 */
+/**
+ * 动作页：开关「当前位置」（联机编辑）。打开时到「手动控制」页（点动在那里），
+ * 之后切到「属性」也还开着；只有这里能关，关掉时在「手动控制」页就回到「属性」。
+ */
 const CurrentPoseToggle = () => {
-  const { activeRightTab, setActiveRightTab } = useActionBuilder();
-  const showing = activeRightTab === "manual";
+  const { liveMode, setLiveMode, setActiveRightTab } = useActionBuilder();
+  const showing = liveMode;
 
   return (
     <button
@@ -153,7 +156,7 @@ const CurrentPoseToggle = () => {
       aria-label="显示当前位置"
       title={showing ? "关闭当前位置" : "显示当前位置"}
       aria-pressed={showing}
-      onClick={() => setActiveRightTab(showing ? "selection" : "manual")}
+      onClick={() => (showing ? setLiveMode(false) : setActiveRightTab("manual"))}
       className={cn(PANEL_TOGGLE_BTN, showing ? "text-primary" : "text-muted-foreground")}
     >
       <Locate aria-hidden />

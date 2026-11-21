@@ -150,6 +150,53 @@ describe("action builder save current pose", () => {
     expect(result.current.project.currentProject!.document!.motion.programs).toEqual(programsBefore);
   });
 
+  it("saves the live position as a new 造型 without leaving the sequence being edited", async () => {
+    const { result } = renderBuilder();
+    await openFixtureProject(result);
+    act(() => result.current.builder.handleCreateSequence([]));
+    const editing = result.current.builder.selectedSequenceId;
+    const countBefore = result.current.builder.sequences.length;
+
+    act(() => result.current.builder.handleSaveShape(capture([7, 8])));
+    act(() => result.current.builder.handleSaveShape(capture([7])));
+
+    const { sequences, selectedSequenceId } = result.current.builder;
+    expect(sequences).toHaveLength(countBefore + 2);
+    expect(selectedSequenceId).toBe(editing);
+    const [first, second] = sequences.slice(-2);
+    expect(first!.name).toBe("造型 1");
+    expect(second!.name).toBe("造型 2");
+    expect(first!.blocks).toEqual([
+      expect.objectContaining({ kind: "pose", objectId: 7, atMs: 0, pose: livePose }),
+      expect.objectContaining({ kind: "pose", objectId: 8, atMs: 0, pose: livePose }),
+    ]);
+    expect(toastSuccess).toHaveBeenCalledWith("已存为「造型 1」");
+  });
+
+  it("saves the sequence's values at the playhead as a 造型", async () => {
+    const { result } = renderBuilder();
+    await openFixtureProject(result);
+    act(() => result.current.builder.handleCreateSequence([]));
+    act(() => {
+      result.current.builder.handleInsertTimelineBlock({ id: "a", kind: "pose", objectId: 7, atMs: 0, pose: { v1: 0 } });
+      result.current.builder.handleInsertTimelineBlock({
+        id: "b",
+        kind: "pose",
+        objectId: 7,
+        atMs: 4000,
+        pose: { v1: 800 },
+      });
+    });
+    // 对称梯形走到一半时间正好走一半
+    act(() => result.current.builder.handleCursorChange(2000));
+    act(() => result.current.builder.handleSaveShapeAtCursor());
+    const shape = result.current.builder.sequences.at(-1)!;
+    expect(shape.name).toBe("造型 1");
+    expect(shape.blocks).toEqual([
+      expect.objectContaining({ kind: "pose", objectId: 7, atMs: 0, pose: { v1: 400 } }),
+    ]);
+  });
+
   it("keeps the manual tab on object picks, playhead moves and block selection", async () => {
     const { result } = renderBuilder();
     await openFixtureProject(result);
@@ -173,6 +220,26 @@ describe("action builder save current pose", () => {
 
     act(() => result.current.builder.setActiveRightTab("program"));
     act(() => result.current.builder.handleObjectsSelect([7]));
+    expect(result.current.builder.activeRightTab).toBe("selection");
+  });
+
+  it("keeps 当前位置 on after leaving 手动控制, and only the toggle turns it off", async () => {
+    const { result } = renderBuilder();
+    await openFixtureProject(result);
+    expect(result.current.builder.liveMode).toBe(false);
+    // 打开手动控制顺带打开当前位置
+    act(() => result.current.builder.setActiveRightTab("manual"));
+    expect(result.current.builder.liveMode).toBe(true);
+    // 切到属性还在联机
+    act(() => result.current.builder.setActiveRightTab("selection"));
+    expect(result.current.builder.liveMode).toBe(true);
+    // 在属性页关掉：留在属性页
+    act(() => result.current.builder.setLiveMode(false));
+    expect(result.current.builder.liveMode).toBe(false);
+    expect(result.current.builder.activeRightTab).toBe("selection");
+    // 在手动控制页关掉：回到属性页
+    act(() => result.current.builder.setActiveRightTab("manual"));
+    act(() => result.current.builder.setLiveMode(false));
     expect(result.current.builder.activeRightTab).toBe("selection");
   });
 });

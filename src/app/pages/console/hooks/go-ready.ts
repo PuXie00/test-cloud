@@ -1,5 +1,6 @@
 import type { VirtualAxisId, VirtualAxisValues } from "@/app/project/project-document-types";
 import { DIMENSION_KEY_TO_VIRTUAL_AXIS } from "@/app/project/manual-jog";
+import { ZERO_GO_VAD, type GoObjectPlan } from "./go-motion";
 import type {
   ControlledObjectSnapshot,
   MonitorPositions,
@@ -120,22 +121,42 @@ export const isArrived = (
 };
 
 /** 目标里没写的轴按设目标时的当前位置下发（不动），连当前位置也没有才是 0 */
-export const buildMoveTargetItem = (entry: GoReadyEntry): MoveTargetItem => ({
-  deviceId: Number(entry.objectId),
-  hTargetPosition: entry.target.v1 ?? entry.current.v1 ?? 0,
-  hVelocity: 0,
-  hAcceleration: 0,
-  hDeceleration: 0,
-  pTargetPosition: entry.target.v2 ?? entry.current.v2 ?? 0,
-  pVelocity: 0,
-  pAcceleration: 0,
-  pDeceleration: 0,
-  yTargetPosition: entry.target.v3 ?? entry.current.v3 ?? 0,
-  yVelocity: 0,
-  yAcceleration: 0,
-  yDeceleration: 0,
-  moveDirection: 0,
-});
+/**
+ * 一条目标位置运动。plan 给出各轴下发的速度、加速度、减速度（没给的轴填 0，C++ 走搭建里的默认值）
+ * 和方向：无极旋转只有正转 1 / 反转 2，其它物体 0（自动）。
+ */
+/** 去掉浮点尾数（110.00000000000001 → 110）；按有效数字取，很小的加速度也不会变成 0（0 = 走默认） */
+const cleanRate = (value: number): number => (Number.isFinite(value) ? Number(value.toPrecision(6)) : value);
+
+export const buildMoveTargetItem = (
+  entry: GoReadyEntry,
+  plan?: Pick<GoObjectPlan, "direction" | "axes">,
+): MoveTargetItem => {
+  const vad = (axis: VirtualAxisId) => {
+    const rates = plan?.axes[axis] ?? ZERO_GO_VAD;
+    return {
+      velocity: cleanRate(rates.velocity),
+      acceleration: cleanRate(rates.acceleration),
+      deceleration: cleanRate(rates.deceleration),
+    };
+  };
+  return {
+    deviceId: Number(entry.objectId),
+    hTargetPosition: entry.target.v1 ?? entry.current.v1 ?? 0,
+    hVelocity: vad("v1").velocity,
+    hAcceleration: vad("v1").acceleration,
+    hDeceleration: vad("v1").deceleration,
+    pTargetPosition: entry.target.v2 ?? entry.current.v2 ?? 0,
+    pVelocity: vad("v2").velocity,
+    pAcceleration: vad("v2").acceleration,
+    pDeceleration: vad("v2").deceleration,
+    yTargetPosition: entry.target.v3 ?? entry.current.v3 ?? 0,
+    yVelocity: vad("v3").velocity,
+    yAcceleration: vad("v3").acceleration,
+    yDeceleration: vad("v3").deceleration,
+    moveDirection: plan?.direction ?? 0,
+  };
+};
 
 export const pendingGoEntries = (entries: readonly GoReadyEntry[]): GoReadyEntry[] =>
   entries.filter((entry) => !entry.dispatched);

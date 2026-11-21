@@ -6,6 +6,11 @@ import {
   sendResetModel,
   sendStopModel,
 } from "../../../hooks/manual-commands";
+import {
+  goObjectInfoFromSetup,
+  shorterRotation,
+  type GoDirection,
+} from "../../../hooks/go-motion";
 import { useSelection } from "../../../hooks/use-selection";
 import { useSequencePreview } from "../../../hooks/use-sequence-preview";
 import { useProject } from "@/app/project/use-project";
@@ -46,6 +51,8 @@ type ManualControlPanelProps = {
   liveLabel?: string | null;
   /** 维度控制「清除」时另外要做的事（动作页：取消选中的位姿） */
   onClearTargets?: () => void;
+  /** 存为造型（动作页）：选中的物体，没选就是所有有位置数据的物体 */
+  onSaveShape?: (request: CapturedPoseRequest) => void;
 };
 
 /** 手动控制：状态条 / 点动 / 维度控制 / 快捷操作；控制页与动作页共用 */
@@ -57,9 +64,10 @@ export const ManualControlPanel = ({
   saveBlockedReason = null,
   liveLabel = null,
   onClearTargets,
+  onSaveShape,
 }: ManualControlPanelProps) => {
   const { selectedId, multiSelectedIds } = useSelection();
-  const { getById } = useControlledObjects();
+  const { getById, snapshots: allSnapshots } = useControlledObjects();
   const { sequenceId: previewSequenceId } = useSequencePreview();
   const { currentProject } = useProject();
   // 点动、维度控制 / GO 要「手动运动」；取当前写进位姿要「编辑动作序列」；状态条按钮各自判断
@@ -90,6 +98,21 @@ export const ManualControlPanel = ({
     previewing ? { name: previewName } : null,
   );
   const canSave = !saveDisabled && !saveBlockedReason && availability.allowed("savePose");
+
+  // 存为造型：选中的物体；没选就存所有有位置数据的物体
+  const shapeIds =
+    selectedIds.length > 0
+      ? selectedIds
+      : (allSnapshots ?? []).filter((snapshot) => snapshot.positions).map((snapshot) => snapshot.descriptor.id);
+  const handleSaveShape = () => {
+    onSaveShape?.({
+      objectIds: shapeIds,
+      poseForObject: (objectId) => {
+        const snapshot = getById(objectId);
+        return snapshot ? poseFromControlSnapshot(snapshot) : null;
+      },
+    });
+  };
 
   const handleSaveCurrentPose = () => {
     onSaveCurrentPose({
@@ -141,8 +164,18 @@ export const ManualControlPanel = ({
     void sendResetModel(deviceIds);
   };
 
+  // 回原：无极旋转只有正转、反转，按现在的角度选转得少的那边
   const handleHome = () => {
-    void sendHomeModel(deviceIds);
+    const setup = currentProject?.document?.setup;
+    const directionOf = (deviceId: number): GoDirection => {
+      const object = setup?.controlledObjects.find((item) => item.id === deviceId);
+      if (!setup || !object) return 0;
+      const rotation = goObjectInfoFromSetup(object, setup.motors).rotation;
+      if (!rotation) return 0;
+      const angle = snapshots.find((snapshot) => snapshot.descriptor.id === deviceId)?.positions?.h;
+      return angle === undefined ? 1 : shorterRotation(angle, 0, rotation.period);
+    };
+    void sendHomeModel(deviceIds, directionOf);
   };
 
   const handleStop = () => {
@@ -201,6 +234,8 @@ export const ManualControlPanel = ({
           onSave={handleSaveCurrentPose}
           label={saveLabel}
           hint={saveBlockedReason}
+          onSaveShape={onSaveShape ? handleSaveShape : undefined}
+          canSaveShape={!previewing && shapeIds.length > 0}
         />
       )}
       <AlertDialog open={couple.phase === "solving"}>

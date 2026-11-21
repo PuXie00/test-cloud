@@ -133,6 +133,8 @@ export type TimelineEditorProps = {
   /** 曲线上拖位姿的值：这些位姿的这根轴加 deltaValue（相对拖动开始） */
   onPoseAxisDrag?: (blockIds: string[], axis: VirtualAxisId, deltaValue: number) => void;
   onPoseAxisDragEnd?: () => void;
+  /** 双击轨道空白处：在那个时刻给这一行的物体加位姿（吸附开着时对齐） */
+  onCreatePoseAt?: (objectId: number, atMs: number) => void;
 };
 
 const NO_OBJECT_IDS: readonly number[] = [];
@@ -214,6 +216,7 @@ export const TimelineEditor = ({
   curveUnderlay = false,
   onPoseAxisDrag,
   onPoseAxisDragEnd,
+  onCreatePoseAt,
 }: TimelineEditorProps) => {
   const viewportRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -483,6 +486,15 @@ export const TimelineEditor = ({
   const snapCursor = (ms: number, indicate = true): number =>
     applySnap(ms, snapTargetTimes({ sequence, totalMs: occupiedEndMs }), indicate);
 
+  /** 双击轨道空白处加位姿；双击在块、区间上不管 */
+  const handleTracksDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!onCreatePoseAt) return;
+    if ((event.target as HTMLElement).closest("button, [role='button']")) return;
+    const row = rows[clientToRow(event.clientY)];
+    if (!row) return;
+    onCreatePoseAt(row.objectId, snapCursor(clientToMs(event.clientX), false));
+  };
+
   /** 拖块时不吸这些块所在行的块，吸指针 */
   const blockSnapTargets = (blockIds: ReadonlySet<string>): number[] =>
     snapTargetTimes({
@@ -543,6 +555,26 @@ export const TimelineEditor = ({
     const labelsEl = labelNamesRef.current;
     if (labelsEl) labelsEl.scrollTop = scrollEl.scrollTop;
   };
+
+  // 在 3D 里选了物体：时间轴滚到第一个选中物体的那一行。
+  // 选中的行已经有一行看得到（比如就是在时间轴里点的）就不滚
+  const selectedObjectsKey = selectedObjectIds.join(",");
+  useEffect(() => {
+    if (curveMode) return;
+    const scrollEl = scrollRef.current;
+    const labelsEl = labelNamesRef.current;
+    if (!scrollEl || !labelsEl || labelsEl.clientHeight <= 0) return;
+    const indices = rows.flatMap((row, index) => (selectedObjectIds.includes(row.objectId) ? [index] : []));
+    if (indices.length === 0) return;
+    const top = scrollEl.scrollTop;
+    const bottom = top + labelsEl.clientHeight;
+    const visible = indices.some(
+      (index) => index * TRACK_ROW_HEIGHT >= top - 1 && (index + 1) * TRACK_ROW_HEIGHT <= bottom + 1,
+    );
+    if (visible) return;
+    scrollEl.scrollTop = Math.max(0, (indices[0]! - 1) * TRACK_ROW_HEIGHT);
+    syncLabelScroll(scrollEl);
+  }, [selectedObjectsKey, curveMode]);
 
   const handleScroll = () => {
     const scrollEl = scrollRef.current;
@@ -985,6 +1017,7 @@ export const TimelineEditor = ({
                 className="relative min-h-0 flex-1"
                 style={{ width: canvasWidth }}
                 onPointerDown={handleTracksPointerDown}
+                onDoubleClick={handleTracksDoubleClick}
               >
                 <div className="pointer-events-none absolute inset-0 z-0 w-full" aria-hidden>
                   {used ? (
@@ -997,6 +1030,17 @@ export const TimelineEditor = ({
                     className="absolute inset-y-0 bg-background"
                     style={{ left: used ? used.leftPx + used.widthPx : 0, right: 0 }}
                   />
+                  {/* 选中物体的整行（左边名字另有竖线和底色） */}
+                  {rows.map((row, index) =>
+                    selectedObjectIds.includes(row.objectId) ? (
+                      <div
+                        key={`selected-${row.objectId}`}
+                        data-testid="timeline-row-selected"
+                        className="absolute inset-x-0 bg-primary/10"
+                        style={{ top: index * TRACK_ROW_HEIGHT, height: TRACK_ROW_HEIGHT }}
+                      />
+                    ) : null,
+                  )}
                   {majorTicks.map((tick) => (
                     <div
                       key={tick.ms}

@@ -787,6 +787,12 @@ export const retimeSegmentCurves = (
     );
     if (crossesInner) return { ok: false, reason: "invalid-time-range" };
     const list = deltasByObject.get(write.objectId) ?? [];
+    // 同一段的几个轴一起改时长：终点只挪一次，时长对不上就不改
+    const sameEnd = list.find((item) => item.atMs === endMs);
+    if (sameEnd) {
+      if (sameEnd.deltaMs !== deltaMs) return { ok: false, reason: "invalid-time-range" };
+      continue;
+    }
     list.push({ atMs: endMs, deltaMs });
     deltasByObject.set(write.objectId, list);
   }
@@ -1102,4 +1108,92 @@ export const explodePresetBlocks = (
     sequence: committed.sequence,
     createdIds: [...posesByPreset.values()].flat().map((block) => block.id),
   };
+};
+
+/** 写入规划好的位姿：每台按时间排好的位姿，以及相邻位姿之间那段的曲线（位姿下标） */
+export type PlannedPosesWrite = {
+  objects: ReadonlyArray<{
+    objectId: number;
+    poses: ReadonlyArray<{
+      atMs: number;
+      pose: KeyframePose;
+      passSpeeds?: Partial<Record<VirtualAxisId, number>>;
+    }>;
+    segments: ReadonlyArray<{
+      fromIndex: number;
+      toIndex: number;
+      profiles: Partial<Record<VirtualAxisId, MotionProfile>>;
+    }>;
+  }>;
+};
+
+export type PlannedPosesResult =
+  | { ok: true; sequence: ActionSequenceConfig; poseIds: string[] }
+  | { ok: false; reason: SequenceEditError };
+
+/**
+ * 在已有区间上写入规划好的位姿（如「汇合」）：那一刻已有同一物体的位姿就用它，换成规划的值；
+ * 再写区间曲线，一次提交。别的块不挪。
+ */
+export const applyPlannedPoses = (
+  sequence: ActionSequenceConfig,
+  write: PlannedPosesWrite,
+  options?: SequenceEditOptions,
+): PlannedPosesResult => {
+  let next = cloneSequence(sequence);
+  const poseIds: string[] = [];
+  const idsByObject = new Map<number, string[]>();
+  for (const object of write.objects) {
+    const ids: string[] = [];
+    for (const planned of object.poses) {
+      // 那一刻已有这个物体的位姿：只改规划要动的轴，别的轴和经过速度照旧
+      const atMs = snapTimeMs(planned.atMs);
+      const existing = next.blocks.find(
+        (block): block is PoseBlock =>
+          block.kind === "pose" && block.objectId === object.objectId && block.atMs === atMs,
+      );
+      const result = upsertPoseBlock(
+        next,
+        {
+          id: nextBlockId(new Set(next.blocks.map((block) => block.id))),
+          kind: "pose",
+          objectId: object.objectId,
+          atMs: planned.atMs,
+          pose: { ...(existing?.pose ?? {}), ...planned.pose },
+        },
+        options,
+      );
+      if (!result.ok) return result;
+      next = result.sequence;
+      if (planned.passSpeeds) {
+        const passSpeeds = { ...(existing?.passSpeeds ?? {}), ...planned.passSpeeds };
+        next = {
+          ...next,
+          blocks: next.blocks.map((block) =>
+            block.id === result.blockId && block.kind === "pose" ? { ...block, passSpeeds } : block,
+          ),
+        };
+      }
+      ids.push(result.blockId);
+      poseIds.push(result.blockId);
+    }
+    idsByObject.set(object.objectId, ids);
+  }
+  const writes: SegmentProfileWrite[] = [];
+  for (const object of write.objects) {
+    const ids = idsByObject.get(object.objectId) ?? [];
+    for (const segment of object.segments) {
+      const fromRef = ids[segment.fromIndex];
+      const toRef = ids[segment.toIndex];
+      const from = object.poses[segment.fromIndex];
+      const to = object.poses[segment.toIndex];
+      if (!fromRef || !toRef || !from || !to) continue;
+      for (const [axis, profile] of Object.entries(segment.profiles) as Array<[VirtualAxisId, MotionProfile]>) {
+        writes.push({ fromRef, toRef, axis, profile, durationMs: to.atMs - from.atMs });
+      }
+    }
+  }
+  next = writeSegmentProfiles(next, writes);
+  const committed = commitBlocks(sequence, next, options);
+  return committed.ok ? { ok: true, sequence: committed.sequence, poseIds } : committed;
 };

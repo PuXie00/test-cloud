@@ -9,6 +9,7 @@ import type {
 import {
   alignMotionSegments,
   alignPoseBlocks,
+  applyPlannedPoses,
   applyPoseAxisWrite,
   copyTimelineBlocks,
   deleteTimelineBlocks,
@@ -978,6 +979,35 @@ describe("retimeSegmentCurves", () => {
     expect(["b", "c", "en", "x"].map((id) => timeOf(result.sequence, id))).toEqual([4000, 7000, 8000, 6000]);
   });
 
+  it("moves the end once when several axes of one segment change duration together", () => {
+    const twoAxes: ActionSequenceConfig = {
+      ...track,
+      blocks: track.blocks.map((block) =>
+        block.kind === "pose" && block.objectId === 1
+          ? { ...block, pose: { ...block.pose, v2: block.id === "b" ? 30 : 0 } }
+          : block,
+      ),
+    };
+    const result = retimeSegmentCurves(twoAxes, [
+      { objectId: 1, fromRef: "a", toRef: "b", axis: "v1", profile: trap(800, 800), durationMs: 6000 },
+      { objectId: 1, fromRef: "a", toRef: "b", axis: "v2", profile: trap(600, 600), durationMs: 6000 },
+    ]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(["b", "c", "en"].map((id) => timeOf(result.sequence, id))).toEqual([6000, 9000, 10000]);
+    const settings = result.sequence.segments.find((item) => item.fromRef === "a" && item.toRef === "b");
+    expect(settings?.settings.profiles.v1).toEqual(trap(800, 800));
+    expect(settings?.settings.profiles.v2).toEqual(trap(600, 600));
+  });
+
+  it("refuses two different durations for one segment", () => {
+    const result = retimeSegmentCurves(track, [
+      { objectId: 1, fromRef: "a", toRef: "b", axis: "v1", profile: trap(800, 800), durationMs: 6000 },
+      { objectId: 1, fromRef: "a", toRef: "b", axis: "v2", profile: trap(800, 800), durationMs: 7000 },
+    ]);
+    expect(result.ok).toBe(false);
+  });
+
   it("adds up the shifts of several curves on one object", () => {
     const result = retimeSegmentCurves(track, [
       { objectId: 1, fromRef: "a", toRef: "b", axis: "v1", profile: trap(800, 800), durationMs: 5500 },
@@ -1290,3 +1320,47 @@ describe("alignMotionSegments", () => {
     });
   });
 });
+
+describe("applyPlannedPoses", () => {
+  it("merges planned values into an existing pose, keeps later blocks in place and writes the curves", () => {
+    const sequence: ActionSequenceConfig = {
+      id: 1,
+      name: "s",
+      trajectoryMode: false,
+      blocks: [
+        { id: "a", kind: "pose", objectId: 1, atMs: 0, pose: { v1: 0, v2: 5 } },
+        { id: "b", kind: "pose", objectId: 1, atMs: 4000, pose: { v1: 400 } },
+        { id: "later", kind: "pose", objectId: 1, atMs: 9000, pose: { v1: 0 } },
+      ],
+      segments: [],
+    };
+    const result = applyPlannedPoses(sequence, {
+      objects: [
+        {
+          objectId: 1,
+          poses: [
+            { atMs: 0, pose: { v1: 0 }, passSpeeds: { v1: 0 } },
+            { atMs: 2000, pose: { v1: 150 }, passSpeeds: { v1: 100 } },
+          ],
+          segments: [
+            { fromIndex: 0, toIndex: 1, profiles: { v1: { kind: "trapezoid", params: { accelMs: 1000, decelMs: 100 } } } },
+          ],
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const byId = new Map(result.sequence.blocks.map((block) => [block.id, block]));
+    // 0 s 已有位姿：V2 照旧，填上经过速度
+    expect(byId.get("a")).toMatchObject({ atMs: 0, pose: { v1: 0, v2: 5 }, passSpeeds: { v1: 0 } });
+    expect(byId.get("later")).toMatchObject({ atMs: 9000 });
+    const added = result.sequence.blocks.find((block) => block.kind === "pose" && block.atMs === 2000);
+    expect(added).toMatchObject({ pose: { v1: 150 }, passSpeeds: { v1: 100 } });
+    expect(result.poseIds).toEqual(["a", added!.id]);
+    const segment = resolveActionSequence(result.sequence).segments.find(
+      (item) => item.startMs === 0 && item.endMs === 2000,
+    );
+    expect(segment?.settings.profiles.v1).toEqual({ kind: "trapezoid", params: { accelMs: 1000, decelMs: 100 } });
+  });
+});
+

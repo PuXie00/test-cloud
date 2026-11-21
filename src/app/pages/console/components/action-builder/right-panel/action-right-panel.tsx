@@ -10,10 +10,12 @@ import type {
 import type { EditorDockMode } from "../action-builder-context-types";
 import type { SequenceSelection } from "../sequence-selection";
 import { ProgramPanel } from "../../program-panel/program-panel";
+import type { CapturedPoseRequest } from "@/app/project/capture-pose-sequence";
 import { ActionManualControlTab } from "./action-manual-control-tab";
+import { LiveEditStrip, LivePoseGoBinding } from "./live-edit";
 import { SelectionTabContent } from "./selection-tab-content";
 
-/** "manual" 与视口「当前位置」同步：选中该 tab 即显示设备实时位置 */
+/** 打开 "manual" 顺带打开视口「当前位置」；切走后「当前位置」仍开着，见 liveMode */
 export type ActionRightTab = "selection" | "manual" | "program";
 
 const RIGHT_TABS: { id: ActionRightTab; label: string; guide?: string }[] = [
@@ -24,6 +26,10 @@ const RIGHT_TABS: { id: ActionRightTab; label: string; guide?: string }[] = [
 
 type ActionRightPanelProps = {
   activeTab: ActionRightTab;
+  /** 「当前位置」开着：选中位姿绑成 GO 目标，属性页顶上显示联机条 */
+  liveMode?: boolean;
+  /** 联机条里的「存为造型」 */
+  onSaveShape?: (request: CapturedPoseRequest) => void;
   onTabChange: (tab: ActionRightTab) => void;
   dockMode: EditorDockMode;
   sequence: ActionSequenceConfig | null;
@@ -46,6 +52,8 @@ type ActionRightPanelProps = {
 
 export const ActionRightPanel = ({
   activeTab,
+  liveMode = false,
+  onSaveShape,
   onTabChange,
   dockMode,
   sequence,
@@ -70,6 +78,7 @@ export const ActionRightPanel = ({
 
   return (
   <aside className="flex h-full w-[320px] shrink-0 flex-col overflow-hidden rounded-lg bg-card">
+    {liveMode ? <LivePoseGoBinding /> : null}
     <TabBar tabs={tabs} active={shownTab} onChange={onTabChange} variant="underline" />
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {shownTab === "selection" && readOnly && (
@@ -77,6 +86,7 @@ export const ActionRightPanel = ({
           只读：没有「编辑动作序列」权限
         </p>
       )}
+      {shownTab === "selection" && liveMode && canManual ? <LiveEditStrip onSaveShape={readOnly ? undefined : onSaveShape} /> : null}
       {shownTab === "selection" && (
         <div data-guide="console-action-selection-properties" className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <ReadOnlyScope readOnly={readOnly} className="flex min-h-0 flex-1 flex-col overflow-hidden">

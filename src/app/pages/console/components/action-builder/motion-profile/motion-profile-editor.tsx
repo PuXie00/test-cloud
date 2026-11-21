@@ -2,24 +2,19 @@ import { useState } from "react";
 import { TabBar } from "@/app/components/ics/tab-bar";
 import { cn } from "@/app/components/ui/utils";
 import { useSessionDisplayLengthUnit } from "@/app/project/display-length-unit-provider";
-import {
-  getDisplayLengthFamilyUnit,
-  type DisplayLengthUnit,
-} from "@/app/project/display-length-units";
+import { getDisplayLengthFamilyUnit } from "@/app/project/display-length-units";
 import {
   boundaryTrapezoidOf,
-  boundaryTrapezoidSpeedAt,
   hasMotionBoundary,
   type MotionProfileKinematics,
 } from "@/app/project/action-sequence/motion-profile";
 import type { AxisMotionProfiles, ModelPose, MotionProfile } from "@/app/project/action-sequence/types";
 import type { VirtualAxisId } from "@/app/project/project-document-types";
-import { VIRTUAL_AXIS_IDS, formatDurationSeconds } from "../timeline/timeline-data";
+import { VIRTUAL_AXIS_IDS } from "../timeline/timeline-data";
 import { getVirtualAxisCanonicalUnit } from "../virtual-axis-display";
 import { PROFILE_KIND_OPTIONS, profileKindMeta } from "./profile-kind";
 import {
   axisDurationMs,
-  axisHasWarning,
   maxAccelerationOf,
   minAccelMsOf,
   profileLimitWarnings,
@@ -41,25 +36,9 @@ export type MotionProfileEditorProps = {
   compact?: boolean;
   ownedAxes?: readonly VirtualAxisId[];
   axisContext?: MotionProfileAxisContext;
-  segmentContext?: {
-    fromRef: string;
-    toRef: string;
-  };
-  /** 区间模式下当前轴的补充说明，如轴跨过端点位姿时的整段曲线范围 */
-  axisNotes?: Partial<Record<VirtualAxisId, string>>;
-  /** 区间模式下阶段的填法；给了切换回调才显示「按时间 / 按速度」 */
-  phaseInputMode?: PhaseInputMode;
-  onPhaseInputModeChange?: (mode: PhaseInputMode) => void;
-  /** 按速度改出来的曲线和这一轴整段曲线的新时长 */
-  onAxisRetime?: (axis: VirtualAxisId, profile: MotionProfile, durationMs: number) => void;
 };
 
 const axisName = (axis: VirtualAxisId): string => axis.toUpperCase();
-
-const formatTravel = (value: number, unit: string, display: DisplayLengthUnit): string => {
-  const prefix = value > 0 ? "+" : "";
-  return `${prefix}${formatQuantity(value, unit, display)}`;
-};
 
 const pickDefaultAxis = (
   axes: readonly VirtualAxisId[],
@@ -275,31 +254,6 @@ export const PhaseInputModeTabs = ({
   />
 );
 
-const SegmentMetricTile = ({
-  label,
-  value,
-  warning = false,
-}: {
-  label: string;
-  value: string;
-  warning?: boolean;
-}) => (
-  <div className="min-w-0 rounded-md bg-input-background px-2 py-2">
-    <p className="text-body-sm text-muted-foreground">{label}</p>
-    <p
-      aria-label={label}
-      aria-readonly="true"
-      className={cn(
-        "mt-0.5 truncate font-mono text-mono-sm tabular-nums",
-        warning ? "text-warning" : "text-foreground",
-      )}
-      title={value}
-    >
-      {value}
-    </p>
-  </div>
-);
-
 export const MotionProfileEditor = ({
   value,
   onChange,
@@ -307,11 +261,6 @@ export const MotionProfileEditor = ({
   compact = false,
   ownedAxes,
   axisContext,
-  segmentContext,
-  axisNotes,
-  phaseInputMode = "time",
-  onPhaseInputModeChange,
-  onAxisRetime,
 }: MotionProfileEditorProps) => {
   const enabledAxes = (axisContext
     ? resolveEnabledAxes(axisContext.enabledAxes)
@@ -367,9 +316,6 @@ export const MotionProfileEditor = ({
     travelDistance > 0 && currentBoundary && hasMotionBoundary(currentBoundary)
       ? boundaryTrapezoidOf(displayProfile, travelDistance, currentDurationMs, currentBoundary)
       : null;
-  const boundaryVelocityAt = boundaryShape
-    ? (tNorm: number) => boundaryTrapezoidSpeedAt(boundaryShape, (tNorm * currentDurationMs) / 1000)
-    : undefined;
   const limits =
     travelDistance > 0 && kinematics
       ? toChartLimits(kinematics, currentAxis, axisContext)
@@ -387,244 +333,6 @@ export const MotionProfileEditor = ({
       ? ["经过速度太快，这段行程放不下进出变速"]
       : []),
   ];
-  const currentMaxSpeed = axisContext.maxSpeedByAxis?.[currentAxis];
-  const currentOverSpeed =
-    currentMaxSpeed !== undefined &&
-    kinematics !== null &&
-    kinematics.peakVelocity > currentMaxSpeed;
-
-  if (segmentContext) {
-    const peakVelocityText = kinematics
-      ? formatQuantity(kinematics.peakVelocity, speedUnit, display)
-      : "—";
-    const maxVelocityText =
-      currentMaxSpeed === undefined
-        ? "未配置"
-        : formatQuantity(currentMaxSpeed, speedUnit, display);
-
-    return (
-      <div className="flex flex-col gap-2.5">
-        <section className="rounded-md bg-muted p-3" aria-label="区间摘要">
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-            <ProfileKindSelect
-              profile={displayProfile}
-              durationMs={currentDurationMs}
-              minAccelMs={minAccelMs}
-              disabled={disabled || displayProfile.kind === "idle"}
-              summary
-              onChange={(profile) => handleProfileChange(currentAxis, profile)}
-            />
-            <div className="min-w-19 rounded-md bg-input-background px-2 py-2">
-              <p className="text-body-sm text-muted-foreground">总时长</p>
-              <p
-                aria-label="时长"
-                aria-readonly="true"
-                className="mt-0.5 font-mono text-mono-sm tabular-nums text-foreground"
-              >
-                {formatDurationSeconds(currentDurationMs)}
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <div
-          className="flex gap-1 rounded-md bg-input-background p-1"
-          role="group"
-          aria-label="虚拟轴"
-        >
-          {enabledAxes.map((axis) => {
-            const pressed = axis === currentAxis;
-            const axisUnit = getVirtualAxisCanonicalUnit(
-              axis,
-              axisContext.controlType,
-            );
-            const axisWarning = axisHasWarning(axis, value, axisContext);
-            return (
-              <button
-                key={axis}
-                type="button"
-                aria-label={`${axisName(axis)} ${formatTravel(axisContext.travel[axis] ?? 0, axisUnit, display)}`}
-                aria-pressed={pressed}
-                onClick={() => handleAxisClick(axis)}
-                className={cn(
-                  "min-w-0 flex-1 rounded-sm border-b-2 px-1 py-1.5 text-center",
-                  pressed
-                    ? "border-primary bg-accent text-primary"
-                    : "border-transparent text-muted-foreground hover:bg-accent",
-                )}
-              >
-                <span className="block text-body-sm font-semibold">
-                  {axisName(axis)}
-                  {axisWarning ? <span className="ml-1 text-warning">●</span> : null}
-                </span>
-                <span className="block truncate font-mono text-[10px] leading-3 tabular-nums">
-                  {formatTravel(axisContext.travel[axis] ?? 0, axisUnit, display)}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        {axisNotes?.[currentAxis] ? (
-          <p className="px-1 text-body-sm text-muted-foreground">{axisNotes[currentAxis]}</p>
-        ) : null}
-
-        <div className="h-40 overflow-visible">
-          <VelocityChart
-            profile={displayProfile}
-            durationMs={currentDurationMs}
-            velocityUnit={speedDisplayUnit}
-            formatVelocity={formatSpeedValue}
-            limits={limits}
-            disabled={disabled || displayProfile.kind === "idle"}
-            compact
-            velocityAt={boundaryVelocityAt}
-            onProfileChange={
-              displayProfile.kind === "idle"
-                ? undefined
-                : (profile) => handleProfileChange(currentAxis, profile)
-            }
-          />
-        </div>
-
-        <section className="rounded-md bg-muted p-3" aria-label="阶段">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <h3 className="text-label-caps text-muted-foreground">阶段</h3>
-            {onPhaseInputModeChange ? (
-              <PhaseInputModeTabs mode={phaseInputMode} onChange={onPhaseInputModeChange} />
-            ) : (
-              <p className="text-[10px] leading-3 text-muted-foreground">
-                拖动控制点或精确输入
-              </p>
-            )}
-          </div>
-          {kindMeta ? (
-            <TrapezoidProfileEditor
-              value={displayProfile}
-              onChange={(profile) => handleProfileChange(currentAxis, profile)}
-              durationMs={currentDurationMs}
-              disabled={disabled}
-              compact
-              showKindSelect={false}
-              timeUnit="s"
-              readOnly={displayProfile.kind === "idle"}
-              withPassSpeeds={withPassSpeeds}
-              inputMode={phaseInputMode}
-              rateContext={{ distance: travelDistance, boundary: currentBoundary, unit }}
-              onRetime={
-                onAxisRetime
-                  ? (profile, nextDurationMs) => onAxisRetime(currentAxis, profile, nextDurationMs)
-                  : undefined
-              }
-            />
-          ) : (
-            <p className="text-body-sm text-muted-foreground">未知曲线</p>
-          )}
-        </section>
-
-        {currentWarnings.length > 0 || currentOverSpeed ? (
-          <div className="rounded-md bg-warning-surface px-3 py-2" role="status">
-            {currentOverSpeed && currentMaxSpeed !== undefined ? (
-              <p className="text-body-sm text-warning">
-                峰值速度超过上限 {formatQuantity(currentMaxSpeed, speedUnit, display)}
-              </p>
-            ) : null}
-            {currentWarnings.map((message) => (
-              <p key={message} className="text-body-sm text-warning">
-                {message}
-              </p>
-            ))}
-          </div>
-        ) : null}
-
-        <section className="rounded-md bg-muted p-3" aria-label={`${axisName(currentAxis)} 运动结果`}>
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <h3 className="text-label-caps text-muted-foreground">
-              {axisName(currentAxis)} 运动结果
-            </h3>
-            <span className={currentOverSpeed ? "text-body-sm text-warning" : "text-body-sm text-show"}>
-              {currentOverSpeed ? "超过限制" : "限制内"}
-            </span>
-          </div>
-          <div className="grid grid-cols-2 gap-1.5">
-            <SegmentMetricTile
-              label="峰值速度"
-              value={peakVelocityText}
-              warning={currentOverSpeed}
-            />
-            <SegmentMetricTile
-              label="速度上限"
-              value={maxVelocityText}
-            />
-            <SegmentMetricTile
-              label="加速度"
-              value={
-                kinematics
-                  ? formatQuantity(kinematics.acceleration, accelUnit, display)
-                  : "—"
-              }
-            />
-            <SegmentMetricTile
-              label="减速度"
-              value={
-                kinematics
-                  ? formatQuantity(kinematics.deceleration, accelUnit, display)
-                  : "—"
-              }
-            />
-          </div>
-        </section>
-
-        {otherAxes.length > 0 ? (
-          <section className="rounded-md bg-muted p-3" aria-label="其他轴">
-            <h3 className="mb-2 text-label-caps text-muted-foreground">其他轴</h3>
-            <div className="flex flex-col gap-1">
-              {otherAxes.map((axis) => {
-                const axisUnit = getVirtualAxisCanonicalUnit(
-                  axis,
-                  axisContext.controlType,
-                );
-                const axisTravel = axisContext.travel[axis] ?? 0;
-                const axisKinematics = tryKinematics(
-                  value[axis],
-                  Math.abs(axisTravel),
-                  axisDurationMs(axisContext, axis),
-                  axisContext.boundaryByAxis?.[axis],
-                );
-                const axisMaxSpeed = axisContext.maxSpeedByAxis?.[axis];
-                const axisWarning = axisHasWarning(axis, value, axisContext);
-                const resultText =
-                  axisTravel === 0
-                    ? "无位移"
-                    : axisKinematics
-                      ? axisMaxSpeed === undefined
-                        ? formatQuantity(axisKinematics.peakVelocity, `${axisUnit}/s`, display)
-                        : `${formatQuantityValue(axisKinematics.peakVelocity, `${axisUnit}/s`, display)} / ${formatQuantity(axisMaxSpeed, `${axisUnit}/s`, display)}`
-                      : "无法计算";
-
-                return (
-                  <button
-                    key={axis}
-                    type="button"
-                    aria-label={`切换到 ${axisName(axis)}，${resultText}`}
-                    onClick={() => handleAxisClick(axis)}
-                    className="grid min-h-9 grid-cols-[32px_minmax(0,1fr)] items-center gap-2 rounded-md bg-input-background px-2 text-left hover:bg-accent"
-                  >
-                    <span className={cn("font-mono text-mono-sm", axisWarning ? "text-warning" : "text-secondary")}>
-                      {axisName(axis)}
-                    </span>
-                    <span className={cn("truncate text-right font-mono text-[10px] leading-3 tabular-nums", axisWarning ? "text-warning" : "text-muted-foreground")}>
-                      {resultText}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        ) : null}
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col gap-3">

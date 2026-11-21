@@ -7,6 +7,9 @@ type QuickActionsProps = {
   label?: string;
   /** 不能保存的原因 */
   hint?: string | null;
+  /** 存为造型（动作页）：当前位置存成新的单帧序列；不传就没有这个按钮 */
+  onSaveShape?: () => void;
+  canSaveShape?: boolean;
 };
 
 export const QuickActions = ({
@@ -14,6 +17,8 @@ export const QuickActions = ({
   onSave,
   label = "保存当前位姿",
   hint = null,
+  onSaveShape,
+  canSaveShape = false,
 }: QuickActionsProps) => (
   <div className="space-y-2 px-3 py-3">
     <div className="overflow-hidden rounded-md">
@@ -28,6 +33,16 @@ export const QuickActions = ({
           >
             <Save className="h-4 w-4" /> {label}
           </button>
+          {onSaveShape ? (
+            <button
+              type="button"
+              disabled={!canSaveShape}
+              onClick={onSaveShape}
+              className="inline-flex h-10 shrink-0 items-center justify-center rounded-sm border border-border px-3 text-foreground hover:bg-accent disabled:pointer-events-none disabled:opacity-40"
+            >
+              存为造型
+            </button>
+          ) : null}
         </div>
         {hint ? <p className="mt-2 text-body-sm text-warning">{hint}</p> : null}
       </div>

@@ -9,11 +9,11 @@ import { mergeHoldPoses, pinLiveAxes, resolveLivePoses } from "./resolve-live-po
 import { resolvePreviewPoses } from "./resolve-preview-poses";
 
 export const useActionPreviewPoses = (): Map<number, ModelPose> => {
-  const { dockMode, sequence, cursorMs, activeRightTab } = useActionBuilder();
+  const { dockMode, sequence, cursorMs, liveMode } = useActionBuilder();
   const { snapshots } = useControlledObjects();
   const { objects } = useProjectStore();
-  // 「当前位置」开启 ⇔ 手动控制 tab 选中
-  const showLivePose = activeRightTab === "manual";
+  // 「当前位置」开着（不管在哪个页签）
+  const showLivePose = liveMode;
 
   const virtualAxisObjectIds = useMemo(
     () =>

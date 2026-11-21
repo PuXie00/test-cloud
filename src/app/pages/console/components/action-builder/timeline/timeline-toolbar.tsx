@@ -78,6 +78,8 @@ type TimelineToolbarProps = {
   /** 吸附开关（S） */
   snapEnabled?: boolean;
   onSnapToggle?: () => void;
+  /** 在游标处给选中的物体加位姿（K） */
+  onAddPose?: () => void;
   /** 「标记」菜单：添加标记（M），点列表里的标记跳过去 */
   markers?: readonly TimelineMarker[];
   onAddMarker?: () => void;
@@ -90,6 +92,9 @@ type TimelineToolbarProps = {
   /** 轨道视图的曲线底图（只选一个物体时）；开着时也能选位置 / 速度和虚轴 */
   curveUnderlay?: boolean;
   onCurveUnderlayChange?: (on: boolean) => void;
+  /** 选中位姿时游标跳过去 */
+  poseCursorFollow?: boolean;
+  onPoseCursorFollowChange?: (on: boolean) => void;
   /** available 为 false：显示的物体都没有这根轴，或序列不控制它 */
   curveAxis?: VirtualAxisId;
   curveAxes?: readonly { axis: VirtualAxisId; available: boolean }[];
@@ -162,6 +167,7 @@ export const TimelineToolbar = ({
   onSnapToggle,
   markers = [],
   onAddMarker,
+  onAddPose,
   onJumpToMarker,
   viewMode,
   onViewModeChange,
@@ -169,6 +175,8 @@ export const TimelineToolbar = ({
   onCurveGraphChange,
   curveUnderlay = false,
   onCurveUnderlayChange,
+  poseCursorFollow = false,
+  onPoseCursorFollowChange,
   curveAxis,
   curveAxes,
   onCurveAxisChange,
@@ -245,6 +253,16 @@ export const TimelineToolbar = ({
               <DropdownMenuShortcut>选一个物体时</DropdownMenuShortcut>
             </DropdownMenuCheckboxItem>
           ) : null}
+          {onPoseCursorFollowChange ? (
+            <DropdownMenuCheckboxItem
+              checked={poseCursorFollow}
+              onCheckedChange={(checked) => onPoseCursorFollowChange(checked === true)}
+              onSelect={keepMenuOpen}
+              className={viewMenuItemClass}
+            >
+              选中位姿时跳到位姿
+            </DropdownMenuCheckboxItem>
+          ) : null}
           {curveGraph !== undefined && onCurveGraphChange ? (
             <>
               <DropdownMenuSeparator />
@@ -294,6 +312,18 @@ export const TimelineToolbar = ({
       </DropdownMenu>
     ) : null}
     
+    {onAddPose ? (
+      <button
+        type="button"
+        aria-label="加位姿"
+        title="在游标处给选中的物体加位姿（K）"
+        onClick={onAddPose}
+        className={menuButtonClass}
+      >
+        <Plus className="h-3.5 w-3.5" aria-hidden />
+        位姿
+      </button>
+    ) : null}
     {onAddMarker || onJumpToMarker ? (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

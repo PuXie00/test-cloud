@@ -152,6 +152,61 @@ describe("editor dock sequence editor", () => {
     expect(props!.objects).toBe(timelineObjects);
   });
 
+  it("moves the cursor to selected poses at one time, unless turned off", () => {
+    const poses: ActionSequenceConfig = {
+      ...sequence,
+      blocks: [
+        { id: "p1", kind: "pose", objectId: 7, atMs: 2000, pose: { v1: 0 } },
+        { id: "p2", kind: "pose", objectId: 8, atMs: 2000, pose: { v1: 0 } },
+        { id: "p3", kind: "pose", objectId: 7, atMs: 4000, pose: { v1: 10 } },
+      ],
+    };
+    const handleCursorChange = vi.fn();
+    mockBuilder({
+      sequence: poses,
+      selection: { kind: "multi-block", blockIds: ["p1", "p2"] },
+      handleCursorChange,
+      poseCursorFollow: true,
+    });
+    render(<EditorDock />);
+    expect(handleCursorChange).toHaveBeenCalledWith(2000);
+    cleanup();
+
+    // 一个区间（两头时刻不同）不跳；关掉了也不跳
+    handleCursorChange.mockClear();
+    mockBuilder({
+      sequence: poses,
+      selection: { kind: "multi-block", blockIds: ["p1", "p3"] },
+      handleCursorChange,
+      poseCursorFollow: true,
+    });
+    render(<EditorDock />);
+    cleanup();
+    mockBuilder({
+      sequence: poses,
+      selection: { kind: "block", blockId: "p3" },
+      handleCursorChange,
+      poseCursorFollow: false,
+    });
+    render(<EditorDock />);
+    expect(handleCursorChange).not.toHaveBeenCalled();
+  });
+
+  it("adds poses for the selected objects at the playhead with ＋位姿 or K", () => {
+    const handleCreatePose = vi.fn();
+    selectionState.ids = [7, 8];
+    mockBuilder({ handleCreatePose });
+    render(<EditorDock />);
+    fireEvent.click(screen.getByRole("button", { name: "加位姿" }));
+    fireEvent.keyDown(window, { key: "k" });
+    expect(handleCreatePose).toHaveBeenNthCalledWith(1, [7, 8]);
+    expect(handleCreatePose).toHaveBeenNthCalledWith(2, [7, 8]);
+    // 双击轨道空白处：那一行的物体、双击的时刻
+    capturedEditor.current!.onCreatePoseAt!(8, 3200);
+    expect(handleCreatePose).toHaveBeenLastCalledWith([8], 3200);
+    selectionState.ids = [];
+  });
+
   it("does not offer an add-action control in the sequence editor header", () => {
     render(<EditorDock />);
     expect(screen.queryByRole("button", { name: /添加动作/ })).toBeNull();
@@ -795,6 +850,83 @@ describe("explode presets from the timeline menu", () => {
     fireEvent.contextMenu(screen.getByTestId("timeline-editor"));
     await screen.findByRole("menu");
     expect(screen.queryByRole("menuitem", { name: /拆解/ })).toBeNull();
+  });
+});
+
+describe("segment tools in the right-click menu", () => {
+  // 模型 7：0→2 s 走到 200；模型 8：0→4 s 走到 400
+  const twoSpans: ActionSequenceConfig = {
+    ...sequence,
+    blocks: [
+      { id: "a1", kind: "pose", objectId: 7, atMs: 0, pose: { v1: 0 } },
+      { id: "b1", kind: "pose", objectId: 7, atMs: 2000, pose: { v1: 200 } },
+      { id: "a2", kind: "pose", objectId: 8, atMs: 0, pose: { v1: 0 } },
+      { id: "b2", kind: "pose", objectId: 8, atMs: 4000, pose: { v1: 400 } },
+    ],
+  };
+  const keys = resolveActionSequence(twoSpans).segments.map((segment) => segment.key);
+  const tools = () => ({
+    handleRetimeSegmentCurves: vi.fn(() => true),
+    handleStaggerSegments: vi.fn(),
+    handleMergeSegments: vi.fn(),
+    getTimelineObject: (id: number) => timelineObjects.find((object) => object.id === id),
+  });
+  const openMenu = async () => {
+    render(<EditorDock />);
+    fireEvent.contextMenu(screen.getByTestId("timeline-editor"));
+    await screen.findByRole("menu");
+  };
+
+  it("unifies the selected segments' duration with a typed value", async () => {
+    const handlers = tools();
+    mockBuilder({
+      sequence: twoSpans,
+      sequences: [twoSpans],
+      selection: { kind: "multi-block", blockIds: ["a1", "b1", "a2", "b2"], focus: "segments" },
+      ...handlers,
+    });
+    await openMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "统一时长…" }));
+    const input = (await screen.findByLabelText("每段时长")) as HTMLInputElement;
+    // 不一样时先填最长的那段
+    expect(input.value).toBe("4");
+    fireEvent.change(input, { target: { value: "3" } });
+    fireEvent.click(screen.getByRole("button", { name: "确定" }));
+    const [writes] = handlers.handleRetimeSegmentCurves.mock.calls[0]! as unknown as [Array<{ durationMs: number }>];
+    expect(writes.map((write) => write.durationMs)).toEqual([3000, 3000]);
+  });
+
+  it("staggers with a typed gap and merges two segments", async () => {
+    const handlers = tools();
+    mockBuilder({
+      sequence: twoSpans,
+      sequences: [twoSpans],
+      selection: { kind: "multi-block", blockIds: ["a1", "b1", "a2", "b2"], focus: "segments" },
+      ...handlers,
+    });
+    await openMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "错峰…" }));
+    const gap = (await screen.findByLabelText("每台比上一台晚")) as HTMLInputElement;
+    expect(gap.value).toBe("1");
+    fireEvent.change(gap, { target: { value: "1.5" } });
+    fireEvent.click(screen.getByRole("button", { name: "确定" }));
+    expect(handlers.handleStaggerSegments).toHaveBeenCalledWith(keys, 1500);
+
+    cleanup();
+    await openMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "汇合" }));
+    expect(handlers.handleMergeSegments).toHaveBeenCalledWith(keys);
+  });
+
+  it("offers none of them without two selected segments", async () => {
+    mockBuilder({
+      sequence: twoSpans,
+      sequences: [twoSpans],
+      selection: { kind: "multi-block", blockIds: ["a1", "b1"], focus: "segments" },
+      ...tools(),
+    });
+    await openMenu();
+    expect(screen.queryByRole("menuitem", { name: /统一时长|错峰|汇合/ })).toBeNull();
   });
 });
 

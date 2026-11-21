@@ -20,7 +20,7 @@ export const Viz3DVirtualAxisLabelSync = () => {
   const engine = useViz3DContext();
   const engineReadyVersion = useViz3DReadyVersion(engine);
   const { activeNav } = useConsoleNav();
-  const { dockMode, sequence, activeRightTab } = useActionBuilder();
+  const { dockMode, sequence, liveMode } = useActionBuilder();
   const { snapshots } = useControlledObjects();
   const { objects } = useProjectStore();
   const display = useSessionDisplayLengthUnit();
@@ -64,8 +64,8 @@ export const Viz3DVirtualAxisLabelSync = () => {
       labelledIdsRef.current = nextIds;
     };
 
-    // 动作页「当前位置」（手动控制）和控制页一样：所有物体都显示实时位置，不管在不在序列里
-    const actionLive = activeNav === "sequences" && activeRightTab === "manual";
+    // 动作页「当前位置」开着和控制页一样：所有物体都显示实时位置，不管在不在序列里
+    const actionLive = activeNav === "sequences" && liveMode;
 
     if (activeNav === "sequences" && !controlPreviewPoses && !actionLive) {
       applyLabels(collectActionPageDriveUnitLabels(poses, objects, display, memberIds));
@@ -101,7 +101,7 @@ export const Viz3DVirtualAxisLabelSync = () => {
     engine,
     engineReadyVersion,
     activeNav,
-    activeRightTab,
+    liveMode,
     snapshots,
     objects,
     display,

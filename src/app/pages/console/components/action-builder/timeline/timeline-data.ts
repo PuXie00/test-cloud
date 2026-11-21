@@ -23,6 +23,9 @@ export type ControlledObject = {
   rangeByAxis?: Partial<Record<VirtualAxisId, { min: number; max: number }>>;
   maxSpeedByAxis?: Partial<Record<VirtualAxisId, number>>;
   minAccelTimeByAxis?: Partial<Record<VirtualAxisId, number>>;
+  /** 搭建里设的默认速度、加速度（运动参数 speed、acceleration）：区间的起步收尾档位和参考时长用 */
+  defaultSpeedByAxis?: Partial<Record<VirtualAxisId, number>>;
+  defaultAccelByAxis?: Partial<Record<VirtualAxisId, number>>;
   controlType?: ControlType;
 };
 

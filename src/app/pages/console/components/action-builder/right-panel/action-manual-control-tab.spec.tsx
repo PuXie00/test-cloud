@@ -3,6 +3,15 @@ import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
 import { ActionManualControlTab } from "./action-manual-control-tab";
+import { LivePoseGoBinding } from "./live-edit";
+
+/** 联机时右侧面板挂着绑定（不管在哪个页签）和手动控制页 */
+const LiveManualTab = () => (
+  <>
+    <LivePoseGoBinding />
+    <ActionManualControlTab />
+  </>
+);
 
 type PanelProps = {
   objectIds?: readonly number[];
@@ -93,7 +102,7 @@ afterEach(cleanup);
 describe("ActionManualControlTab live pose editing", () => {
   it("binds the selected poses as GO targets and writes the live position back on 取当前", () => {
     setBuilder({ kind: "multi-block", blockIds: ["a", "b"] });
-    const { unmount } = render(<ActionManualControlTab />);
+    const { unmount } = render(<LiveManualTab />);
 
     const bindings = state.bind.mock.calls.at(-1)?.[0] as Map<string, { target: unknown }>;
     expect([...bindings.entries()].map(([id, binding]) => [id, binding.target])).toEqual([
@@ -121,7 +130,7 @@ describe("ActionManualControlTab live pose editing", () => {
   it("blocks 取当前 while a bound device moves or two poses share an object", () => {
     setBuilder({ kind: "block", blockId: "a" });
     state.snapshots.set(7, snapshot(7, { h: 380 }, "running"));
-    render(<ActionManualControlTab />);
+    render(<LiveManualTab />);
     expect(state.panel?.saveBlockedReason).toBe("设备运动中，停稳后再取当前");
     cleanup();
 
@@ -130,7 +139,7 @@ describe("ActionManualControlTab live pose editing", () => {
     state.goEntries = [
       { objectId: "7", target: { v1: 400 }, current: {}, dispatched: true, dispatchedAt: Date.now() },
     ];
-    render(<ActionManualControlTab />);
+    render(<LiveManualTab />);
     expect(state.panel?.saveBlockedReason).toBe("设备运动中，停稳后再取当前");
     cleanup();
 
@@ -138,13 +147,13 @@ describe("ActionManualControlTab live pose editing", () => {
     state.goEntries = [
       { objectId: "7", target: { v1: 400 }, current: {}, dispatched: true, dispatchedAt: Date.now() - 5000 },
     ];
-    render(<ActionManualControlTab />);
+    render(<LiveManualTab />);
     expect(state.panel?.saveBlockedReason).toBeNull();
     cleanup();
 
     state.goEntries = [];
     setBuilder({ kind: "multi-block", blockIds: ["a", "c"] });
-    render(<ActionManualControlTab />);
+    render(<LiveManualTab />);
     expect(state.panel?.saveBlockedReason).toBe(
       "同一物体选了多个时刻的位姿，联机时每个物体只能选一个",
     );

@@ -22,6 +22,20 @@ export const sequenceNameError = (
   return null;
 };
 
+/** 存为造型的基础名：「造型 1」「造型 2」… */
+export const SHAPE_BASE_NAME = "造型";
+
+/** 存为造型：取第一个没用过的「造型 N」；编号长到超过 8 个字符时退回「新动作 (N)」 */
+export const nextShapeName = (existingNames: readonly string[]): string => {
+  const taken = new Set(existingNames.map(normalizeSequenceName));
+  for (let index = 1; index < 100000; index += 1) {
+    const candidate = `${SHAPE_BASE_NAME} ${index}`;
+    if (codePointLength(candidate) > SEQUENCE_NAME_MAX_LENGTH) break;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return nextNewSequenceName(existingNames);
+};
+
 /** 在已有名称之外取下一个「新动作」「新动作 (2)」…，结果不超过 8 个字符 */
 export const nextNewSequenceName = (existingNames: readonly string[]): string => {
   const taken = new Set(existingNames.map(normalizeSequenceName));

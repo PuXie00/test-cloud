@@ -26,6 +26,7 @@ import { LoopBadge } from "../../loop-badge";
 import { writeLibraryDrag } from "./library-dnd";
 import { ClipboardContextMenu } from "../action-clipboard-menu";
 import { SequenceRenameDialog } from "./sequence-rename-dialog";
+import { useGoToSequence } from "../go-to-sequence";
 
 type LibraryEntry = { kind: "sequence"; sequence: ActionSequenceConfig };
 
@@ -75,6 +76,9 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
   const { can } = usePermissions();
   const canEdit = can("action.edit");
   const canProgram = can("program.edit");
+  // 「去这里」会让设备动：和 GO 一样要「手动运动」
+  const canMove = can("control.manual");
+  const goToSequence = useGoToSequence();
 
   const [search, setSearch] = useState("");
   const [chapterMenuFor, setChapterMenuFor] = useState<number | null>(null);
@@ -300,8 +304,8 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
         onContextMenu={handleListContextMenu}
         // 序列只走右键菜单；Ctrl+C / V 留给时间轴动作块
         showShortcuts={false}
-        actions={
-          canEdit
+        actions={[
+          ...(canEdit
             ? [
                 {
                   label: menuSequence ? `重命名「${menuSequence.name}」` : "重命名",
@@ -311,8 +315,19 @@ export const ContentLibraryPanel = ({ className }: { className?: string }) => {
                   },
                 },
               ]
-            : []
-        }
+            : []),
+          ...(canMove && goToSequence
+            ? [
+                {
+                  label: menuSequence ? `去「${menuSequence.name}」的起点` : "去这里",
+                  disabled: menuSequence === undefined,
+                  onSelect: () => {
+                    if (menuSequence) goToSequence?.(menuSequence);
+                  },
+                },
+              ]
+            : []),
+        ]}
       >
         <div
           className="custom-scrollbar min-h-0 flex-1 overflow-y-auto py-1 outline-none"

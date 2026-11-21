@@ -7,6 +7,7 @@ import {
   pruneSequenceSelection,
   segmentEndpointBlockIds,
   segmentSelection,
+  selectedPosesTimeMs,
   selectedSegmentsOf,
   selectionBlockIds,
   toggleBlockSelection,
@@ -184,5 +185,35 @@ describe("objects following a block click on the tracks", () => {
 
   it("leaves the objects alone when no block is selected any more", () => {
     expect(followedObjectIds(sequence, null, "replace", [1])).toBeNull();
+  });
+});
+
+describe("selectedPosesTimeMs", () => {
+  const seq = {
+    blocks: [
+      { id: "a", kind: "pose" as const, objectId: 1, atMs: 2000, pose: { v1: 0 } },
+      { id: "b", kind: "pose" as const, objectId: 2, atMs: 2000, pose: { v1: 0 } },
+      { id: "c", kind: "pose" as const, objectId: 1, atMs: 4000, pose: { v1: 5 } },
+      {
+        id: "en",
+        kind: "instruction" as const,
+        presetId: "set-enabled" as const,
+        objectId: 1,
+        atMs: 2000,
+        instr: { enabled: true },
+      },
+    ],
+  };
+
+  it("is the shared time of selected poses", () => {
+    expect(selectedPosesTimeMs(seq, { kind: "block", blockId: "c" })).toBe(4000);
+    expect(selectedPosesTimeMs(seq, { kind: "multi-block", blockIds: ["a", "b"] })).toBe(2000);
+  });
+
+  it("is null for poses at different times, other kinds or nothing selected", () => {
+    expect(selectedPosesTimeMs(seq, { kind: "multi-block", blockIds: ["a", "c"] })).toBeNull();
+    expect(selectedPosesTimeMs(seq, { kind: "multi-block", blockIds: ["a", "en"] })).toBeNull();
+    expect(selectedPosesTimeMs(seq, null)).toBeNull();
+    expect(selectedPosesTimeMs(null, { kind: "block", blockId: "a" })).toBeNull();
   });
 });

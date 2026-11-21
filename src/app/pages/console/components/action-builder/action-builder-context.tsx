@@ -48,6 +48,7 @@ import { allocateSequenceIdsInProject } from "@/app/project/action-sequence/sequ
 import { sequenceObjectIds } from "@/app/project/action-sequence/sequence-object-ids";
 import {
   nextNewSequenceName,
+  nextShapeName,
   normalizeSequenceName,
   sequenceNameError,
 } from "@/app/project/action-sequence/sequence-name";
@@ -149,6 +150,7 @@ import { ActionBuilderContext } from "./action-builder-react-context";
 import type { ContextSelection } from "./context-bar/selection-context-bar";
 import { LivePoseBridge, type LivePoseLookup } from "./live-pose-bridge";
 import type { PhaseInputMode } from "./motion-profile/phase-rates";
+import { mergeSegments, staggerSegments } from "./right-panel/segment-rhythm";
 import type { CurveGraph, TimelineViewMode } from "./timeline/curve-data";
 import type { ActionRightTab } from "./right-panel/action-right-panel";
 
@@ -264,6 +266,16 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   const [selectedObjectIds, setSelectedObjectIds] = useState<number[]>([]);
   const [cursorMs, setCursorMs] = useState(0);
   const [activeRightTab, setActiveRightTab] = useState<ActionRightTab>("selection");
+  const [liveMode, setLiveModeState] = useState(false);
+  // 打开「手动控制」顺带打开「当前位置」；关掉「当前位置」时在「手动控制」就回到「属性」
+  const handleActiveRightTabChange = useCallback((tab: ActionRightTab) => {
+    setActiveRightTab(tab);
+    if (tab === "manual") setLiveModeState(true);
+  }, []);
+  const setLiveMode = useCallback((on: boolean) => {
+    setLiveModeState(on);
+    if (!on) setActiveRightTab((tab) => (tab === "manual" ? "selection" : tab));
+  }, []);
   const [selectedProgramNodeId, setSelectedProgramNodeId] = useState<string | null>(null);
   const [programs, setPrograms] = useState<ProgramNode[]>([]);
   const [timelineObjects, setTimelineObjects] = useState<TimelineControlledObject[]>([]);
@@ -954,12 +966,14 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   );
 
   const [phaseInputMode, setPhaseInputMode] = useState<PhaseInputMode>("time");
+  const [segmentDetailsOpen, setSegmentDetailsOpen] = useState(false);
   // 时间轴看轨道还是曲线、曲线看哪根轴、看位置还是速度：离开动作页再回来也保持
   const [timelineViewMode, setTimelineViewMode] = useState<TimelineViewMode>("tracks");
   const [curveAxis, setCurveAxis] = useState<VirtualAxisId>("v1");
   const [curveGraph, setCurveGraph] = useState<CurveGraph>("position");
   // 轨道视图只选一个物体时铺它的曲线做底图，默认开
   const [curveUnderlay, setCurveUnderlay] = useState(true);
+  const [poseCursorFollow, setPoseCursorFollow] = useState(true);
 
   const handleTrajectoryModeChange = useCallback(
     (trajectoryMode: TrajectoryMode) => {
@@ -1105,8 +1119,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   );
 
   const reportUpsert = useCallback(
-    (outcome: UpsertOutcome, label: string) => {
-      const at = `${formatTime(snapTimeMs(cursorMs))}s`;
+    (outcome: UpsertOutcome, label: string, atMs: number = cursorMs) => {
+      const at = `${formatTime(snapTimeMs(atMs))}s`;
       if (outcome.refusedNames.length > 0) {
         toast.warning(`${outcome.refusedNames.join("、")} 在 ${at} 已有其他动作，未插入${label}`);
       }
@@ -1129,19 +1143,23 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
    * 没有时取实时位置。指针处已有位姿就原样保留（包括不设定的轴）。
    */
   const defaultPosesAtCursor = useCallback(
-    (target: ActionSequenceConfig, objectIds: readonly number[]): Map<number, KeyframePose> => {
+    (
+      target: ActionSequenceConfig,
+      objectIds: readonly number[],
+      atMs: number = cursorMs,
+    ): Map<number, KeyframePose> => {
       let resolved: ResolvedActionSequence | null = null;
       let evaluated = new Map<number, ModelPose>();
       try {
         resolved = resolveActionSequence(target);
-        evaluated = evaluateResolvedSequence(resolved, cursorMs);
+        evaluated = evaluateResolvedSequence(resolved, atMs);
       } catch {
         // 序列解析失败时全部退回实时位置
       }
       return new Map(
         objectIds.map((objectId): [number, KeyframePose] => {
           const existing = target.blocks.find(
-            (block) => block.kind === "pose" && block.objectId === objectId && block.atMs === cursorMs,
+            (block) => block.kind === "pose" && block.objectId === objectId && block.atMs === atMs,
           );
           if (existing?.kind === "pose") return [objectId, { ...existing.pose }];
           const pose = evaluated.get(objectId);
@@ -1158,21 +1176,27 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     [cursorMs, getLivePose],
   );
 
+  /** 在游标处（或给定时刻，如双击轨道的地方）给这些物体加位姿；那一刻已有位姿就选中它 */
   const handleCreatePose = useCallback(
-    (objectIds: number[]) => {
+    (objectIds: number[], atMs?: number) => {
       if (!selectedSequenceId || !sequence) {
         setSequenceMissingHint(true);
         return;
       }
-      const poses = defaultPosesAtCursor(sequence, objectIds);
+      if (objectIds.length === 0) {
+        toast.info("先在 3D 或时间轴里选物体");
+        return;
+      }
+      const at = snapTimeMs(atMs ?? cursorMs);
+      const poses = defaultPosesAtCursor(sequence, objectIds, at);
       const outcome = upsertForObjects(objectIds, (current, objectId) =>
         upsertPoseBlock(
           current,
-          { id: nextId("blk"), kind: "pose", objectId, atMs: cursorMs, pose: poses.get(objectId)! },
+          { id: nextId("blk"), kind: "pose", objectId, atMs: at, pose: poses.get(objectId)! },
           sequenceEditOptions,
         ),
       );
-      reportUpsert(outcome, "位姿");
+      reportUpsert(outcome, "位姿", at);
     },
     [selectedSequenceId, sequence, cursorMs, defaultPosesAtCursor, sequenceEditOptions],
   );
@@ -1271,6 +1295,103 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       commitMotionProjection,
       handleSequenceSelect,
     ],
+  );
+
+  /**
+   * 新建一条单帧动作序列当造型（名字「造型 N」），不切换正在编的序列。
+   * 存了返回名字；没有能存的位置或 id 用完时返回 null。
+   */
+  const addShapeSequence = useCallback(
+    (objectIds: readonly number[], poseForObject: (objectId: number) => KeyframePose | null) => {
+      let id: number;
+      try {
+        [id] = allocateSequenceIdsInProject(motionRef.current.sequences, 1);
+      } catch (error) {
+        setLastPersistError(error instanceof Error ? error.message : "动作序列 id 已满（1~65535）");
+        return null;
+      }
+      const name = nextShapeName(motionRef.current.sequences.map((item) => item.name));
+      const created = buildCapturedPoseSequence({ id, name, objectIds, poseForObject });
+      if (!created) {
+        toast.warning("没有可存的位置");
+        return null;
+      }
+      const nextSequences = [...motionRef.current.sequences, created];
+      if (!recordEditorStep(() => commitMotionProjection({ ...motionRef.current, sequences: nextSequences }))) {
+        return null;
+      }
+      toast.success(`已存为「${name}」`);
+      return name;
+    },
+    [commitMotionProjection, recordEditorStep],
+  );
+
+  /** 存为造型：当前位置存成新的单帧动作序列 */
+  const handleSaveShape = useCallback(
+    ({ objectIds, poseForObject }: CapturedPoseRequest) => {
+      addShapeSequence(objectIds, poseForObject);
+    },
+    [addShapeSequence],
+  );
+
+  /** 游标处存为造型：序列在游标那一刻的值，选中的物体（没选就是序列里的全部物体） */
+  const handleSaveShapeAtCursor = useCallback(() => {
+    if (!sequence) return;
+    let resolved: ResolvedActionSequence;
+    try {
+      resolved = resolveActionSequence(sequence);
+    } catch {
+      toast.warning("这条序列有待修复的内容，存不了造型");
+      return;
+    }
+    const evaluated = evaluateResolvedSequence(resolved, cursorMs);
+    const inSequence = [...resolved.posesByObject.keys()];
+    const picked = selectedObjectIds.filter((objectId) => inSequence.includes(objectId));
+    const objectIds = picked.length > 0 ? picked : inSequence;
+    addShapeSequence(objectIds, (objectId) => {
+      const pose = evaluated.get(objectId);
+      if (!pose) return null;
+      const uncontrolled = uncontrolledAxesOf(resolved, objectId);
+      const next: KeyframePose = {};
+      for (const axis of ["v1", "v2", "v3"] as const) {
+        if (!uncontrolled.includes(axis)) next[axis] = roundProjectCoordinate(pose[axis]);
+      }
+      return Object.keys(next).length > 0 ? next : null;
+    });
+  }, [sequence, cursorMs, selectedObjectIds, addShapeSequence]);
+
+  /** 错峰：选中的区间（每台一段）到达不动，起点按先后依次晚 gapMs 出发 */
+  const handleStaggerSegments = useCallback(
+    (keys: readonly string[], gapMs: number) => {
+      let message: string | null = null;
+      updateSelectedSequence((current) => {
+        const result = staggerSegments(current, keys, gapMs, getTimelineObject, sequenceEditOptions);
+        if (!result.ok) {
+          message = result.message;
+          return null;
+        }
+        return result.sequence;
+      });
+      if (message) toast.warning(message);
+    },
+    [updateSelectedSequence, getTimelineObject, sequenceEditOptions],
+  );
+
+  /** 汇合：两台各一段、同时到同一位置，重排成后出发的追上、之后并排 */
+  const handleMergeSegments = useCallback(
+    (keys: readonly string[]) => {
+      let message: string | null = null;
+      updateSelectedSequence((current) => {
+        const result = mergeSegments(current, keys, getTimelineObject, sequenceEditOptions);
+        if (!result.ok) {
+          message = result.message;
+          return null;
+        }
+        return result.sequence;
+      });
+      if (message) toast.warning(message);
+    },
+    [updateSelectedSequence, getTimelineObject, sequenceEditOptions],
   );
 
   const handleRenameSequence = useCallback(
@@ -1882,6 +2003,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       canPasteSequence: clipboard.sequence !== null,
       phaseInputMode,
       handlePhaseInputModeChange: setPhaseInputMode,
+      segmentDetailsOpen,
+      handleSegmentDetailsOpenChange: setSegmentDetailsOpen,
       timelineViewMode,
       handleTimelineViewModeChange: setTimelineViewMode,
       curveAxis,
@@ -1890,7 +2013,11 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleCurveGraphChange: setCurveGraph,
       curveUnderlay,
       handleCurveUnderlayChange: setCurveUnderlay,
-      setActiveRightTab,
+      poseCursorFollow,
+      handlePoseCursorFollowChange: setPoseCursorFollow,
+      setActiveRightTab: handleActiveRightTabChange,
+      liveMode,
+      setLiveMode,
       handleSequenceSelect,
       handleSelectionChange,
       handleObjectSelect,
@@ -1935,6 +2062,10 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleCreateSetEnabled,
       handleCreateSequence,
       handleSaveCurrentPose,
+      handleSaveShape,
+      handleSaveShapeAtCursor,
+      handleStaggerSegments,
+      handleMergeSegments,
       getLivePose,
       handleRenameSequence,
       handleDeleteSequence,
@@ -1964,6 +2095,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       selectedObjectIds,
       cursorMs,
       activeRightTab,
+      liveMode,
       selectedProgramNodeId,
       contextSelection,
       programs,
@@ -1973,10 +2105,12 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       timelinePxPerSecond,
       clipboard,
       phaseInputMode,
+      segmentDetailsOpen,
       timelineViewMode,
       curveAxis,
       curveGraph,
       curveUnderlay,
+      poseCursorFollow,
       lastPersistError,
       sequenceIssues,
       getTimelineObject,
@@ -2024,6 +2158,10 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleCreateSetEnabled,
       handleCreateSequence,
       handleSaveCurrentPose,
+      handleSaveShape,
+      handleSaveShapeAtCursor,
+      handleStaggerSegments,
+      handleMergeSegments,
       getLivePose,
       handleRenameSequence,
       handleDeleteSequence,

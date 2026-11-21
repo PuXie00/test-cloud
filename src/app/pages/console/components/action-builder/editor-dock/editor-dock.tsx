@@ -27,12 +27,16 @@ import {
   selectionMarkerIds,
   type ObjectFollow,
   type SequenceSelection,
+  selectedPosesTimeMs,
+  selectedSegmentsOf,
 } from "../sequence-selection";
 import {
   TIMELINE_PX_PER_SECOND_MAX,
   TIMELINE_PX_PER_SECOND_MIN,
   VIRTUAL_AXIS_IDS,
+  secondsToMs,
 } from "../timeline/timeline-data";
+import { uniformDurationWrites } from "../right-panel/segment-retime";
 import {
   availableCurveAxes,
   curveRowObjectIds,
@@ -47,6 +51,7 @@ import { pickNiceMajorStepSec } from "../timeline/timeline-ticks";
 import { TimelineEditor } from "../timeline/timeline-editor";
 import { TimelineToolbar } from "../timeline/timeline-toolbar";
 import { MarkerRenameDialog } from "./marker-rename-dialog";
+import { SecondsPromptDialog, type SecondsPrompt } from "./seconds-prompt-dialog";
 import { SequenceDeleteDialog } from "./sequence-delete-dialog";
 import { sortedMarkers } from "../marker-ops";
 import { useTimelinePlayback } from "../timeline/use-timeline-playback";
@@ -91,6 +96,14 @@ const SequenceEditor = () => {
     handleCurveGraphChange,
     curveUnderlay,
     handleCurveUnderlayChange,
+    poseCursorFollow,
+    handlePoseCursorFollowChange,
+    handleCreatePose,
+    handleSaveShapeAtCursor,
+    handleStaggerSegments,
+    handleMergeSegments,
+    handleRetimeSegmentCurves,
+    getTimelineObject,
     handleResizeDynamicPreset,
     handleBlockDelete,
     handleExplodePresets,
@@ -154,6 +167,8 @@ const SequenceEditor = () => {
   const [fitRequestId, setFitRequestId] = useState(0);
   const [revealCursorRequestId, setRevealCursorRequestId] = useState(0);
   const [renamingMarkerId, setRenamingMarkerId] = useState<string | null>(null);
+  // 右键「统一时长…」「错峰…」要填的秒数
+  const [secondsPrompt, setSecondsPrompt] = useState<SecondsPrompt | null>(null);
   const selectedBlockIds = selectionBlockIds(selection);
   const invalidTargets = useMemo(
     () => invalidTimelineTargets(sequenceIssues),
@@ -215,6 +230,17 @@ const SequenceEditor = () => {
     pauseKey: sequence,
   });
 
+  // 选中位姿（同一时刻）时游标跳过去，3D 显示的就是正在改的那一帧；改了位姿的时刻也跟着走。
+  // 只看选中和位姿时刻：播放、拖游标都不触发
+  const followTimeMs = useMemo(() => selectedPosesTimeMs(sequence, selection), [sequence, selection]);
+  useEffect(() => {
+    if (!poseCursorFollow || isPlaying || followTimeMs === null) return;
+    handleCursorChange(followTimeMs);
+  }, [selection, followTimeMs]);
+
+  // ＋位姿 / K：在游标处给选中的物体加位姿，不用先回到「添加位姿」
+  const addPoseAtPlayhead = () => handleCreatePose?.([...multiSelectedIds]);
+
   // 直接加，不弹改名框；名字之后双击、F2 或在属性里改
   const addMarkerAtPlayhead = () => {
     handleAddMarker();
@@ -267,6 +293,11 @@ const SequenceEditor = () => {
         addMarkerAtPlayhead();
         return;
       }
+      if (plain && !event.shiftKey && (event.key.toLowerCase() === "k" || event.code === "KeyK")) {
+        event.preventDefault();
+        addPoseAtPlayhead();
+        return;
+      }
       const markerIds = selectionMarkerIds(selection);
       if (plain && event.key === "F2") {
         if (markerIds.length !== 1) return;
@@ -300,6 +331,8 @@ const SequenceEditor = () => {
     selection,
     handleAddMarker,
     handleDeleteMarkers,
+    handleCreatePose,
+    multiSelectedIds,
   ]);
 
   if (!sequence) return null;
@@ -312,14 +345,77 @@ const SequenceEditor = () => {
         selectedBlockIds.includes(block.id),
     )
     .map((block) => block.id);
-  const presetActions: ContextMenuAction[] =
-    canEdit && selectedPresetIds.length > 0
+  const presetActions: ContextMenuAction[] = [
+    ...(canEdit && selectedPresetIds.length > 0
       ? [
           {
             label:
               selectedPresetIds.length > 1 ? `拆解 ${selectedPresetIds.length} 个预设` : "拆解预设",
             onSelect: () => handleExplodePresets(selectedPresetIds),
           },
+        ]
+      : []),
+    // 序列在游标那一刻的样子存成新的单帧序列（选中的物体，没选就是全部）
+    ...(canEdit && handleSaveShapeAtCursor
+      ? [{ label: "游标处存为造型", onSelect: () => handleSaveShapeAtCursor() }]
+      : []),
+  ];
+
+  // 选中了两段以上运动区间（两端都选中）：右键里统一时长、错峰、汇合
+  const selectedSegments = resolved ? selectedSegmentsOf(resolved, selectedBlockIds) : [];
+  const segmentKeys = selectedSegments.map((segment) => segment.key);
+  const onePerObject =
+    new Set(selectedSegments.map((segment) => segment.objectId)).size === selectedSegments.length;
+  const durations = selectedSegments.map((segment) => segment.durationMs);
+  const sharedDurationMs = durations.every((ms) => ms === durations[0]) ? durations[0] : undefined;
+  const segmentActions: ContextMenuAction[] =
+    canEdit && selectedSegments.length >= 2
+      ? [
+          ...(handleRetimeSegmentCurves
+            ? [
+                {
+                  label: "统一时长…",
+                  onSelect: () =>
+                    setSecondsPrompt({
+                      title: "统一时长",
+                      description: `选中的 ${selectedSegments.length} 段都改成这个时长，各物体后面的块跟着挪`,
+                      label: "每段时长",
+                      initialSeconds: (sharedDurationMs ?? Math.max(...durations)) / 1000,
+                      min: 0.1,
+                      onConfirm: (seconds) => {
+                        const writes = uniformDurationWrites(selectedSegments, getTimelineObject, secondsToMs(seconds));
+                        if (writes.length > 0) handleRetimeSegmentCurves(writes);
+                      },
+                    }),
+                },
+              ]
+            : []),
+          ...(handleStaggerSegments
+            ? [
+                {
+                  label: onePerObject ? "错峰…" : "错峰…（每台只选一段）",
+                  disabled: !onePerObject,
+                  onSelect: () =>
+                    setSecondsPrompt({
+                      title: "错峰",
+                      description: "到达不动，按出发先后，每台比上一台晚出发",
+                      label: "每台比上一台晚",
+                      initialSeconds: 1,
+                      min: 0.1,
+                      onConfirm: (seconds) => handleStaggerSegments(segmentKeys, secondsToMs(seconds)),
+                    }),
+                },
+              ]
+            : []),
+          ...(handleMergeSegments
+            ? [
+                {
+                  label: onePerObject && selectedSegments.length === 2 ? "汇合" : "汇合（两台各选一段）",
+                  disabled: !onePerObject || selectedSegments.length !== 2,
+                  onSelect: () => handleMergeSegments(segmentKeys),
+                },
+              ]
+            : []),
         ]
       : [];
 
@@ -379,6 +475,7 @@ const SequenceEditor = () => {
         onSnapToggle={handleSnapToggle}
         markers={markers}
         onAddMarker={canEdit ? addMarkerAtPlayhead : undefined}
+        onAddPose={canEdit ? addPoseAtPlayhead : undefined}
         onJumpToMarker={jumpToMarker}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
@@ -386,12 +483,15 @@ const SequenceEditor = () => {
         onCurveGraphChange={handleCurveGraphChange}
         curveUnderlay={curveUnderlay}
         onCurveUnderlayChange={handleCurveUnderlayChange}
+        poseCursorFollow={poseCursorFollow}
+        onPoseCursorFollowChange={handlePoseCursorFollowChange}
         curveAxis={shownCurveAxis}
         curveAxes={curveAxes}
         onCurveAxisChange={setCurveAxis}
       />
       <SequenceDeleteDialog open={deleteOpen} onOpenChange={setDeleteOpen} />
       <MarkerRenameDialog marker={renamingMarker} onClose={() => setRenamingMarkerId(null)} />
+      <SecondsPromptDialog prompt={secondsPrompt} onClose={() => setSecondsPrompt(null)} />
       {resolved === null && (
         <div className="shrink-0 bg-warning-surface px-3 py-2 text-body-sm text-warning">
           预设无法解析，可继续编辑块
@@ -405,7 +505,7 @@ const SequenceEditor = () => {
         onCopy={handleBlockCopy}
         onPaste={handleBlockPaste}
         onContextMenu={handleTimelineContextMenu}
-        actions={presetActions}
+        actions={[...segmentActions, ...presetActions]}
       >
         <div data-guide="console-action-timeline" className="flex min-h-0 flex-1">
           <TimelineEditor
@@ -427,6 +527,9 @@ const SequenceEditor = () => {
             invalidTargets={invalidTargets}
             selectedObjectIds={multiSelectedIds}
             onObjectClick={handleObjectClick}
+            onCreatePoseAt={
+              canEdit && handleCreatePose ? (objectId, atMs) => handleCreatePose([objectId], atMs) : undefined
+            }
             snapEnabled={snapEnabled}
             fitRequestId={fitRequestId}
             revealCursorRequestId={revealCursorRequestId}

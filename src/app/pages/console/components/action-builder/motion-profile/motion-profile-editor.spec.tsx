@@ -219,7 +219,6 @@ describe("MotionProfileEditor", () => {
         travel: { v1: 0, v2: 0, v3: 0 },
         minAccelTimeByAxis: { v1: 1 },
       }),
-      segmentContext: { fromRef: "a", toRef: "b" },
     });
 
     expect(screen.queryByRole("slider", { name: "加速结束" })).toBeNull();

@@ -2,6 +2,7 @@ import { toast } from "sonner";
 import { isCppAckFailed } from "@shared/csocket/ack";
 import { DIMENSION_KEY_TO_VIRTUAL_AXIS } from "@/app/project/manual-jog";
 import type { VirtualAxisId } from "@/app/project/project-document-types";
+import type { GoDirection } from "./go-motion";
 import { buildMoveTargetItem, type MoveTargetItem } from "./go-ready";
 
 const AXIS_TO_TYPE: Record<VirtualAxisId, 0 | 1 | 2> = {
@@ -58,9 +59,16 @@ export const buildResetItems = (deviceIds: readonly number[]) =>
 export const buildStopItems = (deviceIds: readonly number[]) =>
   deviceIds.map((deviceId) => ({ deviceId }));
 
-export const buildHomeMoveTargetItems = (deviceIds: readonly number[]): MoveTargetItem[] =>
+/** 回原：各轴目标 0、按默认速度；无极旋转要给方向（directionOf），其它物体 0 */
+export const buildHomeMoveTargetItems = (
+  deviceIds: readonly number[],
+  directionOf: (deviceId: number) => GoDirection = () => 0,
+): MoveTargetItem[] =>
   deviceIds.map((deviceId) =>
-    buildMoveTargetItem({ objectId: String(deviceId), target: {}, current: {} }),
+    buildMoveTargetItem(
+      { objectId: String(deviceId), target: {}, current: {} },
+      { direction: directionOf(deviceId), axes: {} },
+    ),
   );
 
 export const buildJogModelItems = (args: {
@@ -130,8 +138,11 @@ export const sendResetModel = async (deviceIds: readonly number[]): Promise<void
   }
 };
 
-export const sendHomeModel = async (deviceIds: readonly number[]): Promise<void> => {
-  const items = buildHomeMoveTargetItems(deviceIds);
+export const sendHomeModel = async (
+  deviceIds: readonly number[],
+  directionOf?: (deviceId: number) => GoDirection,
+): Promise<void> => {
+  const items = buildHomeMoveTargetItems(deviceIds, directionOf);
   if (items.length === 0) return;
   const api = window.csocketApi;
   if (!api?.moveTargetModel) {
