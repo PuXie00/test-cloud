@@ -14,20 +14,23 @@ export type AngleProtectionLimits = {
 
 export type AngleProtectionObject = AngleProtectionLimits & {
   objectId: number;
+  /** XY 多点摆（多点倾斜）：v2、v3 是 X、Y 两个倾角，按合成倾角 acos(cosX·cosY) 限制 */
+  xyTilt?: boolean;
 };
 
 export type AngleProtectionHit = {
   objectId: number;
   atMs: number;
-  height: number;
-  pitch: number;
-  limitMin: number;
-  limitMax: number;
+  /** 超出允许角度的度数；一段里取最大的采样点 */
+  excess: number;
   message: string;
   segmentKey?: string;
   blockId?: string;
 };
 
+type AngleViolation = Pick<AngleProtectionHit, "excess" | "message">;
+
+const DEG_TO_RAD = Math.PI / 180;
 const RAD_TO_DEG = 180 / Math.PI;
 
 const formatQty = (value: number): string => {
@@ -42,6 +45,16 @@ export const formatAngleProtectionMessage = (hit: {
   limitMax: number;
 }): string =>
   `当前高度 ${formatQty(hit.height)} mm 下虚轴2 允许 [${formatQty(hit.limitMin)}, ${formatQty(hit.limitMax)}]°，实际 ${formatQty(hit.pitch)}°`;
+
+export const formatXyTiltProtectionMessage = (hit: {
+  height: number;
+  angleX: number;
+  angleY: number;
+  combined: number;
+  limit: number;
+}): string =>
+  `当前高度 ${formatQty(hit.height)} mm 下虚轴2、虚轴3 合成倾角最大 ${formatQty(hit.limit)}°，` +
+  `实际 ${formatQty(hit.combined)}°（虚轴2 ${formatQty(hit.angleX)}°，虚轴3 ${formatQty(hit.angleY)}°）`;
 
 const pitchEnvelopeDeg = (height: number, limits: AngleProtectionLimits): number => {
   if (!(limits.radius > 0)) return 90;
@@ -65,6 +78,12 @@ export const pitchLimitsAtHeight = (
   };
 };
 
+/** 平台法向与竖直方向的夹角（°），PLC `_Limit` 的合成倾角 */
+export const combinedTiltDeg = (angleX: number, angleY: number): number =>
+  Math.acos(
+    Math.min(1, Math.max(-1, Math.cos(angleX * DEG_TO_RAD) * Math.cos(angleY * DEG_TO_RAD))),
+  ) * RAD_TO_DEG;
+
 const sampleTimesMs = (startMs: number, endMs: number, stepMs: number): number[] => {
   const times: number[] = [];
   for (let time = startMs; time < endMs; time += stepMs) times.push(time);
@@ -75,8 +94,37 @@ const sampleTimesMs = (startMs: number, endMs: number, stepMs: number): number[]
 const poseAtProgress = (segment: ResolvedMotionSegment, progress: number): ModelPose =>
   segmentPoseAt(segment, segment.startMs + progress * segment.durationMs);
 
-const excessOf = (pitch: number, min: number, max: number): number =>
-  Math.max(min - pitch, pitch - max, 0);
+const pitchViolationOf = (object: AngleProtectionObject, pose: ModelPose): AngleViolation | null => {
+  const limits = pitchLimitsAtHeight(pose.v1, object);
+  const excess = Math.max(limits.min - pose.v2, pose.v2 - limits.max, 0);
+  if (excess <= 1e-9) return null;
+  return {
+    excess,
+    message: formatAngleProtectionMessage({
+      height: pose.v1,
+      pitch: pose.v2,
+      limitMin: limits.min,
+      limitMax: limits.max,
+    }),
+  };
+};
+
+const xyTiltViolationOf = (object: AngleProtectionObject, pose: ModelPose): AngleViolation | null => {
+  const limit = pitchEnvelopeDeg(pose.v1, object);
+  const combined = combinedTiltDeg(pose.v2, pose.v3);
+  const excess = combined - limit;
+  if (excess <= 1e-9) return null;
+  return {
+    excess,
+    message: formatXyTiltProtectionMessage({
+      height: pose.v1,
+      angleX: pose.v2,
+      angleY: pose.v3,
+      combined,
+      limit,
+    }),
+  };
+};
 
 const hitOf = (
   object: AngleProtectionObject,
@@ -84,23 +132,9 @@ const hitOf = (
   atMs: number,
   extra: { segmentKey?: string; blockId?: string },
 ): AngleProtectionHit | null => {
-  const limits = pitchLimitsAtHeight(pose.v1, object);
-  if (excessOf(pose.v2, limits.min, limits.max) <= 1e-9) return null;
-  return {
-    objectId: object.objectId,
-    atMs,
-    height: pose.v1,
-    pitch: pose.v2,
-    limitMin: limits.min,
-    limitMax: limits.max,
-    message: formatAngleProtectionMessage({
-      height: pose.v1,
-      pitch: pose.v2,
-      limitMin: limits.min,
-      limitMax: limits.max,
-    }),
-    ...extra,
-  };
+  const violation = object.xyTilt ? xyTiltViolationOf(object, pose) : pitchViolationOf(object, pose);
+  if (!violation) return null;
+  return { objectId: object.objectId, atMs, ...violation, ...extra };
 };
 
 const checkSegment = (
@@ -111,7 +145,6 @@ const checkSegment = (
   if (segment.durationMs <= 0) return null;
   const times = sampleTimesMs(segment.startMs, segment.endMs, stepMs);
   let worst: AngleProtectionHit | null = null;
-  let worstExcess = 0;
   for (const timeMs of times) {
     const progress = (timeMs - segment.startMs) / segment.durationMs;
     const pose = poseAtProgress(segment, progress);
@@ -119,11 +152,8 @@ const checkSegment = (
       segmentKey: segment.key,
       ...(segment.ownerPresetBlockId ? { blockId: segment.ownerPresetBlockId } : {}),
     });
-    if (!hit) continue;
-    const excess = excessOf(hit.pitch, hit.limitMin, hit.limitMax);
-    if (excess <= worstExcess) continue;
+    if (!hit || (worst && hit.excess <= worst.excess)) continue;
     worst = hit;
-    worstExcess = excess;
   }
   return worst;
 };

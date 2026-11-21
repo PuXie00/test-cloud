@@ -5,7 +5,9 @@ import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
 import { validateActionSequence } from "@/app/project/action-sequence/validate-sequence";
 import {
   collectAngleProtectionHits,
+  combinedTiltDeg,
   formatAngleProtectionMessage,
+  formatXyTiltProtectionMessage,
   pitchLimitsAtHeight,
   type AngleProtectionObject,
 } from "./angle-protection";
@@ -125,6 +127,50 @@ describe("collectAngleProtectionHits", () => {
   });
 });
 
+describe("collectAngleProtectionHits XY tilt", () => {
+  // 高度 42 时上限 asin(42/200) ≈ 12.1°；X、Y 各 10° 合成约 14.1°
+  const xyObject: AngleProtectionObject = { ...objectOf(), xyTilt: true };
+  const tiltedPose = { v1: 42, v2: 10, v3: 10 };
+
+  it("limits the combined X/Y tilt instead of v2 alone", () => {
+    const hits = collectAngleProtectionHits(
+      [xyObject],
+      [segmentOf(tiltedPose, tiltedPose, 1000)],
+    );
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.message).toContain("合成倾角");
+    const envelopeDeg = (Math.asin(42 / 200) * 180) / Math.PI;
+    expect(hits[0]?.excess).toBeCloseTo(combinedTiltDeg(10, 10) - envelopeDeg, 6);
+  });
+
+  it("lets the same pose pass the single-pitch check", () => {
+    expect(
+      collectAngleProtectionHits([objectOf()], [segmentOf(tiltedPose, tiltedPose, 1000)]),
+    ).toEqual([]);
+  });
+
+  it("passes when the combined tilt stays inside the envelope", () => {
+    const pose = { v1: 42, v2: 10, v3: 0 };
+    expect(collectAngleProtectionHits([xyObject], [segmentOf(pose, pose, 1000)])).toEqual([]);
+  });
+
+  it("flags Y-only tilt at min height", () => {
+    const pose = { v1: 0, v2: 0, v3: 5 };
+    expect(collectAngleProtectionHits([xyObject], [segmentOf(pose, pose, 1000)])).toHaveLength(1);
+  });
+});
+
+describe("combinedTiltDeg", () => {
+  it("reduces to the single angle when the other is zero", () => {
+    expect(combinedTiltDeg(12, 0)).toBeCloseTo(12, 10);
+    expect(combinedTiltDeg(0, -12)).toBeCloseTo(12, 10);
+  });
+
+  it("is larger than either angle when both tilt", () => {
+    expect(combinedTiltDeg(10, 10)).toBeCloseTo(14.106, 3);
+  });
+});
+
 describe("formatAngleProtectionMessage", () => {
   it("names height, allowed pitch, and actual pitch", () => {
     expect(
@@ -135,6 +181,18 @@ describe("formatAngleProtectionMessage", () => {
         limitMax: 14.5,
       }),
     ).toBe("当前高度 50 mm 下虚轴2 允许 [-14.5, 14.5]°，实际 18°");
+  });
+
+  it("names the combined X/Y tilt for XY tilt objects", () => {
+    expect(
+      formatXyTiltProtectionMessage({
+        height: 42,
+        angleX: 10,
+        angleY: 10,
+        combined: 14.106,
+        limit: 12.12,
+      }),
+    ).toBe("当前高度 42 mm 下虚轴2、虚轴3 合成倾角最大 12.1°，实际 14.1°（虚轴2 10°，虚轴3 10°）");
   });
 });
 
@@ -191,6 +249,21 @@ describe("validateActionSequence angle-protection", () => {
       ],
     });
     expect(issues.filter((issue) => issue.code === "angle-protection")).toEqual([]);
+  });
+
+  it("blocks validation when an XY tilt object exceeds the combined envelope", () => {
+    const issues = validateActionSequence(sequenceOf({ v1: 42, v2: 10, v3: 10 }), {
+      objects: [
+        {
+          id: 7,
+          enabledVirtualAxes: ["v1", "v2", "v3"],
+          limits: { v1: axis(0, 1000), v2: axis(-20, 20), v3: axis(-20, 20) },
+          safetyRadius: 200,
+          xyTilt: true,
+        },
+      ],
+    });
+    expect(issues.some((issue) => issue.code === "angle-protection")).toBe(true);
   });
 
   it("does not flag a sequence without safetyRadius", () => {

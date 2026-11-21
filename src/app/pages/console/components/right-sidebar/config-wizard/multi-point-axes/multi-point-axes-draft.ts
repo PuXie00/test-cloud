@@ -2,21 +2,16 @@ import {
   CONTROL_TYPE_RULES,
   nextDriveAxisKey,
 } from "@/app/project/configuration-rules";
+import type { ControlType } from "@/app/project/configuration-types";
 import {
   MAX_INITIAL_TILT_DIRECTION,
-  MAX_MOUNT_ROTATION,
   normalizeInitialTiltDirection,
-  normalizeMountRotation,
   normalizeSafetyRadius,
 } from "@/app/project/hoist-point-defaults";
 import type { MountLayout } from "@/app/project/project-document-types";
 import { getMotorIdForAxis } from "@/app/pages/console/hooks/binding-utils";
 import type { AxisDefinition, AxisMount, ControlledObject, Motor } from "../config-wizard-types";
-import {
-  averageMountRadius,
-  resolveCircleMountLayout,
-  rotateMountAroundOrigin,
-} from "./multi-point-axes-circle-layout";
+import { averageMountRadius, resolveCircleMountLayout } from "./multi-point-axes-circle-layout";
 import { resolveLineMountLayout } from "./multi-point-axes-line-layout";
 import {
   createNextAxisMount,
@@ -47,7 +42,6 @@ export type DraftMountLayout =
 export type MultiPointAxesDraft = {
   safetyRadius: number;
   initialTiltDirection: number;
-  mountRotation: number;
   mountLayout: DraftMountLayout;
   axes: AxisDefinition[];
   unbindAxisKeys: string[];
@@ -63,7 +57,7 @@ export type MultiPointAxesValidationIssue = {
     | "outside-footprint"
     | "invalid-safety-radius"
     | "invalid-initial-tilt"
-    | "invalid-mount-rotation"
+    | "invalid-two-point-layout"
     | "incomplete-circle-layout"
     | "invalid-circle-layout"
     | "invalid-line-layout";
@@ -158,7 +152,6 @@ const withSyncedCircleMounts = (draft: MultiPointAxesDraft): MultiPointAxesDraft
   const resolved = resolveCircleMountLayout(
     draft.mountLayout.radius,
     draft.mountLayout.chordLengths,
-    { mountRotation: draft.mountRotation },
   );
   if (!resolved.ok) return draft;
   return {
@@ -172,7 +165,6 @@ const withSyncedLineMounts = (draft: MultiPointAxesDraft): MultiPointAxesDraft =
   const resolved = resolveLineMountLayout(
     draft.mountLayout.spacings,
     draft.axes.length,
-    { mountRotation: draft.mountRotation },
   );
   if (!resolved.ok) return draft;
   return {
@@ -215,7 +207,6 @@ export const createMultiPointAxesDraft = (
 ): MultiPointAxesDraft => ({
   safetyRadius: normalizeSafetyRadius(object.safetyRadius),
   initialTiltDirection: normalizeInitialTiltDirection(object.initialTiltDirection),
-  mountRotation: normalizeMountRotation(object.mountRotation),
   mountLayout: toDraftMountLayout(object.mountLayout, object.axes.length),
   axes: cloneAxes(object.axes),
   unbindAxisKeys: [],
@@ -362,47 +353,6 @@ export const setDraftMountLayoutKind = (
     unbindAxisKeys: [...draft.unbindAxisKeys],
     pendingBinds: clonePendingBinds(draft.pendingBinds),
   });
-};
-
-export const updateDraftMountRotation = (
-  draft: MultiPointAxesDraft,
-  mountRotation: number,
-): MultiPointAxesDraft => {
-  const next = normalizeMountRotation(mountRotation);
-  const delta = next - draft.mountRotation;
-  if (delta === 0) return draft;
-
-  if (draft.mountLayout.kind === "circle") {
-    return withSyncedCircleMounts({
-      ...draft,
-      mountRotation: next,
-      axes: cloneAxes(draft.axes),
-      unbindAxisKeys: [...draft.unbindAxisKeys],
-      pendingBinds: clonePendingBinds(draft.pendingBinds),
-    });
-  }
-
-  if (draft.mountLayout.kind === "line") {
-    return withSyncedLineMounts({
-      ...draft,
-      mountRotation: next,
-      axes: cloneAxes(draft.axes),
-      unbindAxisKeys: [...draft.unbindAxisKeys],
-      pendingBinds: clonePendingBinds(draft.pendingBinds),
-    });
-  }
-
-  return {
-    ...draft,
-    mountRotation: next,
-    mountLayout: cloneMountLayout(draft.mountLayout),
-    axes: draft.axes.map((axis) => ({
-      ...axis,
-      mount: rotateMountAroundOrigin(axis.mount, delta),
-    })),
-    unbindAxisKeys: [...draft.unbindAxisKeys],
-    pendingBinds: clonePendingBinds(draft.pendingBinds),
-  };
 };
 
 export const updateDraftCircleRadius = (
@@ -599,10 +549,20 @@ export const getEffectiveDraftMotorId = (
 
 const isFiniteCoordinate = (value: number): boolean => Number.isFinite(value);
 
+/** 多点倾斜（XY）两个吊点：须在同一条 X 或 Y 轴上，且原点在两点之间（可与一点重合） */
+export const isValidTwoPointTiltLayout = (mounts: readonly AxisMount[]): boolean => {
+  if (mounts.length !== 2) return true;
+  const [a, b] = mounts as [AxisMount, AxisMount];
+  const onX = a.z === 0 && b.z === 0 && a.x !== b.x && Math.min(a.x, b.x) <= 0 && Math.max(a.x, b.x) >= 0;
+  const onZ = a.x === 0 && b.x === 0 && a.z !== b.z && Math.min(a.z, b.z) <= 0 && Math.max(a.z, b.z) >= 0;
+  return onX || onZ;
+};
+
 export const validateMultiPointAxesDraft = (
   draft: MultiPointAxesDraft,
   footprint: ShapeFootprint,
   minimumAxes: number = MINIMUM_DRIVE_AXES,
+  controlType?: ControlType,
 ): MultiPointAxesValidationIssue[] => {
   const issues: MultiPointAxesValidationIssue[] = [];
 
@@ -632,23 +592,10 @@ export const validateMultiPointAxesDraft = (
     });
   }
 
-  if (
-    typeof draft.mountRotation !== "number" ||
-    !Number.isFinite(draft.mountRotation) ||
-    draft.mountRotation < 0 ||
-    draft.mountRotation > MAX_MOUNT_ROTATION
-  ) {
-    issues.push({
-      code: "invalid-mount-rotation",
-      message: `吊点旋转必须在 0–${MAX_MOUNT_ROTATION} 之间`,
-    });
-  }
-
   if (draft.mountLayout.kind === "circle") {
     const resolved = resolveCircleMountLayout(
       draft.mountLayout.radius,
       draft.mountLayout.chordLengths,
-      { mountRotation: draft.mountRotation },
     );
     if (!resolved.ok) {
       issues.push({
@@ -665,7 +612,6 @@ export const validateMultiPointAxesDraft = (
     const resolved = resolveLineMountLayout(
       draft.mountLayout.spacings,
       draft.axes.length,
-      { mountRotation: draft.mountRotation },
     );
     if (!resolved.ok) {
       issues.push({
@@ -706,6 +652,16 @@ export const validateMultiPointAxesDraft = (
     }
   }
 
+  if (
+    controlType === "dualTiltFourPointSwing" &&
+    !isValidTwoPointTiltLayout(draft.axes.map((axis) => axis.mount))
+  ) {
+    issues.push({
+      code: "invalid-two-point-layout",
+      message: "两个吊点须在同一 X 或 Y 轴上，原点在两点之间",
+    });
+  }
+
   return issues;
 };
 
@@ -717,7 +673,6 @@ const canonicalPendingBinds = (pendingBinds: Record<string, number>) =>
 const canonicalDraft = (draft: MultiPointAxesDraft) => ({
   safetyRadius: draft.safetyRadius,
   initialTiltDirection: draft.initialTiltDirection,
-  mountRotation: draft.mountRotation,
   mountLayout: draft.mountLayout,
   axes: draft.axes.map((axis) => ({
     key: axis.key,

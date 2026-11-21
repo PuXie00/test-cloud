@@ -37,6 +37,8 @@ export type TreeViewProps<T> = {
   onSelect: (node: T, event: MouseEvent | KeyboardEvent) => void;
   /** Delete / Backspace on a focused row */
   onDelete?: (node: T) => void;
+  /** Esc：清空选择 */
+  onClearSelection?: () => void;
 
   renderLabel: (node: T) => ReactNode;
   renderIcon?: (node: T) => ReactNode;

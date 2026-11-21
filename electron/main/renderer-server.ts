@@ -2,6 +2,9 @@ import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
 
+/** 打包后界面只监听这个端口。localStorage 按主机加端口隔离，端口一变上次的用户名就读不到 */
+export const RENDERER_PORT = 17891
+
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -86,7 +89,7 @@ const listen = (rootDir: string): Promise<string> =>
       reject(err)
     }
     next.once('error', fail)
-    next.listen(0, '127.0.0.1', () => {
+    next.listen(RENDERER_PORT, '127.0.0.1', () => {
       next.off('error', fail)
       next.on('error', (err) => console.error(`[renderer] ${err.message}`))
       const address = next.address()
@@ -102,7 +105,7 @@ const listen = (rootDir: string): Promise<string> =>
     })
   })
 
-/** 把打包后的页面目录挂到 127.0.0.1 的空闲端口。重复调用返回同一个地址 */
+/** 把打包后的页面目录挂到 127.0.0.1 的固定端口。重复调用返回同一个地址 */
 export const startRendererServer = (rootDir: string): Promise<string> => {
   if (origin) return Promise.resolve(origin)
   if (!starting) {
@@ -113,11 +116,13 @@ export const startRendererServer = (rootDir: string): Promise<string> => {
   return starting
 }
 
-export const stopRendererServer = (): void => {
+export const stopRendererServer = (): Promise<void> => {
   const current = server
   server = null
   origin = null
-  if (!current) return
-  current.closeAllConnections()
-  current.close()
+  if (!current) return Promise.resolve()
+  return new Promise((resolve) => {
+    current.closeAllConnections()
+    current.close(() => resolve())
+  })
 }

@@ -5,8 +5,8 @@ import type {
   VirtualAxisId,
 } from "../project-document-types";
 import { motionAxisIdForVirtualAxis } from "../virtual-axis-mapping";
-import { ALGORITHM_SETTINGS, buildAlgorithmModels } from "./algorithm-models";
-import type { AlgorithmModel, Hpy, RuntimeModelState } from "./algorithm-params";
+import { ALGORITHM_SETTINGS, buildAlgorithmModels, withAlgorithmModelType } from "./algorithm-models";
+import { pythonMod, type AlgorithmModel, type Hpy, type RuntimeModelState } from "./algorithm-params";
 import { calculateNearestEntry, type NearestEntryResult } from "./nearest-entry";
 import { pointToPointPositionAt, type AxisVad, type HpyPose } from "./nearest-start-motion";
 import {
@@ -21,10 +21,12 @@ import type { ModelPose } from "./types";
 
 /**
  * 启动接入：选出接入帧，并算出各成员的准备 Move 与共同准备时间。
- * - 强制：python/新就近算法 的停稳同步准备（nearest-entry），准备速度上限用物体默认速度
- *   （算法读 max_velocity_HPY，只在传入前替换）。
- * - 非强制：python/非强制就近接入.py（nonforced-entry）。每台设备 H/P/Y 各一条准备 Move，GO 时一起下发，
- *   接入帧时位置和速度都接上帧表；准备按真实最大能力（不换默认速度，否则曲线本身就会超出“能力”被判不可行）。
+ * - 强制：python/强制就近算法 的停稳同步准备（nearest-entry），准备速度上限用物体默认速度
+ *   （算法读 max_velocity_HPY，只在传入前替换）。传入前改成算法类型：2 单点、3 多级升降、4 无极旋转、
+ *   7 多点摆、9 XY 多点。
+ * - 非强制：python/非强制就近接入.py（nonforced-entry，五模型实轴核对）。每台设备 H/P/Y 各一条准备 Move，
+ *   GO 时一起下发，接入帧时位置和速度都接上帧表。模型类型与强制相同。
+ * 无极旋转的 H 目标按周期取模，PLC 走最短路；预览的过渡段也按最短路转（目标换成离当前最近的像）。
  */
 
 export type { AxisVad } from "./nearest-start-motion";
@@ -62,6 +64,8 @@ export type NearestStartAxisMove = AxisVad & {
   joinVelocity?: number;
   /** 非强制：GO 时下发的准备 Move，原样给 C++；pos 是停车目标，不是接入点；设备没有的轴速度为 0（不下发） */
   entryMove?: EntryMove;
+  /** 无极旋转的 H：周期（workingStroke）。entryMove.pos 是取模后的线上目标，预览按最短路回放 */
+  period?: number;
 };
 
 export type NearestStartMemberPlan = {
@@ -94,15 +98,46 @@ const AXES: readonly VirtualAxisId[] = ["v1", "v2", "v3"];
 
 const poseOf = (values: Hpy): ModelPose => ({ v1: values[0], v2: values[1], v3: values[2] });
 
+/** 无极旋转的 H 周期（workingStroke），按物体 id */
+const rotationPeriodsOf = (models: readonly AlgorithmModel[]): Map<number, number> =>
+  new Map(
+    models.flatMap((model) =>
+      model.model_type === 4 && model.workingStroke !== undefined ? [[model.model_id, model.workingStroke]] : [],
+    ),
+  );
+
+/** 实时位置（按物体 id）：无极旋转的预览从实时读数出发，不用算法归一后的姿态 */
+const livePositionsOf = (runtime: readonly RuntimeModelState[]): Map<number, Hpy> =>
+  new Map(runtime.map((state) => [state.model_id, state.position_HPY]));
+
+/** 周期上离 from 最近的像（算法的 _rotation_delta：正好半周期时取正向） */
+const nearestImage = (from: number, value: number, period: number): number => {
+  let delta = pythonMod(value - from, period);
+  if (delta > period / 2) delta -= period;
+  return from + delta;
+};
+
 export const toNearestStartPlan = (
   result: NearestEntryResult,
-  options: { forced: boolean; nearest: boolean },
+  options: {
+    forced: boolean;
+    nearest: boolean;
+    rotationPeriods?: ReadonlyMap<number, number>;
+    livePositions?: ReadonlyMap<number, Hpy>;
+  },
 ): NearestStartPlan => {
   const transitionSec = result.prepare_time_ms / 1000;
   const members = result.devices.flatMap((group) =>
     group.models.map((model): NearestStartMemberPlan => {
       const from = poseOf(model.current_HPY);
       const target = poseOf(model.target_HPY);
+      // 无极旋转：算法把当前和目标按纯姿态归一（725° 记作 5°）。预览从实时读数出发，
+      // 目标按算法的最短路换成离它最近的像，才不会跳变或绕远
+      const period = options.rotationPeriods?.get(model.model_id);
+      if (period !== undefined) {
+        from.v1 = options.livePositions?.get(model.model_id)?.[0] ?? from.v1;
+        target.v1 = nearestImage(from.v1, target.v1, period);
+      }
       const axes = AXES.flatMap((axis, index): NearestStartAxisMove[] =>
         model.execute_HPY[index]
           ? [
@@ -203,6 +238,13 @@ const withStroke = (
   const lower: Hpy = [-PROTOCOL_POSITION_LIMIT, -PROTOCOL_POSITION_LIMIT, -PROTOCOL_POSITION_LIMIT];
   const upper: Hpy = [PROTOCOL_POSITION_LIMIT, PROTOCOL_POSITION_LIMIT, PROTOCOL_POSITION_LIMIT];
   AXES.forEach((axis, index) => {
+    if (model.model_type === 4 && index === 0 && model.min_position_HPY && model.max_position_HPY) {
+      // 无极旋转 H 是纯姿态：沿用模型的软行程，算法自己按周期把实时读数（如 725°）归一；
+      // 拿原始读数放宽行程会把部分行程误当成整圈
+      lower[0] = model.min_position_HPY[0];
+      upper[0] = model.max_position_HPY[0];
+      return;
+    }
     const params = object?.enabledVirtualAxes.includes(axis)
       ? object.motionParams[motionAxisIdForVirtualAxis(axis)]
       : undefined;
@@ -224,17 +266,29 @@ const nonforcedFailure = (result: NonforcedEntryResult): Error => {
 
 const toNonforcedStartPlan = (
   result: NonforcedPlannedResult,
-  options: { nearest: boolean; loopCount: number; objects: readonly ControlledObjectConfig[] },
+  options: {
+    nearest: boolean;
+    loopCount: number;
+    objects: readonly ControlledObjectConfig[];
+    rotationPeriods: ReadonlyMap<number, number>;
+    livePositions?: ReadonlyMap<number, Hpy>;
+  },
 ): NearestStartPlan => {
   const transitionSec = result.entry_lead_ms / 1000;
   const members = result.devices.map((row): NearestStartMemberPlan => {
     const from = poseOf(row.current_HPY as Hpy);
+    const rotationPeriod = options.rotationPeriods.get(row.model_id);
+    // 无极旋转：算法的 current_HPY 已按纯姿态归一，预览从实时读数出发
+    if (rotationPeriod !== undefined) from.v1 = options.livePositions?.get(row.model_id)?.[0] ?? from.v1;
     const target = { ...from };
     const object = options.objects.find((item) => item.id === row.model_id);
     const axes = AXES.flatMap((axis, index): NearestStartAxisMove[] => {
       const move = result.entry_moves.find((item) => item.model_id === row.model_id && item.axisIndex === index);
       if (!move) return [];
-      const to = row.join_HPY[index] ?? from[axis];
+      // 无极旋转：接入位置已取模，换成准备 Move 最短路上离当前最近的像
+      const period = index === 0 ? rotationPeriod : undefined;
+      const join = row.join_HPY[index];
+      const to = join === null || join === undefined ? from[axis] : period !== undefined ? nearestImage(from[axis], join, period) : join;
       target[axis] = to;
       // 设备没有的轴：pos 填实时值，速度、加减速度填 0，C++ 不下发（算法内部为了核对给的是 0.1）
       const exists = object === undefined || object.enabledVirtualAxes.includes(axis);
@@ -252,6 +306,7 @@ const toNonforcedStartPlan = (
           durationSec: transitionSec,
           joinVelocity: row.join_velocity_HPY[index] ?? 0,
           entryMove,
+          ...(period !== undefined ? { period } : {}),
         },
       ];
     });
@@ -298,12 +353,19 @@ const planNonforcedStart = (
     },
     settings: ALGORITHM_SETTINGS,
     models: models.map((model) =>
-      withStroke(model, input.objects, runtime.find((state) => state.model_id === model.model_id)!.position_HPY),
+      withAlgorithmModelType(
+        withStroke(model, input.objects, runtime.find((state) => state.model_id === model.model_id)!.position_HPY),
+        input.objects,
+      ),
     ),
     runtime: { models: runtime },
   });
   if (result.status !== "planned") throw nonforcedFailure(result);
-  return toNonforcedStartPlan(result, input);
+  return toNonforcedStartPlan(result, {
+    ...input,
+    rotationPeriods: rotationPeriodsOf(models),
+    livePositions: livePositionsOf(runtime),
+  });
 };
 
 export const planNearestStart = (input: NearestStartInput): NearestStartPlan => {
@@ -344,10 +406,14 @@ export const planNearestStart = (input: NearestStartInput): NearestStartPlan => 
         loop_count: input.loopCount,
       },
       settings: ALGORITHM_SETTINGS,
-      models: modelsAtDefaultSpeed,
+      models: modelsAtDefaultSpeed.map((model) => withAlgorithmModelType(model, input.objects)),
       runtime: { models: runtime },
     });
-    plan = toNearestStartPlan(result, input);
+    plan = toNearestStartPlan(result, {
+      ...input,
+      rotationPeriods: rotationPeriodsOf(models),
+      livePositions: livePositionsOf(runtime),
+    });
   }
   // 整条序列只有一刻时模型向后补了 1ms，接入帧不超过序列总时长
   return { ...plan, targetFrameMs: Math.min(plan.targetFrameMs, Math.max(0, input.resolved.totalMs)) };
@@ -367,7 +433,7 @@ export const nearestStartPosesAt = (
     const pose = { ...member.from };
     for (const move of member.axes) {
       pose[move.axis] = move.entryMove
-        ? entryMovePositionAt(move.from, move.entryMove, tSec)
+        ? entryMovePositionAt(move.from, move.entryMove, tSec, move.period)
         : pointToPointPositionAt(move.from, move.to, move, tSec);
     }
     poses.set(member.objectId, pose);

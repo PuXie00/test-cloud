@@ -1,0 +1,464 @@
+{
+  "status": "planned",
+  "message": "接入方案已生成，核对通过",
+  "algorithm_version": "nonforced_single_move_five_models_decimal_ad_pose_modulo_20261120",
+  "trajectory_run": false,
+  "reverse": false,
+  "selected_curve_time_ms": 2250,
+  "clock_start_ms": 1750.0,
+  "entry_lead_ms": 500.0,
+  "frame_selection_mode": "current_segment_first",
+  "reference_frame_ms": 2200.0,
+  "reference_clamped": false,
+  "reference_segment_range_ms": [
+    2000.0,
+    3000.0
+  ],
+  "selected_segment_range_ms": [
+    2000.0,
+    3000.0
+  ],
+  "segment_search_attempts": [
+    {
+      "range_ms": [
+        2000.0,
+        3000.0
+      ],
+      "phase": "current_segment",
+      "status": "planned"
+    }
+  ],
+  "candidates_evaluated": 1,
+  "max_skip_ms": 3000,
+  "entry_moves": [
+    {
+      "plc_id": "1",
+      "model_id": 100,
+      "device_id": 100,
+      "axis": "H",
+      "axisIndex": 0,
+      "role": "run_up",
+      "sendTime": 1750.0,
+      "beforeJoinMs": 500.0,
+      "pos": 400.0,
+      "vel": 100.0,
+      "accVel": 200.0,
+      "decVel": 50.0
+    },
+    {
+      "plc_id": "1",
+      "model_id": 100,
+      "device_id": 100,
+      "axis": "P",
+      "axisIndex": 1,
+      "role": "reposition",
+      "sendTime": 1750.0,
+      "beforeJoinMs": 500.0,
+      "pos": 0.0,
+      "vel": 0.1,
+      "accVel": 0.1,
+      "decVel": 0.1
+    },
+    {
+      "plc_id": "1",
+      "model_id": 100,
+      "device_id": 100,
+      "axis": "Y",
+      "axisIndex": 2,
+      "role": "reposition",
+      "sendTime": 1750.0,
+      "beforeJoinMs": 500.0,
+      "pos": 0.0,
+      "vel": 0.1,
+      "accVel": 0.1,
+      "decVel": 0.1
+    },
+    {
+      "plc_id": "1",
+      "model_id": 200,
+      "device_id": 200,
+      "axis": "H",
+      "axisIndex": 0,
+      "role": "run_up",
+      "sendTime": 1750.0,
+      "beforeJoinMs": 500.0,
+      "pos": 800.0,
+      "vel": 200.0,
+      "accVel": 400.0,
+      "decVel": 100.0
+    },
+    {
+      "plc_id": "1",
+      "model_id": 200,
+      "device_id": 200,
+      "axis": "P",
+      "axisIndex": 1,
+      "role": "reposition",
+      "sendTime": 1750.0,
+      "beforeJoinMs": 500.0,
+      "pos": 0.0,
+      "vel": 0.1,
+      "accVel": 0.1,
+      "decVel": 0.1
+    },
+    {
+      "plc_id": "1",
+      "model_id": 200,
+      "device_id": 200,
+      "axis": "Y",
+      "axisIndex": 2,
+      "role": "reposition",
+      "sendTime": 1750.0,
+      "beforeJoinMs": 500.0,
+      "pos": 0.0,
+      "vel": 0.1,
+      "accVel": 0.1,
+      "decVel": 0.1
+    },
+    {
+      "plc_id": "1",
+      "model_id": 300,
+      "device_id": 300,
+      "axis": "H",
+      "axisIndex": 0,
+      "role": "run_up",
+      "sendTime": 1750.0,
+      "beforeJoinMs": 500.0,
+      "pos": 400.0,
+      "vel": 100.0,
+      "accVel": 200.0,
+      "decVel": 50.0
+    },
+    {
+      "plc_id": "1",
+      "model_id": 300,
+      "device_id": 300,
+      "axis": "P",
+      "axisIndex": 1,
+      "role": "run_up",
+      "sendTime": 1750.0,
+      "beforeJoinMs": 500.0,
+      "pos": 16.0,
+      "vel": 4.0,
+      "accVel": 8.0,
+      "decVel": 2.0
+    },
+    {
+      "plc_id": "1",
+      "model_id": 300,
+      "device_id": 300,
+      "axis": "Y",
+      "axisIndex": 2,
+      "role": "run_up",
+      "sendTime": 1750.0,
+      "beforeJoinMs": 500.0,
+      "pos": 8.0,
+      "vel": 2.0,
+      "accVel": 4.0,
+      "decVel": 1.0
+    },
+    {
+      "plc_id": "1",
+      "model_id": 400,
+      "device_id": 400,
+      "axis": "H",
+      "axisIndex": 0,
+      "role": "run_up",
+      "sendTime": 1750.0,
+      "beforeJoinMs": 500.0,
+      "pos": 400.0,
+      "vel": 100.0,
+      "accVel": 200.0,
+      "decVel": 50.0
+    },
+    {
+      "plc_id": "1",
+      "model_id": 400,
+      "device_id": 400,
+      "axis": "P",
+      "axisIndex": 1,
+      "role": "run_up",
+      "sendTime": 1750.0,
+      "beforeJoinMs": 500.0,
+      "pos": 14.5,
+      "vel": 3.0,
+      "accVel": 6.0,
+      "decVel": 2.0
+    },
+    {
+      "plc_id": "1",
+      "model_id": 400,
+      "device_id": 400,
+      "axis": "Y",
+      "axisIndex": 2,
+      "role": "run_up",
+      "sendTime": 1750.0,
+      "beforeJoinMs": 500.0,
+      "pos": 8.0,
+      "vel": 2.0,
+      "accVel": 4.0,
+      "decVel": 1.0
+    },
+    {
+      "plc_id": "1",
+      "model_id": 500,
+      "device_id": 500,
+      "axis": "H",
+      "axisIndex": 0,
+      "role": "run_up",
+      "sendTime": 1750.0,
+      "beforeJoinMs": 500.0,
+      "pos": 356.0,
+      "vel": 2.0,
+      "accVel": 4.0,
+      "decVel": 1.0
+    },
+    {
+      "plc_id": "1",
+      "model_id": 500,
+      "device_id": 500,
+      "axis": "P",
+      "axisIndex": 1,
+      "role": "reposition",
+      "sendTime": 1750.0,
+      "beforeJoinMs": 500.0,
+      "pos": 0.0,
+      "vel": 0.1,
+      "accVel": 0.1,
+      "decVel": 0.1
+    },
+    {
+      "plc_id": "1",
+      "model_id": 500,
+      "device_id": 500,
+      "axis": "Y",
+      "axisIndex": 2,
+      "role": "reposition",
+      "sendTime": 1750.0,
+      "beforeJoinMs": 500.0,
+      "pos": 0.0,
+      "vel": 0.1,
+      "accVel": 0.1,
+      "decVel": 0.1
+    }
+  ],
+  "devices": [
+    {
+      "plc_id": "1",
+      "model_id": 100,
+      "device_id": 100,
+      "current_HPY": [
+        200.0,
+        0.0,
+        0.0
+      ],
+      "join_HPY": [
+        225.0,
+        0.0,
+        0.0
+      ],
+      "join_velocity_HPY": [
+        100.0,
+        0.0,
+        0.0
+      ],
+      "axes": [
+        {
+          "axis": "H",
+          "kind": "run_up",
+          "lead_ms": 500.0,
+          "distance": 25.0,
+          "run_up_distance": 25.0
+        },
+        {
+          "axis": "P",
+          "kind": "in_place",
+          "lead_ms": 0.0
+        },
+        {
+          "axis": "Y",
+          "kind": "in_place",
+          "lead_ms": 0.0
+        }
+      ]
+    },
+    {
+      "plc_id": "1",
+      "model_id": 200,
+      "device_id": 200,
+      "current_HPY": [
+        400.0,
+        0.0,
+        0.0
+      ],
+      "join_HPY": [
+        450.0,
+        0.0,
+        0.0
+      ],
+      "join_velocity_HPY": [
+        200.0,
+        0.0,
+        0.0
+      ],
+      "axes": [
+        {
+          "axis": "H",
+          "kind": "run_up",
+          "lead_ms": 500.0,
+          "distance": 50.0,
+          "run_up_distance": 50.0
+        },
+        {
+          "axis": "P",
+          "kind": "in_place",
+          "lead_ms": 0.0
+        },
+        {
+          "axis": "Y",
+          "kind": "in_place",
+          "lead_ms": 0.0
+        }
+      ]
+    },
+    {
+      "plc_id": "1",
+      "model_id": 500,
+      "device_id": 500,
+      "current_HPY": [
+        352.0,
+        0.0,
+        0.0
+      ],
+      "join_HPY": [
+        352.5,
+        0.0,
+        0.0
+      ],
+      "join_velocity_HPY": [
+        2.0,
+        0.0,
+        0.0
+      ],
+      "axes": [
+        {
+          "axis": "H",
+          "kind": "run_up",
+          "lead_ms": 500.0,
+          "distance": 0.5,
+          "run_up_distance": 0.5
+        },
+        {
+          "axis": "P",
+          "kind": "in_place",
+          "lead_ms": 0.0
+        },
+        {
+          "axis": "Y",
+          "kind": "in_place",
+          "lead_ms": 0.0
+        }
+      ]
+    },
+    {
+      "plc_id": "1",
+      "model_id": 300,
+      "device_id": 300,
+      "current_HPY": [
+        200.0,
+        8.0,
+        4.0
+      ],
+      "join_HPY": [
+        225.0,
+        9.0,
+        4.5
+      ],
+      "join_velocity_HPY": [
+        100.0,
+        4.0,
+        2.0
+      ],
+      "axes": [
+        {
+          "axis": "H",
+          "kind": "run_up",
+          "lead_ms": 500.0,
+          "distance": 25.0,
+          "run_up_distance": 25.0
+        },
+        {
+          "axis": "P",
+          "kind": "run_up",
+          "lead_ms": 500.0,
+          "distance": 1.0,
+          "run_up_distance": 1.0
+        },
+        {
+          "axis": "Y",
+          "kind": "run_up",
+          "lead_ms": 500.0,
+          "distance": 0.5,
+          "run_up_distance": 0.5
+        }
+      ]
+    },
+    {
+      "plc_id": "1",
+      "model_id": 400,
+      "device_id": 400,
+      "current_HPY": [
+        200.0,
+        7.75,
+        4.0
+      ],
+      "join_HPY": [
+        225.0,
+        8.5,
+        4.5
+      ],
+      "join_velocity_HPY": [
+        100.0,
+        3.0,
+        2.0
+      ],
+      "axes": [
+        {
+          "axis": "H",
+          "kind": "run_up",
+          "lead_ms": 500.0,
+          "distance": 25.0,
+          "run_up_distance": 25.0
+        },
+        {
+          "axis": "P",
+          "kind": "run_up",
+          "lead_ms": 500.0,
+          "distance": 0.75,
+          "run_up_distance": 0.75
+        },
+        {
+          "axis": "Y",
+          "kind": "run_up",
+          "lead_ms": 500.0,
+          "distance": 0.5,
+          "run_up_distance": 0.5
+        }
+      ]
+    }
+  ],
+  "execution": {
+    "rule": "曲线时钟从clock_start_ms开始走；时钟到entry_moves[].sendTime时给对应轴下发那条Move（每条只发一次）；帧表中下发时刻早于selected_curve_time_ms的Move全部跳过，从selected_curve_time_ms起照帧表逐帧下发",
+    "relative": "也可按相对时间执行：GO后经过entry_lead_ms到达selected_curve_time_ms；每条接入Move在到达前beforeJoinMs下发（clock_start_ms可能早于动作首帧，甚至为负）",
+    "reverse_clock": "反向时原曲线时钟从clock_start_ms往小走，sendTime都不小于selected_curve_time_ms",
+    "run_up_moves": 9,
+    "speed_factor": "按输入执行曲线和真实最大能力计算，结果直接发送；外部再变倍率须重新校验",
+    "mid_run_speed_change": "selected_curve_time_ms之前不做运行中调速"
+  },
+  "verification": {
+    "max_position_error": 0.0,
+    "max_velocity_error": 0.0,
+    "entry_monotonic": true,
+    "passed": true
+  }
+}

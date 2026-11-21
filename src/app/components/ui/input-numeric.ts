@@ -51,3 +51,9 @@ export const roundToInputPrecision = (value: number, precision: number): number 
   const factor = 10 ** Math.max(0, Math.floor(precision));
   return Math.round(value * factor) / factor;
 };
+
+/** 是一个完整的数（"" / "-" / "." 这类键入中间态不算） */
+export const isCompleteNumericText = (text: string): boolean => {
+  const trimmed = text.trim();
+  return trimmed !== "" && Number.isFinite(Number(trimmed));
+};

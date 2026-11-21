@@ -11,7 +11,7 @@ import { isCppAckFailed } from "@shared/csocket/ack";
 import { adjustDistancesForPlc } from "@/app/project/multi-level-hoist";
 import { runCsocket } from "./motor-csocket-payload";
 
-export type ModelTypeCode = 2 | 3 | 4 | 5 | 7 | 8 | 10;
+export type ModelTypeCode = 2 | 3 | 4 | 5 | 7 | 9 | 10;
 
 const MODEL_TYPE_BY_CONTROL_TYPE: Record<
   Exclude<ControlType, "staticProp">,
@@ -23,7 +23,7 @@ const MODEL_TYPE_BY_CONTROL_TYPE: Record<
   continuousRotation: 4,
   railCar: 5,
   multiPointSwing: 7,
-  dualTiltFourPointSwing: 8,
+  dualTiltFourPointSwing: 9,
 };
 
 export const encodeModelType = (controlType: ControlType): ModelTypeCode | null =>

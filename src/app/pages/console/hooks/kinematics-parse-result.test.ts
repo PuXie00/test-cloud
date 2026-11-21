@@ -1,18 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildKinematicsCallFile,
-  parseKinematicsResultFile,
-} from "@shared/kinematics/parse-result";
-
-describe("buildKinematicsCallFile", () => {
-  it("顶层为 path + data 数组", () => {
-    const items = [{ index: 1, type: 7 }];
-    expect(buildKinematicsCallFile(items, "M:\\yuezhong\\main\\console")).toEqual({
-      path: "M:\\yuezhong\\main\\console",
-      data: items,
-    });
-  });
-});
+import { parseKinematicsResultFile } from "@shared/kinematics/parse-result";
 
 describe("parseKinematicsResultFile", () => {
   it("合法数组成功", () => {

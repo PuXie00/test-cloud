@@ -11,15 +11,13 @@ import {
 import { toast } from "sonner";
 import { isCppAckFailed } from "@shared/csocket/ack";
 import {
-  ARRIVAL_TOLERANCE,
   applyGoBindings,
   buildMoveTargetItem,
   goEntriesForObjectIds,
+  goEntryProgress,
   goPhaseFromEntries,
-  isArrived,
   markGoDispatched,
   pendingGoEntries,
-  positionsToAxisValues,
   releaseGoEntries,
   type GoBindings,
   type GoReadyEntry,
@@ -63,11 +61,12 @@ export const GoReadyProvider = ({ children }: GoReadyProviderProps) => {
   const [state, setState] = useState<GoReadyState>(IDLE_STATE);
   const stateRef = useRef(state);
   stateRef.current = state;
-  const arriveStreakRef = useRef(0);
+  /** 已下发的物体从什么时候起一直在容差内（按物体，换一次下发重新计） */
+  const arrivedSinceRef = useRef(new Map<string, { dispatchedAt?: number; since: number }>());
+  const [recheck, setRecheck] = useState(0);
   const bindingsRef = useRef<GoBindings>(NO_BINDINGS);
 
   const clear = useCallback(() => {
-    arriveStreakRef.current = 0;
     bindingsRef.current = NO_BINDINGS;
     setState(IDLE_STATE);
   }, []);
@@ -77,14 +76,12 @@ export const GoReadyProvider = ({ children }: GoReadyProviderProps) => {
     const next = bindings ?? NO_BINDINGS;
     if (previous.size === 0 && next.size === 0) return;
     bindingsRef.current = next;
-    arriveStreakRef.current = 0;
     setState((current) =>
       stateFromEntries(current, applyGoBindings(current.entries, previous, next)),
     );
   }, []);
 
   const arm = useCallback((entries: GoReadyEntry[], mode: "abs" | "rel") => {
-    arriveStreakRef.current = 0;
     setState((current) => {
       const byId = new Map(current.entries.map((entry) => [entry.objectId, entry]));
       for (const entry of entries) {
@@ -109,12 +106,7 @@ export const GoReadyProvider = ({ children }: GoReadyProviderProps) => {
     // 绑定在位姿上的物体清除后回到位姿值
     setState((current) => {
       const ids = objectIds ?? current.entries.map((entry) => entry.objectId);
-      const next = stateFromEntries(
-        current,
-        releaseGoEntries(current.entries, ids, bindingsRef.current),
-      );
-      if (next === IDLE_STATE) arriveStreakRef.current = 0;
-      return next;
+      return stateFromEntries(current, releaseGoEntries(current.entries, ids, bindingsRef.current));
     });
   }, [clear]);
 
@@ -135,8 +127,13 @@ export const GoReadyProvider = ({ children }: GoReadyProviderProps) => {
       toast.error("GO 指令失败，保持准备状态");
       return;
     }
-    const dispatchedIds = entries.map((entry) => entry.objectId);
+    // 等应答期间又改了目标（或清除）的物体不标下发：新目标还没发出去
+    const sent = new Set(entries);
     setState((current) => {
+      const dispatchedIds = current.entries
+        .filter((entry) => sent.has(entry))
+        .map((entry) => entry.objectId);
+      if (dispatchedIds.length === 0) return current;
       const nextEntries = markGoDispatched(current.entries, dispatchedIds);
       return { ...current, phase: goPhaseFromEntries(nextEntries), entries: nextEntries };
     });
@@ -167,32 +164,53 @@ export const GoReadyProvider = ({ children }: GoReadyProviderProps) => {
     }
   }, [objects, clear]);
 
-  // 已下发条目到位后移除（未下发的准备目标保留）；绑定在位姿上的物体回到位姿值
+  // 已下发的物体各自走完（到位，或停下 / 报警）就去掉它的 GO 目标（未下发的准备目标保留）；
+  // 绑定在位姿上的物体回到位姿值。主进程只在数值变化时转发遥测，物体停下后不再有帧，
+  // 所以到了要重新判断的时刻用一个一次性定时器补判一次（只在有已下发条目时存在）。
   useEffect(() => {
-    const current = stateRef.current;
-    const dispatched = current.entries.filter((entry) => entry.dispatched);
+    const dispatched = state.entries.filter((entry) => entry.dispatched);
     if (dispatched.length === 0) {
-      arriveStreakRef.current = 0;
+      arrivedSinceRef.current.clear();
       return;
     }
-    const allArrived = dispatched.every((entry) => {
-      const snapshot = getById(Number(entry.objectId));
-      if (!snapshot) return false;
-      return isArrived(positionsToAxisValues(snapshot.positions), entry.target, ARRIVAL_TOLERANCE);
-    });
-    if (allArrived) {
-      arriveStreakRef.current += 1;
-      if (arriveStreakRef.current >= 3) {
-        const dispatchedIds = dispatched.map((entry) => entry.objectId);
-        setState((prev) =>
-          stateFromEntries(prev, releaseGoEntries(prev.entries, dispatchedIds, bindingsRef.current)),
-        );
-        arriveStreakRef.current = 0;
+    const now = Date.now();
+    const previous = arrivedSinceRef.current;
+    const arrivedSince = new Map<string, { dispatchedAt?: number; since: number }>();
+    const done = new Set<GoReadyEntry>();
+    let recheckAt = Number.POSITIVE_INFINITY;
+    for (const entry of dispatched) {
+      const prev = previous.get(entry.objectId);
+      const progress = goEntryProgress(
+        entry,
+        getById(Number(entry.objectId)),
+        now,
+        prev && prev.dispatchedAt === entry.dispatchedAt ? prev.since : undefined,
+      );
+      if (progress.done) {
+        done.add(entry);
+        continue;
       }
-    } else {
-      arriveStreakRef.current = 0;
+      if (progress.arrivedSince !== undefined) {
+        arrivedSince.set(entry.objectId, {
+          dispatchedAt: entry.dispatchedAt,
+          since: progress.arrivedSince,
+        });
+      }
+      if (progress.recheckAt !== undefined) recheckAt = Math.min(recheckAt, progress.recheckAt);
     }
-  }, [snapshots, getById]);
+    arrivedSinceRef.current = arrivedSince;
+    if (done.size > 0) {
+      setState((prev) => {
+        const ids = prev.entries.filter((entry) => done.has(entry)).map((entry) => entry.objectId);
+        if (ids.length === 0) return prev;
+        return stateFromEntries(prev, releaseGoEntries(prev.entries, ids, bindingsRef.current));
+      });
+      return;
+    }
+    if (!Number.isFinite(recheckAt)) return;
+    const timer = setTimeout(() => setRecheck((value) => value + 1), Math.max(0, recheckAt - now));
+    return () => clearTimeout(timer);
+  }, [state.entries, snapshots, getById, recheck]);
 
   const value = useMemo<GoReadyContextValue>(
     () => ({ state, arm, go, cancel, clear, bind }),

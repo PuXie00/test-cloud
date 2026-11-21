@@ -59,10 +59,25 @@ export const resolveMasterTypeIdByPlcModel = (plcModel: number): string =>
 /** 产品型号索引映射：gourdNo → productModel（暂用，后续换正式型号表） */
 export const GOURD_NO_TO_PRODUCT_MODEL: Record<number, string> = {
   253: "YZ_AXIS_HOIST_500KG",
+  0: "YZ_AXIS_HOIST_500KG",
+  3: "YZ_AXIS_HOIST_500KG"
 };
 
 export const resolveProductModelByGourdNo = (gourdNo: number): string =>
   GOURD_NO_TO_PRODUCT_MODEL[gourdNo] ?? getDefaultMotorRegistryEntry().productModel;
+
+/** 对型号用：型号表里没有的码返回 null，不回退默认型号（认不出的型号不能算一致） */
+export const lookupMasterTypeIdByPlcModel = (plcModel: number): string | null =>
+  PLC_MODEL_TO_MASTER_TYPE[plcModel] ?? null;
+
+export const lookupProductModelByGourdNo = (gourdNo: number): string | null =>
+  GOURD_NO_TO_PRODUCT_MODEL[gourdNo] ?? null;
+
+/** 主控型号显示名：描述文件 device.name，否则就显示 id */
+export const resolvePlcModelName = (masterTypeId: string): string => {
+  const entry = getPlcRegistryEntries().find((item) => item.productModel === masterTypeId);
+  return entry?.label?.trim() || masterTypeId;
+};
 
 /** 主控型号 id：catalog 命中则用，否则回退默认描述文件 id */
 export const resolvePlcMasterTypeId = (masterTypeId: string): string => {

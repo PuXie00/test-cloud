@@ -81,7 +81,7 @@ export const registerCppSocketIpc = (api: CsocketApiService): void => {
     api.clear731AlarmMotor(items as Parameters<CsocketApiService['clear731AlarmMotor']>[0], opts),
   )
   handleItems(CSOCKET_CHANNELS.lightSlaveMotor, (items, opts) =>
-    api.lightSlaveMotor(items as { lightFlag: number }[], opts),
+    api.lightSlaveMotor(items as { deviceId: number }[], opts),
   )
   handleItems(CSOCKET_CHANNELS.setPositionMotor, (items, opts) =>
     api.setPositionMotor(

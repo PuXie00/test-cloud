@@ -1,48 +1,69 @@
-调速范围计算：统一models输入版
+五模型调速范围计算接入说明
+2026-11-20
 
-每个压缩包分别解压到独立目录。包内只有算法、算法参数.json、说明和本次接口报告。
-三份JSON由同一总模板按需拆出，输入models与settings逐值及数字类型完全一致。上位机只需维护一份原动作模型数据。
+1. 模型和坐标
+业务模型编号为2单点、3多级升降、4无极旋转、7普通多点摆、9XY多点摆。
+单点和多级升降的每根实轴位置为H，电机速度按H导数计算。
+无极旋转4只有H有效，所有实轴直接跟随同一个H角度；P/Y模板项填0，不得包含运动。实轴峰速与H峰速相同，不需要多点几何参数。
+无极必须传现有字段workingStroke及min_position_HPY、max_position_HPY：workingStroke为PLC所有绑定实轴共同的真实正周期，H姿态区间满足0<=下限<上限，上限允许超过一个周期；绑定实轴数为1到32，与PLC的oneModelMaxAxisNum一致。
+workingStroke不能硬码360，也不能用软行程宽度代替。H位置、速度、加减速度使用PLC技术单位及其每秒、每秒平方；周期360度时通常为degree、degree/s、degree/s²。
+本版无极按纯姿态、模真实周期理解位置，三个算法使用同一代表值min+((H-min)%workingStroke)。例如周期360、姿态区间0到720时725等价于5；周期仍是360，不是720。不新增圈数或在线状态字段。
+区间宽度>=workingStroke时覆盖整个姿态圆，原系数可使用负值或多周期展开值。输入保留真实连续H系数，例如350到370经过360零点；算法不把位置取模后的数值跳变当成速度，也不自行改变原系数或选择最短路径。
+也支持在系数阶段边界按周期归零，例如359到360后下一阶段0到1；这与连续展开359到361具有相同的V/A/D及倍率。这里的周期归零仍是同向运动，不等于实际反向；真实反向由原系数导数符号体现。
+若原系数本来描述359到1的连续反向358单位运动，仍按其真实导数计算；若实际计划正向跨零2单位，应提供359到361的执行系数。非强制也须传入PLC实际Move执行曲线的系数。
+区间宽度<workingStroke时为部分允许姿态弧。整段系数的位置包络须落在同一个[min+k*周期,max+k*周期]副本内，检查端点及所有内部位置极值；不能只将几个点取模再判断，避免漏过禁用区。例如周期360、允许300到400时，350到370及-10到10均可用；连续350到30会经过禁区，应拒绝，即使两个端点单独取模后都合法。调速不改变位置路径，合法姿态路径仍按真实V/A/D能力限制倍率。
+多级升降3在PLC内部段点数为0时按普通H运动计算。范围算法无需nSections、AdjustDistance或deceleration_ratio，0点时这三个字段都可省略，或传nSections=0、AdjustDistance=[]。
+存在内部段点时，segments或coefficient_segments应填写PLC最终实际执行的H曲线，将经过段点的速度变化纳入系数；范围算法直接从该H曲线求V/A/D峰值。
+普通多点HPY为高度/倾角/方向角，XY的HPY为高度/X倾角/Y倾角。
+长度单位mm，角度单位degree，速度单位分别为mm/s和degree/s。
+普通多点倾角及XY两个倾角处于(-90,90)内，XY的betainit为0。
+吊点按真实轴顺序传入，支持二维或三维坐标。边距由凸包计算，全部实轴保留输入顺序。
+普通多点摆至少3个非共线吊点。XY多点摆支持2个吊点；双点须位于同一X轴或Y轴，线段包含原点、两点不重合且Z为0，允许一个端点位于原点。
+最终PLC为双点保存两个线段端点，双点正算将水平偏移置0。算法采用相同零偏移正算，实轴位置与速度按固定X轴、固定Y轴旋转及线长变化计算。XY三个及以上吊点沿用原凸包逻辑。
+XY两个角的最大速度使用PLC保存的REAL数值，例如3.9degree/s按3.9限制，不先取整。
 
-1. 本算法取哪些字段
-command：本例operation=range，trajectory_run选择强制/非强制。
-settings：公共静态设置，系数单位使用forced_coefficient_time_unit_ms。
-models：整个动作的全部模型、几何、能力限值和原segments。几何按示例平铺。
-本算法不需要runtime、当前Move或新请求倍率；公共models中其它算法需要的字段原样保留。
+2. 输入与返回
+输入包含command、settings、models，算法参数.json给出逐字段说明及五模型示例。
+command.trajectory_run为true时按强制轨迹计算，为false时执行非强制的动作分类与速度范围计算。
+settings.forced_coefficient_time_unit_ms规定abcdef自变量的时间单位。
+models放完整原动作曲线、真实max_velocity_HPY、max_motor_velocity及几何参数。
+每段可含coefficient_segments，连续覆盖原段起止时间。多级过点减速按最终执行H曲线填写。
+原动作按100%传入。虚轴上限除以原曲线峰速，实轴上限除以正解得到的电机峰速，再与已提供的A/D能力约束一起取整个动作最严倍率。
+max_acceleration_HPY、max_deceleration_HPY沿用已有字段且均可省略。调速采用V乘倍率、A/D乘倍率平方；缺少哪一项，就不追加该项能力限制。
+原表按速度幅值增大归A、减小归D，速度过零时分段判断。峰值由原abcdef多项式及其导数计算，包含阶段端点、速度零点、加速度零点和jerk零点。
+此范围接口没有方向字段，返回正向、反向共同可用的范围。时间反向后A/D角色互换，因此逐轴取原表A/D峰值的较大值，分别用sqrt(最大A/双向峰值)、sqrt(最大D/双向峰值)约束已提供的能力；每轴单独计算后再取动作最严倍率。
+max_factor为倍率，1表示100%。max_factor=null且unlimited=true表示全程速度约束没有有限倍率上限。
+action_category给出动作分类，action_signature绑定models/settings/运行方式，range_version本版为shared_json_v2。
+上位机须重新计算旧range_result，不能复用shared_json_v1的仅速度约束缓存。上位机使用缓存前同时核对range_version和action_signature，任一不符即重新调用calculate_range_result。在线调速Python由上位机提供允许倍率，上位机负责这项缓存检查。
+更新算法或原动作、限速、几何后重新计算range_result。
 
-2. 调用
-命令行/F5：python 调速范围计算.py
-显式文件：python 调速范围计算.py 算法参数.json
-API：
-  from 调速范围计算 import calculate_range_result
-  range_result = calculate_range_result(parameters)
-API返回字典，不写文件；CLI只回写本JSON的range_result，保留原输入及其它结果。
-默认优先算法参数.json；缺失时兼容旧调速参数.json。显式路径不存在时不自动换文件。
+3. API及命令行
+from 调速范围计算 import calculate_range_result
+range_result = calculate_range_result(parameters)
+API返回结果字典，调用方捕获异常并显示错误原因。
+非法参数或姿态路径会抛异常，不返回100%兜底结果；调用失败时不得继续使用旧range_result。命令行失败不会覆盖已有结果，上位机须检查调用错误或进程退出码。
+python 调速范围计算.py
+python 调速范围计算.py 算法参数.json
+命令行把结果保存至同一JSON的range_result，保留其它请求和结果。
 
-3. 返回什么
-max_factor是相对原动作的倍率，1=100%；显示百分比时乘100。
-unlimited=true且max_factor=null表示无有限上限，不能把null当0。
-action_category是分类说明。action_signature与range_version用于在线算法校验。
-范围API没有status；捕获异常，失败时不使用旧结果。
-将完整range_result对象交给在线算法，不能只复制max_factor或伪造签名。
+4. 计算依据
+正解按YXZ_new.py对照，普通多点采用倾角与方向角，XY采用固定X轴、固定Y轴的顺序旋转。
+普通多点的原Z在旋转后叠加，XY原Z参与两次旋转。
+实轴峰速由解析瞬时速度和整段区间上界共同求取，分段时检查内部极值及相位边界。
+单点及多级升降的H峰速、所有模型H/P/Y峰速均包含高阶内部极值。
+所有模型的虚轴最大速度和实轴最大速度共同参与整个动作倍率计算。
+非强制中单点/多级升降/无极旋转均为单虚轴直接映射，均可升速、降速，最终受真实V/A/D能力约束；同步非单点、不同步非单点沿用相应分类上限。
 
-4. 一致性规则
-三份models中的model_id使用全动作唯一正整数；plc_id是非空字符串路由标识（本例"1"，硬件PLC ID仍为1），device_id是PLC设备编号。一次计算包含本动作所有PLC的模型。
-models只放静态原动作，当前位置/速度放runtime.models。HPY数组固定三个数，不参与轴填相应常量。
-原位置、原系数、原分段及数字类型不得为不同算法自行改写。
-范围签名绑定完整models、完整settings和trajectory_run。改变其中任意字段后重新计算范围。
-当前反馈、请求倍率及反向请求不改变原动作签名。三个包的JSON字段说明可直接查阅。
+5. 文件与核验
+本包包括算法、带字段说明的输入JSON、本说明和本次测试报告。
+算法通过Python标准库独立运行。
+离线测试采用参考文件的原正解函数AST及基础数组操作替身，另进行有限差分及区间采样对照。
+实轴峰值采用双精度数值上界，复杂段在细分预算内可能得到偏保守的范围。
 
-5. 范围边界
-强制按原曲线计算，非强制先完成既有动作分类。
-每个模型分别计算实轴速度倍率以及H/P/Y虚轴速度倍率，整个动作取分类与全部速度倍率的最小值。
-虚轴倍率等于max_velocity_HPY对应上限除以该轴在原动作100%下的绝对速度峰值。
-峰值包含每个系数阶段的两端和段内加速度为0的位置，覆盖负速度和高阶曲线。
-max_velocity_HPY按H/P/Y顺序提供三个有限非负数，单位为mm/s、degree/s、degree/s。
-0上限允许静止轴，运动轴上限为0时沿API异常路径返回明确错误。
-包内示例角度峰速2degree/s、保存上限3degree/s，最大倍率为1.5，即150%。
-原角度峰速1degree/s、保存上限3degree/s时，角度允许倍率为3，即300%。
-
-6. 2026-11-11升级接入
-更新算法后重新计算已保存动作的range_result，再使用新的max_factor设置调速范围。
-原动作输入相同时旧范围签名也会相同，需要主动重新调用calculate_range_result更新已保存的范围结果。
-JSON继续使用现有max_velocity_HPY字段，API与CLI均会校验该字段。
+2026-11-20 纯姿态统一取模冻结
+源码SHA256：26f3b88210f2a9255ac6adc02c08004f28f551b1335c37ef805f8a6d69b9500d
+离线公开API验证663项全部通过，包含原四模型完整结果回归、无极真实周期及部分允许弧、原系数V/A/D和阶段归零；详见本次接口测试报告。
+仅4号H使用纯姿态语义，P/Y及其他模型不取模；原帧、abcdef及导数保留，不新增圈数或在线状态字段。
+本次未修改PLC工程、未发送运动报文，未验证PLC部署。已读取的PLC快照中initParam1Dof/couplerCheck仍可能禁止姿态上限超过周期。
+离线算法接受0到720/P360不保证当前PLC模型接受该配置，部署前须核对实际PLC初始化、耦合检查和软限。
+上位机更新后重新加载模块，重新计算range_result并核对版本和动作签名。算法异常须明确处理，不以100%兜底。

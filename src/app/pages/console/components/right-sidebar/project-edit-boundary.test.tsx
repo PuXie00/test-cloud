@@ -104,7 +104,22 @@ vi.mock("@/app/pages/console/3d/Viz3DProvider", () => ({
 vi.mock("@/app/pages/console/hooks/plc-runtime-provider", () => ({
   usePlcRuntime: () => ({
     getPlcRuntime: () => ({ connection: "disconnected" }),
+    getPlcOnline: (plcId: number) => ({
+      plcId,
+      kind: "unscanned",
+      plcModel: null,
+      scannedMasterTypeId: null,
+      modelMatch: false,
+      motorById: new Map(),
+      discovered: [],
+      realAxisCount: 0,
+      configuredCount: 0,
+      onlineCount: 0,
+      hasDiff: false,
+    }),
+    scan: { masters: null, at: null, scanning: false, error: null },
     scanAll: vi.fn(),
+    scanInBackground: vi.fn(),
   }),
 }));
 

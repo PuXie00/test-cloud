@@ -36,7 +36,7 @@ export type AlgorithmModel = {
   plc_id: string;
   model_id: number;
   device_id: number;
-  /** 业务类型：2 单点、6 两点、7 四点、8 多点 */
+  /** 算法模型类型：2 单点、3 多级升降、4 无极旋转、7 普通多点摆、9 XY多点摆（工程内先用 2/7/8，见 withAlgorithmModelType） */
   model_type: number;
   motor_num?: number;
   active_axes?: AxisName[];
@@ -60,8 +60,11 @@ export type AlgorithmModel = {
   moveWhat?: number;
   Baseheight1?: number;
   Baseheight2?: number;
-  point_init_pos?: Hpy[];
+  /** 吊点 [x,y] 或 [x,y,z] */
+  point_init_pos?: Array<[number, number] | Hpy>;
   betainit?: number;
+  /** 无极旋转（4）的真实正周期，所有绑定实轴相同；周期 360 时单位为 °，H 软行程须在 [0, workingStroke] 内 */
+  workingStroke?: number;
 };
 
 export type AlgorithmSettings = {
@@ -275,7 +278,9 @@ export const fsum = (values: Iterable<number>): number => {
 /** Python 浮点取模：结果与除数同号 */
 export const pythonMod = (value: number, divisor: number): number => {
   const remainder = value % divisor;
-  return remainder !== 0 && remainder < 0 !== divisor < 0 ? remainder + divisor : remainder;
+  // Python 余数为 0 时取除数的符号（-0.0 % 360 = 0.0）
+  if (remainder === 0) return divisor < 0 ? -0 : 0;
+  return remainder < 0 !== divisor < 0 ? remainder + divisor : remainder;
 };
 
 /** Python round(x)：取整，正好一半时取偶数 */

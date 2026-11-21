@@ -54,12 +54,6 @@ const motorsForObject = (object: ControlledObject, motors: readonly Motor[]): Mo
       },
   );
 
-const mountBBoxSpan = (object: ControlledObject): [number, number] => {
-  const xs = object.axes.map((axis) => axis.mount.x);
-  const zs = object.axes.map((axis) => axis.mount.z);
-  return [Math.max(...xs) - Math.min(...xs), Math.max(...zs) - Math.min(...zs)];
-};
-
 const originDistances = (object: ControlledObject): { origin_distance1: number; origin_distance2: number } =>
   object.modelRunDirection === 2
     ? { origin_distance1: 0, origin_distance2: object.pulleyDistance }
@@ -75,15 +69,12 @@ const solverAxisParams = (
   return object.motionParams?.[id];
 };
 
-const paramsForType = (object: ControlledObject, type: SolverTypeCode): number[][] => {
-  if (type === 64) return [mountBBoxSpan(object)];
-  return object.axes.map((axis) => [axis.mount.x, axis.mount.z, 0]);
-};
+/** 吊点按 PLC 平面坐标 [x, z, 0]，与 hangingPointArray 同序 */
+const hoistPoints = (object: ControlledObject): number[][] =>
+  object.axes.map((axis) => [axis.mount.x, axis.mount.z, 0]);
 
-const rimForType = (object: ControlledObject, type: SolverTypeCode): number[] => {
-  if (type === 64) return [object.dimensions.w, object.dimensions.d];
-  return [object.safetyRadius ?? 0];
-};
+/** 安全半径：多点摆和多点倾斜都用配置值 */
+const rimForType = (object: ControlledObject): number[] => [object.safetyRadius ?? 0];
 
 export const assignSolverIndexes = <T>(
   entries: ReadonlyArray<{ objectId: number; payload: T }>,
@@ -107,7 +98,7 @@ export const buildSolverCallItem = (input: {
     index: input.index,
     type,
     ...origins,
-    params: paramsForType(input.object, type),
+    params: hoistPoints(input.object),
     motor_H: bound.map((motor) => input.motorPositions.get(motor.id) ?? 0),
     // motor_H: bound.map((motor) => 0),
     limit_data: [
@@ -115,8 +106,8 @@ export const buildSolverCallItem = (input: {
       axisLimit(solverAxisParams(input.object, "p")),
       axisLimit(solverAxisParams(input.object, "y")),
     ],
-    limit_rim: rimForType(input.object, type),
-    betainit: type === 63 ? (input.object.initialTiltDirection ?? 0) : 0,
+    limit_rim: rimForType(input.object),
+    betainit: type === 7 ? (input.object.initialTiltDirection ?? 0) : 0,
     HPY: [input.hpy[0], input.hpy[1], input.hpy[2]],
     // HPY: [0, 0, 0],
   };

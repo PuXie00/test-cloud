@@ -31,9 +31,10 @@ import {
 import { cn } from "@/app/components/ui/utils";
 import { writeMotorHoistDrag } from "@/app/pages/console/3d/motor-hoist-drop";
 import {
-  reconcileMotorsByOrder,
-  type MotorOrderReconciliation,
-} from "@/app/pages/console/hooks/plc-reconciliation";
+  discoveredAxesThrough,
+  toScannedAxes,
+  type RealAxis,
+} from "@/app/pages/console/hooks/plc-online";
 import { usePlcRuntime } from "@/app/pages/console/hooks/plc-runtime-provider";
 import { useSetupEditState } from "@/app/pages/console/hooks/axis-motion";
 import { formatMotorDisplayName } from "@/app/pages/console/hooks/motor-mid";
@@ -55,10 +56,13 @@ import { DeleteImpactDialog } from "./delete-impact-dialog";
 import { MotorInsertMenuItems } from "./motor-insert-menu-items";
 import {
   buildBusGroupTreeNode,
+  buildDiscoveredTreeNodes,
+  buildMotorTreeNode,
   buildPlcTreeNodes,
   computeDeleteImpact,
   deleteImpactRequiresConfirmation,
   getBusGroupTreeId,
+  getLinkedCoTreeId,
   getPlcTreeStatus,
   getStructureNodeId,
   type BusGroupTreeNode,
@@ -87,12 +91,14 @@ const STRUCTURE_VIEW_TABS: readonly { id: StructureViewId; label: string; guide?
   { id: "masters", label: "主控", guide: "console-masters-tab" },
 ];
 
-const STATUS_DOT_CLASS: Record<PlcTreeStatusTone, string> = {
-  muted: "bg-muted-foreground",
-  primary: "bg-primary animate-pulse",
-  show: "bg-show",
-  warning: "bg-warning",
+const STATUS_TEXT_CLASS: Record<PlcTreeStatusTone, string> = {
+  muted: "text-muted-foreground",
+  primary: "text-primary",
+  show: "text-show",
+  warning: "text-warning",
 };
+
+const BUS_NOS = [0, 1] as const;
 
 type StructurePanelNode = PendingCoNode | StructureTreeNode;
 
@@ -123,7 +129,6 @@ const handleCoSelect = (
   select: ReturnType<typeof useSelection>["select"],
   toggleMulti: ReturnType<typeof useSelection>["toggleMulti"],
   replaceSelection: ReturnType<typeof useSelection>["replaceSelection"],
-  clearSelection: ReturnType<typeof useSelection>["clearSelection"],
   setTreeFocus: ReturnType<typeof useSelection>["setTreeFocus"],
   multiSelectedIds: number[],
   orderedObjectIds: readonly number[],
@@ -141,11 +146,7 @@ const handleCoSelect = (
     setTreeFocus({ kind: "controlled-object", id: objectId });
     return;
   }
-  if (multiSelectedIds.length === 1 && multiSelectedIds[0] === objectId) {
-    clearSelection();
-    setTreeFocus(null);
-    return;
-  }
+  // 单击就是选中它（再点一次不会取消，免得触屏上点两下就丢了选择）；取消用 Ctrl/⌘ 单击、Esc 或点空白处
   setTreeFocus({ kind: "controlled-object", id: objectId });
   select(objectId);
 };
@@ -170,7 +171,7 @@ export const ProjectStructurePanel = () => {
   const objectDeletion = useObjectDeletion();
   // 没有「编辑工程配置」或轴运动中只能浏览：不显示增删、右键菜单，Delete 键和拖动挂载 / 绑定都不生效
   const canEdit = !useSetupEditState().readOnly;
-  const { getPlcRuntime } = usePlcRuntime();
+  const { getPlcOnline, scan } = usePlcRuntime();
   const {
     multiSelectedIds,
     multiSelectedMotorIds,
@@ -184,7 +185,7 @@ export const ProjectStructurePanel = () => {
     clearSelection,
   } = useSelection();
   const [structureView, setStructureView] = useState<StructureViewId>("all");
-  const masterScan = useMasterScan();
+  const masterScan = useMasterScan({ canAdd: canEdit });
   const [plcAddOpen, setPlcAddOpen] = useState(false);
   const [motorAddPlcId, setMotorAddPlcId] = useState<number | null>(null);
   const [motorInsert, setMotorInsert] = useState<{
@@ -192,9 +193,10 @@ export const ProjectStructurePanel = () => {
     plcId: number;
     position: InsertMotorsPosition;
   } | null>(null);
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(
-    () => new Set(plcs.map((plc) => String(plc.id))),
-  );
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
+  /** 已经自动展开过的主控：只有新出现的主控才自动展开，用户收起的不会因为改了别的配置又被撑开 */
+  const autoExpandedPlcIdsRef = useRef<Set<number>>(new Set());
+  const treeScrollRef = useRef<HTMLDivElement>(null);
   /** 受控物体视图按挂载树显示；记录用户折叠的父物体 */
   const [collapsedObjectIds, setCollapsedObjectIds] = useState<Set<string>>(() => new Set());
   const [dropHighlight, setDropHighlight] = useState<TreeDropHighlight>(null);
@@ -209,26 +211,19 @@ export const ProjectStructurePanel = () => {
   }, [dropHighlight]);
 
   useEffect(() => {
+    const seen = autoExpandedPlcIdsRef.current;
+    const fresh = plcs.filter((plc) => !seen.has(plc.id));
+    if (fresh.length === 0) return;
+    for (const plc of fresh) seen.add(plc.id);
     setExpandedIds((current) => {
       const next = new Set(current);
-      for (const plc of plcs) {
+      for (const plc of fresh) {
         next.add(String(plc.id));
-        next.add(getBusGroupTreeId(plc.id, 0));
-        next.add(getBusGroupTreeId(plc.id, 1));
+        for (const busNo of BUS_NOS) next.add(getBusGroupTreeId(plc.id, busNo));
       }
       return next;
     });
   }, [plcs]);
-
-  const reconciliationByPlcId = useMemo(() => {
-    const map = new Map<number, MotorOrderReconciliation>();
-    for (const plc of plcs) {
-      const runtime = getPlcRuntime(plc.id);
-      const configured = motors.filter((motor) => motor.plcId === plc.id);
-      map.set(plc.id, reconcileMotorsByOrder(configured, runtime.scannedAxes ?? []));
-    }
-    return map;
-  }, [getPlcRuntime, motors, plcs]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -303,76 +298,116 @@ export const ProjectStructurePanel = () => {
     [mountChildrenById],
   );
 
-  const selectedIds = useMemo(
-    () => new Set([...multiSelectedIds, ...multiSelectedMotorIds].map((id) => String(id))),
-    [multiSelectedIds, multiSelectedMotorIds],
-  );
-  const focusedId = treeFocus?.id != null ? String(treeFocus.id) : null;
+  /** 高亮的行：选中的物体 / 电机 + 属性面板正在看的那一项（物体在每个主控下都有一行） */
+  const selectedIds = useMemo(() => {
+    const ids = new Set<string>();
+    const objectIds = new Set(multiSelectedIds);
+    if (treeFocus?.kind === "controlled-object") objectIds.add(treeFocus.id);
+    for (const objectId of objectIds) {
+      ids.add(String(objectId));
+      for (const plc of plcs) ids.add(getLinkedCoTreeId(plc.id, objectId));
+    }
+    for (const motorId of multiSelectedMotorIds) ids.add(String(motorId));
+    if (treeFocus?.kind === "motor" || treeFocus?.kind === "master") ids.add(String(treeFocus.id));
+    return ids;
+  }, [multiSelectedIds, multiSelectedMotorIds, plcs, treeFocus]);
 
-  const motorNodeWithStatus = useCallback(
-    (plcId: number, motor: MotorTreeNode["motor"]): MotorTreeNode => {
-      const reconciliation = reconciliationByPlcId.get(plcId);
-      if (!reconciliation) return { kind: "motor", motor };
+  /** Esc / 点树下面的空白处：清空选择 */
+  const clearTreeSelection = useCallback(() => {
+    clearSelection();
+    setTreeFocus(null);
+  }, [clearSelection, setTreeFocus]);
 
-      const onlineIds = new Set(reconciliation.online.map((i) => i.motor.id));
-      const modelMismatchIds = new Set(reconciliation.modelMismatch.map((i) => i.motor.id));
-      const portMismatchIds = new Set(reconciliation.portMismatch.map((i) => i.motor.id));
-      const offlineIds = new Set(reconciliation.offline.map((i) => i.id));
-
-      return {
-        kind: "motor",
-        motor,
-        status: onlineIds.has(motor.id)
-          ? "connected"
-          : modelMismatchIds.has(motor.id)
-            ? "modelMismatch"
-            : portMismatchIds.has(motor.id)
-              ? "portMismatch"
-              : offlineIds.has(motor.id)
-                ? "missing"
-                : undefined,
-      };
-    },
-    [reconciliationByPlcId],
-  );
+  // 在 3D 里（或别处）选中时，展开到选中的行并滚到能看见；只在选择变化时做，不跟用户的收起较劲
+  const revealSourceRef = useRef({ motors, plcs, structureView });
+  revealSourceRef.current = { motors, plcs, structureView };
+  const revealKey = `${treeFocus?.kind ?? ""}:${treeFocus?.id ?? ""}|${multiSelectedIds.join(",")}|${multiSelectedMotorIds.join(",")}`;
+  useEffect(() => {
+    const { motors: allMotors, plcs: allPlcs, structureView: view } = revealSourceRef.current;
+    const ancestors = new Set<string>();
+    const targets: string[] = [];
+    const motorIds = new Set(multiSelectedMotorIds);
+    if (treeFocus?.kind === "motor") motorIds.add(treeFocus.id);
+    for (const motorId of motorIds) {
+      const motor = allMotors.find((item) => item.id === motorId);
+      if (!motor) continue;
+      ancestors.add(String(motor.plcId));
+      if (view === "masters") ancestors.add(getBusGroupTreeId(motor.plcId, motor.busNo));
+      else if (motor.controlledObjectId != null) {
+        ancestors.add(getLinkedCoTreeId(motor.plcId, motor.controlledObjectId));
+      }
+      targets.push(String(motor.id));
+    }
+    const objectIds = new Set(multiSelectedIds);
+    if (treeFocus?.kind === "controlled-object") objectIds.add(treeFocus.id);
+    for (const objectId of objectIds) {
+      targets.push(String(objectId));
+      if (view !== "all") continue;
+      for (const plc of allPlcs) {
+        if (allMotors.some((motor) => motor.plcId === plc.id && motor.controlledObjectId === objectId)) {
+          ancestors.add(String(plc.id));
+          targets.push(getLinkedCoTreeId(plc.id, objectId));
+        }
+      }
+    }
+    if (treeFocus?.kind === "master") targets.push(String(treeFocus.id));
+    if (ancestors.size > 0) {
+      setExpandedIds((current) => {
+        if ([...ancestors].every((id) => current.has(id))) return current;
+        return new Set([...current, ...ancestors]);
+      });
+    }
+    if (targets.length === 0) return;
+    const frame = requestAnimationFrame(() => {
+      const root = treeScrollRef.current;
+      if (!root) return;
+      for (const id of targets) {
+        const row = root.querySelector<HTMLElement>(`[data-tree-id="${CSS.escape(id)}"]`);
+        if (row) {
+          row.scrollIntoView?.({ block: "nearest" });
+          return;
+        }
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [revealKey]); // 只在选择本身变化时跟随（工程数据从 ref 读）
 
   const getStructureChildren = useCallback(
     (node: StructureTreeNode): StructureTreeNode[] | undefined => {
       if (node.kind === "linked-co") {
+        const online = getPlcOnline(node.plcId);
         return getObjectMotorsForPlc(node.object.id, node.plcId).map((motor) =>
-          motorNodeWithStatus(node.plcId, motor),
+          buildMotorTreeNode(motor, online),
         );
       }
       if (node.kind === "plc") {
-        const reconciliation =
-          reconciliationByPlcId.get(node.plc.id) ?? reconcileMotorsByOrder([], []);
+        const online = getPlcOnline(node.plc.id);
 
-        // 主控视图：主控 → C口/D口分组 → 电机（含待加入发现项）
+        // 主控视图：主控 → C口/D口分组 → 电机，扫到但工程里没有的实轴排在同口末尾
         if (structureView === "masters") {
           const plcMotors = getPlcMotors(node.plc.id);
-          const busGroups = ([0, 1] as const)
-            .filter((busNo) => plcMotors.some((motor) => motor.busNo === busNo))
-            .map((busNo) => buildBusGroupTreeNode(node.plc.id, busNo));
-          const discoveredNodes = buildPlcTreeNodes(
-            node.plc,
-            [],
-            [],
-            reconciliation,
-          ).filter((child) => child.kind === "discovered-motor");
-          return [...busGroups, ...discoveredNodes];
+          return BUS_NOS.filter(
+            (busNo) =>
+              plcMotors.some((motor) => motor.busNo === busNo) ||
+              online.discovered.some((axis) => axis.busNo === busNo),
+          ).map((busNo) => buildBusGroupTreeNode(node.plc.id, busNo));
         }
 
         return buildPlcTreeNodes(
           node.plc,
           getPlcUnassignedMotors(node.plc.id),
           getPlcLinkedObjects(node.plc.id),
-          reconciliation,
+          online,
         );
       }
       if (node.kind === "bus-group") {
-        return getPlcMotors(node.plcId)
-          .filter((motor) => motor.busNo === node.busNo)
-          .map((motor) => motorNodeWithStatus(node.plcId, motor));
+        const online = getPlcOnline(node.plcId);
+        return [
+          ...getPlcMotors(node.plcId)
+            .filter((motor) => motor.busNo === node.busNo)
+            .map((motor) => buildMotorTreeNode(motor, online)),
+          ...buildDiscoveredTreeNodes(node.plcId, online, node.busNo),
+        ];
       }
       return undefined;
     },
@@ -380,9 +415,8 @@ export const ProjectStructurePanel = () => {
       getObjectMotorsForPlc,
       getPlcLinkedObjects,
       getPlcMotors,
+      getPlcOnline,
       getPlcUnassignedMotors,
-      motorNodeWithStatus,
-      reconciliationByPlcId,
       structureView,
     ],
   );
@@ -569,11 +603,14 @@ export const ProjectStructurePanel = () => {
     [requestObjectDelete],
   );
 
+  /** 加入一根实轴时，同口排在它前面的待加入实轴一起加入，电机才能按口内顺序对上实轴 */
   const handleAdoptDiscovered = useCallback(
-    (plcId: number, axis: { slaveNo: number; busNo: number; gourdNo: number }) => {
-      addMotorsFromScannedAxes(plcId, [axis]);
+    (plcId: number, axis: RealAxis) => {
+      const axes = discoveredAxesThrough(getPlcOnline(plcId), axis);
+      if (axes.length === 0) return;
+      addMotorsFromScannedAxes(plcId, toScannedAxes(axes));
     },
-    [addMotorsFromScannedAxes],
+    [addMotorsFromScannedAxes, getPlcOnline],
   );
 
   /** 拖动已多选的物体时整组挂载，否则只挂被拖的那个 */
@@ -740,18 +777,8 @@ export const ProjectStructurePanel = () => {
 
   const renderStructureIcon = (node: StructureTreeNode) => {
     if (node.kind === "plc") {
-      const runtime = getPlcRuntime(node.plc.id);
-      const iconClass =
-        runtime.connection === "connected" && runtime.modelMismatch
-          ? "text-warning"
-          : runtime.connection === "connected"
-            ? "text-show"
-            : runtime.connection === "connecting"
-              ? "text-primary"
-              : runtime.connection === "abnormal"
-                ? "text-warning"
-                : "text-muted-foreground";
-      return <Cpu className={cn("h-3.5 w-3.5", iconClass)} aria-hidden />;
+      const status = getPlcTreeStatus(getPlcOnline(node.plc.id));
+      return <Cpu className={cn("h-3.5 w-3.5", STATUS_TEXT_CLASS[status.iconTone])} aria-hidden />;
     }
     if (node.kind === "bus-group") {
       return <span className="h-3.5 w-3.5 shrink-0" aria-hidden />;
@@ -761,9 +788,9 @@ export const ProjectStructurePanel = () => {
     }
     if (node.kind === "motor") {
       const iconClass =
-        node.status === "modelMismatch" || node.status === "portMismatch"
+        node.status === "modelMismatch"
           ? "text-warning"
-          : node.status === "connected"
+          : node.status === "online"
             ? "text-show"
             : "text-muted-foreground";
       return <Zap className={cn("h-3.5 w-3.5", iconClass)} aria-hidden />;
@@ -782,16 +809,7 @@ export const ProjectStructurePanel = () => {
 
   const renderStructureLabel = (node: StructureTreeNode) => {
     if (node.kind === "plc") {
-      const runtime = getPlcRuntime(node.plc.id);
-      const configuredCount = getPlcMotors(node.plc.id).length;
-      const reconciliation = reconciliationByPlcId.get(node.plc.id);
-      const actualCount =
-        runtime.connection === "disconnected" || runtime.connection === "connecting"
-          ? 0
-          : (reconciliation?.online.length ?? 0) +
-            (reconciliation?.modelMismatch.length ?? 0) +
-            (reconciliation?.portMismatch.length ?? 0);
-      const status = getPlcTreeStatus(runtime, configuredCount, actualCount);
+      const status = getPlcTreeStatus(getPlcOnline(node.plc.id));
 
       return (
         <>
@@ -801,15 +819,18 @@ export const ProjectStructurePanel = () => {
               {node.plc.ip || "—"}
             </span>
           </div>
-          <span className="shrink-0 font-mono text-mono-sm tabular-nums text-muted-foreground">
-            {status.label}
-          </span>
+          {status.label ? (
+            <span className="shrink-0 font-mono text-mono-sm tabular-nums text-muted-foreground">
+              {status.label}
+            </span>
+          ) : null}
         </>
       );
     }
     if (node.kind === "bus-group") {
       return <span className="min-w-0 truncate text-foreground">{node.label}</span>;
     }
+    // 在线与否看图标颜色：绿在线、黄型号不符、灰离线 / 未扫描
     if (node.kind === "motor") {
       return (
         <span className="min-w-0 truncate font-mono tabular-nums">
@@ -818,13 +839,14 @@ export const ProjectStructurePanel = () => {
       );
     }
     if (node.kind === "discovered-motor") {
+      const unknownModel = node.axis.productModel === null;
       return (
-        <>
-          <span className="min-w-0 truncate border border-dashed border-border/60 px-1.5 font-mono text-mono-sm text-muted-foreground">
-            {node.label}
+        <span className="flex min-w-0 flex-1 items-center gap-1.5 text-muted-foreground">
+          <span className="shrink-0 font-mono text-mono-sm tabular-nums">{node.label}</span>
+          <span className={`min-w-0 truncate text-body-sm ${unknownModel ? "text-warning" : ""}`}>
+            {node.modelLabel}
           </span>
-          <span className="shrink-0 text-body-sm text-secondary">待加入</span>
-        </>
+        </span>
       );
     }
     return <span className="min-w-0 truncate">{node.object.name}</span>;
@@ -837,7 +859,7 @@ export const ProjectStructurePanel = () => {
         setExpandedIds((current) => {
           const next = new Set(current);
           next.add(String(plcId));
-          next.add(String(objectId));
+          next.add(getLinkedCoTreeId(plcId, objectId));
           return next;
         });
       }
@@ -854,17 +876,13 @@ export const ProjectStructurePanel = () => {
         <button
           type="button"
           aria-label={`加入工程 ${node.label}`}
-          className="inline-flex h-7 shrink-0 items-center rounded-sm px-2 text-[10px] text-primary hover:bg-accent"
+          className="inline-flex h-7 shrink-0 items-center rounded-sm px-2 text-body-sm text-primary hover:bg-muted pointer-coarse:h-11"
           onClick={(event) => {
             event.stopPropagation();
-            handleAdoptDiscovered(node.plcId, {
-              slaveNo: node.slaveNo,
-              busNo: node.busNo,
-              gourdNo: node.gourdNo,
-            });
+            handleAdoptDiscovered(node.plcId, node.axis);
           }}
         >
-          加入工程
+          加入
         </button>
       );
     }
@@ -921,15 +939,7 @@ export const ProjectStructurePanel = () => {
     if (isDiscoveredMotorNode(node)) {
       return (
         <ContextMenuContent>
-          <ContextMenuItem
-            onSelect={() =>
-              handleAdoptDiscovered(node.plcId, {
-                slaveNo: node.slaveNo,
-                busNo: node.busNo,
-                gourdNo: node.gourdNo,
-              })
-            }
-          >
+          <ContextMenuItem onSelect={() => handleAdoptDiscovered(node.plcId, node.axis)}>
             加入工程
           </ContextMenuItem>
         </ContextMenuContent>
@@ -1008,9 +1018,15 @@ export const ProjectStructurePanel = () => {
     node: StructureTreeNode,
     event: MouseEvent | KeyboardEvent,
   ) => {
+    // C口 / D口 只是分组：点它展开 / 收起，不动选择
     if (node.kind === "bus-group") {
-      clearSelection();
-      setTreeFocus({ kind: "master", id: node.plcId });
+      const id = getBusGroupTreeId(node.plcId, node.busNo);
+      setExpandedIds((current) => {
+        const next = new Set(current);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
       return;
     }
     if (node.kind === "discovered-motor") {
@@ -1025,7 +1041,6 @@ export const ProjectStructurePanel = () => {
         select,
         toggleMulti,
         replaceSelection,
-        clearSelection,
         setTreeFocus,
         multiSelectedIds,
         orderedObjectIds,
@@ -1037,7 +1052,7 @@ export const ProjectStructurePanel = () => {
       setTreeFocus({ kind: "master", id: node.plc.id });
       return;
     }
-    // motor — 再次点击取消选中（未连接限制仅在调试 Tab）
+    // motor — 单击选中（再点不取消）；未连接限制仅在调试 Tab
     const motorMode = resolveSelectionMode(event);
     if (motorMode === "toggle") {
       toggleMultiMotor(node.motor.id);
@@ -1053,18 +1068,16 @@ export const ProjectStructurePanel = () => {
       setTreeFocus({ kind: "motor", id: node.motor.id });
       return;
     }
-    if (multiSelectedMotorIds.length === 1 && multiSelectedMotorIds[0] === node.motor.id) {
-      clearSelection();
-      setTreeFocus(null);
-      return;
-    }
     replaceMotorSelection([node.motor.id]);
     setTreeFocus({ kind: "motor", id: node.motor.id });
   };
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-row overflow-hidden">
-      <div className="custom-scrollbar flex min-h-0 w-[280px] shrink-0 flex-col overflow-y-auto bg-card">
+      <div
+        ref={treeScrollRef}
+        className="custom-scrollbar flex min-h-0 w-[280px] shrink-0 flex-col overflow-y-auto bg-card"
+      >
         <TabBar
           tabs={STRUCTURE_VIEW_TABS}
           active={structureView}
@@ -1090,7 +1103,7 @@ export const ProjectStructurePanel = () => {
                   expandedIds={showMountTree ? objectSectionExpandedIds : new Set()}
                   onExpandedChange={showMountTree ? handleObjectSectionExpandedChange : () => {}}
                   selectedIds={selectedIds}
-                  focusedId={focusedId}
+                  onClearSelection={clearTreeSelection}
                   onSelect={(node, event) =>
                     handleCoSelect(
                       event,
@@ -1098,7 +1111,6 @@ export const ProjectStructurePanel = () => {
                       select,
                       toggleMulti,
                       replaceSelection,
-                      clearSelection,
                       setTreeFocus,
                       multiSelectedIds,
                       orderedObjectIds,
@@ -1145,18 +1157,19 @@ export const ProjectStructurePanel = () => {
                 title="主控"
                 icon={Cpu}
                 extra={
-                  canEdit ? <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1">
+                    {/* 扫描只读网络，不改工程：只读时也能刷新在线状态 */}
                     <button
                       data-guide="console-master-scan"
                       type="button"
-                      aria-label="扫描添加主控"
+                      aria-label={scan.error ? `扫描主控（${scan.error}）` : "扫描主控"}
                       aria-busy={masterScan.scanning}
                       disabled={masterScan.scanning}
                       className={cn(
                         iconBtn,
-                        "bg-primary text-primary-foreground hover:text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-40",
+                        "relative bg-primary text-primary-foreground hover:text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-40",
                       )}
-                      title="扫描"
+                      title={scan.error ?? "扫描主控"}
                       onClick={masterScan.startScan}
                     >
                       {masterScan.scanning ? (
@@ -1164,18 +1177,27 @@ export const ProjectStructurePanel = () => {
                       ) : (
                         <ScanLine className="h-3.5 w-3.5" aria-hidden />
                       )}
+                      {/* 上次扫描失败：按钮角上一个黄点，再点一次就是重试 */}
+                      {scan.error && !masterScan.scanning ? (
+                        <span
+                          className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-warning ring-2 ring-muted"
+                          aria-hidden
+                        />
+                      ) : null}
                     </button>
-                    <button
-                      data-guide="console-master-add"
-                      type="button"
-                      aria-label="添加主控"
-                      className={iconBtn}
-                      title="添加主控"
-                      onClick={() => setPlcAddOpen(true)}
-                    >
-                      <Plus className="h-3.5 w-3.5" aria-hidden />
-                    </button>
-                  </div> : undefined
+                    {canEdit ? (
+                      <button
+                        data-guide="console-master-add"
+                        type="button"
+                        aria-label="添加主控"
+                        className={iconBtn}
+                        title="添加主控"
+                        onClick={() => setPlcAddOpen(true)}
+                      >
+                        <Plus className="h-3.5 w-3.5" aria-hidden />
+                      </button>
+                    ) : null}
+                  </div>
                 }
               />
               <TreeView
@@ -1186,7 +1208,7 @@ export const ProjectStructurePanel = () => {
                 expandedIds={expandedIds}
                 onExpandedChange={setExpandedIds}
                 selectedIds={selectedIds}
-                focusedId={focusedId}
+                onClearSelection={clearTreeSelection}
                 onSelect={handleStructureSelect}
                 onDelete={canEdit ? handleStructureDeleteKey : undefined}
                 renderLabel={renderStructureLabel}
@@ -1202,6 +1224,8 @@ export const ProjectStructurePanel = () => {
               />
             </>
           ) : null}
+          {/* 点树下面的空白处取消选择 */}
+          <div className="min-h-12 flex-1" aria-hidden onClick={clearTreeSelection} />
           <DragOverlay dropAnimation={null}>
             {activeDragNode ? (
               <div className="flex items-center gap-2 rounded-md bg-card px-3 py-2 opacity-90 shadow-lg">
@@ -1214,11 +1238,7 @@ export const ProjectStructurePanel = () => {
       </div>
       <PropertySection />
 
-      <PlcScanDialog
-        open={masterScan.resultsOpen}
-        onOpenChange={masterScan.setResultsOpen}
-        results={masterScan.results}
-      />
+      <PlcScanDialog open={masterScan.resultsOpen} onOpenChange={masterScan.setResultsOpen} />
       <PlcAddDialog open={plcAddOpen} onOpenChange={setPlcAddOpen} />
       <MotorAddDialog
         open={motorAddPlcId !== null}

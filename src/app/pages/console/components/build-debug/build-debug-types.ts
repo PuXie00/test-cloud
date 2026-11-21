@@ -8,6 +8,7 @@ export {
 /** 与描述文件 variableStateAttri.id 对齐的模拟字段 */
 export const MOCK_STATE_IDS = {
   actualPosition: "actualPosition",
+  actualSpeed: "actualSpeed",
   actualTemperature: "actualTemperature",
   actualTorque: "actualTorque",
   actualWeight: "actualWeight",

@@ -14,7 +14,7 @@ import { checkProjectsRootWritableOnStartup, registerProjectHandlers, restoreKep
 import { attachAiBridgeWindow, registerAiBridgeHandlers, shutdownAiBridge } from './ai-bridge'
 import { shutdownAiAgent, startAiAgent } from './ai-agent'
 import { startRendererServer, stopRendererServer } from './renderer-server'
-import { registerUpdateHandlers, reportLastInstallOnStartup } from './update'
+import { registerUpdateHandlers, reportLastInstallOnStartup } from './update/index'
 import { registerHaHandlers, shutdownHa } from './ha'
 
 const require = createRequire(import.meta.url)
@@ -24,7 +24,7 @@ process.env.APP_ROOT = path.join(__dirname, '../..')
 
 export const MAIN_DIST = path.join(process.env.APP_ROOT, 'dist-electron')
 export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
-export const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
+export const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL?.replace('://localhost', '://127.0.0.1')
 
 
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL

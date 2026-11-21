@@ -28,6 +28,7 @@ const objectOf = (limit: number): MotorOverspeedObject => ({
     id: index + 1,
     name: `吊点${index + 1}`,
     maxAxisVelocity: limit,
+    ropeIndex: index,
   })),
 });
 
@@ -68,6 +69,33 @@ describe("collectMotorOverspeedHits", () => {
     expect(hits[0]?.suggestedDurationMs).toBeGreaterThan(1000);
     expect(hits[0]?.message).toContain("处线速度达到");
     expect(hits[0]?.message).toContain("超过电机限速");
+  });
+
+  it("uses the XY forward solution for XY tilt objects", () => {
+    // 倾角为 0 时，普通多点摆的 v3 是方向角，绳长不变；XY 多点摆的 v3 是 Y 倾角，绳长会变
+    const yOnly = segmentOf({ v1: 200, v2: 0, v3: 0 }, { v1: 200, v2: 0, v3: 12 }, 1000);
+    expect(collectMotorOverspeedHits([objectOf(10)], [yOnly])).toEqual([]);
+    const hits = collectMotorOverspeedHits([{ ...objectOf(10), xyTilt: true }], [yOnly]);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.peakVelocity).toBeGreaterThan(10);
+  });
+
+  it("checks each motor against its own rope when some drive axes have no motor", () => {
+    // 两吊点无凸包、无横向偏移；纯 X 倾斜时 X 轴上的吊点 0 不动，吊点 1 绳长变化
+    const twoPointObject = (ropeIndex: number): MotorOverspeedObject => ({
+      ...objectOf(10),
+      pointInitPos: [
+        [150, 0, 0],
+        [0, 150, 0],
+      ],
+      xyTilt: true,
+      motors: [{ id: 2, name: "吊点2", maxAxisVelocity: 10, ropeIndex }],
+    });
+    const xOnly = segmentOf({ v1: 200, v2: 0, v3: 0 }, { v1: 200, v2: 12, v3: 0 }, 1000);
+    expect(collectMotorOverspeedHits([twoPointObject(0)], [xOnly])).toEqual([]);
+    const hits = collectMotorOverspeedHits([twoPointObject(1)], [xOnly]);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.motorId).toBe(2);
   });
 
   it("recommends stretching duration by the overspeed ratio", () => {

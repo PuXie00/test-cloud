@@ -4,10 +4,10 @@ import { formatMotorDisplayName } from "@/app/pages/console/hooks/motor-mid";
 import { useProjectStore } from "@/app/pages/console/hooks/use-project-store";
 import { useViz3DContext } from "@/app/pages/console/3d/Viz3DProvider";
 import { useSessionDisplayLengthUnit } from "@/app/project/display-length-unit-provider";
-import { formatLengthFamilyValue } from "@/app/project/display-length-units";
 import { evaluateMotorAlarms } from "./build-debug-logic";
 import { useBuildDebugOptional } from "@/app/pages/console/components/build-debug/build-debug-context";
 import { motorStatusDotClass } from "./motor-status-badge";
+import { POSITION_READOUT, formatDebugPositionReadout } from "./debug-readout";
 
 type ScreenAnchor = {
   motorId: string;
@@ -144,8 +144,9 @@ export const MotorTelemetryOverlay = () => {
         return (
           <div
             key={anchor.motorId}
+            data-motor-badge={anchor.motorId}
             className={cn(
-              "absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-full bg-card/95 px-1.5 py-0.5 font-mono text-mono-sm tabular-nums shadow-sm",
+              "absolute flex w-max -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-md bg-card/95 px-1.5 py-0.5 font-mono text-mono-sm tabular-nums shadow-sm",
               online ? "" : "opacity-50",
               primary
                 ? "ring-1 ring-primary"
@@ -157,23 +158,25 @@ export const MotorTelemetryOverlay = () => {
             )}
             style={{ left: anchor.x, top: anchor.y }}
           >
-            <span
-              className={cn(
-                "h-1.5 w-1.5 rounded-full",
-                online ? motorStatusDotClass(telemetry.status) : motorStatusDotClass("powerOff"),
-              )}
-              aria-hidden
-            />
-            <span className="text-foreground">
-              {motor ? formatMotorDisplayName(motors, motor) : "?"}
+            <span className="flex items-center gap-1">
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 rounded-full",
+                  online ? motorStatusDotClass(telemetry.status) : motorStatusDotClass("powerOff"),
+                )}
+                aria-hidden
+              />
+              <span className="text-foreground">
+                {motor ? formatMotorDisplayName(motors, motor) : "?"}
+              </span>
             </span>
-            <span className="text-muted-foreground">
-              {online
-                ? formatLengthFamilyValue(displayPositionOf(motorId), "mm", displayUnit, {
-                    canonicalPrecision: 1,
-                  })
-                : "离线"}
-            </span>
+            {online ? (
+              <span className="text-foreground" title={POSITION_READOUT.label}>
+                {formatDebugPositionReadout(displayPositionOf(motorId), displayUnit)}
+              </span>
+            ) : (
+              <span className="text-muted-foreground">离线</span>
+            )}
           </div>
         );
       })}

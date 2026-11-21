@@ -168,6 +168,58 @@ export const GO_START_GRACE_MS = 1500;
 export const isGoStarting = (entry: GoReadyEntry, now: number = Date.now()): boolean =>
   entry.dispatched === true && now - (entry.dispatchedAt ?? 0) < GO_START_GRACE_MS;
 
+/**
+ * 在容差内停够这么久也算走完：遥测不报 modelStatus、或停下后状态没变回静止时的兜底。
+ * 主进程只在数值变化时转发遥测，物体停下后就没有帧了，不能按「连续几帧到位」判断。
+ */
+export const GO_ARRIVE_SETTLE_MS = 1000;
+
+export type GoEntryProgress =
+  | { done: true }
+  | {
+      done: false;
+      /** 从什么时候起一直在容差内（Date.now()） */
+      arrivedSince?: number;
+      /** 到这个时刻即使没有新遥测也要再判断一次 */
+      recheckAt?: number;
+    };
+
+/**
+ * 已下发的 GO 走完了没有：
+ * - 过了起步宽限期、遥测报不在运动（静止 / 停止 / 报警），到没到目标都算走完；
+ * - 或者在容差内停够 GO_ARRIVE_SETTLE_MS。
+ * 没有遥测（离线）时不判断。
+ */
+export const goEntryProgress = (
+  entry: GoReadyEntry,
+  snapshot: ControlledObjectSnapshot | undefined,
+  now: number,
+  arrivedSince: number | undefined,
+): GoEntryProgress => {
+  if (!snapshot) return { done: false };
+  const arrived = isArrived(
+    positionsToAxisValues(snapshot.positions),
+    entry.target,
+    ARRIVAL_TOLERANCE,
+  );
+  const since = arrived ? (arrivedSince ?? now) : undefined;
+  const settledAt = since === undefined ? undefined : since + GO_ARRIVE_SETTLE_MS;
+  if (settledAt !== undefined && now >= settledAt) return { done: true };
+
+  const stopped = snapshot.modelStatus != null && snapshot.descriptor.status !== "running";
+  const graceEnd = (entry.dispatchedAt ?? 0) + GO_START_GRACE_MS;
+  if (stopped && now >= graceEnd) return { done: true };
+
+  const deadlines = [settledAt, stopped ? graceEnd : undefined].filter(
+    (time): time is number => time !== undefined,
+  );
+  return {
+    done: false,
+    arrivedSince: since,
+    recheckAt: deadlines.length > 0 ? Math.min(...deadlines) : undefined,
+  };
+};
+
 export const removeGoEntries = (
   entries: readonly GoReadyEntry[],
   objectIds: readonly string[],

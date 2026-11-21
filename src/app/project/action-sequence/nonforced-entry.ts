@@ -3,6 +3,7 @@ import {
   COEFFICIENT_NAMES,
   bisectLeft,
   bisectRight,
+  pythonMod,
   pythonRound,
   pythonRoundInt,
   pythonSum,
@@ -11,9 +12,15 @@ import {
   type CoefficientName,
 } from "./algorithm-params";
 import { runMoveCommands, type AxisMoveCommand, type AxisMoveRun } from "./move-commands";
+import { configureMotorGeometry, verifyMotorPlan } from "./nonforced-motor";
 
 /**
  * 非强制就近接入：python/非强制就近接入.py 的逐函数移植（入口 calculate_nonforced_entry）。
+ * 版本 nonforced_single_move_five_models_decimal_ad_modulo_20261120：单 Move 准备通过后，再按
+ * 单点 / 多级升降 / 无极旋转 / 多点摆 / XY 多点倾斜核对真实电机速度。位置、V、A、D 都按 0.1 编码。
+ * 无极旋转（模型 4）的 H 帧表目标按 workingStroke 取模下发，PLC 走最短路：回放、参考轨迹和准备
+ * 都按周期提升到离当前位置最近的像；正好半周期无法确定方向，该候选不可行。
+ * 多级升降的内部段点（nSections / AdjustDistance）不移植：软件不传，Python 省略时按普通 H Move。
  *
  * 每台设备 H/P/Y 各一条准备 Move，GO 时一起下发（一条三轴准备 Move），接入帧时位置和有符号速度
  * 都与帧表回放一致，之后照原帧表运行。帧表从 models 的曲线系数按 move-commands 的规则还原。
@@ -23,7 +30,7 @@ import { runMoveCommands, type AxisMoveCommand, type AxisMoveRun } from "./move-
  * （pythonRound、pythonSum、pythonRoundInt）。Python 改了就照 diff 改这里，再跑 nonforced-entry.spec 对数。
  */
 
-export const NONFORCED_ALGORITHM_VERSION = "nonforced_single_move_join_20261110_fast_5s_skip_limit";
+export const NONFORCED_ALGORITHM_VERSION = "nonforced_single_move_five_models_decimal_ad_pose_modulo_20261120";
 
 type AxisIndex = 0 | 1 | 2;
 
@@ -37,6 +44,8 @@ const MOTION_SPEED_EPS = 1e-6;
 // 内部编码回放误差容差
 const ENTRY_MATCH_VELOCITY_TOLERANCE = 0.05;
 const RATE_LIMIT = 6553.5;
+// 加减速度与速度同为 0.1 精度、uint16 编码
+const ACCELERATION_LIMIT = 6553.5;
 const ARRIVAL_TOLERANCE_MS = 1.0;
 
 export type NonforcedSettings = {
@@ -282,10 +291,19 @@ export const moveProfile = (
 
 const profileDuration = (phases: readonly ProfilePhase[]): number => pythonSum(phases.map((phase) => phase[0]));
 
-/** 从静止的 from 起步、GO 时下发准备 Move 后 tSec 秒的位置（预览过渡段用）；速度为 0 的不下发，原地不动 */
-export const entryMovePositionAt = (from: number, move: EntryMove, tSec: number): number => {
+/**
+ * 从静止的 from 起步、GO 时下发准备 Move 后 tSec 秒的位置（预览过渡段用）；速度为 0 的不下发，原地不动。
+ * period：无极旋转的 H，pos 是取模后的线上目标，PLC 走最短路（预览里正好半周期时取正向）
+ */
+export const entryMovePositionAt = (from: number, move: EntryMove, tSec: number, period?: number): number => {
   if (tSec <= 0 || Math.min(move.vel, move.accVel, move.decVel) <= 0) return from;
-  return profileAt(moveProfile(from, 0, move.pos, move.vel, move.accVel, move.decVel), move.pos, tSec)[0];
+  let target = move.pos;
+  if (period !== undefined) {
+    let delta = pythonMod(target - from, period);
+    if (delta > period / 2) delta -= period;
+    target = from + delta;
+  }
+  return profileAt(moveProfile(from, 0, target, move.vel, move.accVel, move.decVel), target, tSec)[0];
 };
 
 // ---------------------------------------------------------------------------
@@ -421,6 +439,9 @@ const axisRuns = (pieces: readonly Piece[], axis: number, unitMs: number): AxisM
 
 /** 一段恒加速度运动；u0/u1 为运行方向上的毫秒，command 为当时生效的 Move（起步前为 null） */
 export class Segment {
+  /** 当时生效的（无极旋转已按周期提升的）目标位置；起步前为 anchor */
+  readonly target: number;
+
   constructor(
     readonly u0: number,
     readonly u1: number,
@@ -428,7 +449,10 @@ export class Segment {
     readonly v0: number,
     readonly a: number,
     readonly command: EntryMove | null,
-  ) {}
+    target?: number,
+  ) {
+    this.target = target ?? q0;
+  }
 
   state(u: number): [number, number] {
     if (!this.v0 && !this.a) return [this.q0, 0];
@@ -439,9 +463,12 @@ export class Segment {
 
 let trackSerial = 0;
 
-/** 一个轴从 anchor 静止开始、依次执行 sends 得到的轨迹；sends = [u_ms, Move] 按 u 递增 */
+/**
+ * 一个轴从 anchor 静止开始、依次执行 sends 得到的轨迹；sends = [u_ms, Move] 按 u 递增。
+ * period 不为 null（无极旋转的 H）时，每条 Move 的 pos 是取模后的线上目标，按最短路提升到离当时位置最近的像。
+ */
 export class AxisTrack {
-  readonly serial = (trackSerial += 1);
+  readonly serial: number = (trackSerial += 1);
   readonly sends: [number, EntryMove][];
   readonly sendTimes: number[];
   readonly segments: Segment[] = [];
@@ -450,6 +477,7 @@ export class AxisTrack {
   constructor(
     readonly anchor: number,
     sends: readonly [number, EntryMove][],
+    readonly period: number | null = null,
   ) {
     this.sends = [...sends];
     this.sendTimes = this.sends.map(([u]) => u);
@@ -461,13 +489,32 @@ export class AxisTrack {
       checkDeadline();
       const [q, v] = this.activeState(activeU, activePhases, activeTarget, u);
       this.emit(activeU, activePhases, activeTarget, activeCommand, u);
+      const target = period !== null ? rotationLift(command.pos, q, period) : command.pos;
       activeU = u;
-      activeTarget = command.pos;
+      activeTarget = target;
       activeCommand = command;
-      activePhases = moveProfile(q, v, command.pos, command.vel, command.accVel, command.decVel);
+      activePhases = moveProfile(q, v, target, command.vel, command.accVel, command.decVel);
     }
     this.emit(activeU, activePhases, activeTarget, activeCommand, Number.POSITIVE_INFINITY);
     this.starts = this.segments.map((segment) => segment.u0);
+  }
+
+  /** _reference_track 的视图：同一帧表整体平移 shift（周期整数倍），时刻与 Move 不变 */
+  static shiftedView(base: AxisTrack, shift: number): AxisTrack {
+    const view = Object.create(AxisTrack.prototype) as AxisTrack;
+    Object.assign(view, {
+      serial: (trackSerial += 1),
+      anchor: base.anchor + shift,
+      period: base.period,
+      sends: base.sends,
+      sendTimes: base.sendTimes,
+      starts: base.starts,
+      segments: base.segments.map(
+        (segment) =>
+          new Segment(segment.u0, segment.u1, segment.q0 + shift, segment.v0, segment.a, segment.command, segment.target + shift),
+      ),
+    });
+    return view;
   }
 
   private activeState(activeU: number, phases: readonly ProfilePhase[], target: number, u: number): [number, number] {
@@ -488,17 +535,17 @@ export class AxisTrack {
     until: number,
   ): void {
     if (activeU === Number.NEGATIVE_INFINITY) {
-      this.segments.push(new Segment(Number.NEGATIVE_INFINITY, until, this.anchor, 0, 0, null));
+      this.segments.push(new Segment(Number.NEGATIVE_INFINITY, until, this.anchor, 0, 0, null, this.anchor));
       return;
     }
     let u = activeU;
     for (const [duration, q, v, a] of phases) {
       const end = u + duration * 1000;
       if (u >= until) return;
-      if (end > u) this.segments.push(new Segment(u, Math.min(end, until), q, v, a, command));
+      if (end > u) this.segments.push(new Segment(u, Math.min(end, until), q, v, a, command, target));
       u = end;
     }
-    if (u < until) this.segments.push(new Segment(u, until, target, 0, 0, command));
+    if (u < until) this.segments.push(new Segment(u, until, target, 0, 0, command, target));
   }
 
   segmentContaining(u: number): Segment {
@@ -521,6 +568,190 @@ export class AxisTrack {
     return values;
   }
 }
+
+// ---------------------------------------------------------------------------
+// 四之二、无极旋转（模型 4）：H 按 workingStroke 取模下发，PLC 走最短路
+// ---------------------------------------------------------------------------
+
+/** _rotation_period_of：只有模型 4 有周期；平铺字段与 geometry 不能冲突，不能硬写 360 */
+const rotationPeriodOf = (model: Json): number | null => {
+  if (model.model_type !== 4) return null;
+  const geometry = "geometry" in model ? model.geometry : {};
+  if (!isRecord(geometry)) throw new InvalidInput("geometry须为对象");
+  if ("workingStroke" in model && "workingStroke" in geometry && model.workingStroke !== geometry.workingStroke) {
+    throw new InvalidInput("workingStroke平铺字段与geometry配置冲突");
+  }
+  const period = numberOf("workingStroke" in model ? model.workingStroke : geometry.workingStroke, "模型4 workingStroke");
+  if (period <= 0) throw new InvalidInput("模型4 workingStroke须为真实PLC配置的正周期");
+  return period;
+};
+
+/** _rotation_coordinate：纯姿态取模到 [minimum, minimum+周期)，贴着两端的舍入残差归 minimum */
+const rotationCoordinate = (value: number, period: number, minimum = 0): number => {
+  const result = pythonMod(value - minimum, period);
+  const tolerance = Math.max(1e-10, 16 * ulp(Math.max(1, Math.abs(value), period)));
+  return result <= tolerance || period - result <= tolerance ? minimum : minimum + result;
+};
+
+/** _rotation_lift：target 在周期上离 current 最近的像；正好半周期时 PLC 方向不定，判不可行 */
+const rotationLift = (target: number, current: number, period: number): number => {
+  let delta = pythonMod(target - current, period);
+  const tolerance = Math.max(1e-10, 32 * ulp(Math.max(1, Math.abs(target), Math.abs(current), period)));
+  if (Math.abs(delta - period / 2) <= tolerance) {
+    throw new EntryInfeasible(["旋转目标恰好半周期，缺少PLC等距选向信息，无法唯一核验shortest路径"]);
+  }
+  if (delta > period / 2) delta -= period;
+  if (Math.abs(delta) <= tolerance || Math.abs(Math.abs(delta) - period) <= tolerance) delta = 0;
+  return current + delta;
+};
+
+const lexicographicLess = (left: readonly number[], right: readonly number[]): boolean => {
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return left[index]! < right[index]!;
+  }
+  return false;
+};
+
+/**
+ * _rotation_wire_goal：下发给 PLC 的停车目标。以软行程下限为基准取模；按 0.1 编码时
+ * 周期和下限可能不在网格上，先枚举相邻周期的像再编码（不能对编码值再取模），
+ * 取姿态误差 ≤0.05 且在 [minimum, min(maximum, minimum+周期)] 内的网格点。
+ */
+const rotationWireGoal = (
+  value: number,
+  period: number,
+  quantized: boolean,
+  minimum = 0,
+  maximum?: number,
+): number => {
+  const position = rotationCoordinate(value, period, minimum);
+  if (!quantized) return position;
+  const top = maximum === undefined ? minimum + period : Math.min(maximum, minimum + period);
+  // 与 Python 的集合相同：相等的值只留先放入的（includes 把 -0 和 0 视为相等）
+  const candidates: number[] = [];
+  const add = (value: number) => {
+    if (!candidates.includes(value)) candidates.push(value);
+  };
+  for (const shift of [-1, 0, 1]) add(quantize(position + shift * period));
+  add(Math.ceil(minimum * 10 - 1e-8) / 10);
+  add(Math.floor(top * 10 + 1e-8) / 10);
+  // 与 Python min((误差, 是否闭合上端点, 距离, 候选)) 相同的字典序
+  let best: number[] | null = null;
+  for (const candidate of candidates) {
+    const error = Math.abs(pythonMod(candidate - position + period / 2, period) - period / 2);
+    if (minimum - 1e-9 <= candidate && candidate <= top + 1e-9 && error <= 0.05 + 1e-9) {
+      const key = [error, candidate >= minimum + period ? 1 : 0, Math.abs(candidate - position), candidate];
+      if (best === null || lexicographicLess(key, best)) best = key;
+    }
+  }
+  if (best !== null) return best[3]!;
+  throw new EntryInfeasible(["旋转停车目标无法按0.1精度编码到允许软行程内"]);
+};
+
+type PeriodHost = { positionPeriodH: number | null; lower: number[]; upper: number[] };
+
+const axisPeriod = (device: PeriodHost, index: number): number | null => (index === 0 ? device.positionPeriodH : null);
+
+/** _position_interval_allowed：[lower, upper] 是否在软行程内；无极旋转看同一周期里的像，全周期都允许 */
+const positionIntervalAllowed = (
+  device: PeriodHost,
+  index: number,
+  lower: number,
+  upper: number,
+  tolerance = 1e-8,
+): boolean => {
+  const minimum = device.lower[index]!;
+  const maximum = device.upper[index]!;
+  const period = axisPeriod(device, index);
+  if (period === null) return lower >= minimum - tolerance && upper <= maximum + tolerance;
+  if (maximum <= minimum) return false;
+  if (maximum - minimum >= period - tolerance) return true;
+  if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || maximum < minimum) return false;
+  const cycle = Math.floor((lower - minimum + tolerance) / period);
+  return lower >= minimum + cycle * period - tolerance && upper <= maximum + cycle * period + tolerance;
+};
+
+/** _device_track：实际回放轨迹，无极旋转的 H 带周期 */
+const deviceTrack = (
+  device: { positionPeriodH: number | null },
+  index: number,
+  anchor: number,
+  sends: readonly [number, EntryMove][],
+): AxisTrack => new AxisTrack(anchor, sends, index === 0 ? device.positionPeriodH : null);
+
+/** _reference_shift：把参考轨迹平移整数个周期，使 u 时的位置是离当前位置最近的像 */
+const referenceShift = (device: Device, index: number, u: number): number => {
+  const period = axisPeriod(device, index);
+  if (period === null) return 0;
+  const position = device.tracks[index]!.state(u)[0];
+  const shift = rotationLift(position, device.current[index]!, period) - position;
+  return pythonRoundInt(shift / period) * period;
+};
+
+const referenceTrack = (device: Device, index: number, u: number, shift?: number): AxisTrack => {
+  const base = device.tracks[index]!;
+  const amount = shift ?? referenceShift(device, index, u);
+  if (amount === 0) return base;
+  device.rotationReferenceViews ??= new Map();
+  const key = `${index}|${amount}`;
+  let view = device.rotationReferenceViews.get(key);
+  if (view === undefined) {
+    view = AxisTrack.shiftedView(base, amount);
+    device.rotationReferenceViews.set(key, view);
+  }
+  return view;
+};
+
+/** _planning_profile：准备 Move 的实际回放（无极旋转先把目标提升到最近的像） */
+const planningProfile = (
+  device: Device,
+  index: number,
+  current: number,
+  velocity: number,
+  command: EntryMove,
+): [ProfilePhase[], number] => {
+  let target = command.pos;
+  const period = axisPeriod(device, index);
+  if (period !== null) target = rotationLift(target, current, period);
+  return [moveProfile(current, velocity, target, command.vel, command.accVel, command.decVel), target];
+};
+
+/** _rotation_branch_boundaries：参考轨迹经过“离当前半周期”的时刻，最短路方向在这里翻转 */
+const rotationBranchBoundaries = (device: Device, lower: number, upper: number): number[] => {
+  const period = device.positionPeriodH;
+  if (period === null) return [];
+  const result: number[] = [];
+  const current = device.current[0]!;
+  for (const segment of device.tracks[0]!.segments) {
+    checkDeadline();
+    const left = Math.max(lower, segment.u0);
+    const right = Math.min(upper, segment.u1);
+    if (right <= left || !Number.isFinite(left) || !Number.isFinite(right)) continue;
+    const positions = [segment.state(left)[0], segment.state(right)[0]];
+    if (segment.a) {
+      const zero = segment.u0 - (segment.v0 / segment.a) * 1000;
+      if (left < zero && zero < right) positions.push(segment.state(zero)[0]);
+    }
+    const first = Math.ceil((Math.min(...positions) - current) / period - 0.5 - 1e-12);
+    const last = Math.floor((Math.max(...positions) - current) / period - 0.5 + 1e-12);
+    for (let cycle = first; cycle <= last; cycle += 1) {
+      checkDeadline();
+      const target = current + (cycle + 0.5) * period;
+      const [q, v] = segment.state(left);
+      let roots: number[];
+      if (Math.abs(segment.a) <= 1e-14) {
+        roots = Math.abs(v) > 1e-14 ? [(target - q) / v] : [];
+      } else {
+        const discriminant = v * v + 2 * segment.a * (target - q);
+        roots = discriminant < 0 ? [] : [-1, 1].map((sign) => (-v + sign * Math.sqrt(discriminant)) / segment.a);
+      }
+      for (const root of roots) {
+        if (left < left + root * 1000 && left + root * 1000 < right) result.push(left + root * 1000);
+      }
+    }
+  }
+  return result;
+};
 
 // ---------------------------------------------------------------------------
 // 五、输入整理（公共参数格式）
@@ -632,12 +863,12 @@ const wireMove = (command: AxisMoveCommand, settings: Settings): EntryMove => {
     move = { pos: quantize(move.pos), vel: quantize(move.vel), accVel: quantize(move.accVel), decVel: quantize(move.decVel) };
   }
   if (Math.min(move.vel, move.accVel, move.decVel) <= 0) {
-    throw new InvalidInput("曲线里有Move的V/A/D量化后为0（低于协议0.1精度）");
+    throw new InvalidInput("曲线里有Move的V/A/D编码后为0（速度和加减速度精度均为0.1）");
   }
   return move;
 };
 
-// 只缓存与反馈/能力/行程无关的原曲线编译结果；条数和阶段数双重受限（控制台长时间运行）
+// 缓存原曲线编译结果（旋转编码用的周期和软行程在签名里）；条数和阶段数双重受限（控制台长时间运行）
 type CompiledCurve = { weight: number; commands: AxisMoveCommand[][]; tracks: AxisTrack[] };
 const compiledCurves = new Map<string, CompiledCurve>();
 let compiledCurvePieces = 0;
@@ -651,6 +882,9 @@ const compiledCurve = (
   runOrigin: number,
   loop: boolean,
   settings: Settings,
+  periodH: number | null,
+  rotationOriginH = 0,
+  rotationMaximumH: number | null = null,
 ): [AxisMoveCommand[][], AxisTrack[]] => {
   checkDeadline();
   const signature = JSON.stringify([
@@ -658,6 +892,9 @@ const compiledCurve = (
     direction,
     runOrigin,
     loop,
+    periodH,
+    rotationOriginH,
+    rotationMaximumH === null ? null : String(rotationMaximumH),
     settings.entry_quantize_protocol,
     pieces.map(([start, end, coefficients]) => [start, end, ...COEFFICIENT_NAMES.map((name) => coefficients[name])]),
   ]);
@@ -675,7 +912,27 @@ const compiledCurve = (
   const allTracks: AxisTrack[] = [];
   for (const axis of AXES) {
     checkDeadline();
-    const commands = runMoveCommands(axisRuns(pieces, axis, unit), { reverse: direction < 0, loop });
+    const rotating = axis === 0 && periodH !== null;
+    let commands = runMoveCommands(axisRuns(pieces, axis, unit), {
+      reverse: direction < 0,
+      loop,
+      quantizeTarget: !rotating,
+    });
+    if (rotating) {
+      // PLC 轴 MODULO：帧表目标以软行程下限为基准取模、按 0.1 编码下发
+      const quantized = settings.entry_quantize_protocol;
+      commands = commands.map((command) => {
+        let target: number;
+        try {
+          target = rotationWireGoal(command.target, periodH, quantized, rotationOriginH, rotationMaximumH ?? undefined);
+        } catch (error) {
+          if (!(error instanceof EntryInfeasible)) throw error;
+          // 保留原表超范围 Move，交给 tableLimit 判断能否在它之后接入
+          target = rotationWireGoal(command.target, periodH, quantized, rotationOriginH);
+        }
+        return { ...command, target };
+      });
+    }
     const ordered = direction < 0 ? [...commands].reverse() : commands;
     const sends = ordered.map((command): [number, EntryMove] => [
       direction * (command.atMs - runOrigin),
@@ -683,7 +940,7 @@ const compiledCurve = (
     ]);
     const anchor = direction < 0 ? endPositions[axis]! : startPositions[axis]!;
     allCommands.push(commands);
-    allTracks.push(new AxisTrack(anchor, sends));
+    allTracks.push(new AxisTrack(anchor, sends, axis === 0 ? periodH : null));
   }
   const weight = pieces.length;
   if (weight <= COMPILED_CURVE_MAX_PIECES) {
@@ -703,6 +960,11 @@ const floorRate = (value: number, quantized: boolean): number => {
   return quantized ? Math.floor(capped * 10 + 1e-8) / 10 : capped;
 };
 
+const floorAcceleration = (value: number, quantized: boolean): number => {
+  const capped = Math.min(value, ACCELERATION_LIMIT);
+  return quantized ? Math.floor(capped * 10 + 1e-8) / 10 : capped;
+};
+
 /** Python format(round(v, 3), ".3f") 去掉末尾 0 */
 const msText = (value: number): string => {
   const text = pythonRound(value, 3).toFixed(3);
@@ -715,6 +977,8 @@ let deviceSerial = 0;
 class Device {
   readonly serial = (deviceSerial += 1);
   readonly modelId: number;
+  /** 无极旋转 H 的 workingStroke（_rotation_period_of）；其他模型为 null */
+  readonly positionPeriodH: number | null;
   readonly plcId: string;
   readonly deviceId: unknown;
   readonly current: number[];
@@ -735,12 +999,24 @@ class Device {
   readonly commands: AxisMoveCommand[][];
   readonly tracks: AxisTrack[] = [];
   readonly moves: boolean;
+  motorType: number | null = null;
+  motorLimit = 0;
+  motorGeometry: import("./nonforced-motor").MotorGeometry | null = null;
+  motorDomain: [number, number] | null = null;
+  motorGeometrySignature: unknown = null;
+  motorBoxCache?: Map<string, number>;
+  motorReferenceSignature?: string;
+  motorMotionCertificates?: Map<string, true>;
+  motorSharedBoxCache?: Map<string, number>;
   readonly tableLimitU: number[] = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
   readonly tableLimitReasons: (string | null)[] = [null, null, null];
   // 搜索过程中的启发式状态（Python 挂在 devices[0] / device 上的同名属性）
   entryFailureOrder?: string[];
   probeIndices?: number[];
   trajectoryErrorWitnesses?: [Map<string, Witness>, Map<string, Witness>, Map<string, Witness>];
+  rotationReferenceViews?: Map<string, AxisTrack>;
+  /** 无极旋转 H 的取模基准（软行程下限，未给时为 0） */
+  readonly rotationOriginH: number;
 
   constructor(
     model: unknown,
@@ -755,6 +1031,7 @@ class Device {
       throw new InvalidInput("models[].model_id须为整数");
     }
     this.modelId = model.model_id;
+    this.positionPeriodH = rotationPeriodOf(model);
     this.plcId = "plc_id" in model ? pythonStr(model.plc_id) : "";
     this.deviceId = "device_id" in model ? model.device_id : this.modelId;
     const label = `模型${this.modelId}`;
@@ -771,8 +1048,10 @@ class Device {
     }
     this.active = AXIS_NAMES.map((name) => axesRaw.includes(name));
     // 准备统一按真实最大能力
+    // 与 Python 相同写成 floor(v / 0.1) * 0.1（末位可能与 floor(v*10)/10 不同）
+    const step = 0.1;
     const floored = (values: number[]) =>
-      settings.entry_quantize_protocol ? values.map((value) => Math.floor(value * 10 + 1e-8) / 10) : values;
+      settings.entry_quantize_protocol ? values.map((value) => Math.floor(value / step + 1e-8) * step) : values;
     this.entryAcceleration = floored(tripleOf(model.max_acceleration_HPY, `${label} max_acceleration_HPY`, true));
     this.repositionVelocity = floored(tripleOf(model.max_velocity_HPY, `${label} max_velocity_HPY`, true));
     this.repositionAcceleration = floored(tripleOf(model.max_acceleration_HPY, `${label} max_acceleration_HPY`, true));
@@ -791,15 +1070,25 @@ class Device {
       "max_position_HPY" in model
         ? tripleOf(model.max_position_HPY, `${label} max_position_HPY`)
         : [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
+    // 无极旋转纯姿态：以软行程下限为取模基准，上限可以超过周期；停稳反馈同样归一
+    this.rotationOriginH = 0;
+    if (this.positionPeriodH !== null) {
+      if ("min_position_HPY" in model && this.lower[0]! < 0) {
+        throw new InvalidInput(`${label}旋转H软行程下限须大于等于0`);
+      }
+      if (this.upper[0]! <= this.lower[0]!) throw new InvalidInput(`${label}旋转H软行程上限须大于下限`);
+      this.rotationOriginH = Number.isFinite(this.lower[0]) ? this.lower[0]! : 0;
+      this.current[0] = rotationCoordinate(this.current[0]!, this.positionPeriodH, this.rotationOriginH);
+    }
     const quantized = settings.entry_quantize_protocol;
     this.prepareCaps = AXES.map((index): [number, number, number] => [
       floorRate(this.repositionVelocity[index]!, quantized),
-      floorRate(this.repositionAcceleration[index]!, quantized),
-      floorRate(this.repositionDeceleration[index]!, quantized),
+      floorAcceleration(this.repositionAcceleration[index]!, quantized),
+      floorAcceleration(this.repositionDeceleration[index]!, quantized),
     ]);
     this.axisLabels = AXIS_NAMES.map((axis) => `模型${this.modelId} ${axis}`);
-    this.currentInRange = AXES.map(
-      (index) => this.lower[index]! - EPS <= this.current[index]! && this.current[index]! <= this.upper[index]! + EPS,
+    this.currentInRange = AXES.map((index) =>
+      positionIntervalAllowed(this, index, this.current[index]!, this.current[index]!, EPS),
     );
     const unit = settings.unit_ms;
     this.first = pieces[0]![0];
@@ -809,7 +1098,17 @@ class Device {
       for (const name of ["start_frame", "end_frame"] as const) frames.add(numberOf(segment[name], name));
     }
     this.keyframes = [...frames].sort((left, right) => left - right);
-    const [commands, compiledTracks] = compiledCurve(pieces, unit, direction, runOrigin, loop, settings);
+    const [commands, compiledTracks] = compiledCurve(
+      pieces,
+      unit,
+      direction,
+      runOrigin,
+      loop,
+      settings,
+      this.positionPeriodH,
+      this.rotationOriginH,
+      this.positionPeriodH !== null ? this.upper[0]! : null,
+    );
     this.commands = commands;
     for (const axis of AXES) {
       let track = compiledTracks[axis]!;
@@ -823,6 +1122,7 @@ class Device {
       this.tracks.push(track);
     }
     this.moves = AXES.some((axis) => this.active[axis] && this.tracks[axis]!.sends.length > 0);
+    configureMotorGeometry(this, model, settings.entry_quantize_protocol);
     // 帧表能力预检：接入后要执行的原表Move超能力/超行程时，与准备方式无关，verify 必然失败。
     // 记下每轴最后一条这样的Move（运行时刻），在它之前或同时的接入点直接判不可行。
     this.tracks.forEach((track, axis) => {
@@ -839,7 +1139,7 @@ class Device {
 
 /** 原表Move是否必然通不过 verify 的指令检查；能力为 0 的轴在原地保持时另有放行，这里不判 */
 const tableMoveProblem = (command: EntryMove, device: Device, index: AxisIndex): string | null => {
-  if (!(device.lower[index]! - 1e-8 <= command.pos && command.pos <= device.upper[index]! + 1e-8)) {
+  if (!positionIntervalAllowed(device, index, command.pos, command.pos)) {
     return `目标${msText(command.pos)}超出行程`;
   }
   if (!(-214748364.8 <= command.pos && command.pos <= 214748364.7)) return `目标${msText(command.pos)}超出协议范围`;
@@ -849,7 +1149,8 @@ const tableMoveProblem = (command: EntryMove, device: Device, index: AxisIndex):
     ["decVel", device.repositionDeceleration[index]!],
   ] as const;
   for (const [key, maximum] of checks) {
-    if (command[key] > RATE_LIMIT + 1e-8) return `${key}=${msText(command[key])}超出协议上限${RATE_LIMIT}`;
+    const protocolLimit = key === "vel" ? RATE_LIMIT : ACCELERATION_LIMIT;
+    if (command[key] > protocolLimit + 1e-8) return `${key}=${msText(command[key])}超出协议上限${protocolLimit}`;
     if (maximum > 0 && command[key] > maximum + 1e-8) {
       return `${key}=${msText(command[key])}超过最大能力${msText(maximum)}`;
     }
@@ -861,20 +1162,33 @@ const tableMoveProblem = (command: EntryMove, device: Device, index: AxisIndex):
 // 六、单Move准备：只有共同起点一条指令，接入后自然沿原表运行
 // ---------------------------------------------------------------------------
 
-/** 距离相同时取较小值（与 Python 的 (abs(x-value), x) 排序一致） */
-const ratesNear = (value: number, limit: number, settings: Settings, radius = 1): number[] => {
+/** 距离相同时取较小值（与 Python 的 (abs(x-value), x) 排序一致）；V 与 A/D 都是 0.1 精度 */
+const ratesNear = (value: number, limit: number, settings: Settings, radius = 1, resolution = 0.1): number[] => {
   if (!Number.isFinite(value) || value <= 0 || limit <= 0) return [];
   if (!settings.entry_quantize_protocol) return [Math.min(value, limit)];
-  const center = quantize(value);
+  const center = Math.floor(value / resolution + 0.5 + 1e-10) * resolution;
   const rates = new Set<number>();
   for (let k = -radius; k <= radius; k += 1) {
-    const rate = center + k / 10;
-    if (0.1 - 1e-9 <= rate && rate <= limit + 1e-8) rates.add(pythonRound(rate, 1));
+    if (resolution - 1e-9 <= center + k * resolution && center + k * resolution <= limit + 1e-8) {
+      rates.add(pythonRound(center + k * resolution, 1));
+    }
   }
   return [...rates].sort((left, right) => Math.abs(left - value) - Math.abs(right - value) || left - right);
 };
 
 const targetOnWire = (value: number, device: Device, index: AxisIndex, settings: Settings): number => {
+  const period = axisPeriod(device, index);
+  if (period !== null) {
+    // 无极旋转：线上发取模值，规划仍用离 value 最近的连续像
+    const wire = rotationWireGoal(
+      value,
+      period,
+      settings.entry_quantize_protocol,
+      device.rotationOriginH,
+      device.upper[0],
+    );
+    return rotationLift(wire, value, period);
+  }
   if (!settings.entry_quantize_protocol) return value;
   let target = quantize(value);
   const lower = device.lower[index]!;
@@ -922,7 +1236,7 @@ type AxisRequest = {
 };
 
 const axisRequest = (device: Device, index: AxisIndex, u0: number, settings: Settings): AxisRequest => {
-  const track = device.tracks[index]!;
+  const track = referenceTrack(device, index, u0);
   const segment = track.segmentContaining(u0);
   const [q, v] = segment.state(u0);
   const current = device.current[index]!;
@@ -932,12 +1246,16 @@ const axisRequest = (device: Device, index: AxisIndex, u0: number, settings: Set
     throw new EntryInfeasible([`${label}${device.tableLimitReasons[index]}，只能在它之后接入`]);
   }
   if (!device.currentInRange[index]) throw new EntryInfeasible([`${label}当前位置超出行程`]);
-  if (!(device.lower[index]! - EPS <= q && q <= device.upper[index]! + EPS)) {
+  if (!positionIntervalAllowed(device, index, q, q, EPS)) {
     throw new EntryInfeasible([`${label}接入位置超出行程`]);
   }
   const quantized = settings.entry_quantize_protocol;
   const [V, A, D] = device.prepareCaps[index]!;
-  const command = segment.command;
+  // 无极旋转按参考轨迹上提升后的目标接续，线上取模留到 entryForTime
+  const command =
+    segment.command !== null && axisPeriod(device, index) !== null
+      ? { ...segment.command, pos: segment.target }
+      : segment.command;
   const w = Math.abs(v);
   const request: AxisRequest = {
     device,
@@ -965,7 +1283,9 @@ const axisRequest = (device: Device, index: AxisIndex, u0: number, settings: Set
   if (Math.min(V, A, D) <= 0) throw new EntryInfeasible([`${label}需要运动，但可编码最大V/A/D为0`]);
   if (
     command !== null &&
-    (command.vel > V + 1e-8 || command.accVel > A + 1e-8 || command.decVel > D + 1e-8)
+    (command.vel > device.repositionVelocity[index]! + 1e-8 ||
+      command.accVel > device.repositionAcceleration[index]! + 1e-8 ||
+      command.decVel > device.repositionDeceleration[index]! + 1e-8)
   ) {
     throw new EntryInfeasible([`${label}原Move超过真实最大V/A/D，不能用默认值代替最大能力`]);
   }
@@ -1060,7 +1380,7 @@ function* candidateMoves(request: AxisRequest, seconds: number, settings: Settin
     return;
   }
   if (family === "acceleration") {
-    yield { ...request.command! };
+    yield { ...request.command!, vel: Math.min(request.command!.vel, V) };
     return;
   }
   if (seconds <= 0) return;
@@ -1137,7 +1457,13 @@ function* candidateMoves(request: AxisRequest, seconds: number, settings: Settin
   for (const idealDec of decelerations) {
     for (const dec of ratesNear(idealDec, D, settings, 0)) {
       if (family !== "endpoint" && Math.abs(dec - request.dec!) > 1e-8) continue;
-      const target = request.target ?? targetOnWire(q + (s * w * w) / (2 * dec), device, index, settings);
+      let target: number;
+      try {
+        target = request.target ?? targetOnWire(q + (s * w * w) / (2 * dec), device, index, settings);
+      } catch (error) {
+        if (error instanceof EntryInfeasible) continue;
+        throw error;
+      }
       const B = seconds + w / dec;
       const C = (1 / A + 1 / dec) / 2;
       const K = L + (w * w) / (2 * dec);
@@ -1182,35 +1508,74 @@ type Entry = {
   kind: "in_place" | "run_up" | "reposition";
   lead_ms: number;
   join: [number, number];
+  /** 参考轨迹平移的周期整数倍（_reference_shift），非旋转为 0 */
+  referenceShift: number;
   moves: PlanMove[];
   distance?: number;
   run_up_distance?: number;
   certificate?: [string, VerifyResult];
 };
 
-type Plan = { u0: number; lead_ms: number; entries: [Device, Entry][]; clock_start_u: number };
+type Plan = {
+  u0: number;
+  lead_ms: number;
+  entries: [Device, Entry][];
+  clock_start_u: number;
+  motorTimeHintScale?: number;
+  motorVerificationCertificate?: [string, [boolean, string]];
+};
 
 const entryForTime = (request: AxisRequest, seconds: number, u0: number, settings: Settings): Entry | null => {
   const { device, index, family } = request;
   const kind = family === "hold" ? "in_place" : request.v ? "run_up" : "reposition";
   const seen = new Set<string>();
-  for (const move of candidateMoves(request, seconds, settings)) {
+  const period = axisPeriod(device, index);
+  for (const candidate of candidateMoves(request, seconds, settings)) {
     checkDeadline();
+    let move = candidate;
+    if (period !== null) {
+      try {
+        move = {
+          ...candidate,
+          pos: rotationWireGoal(
+            candidate.pos,
+            period,
+            settings.entry_quantize_protocol,
+            device.rotationOriginH,
+            device.upper[0],
+          ),
+        };
+      } catch (error) {
+        if (error instanceof EntryInfeasible) continue;
+        throw error;
+      }
+    }
     const key = `${move.pos}|${move.vel}|${move.accVel}|${move.decVel}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    if (Math.min(move.vel, move.accVel, move.decVel) <= 0 || Math.max(move.vel, move.accVel, move.decVel) > RATE_LIMIT + 1e-8) {
+    if (
+      Math.min(move.vel, move.accVel, move.decVel) <= 0 ||
+      move.vel > RATE_LIMIT + 1e-8 ||
+      Math.max(move.accVel, move.decVel) > ACCELERATION_LIMIT + 1e-8
+    ) {
       continue;
     }
-    if (!(device.lower[index]! - EPS <= move.pos && move.pos <= device.upper[index]! + EPS)) continue;
+    if (!positionIntervalAllowed(device, index, move.pos, move.pos, EPS)) continue;
     if (
       family !== "hold" &&
       (move.vel > request.V + 1e-8 || move.accVel > request.A + 1e-8 || move.decVel > request.D + 1e-8)
     ) {
       continue;
     }
-    const phases = moveProfile(request.current, 0, move.pos, move.vel, move.accVel, move.decVel);
-    const [q, v] = profileAt(phases, move.pos, seconds);
+    let phases: ProfilePhase[];
+    let liftedTarget: number;
+    try {
+      [phases, liftedTarget] = planningProfile(device, index, request.current, 0, move);
+    } catch (error) {
+      if (!(error instanceof EntryInfeasible)) throw error;
+      continue;
+    }
+    const [q, v] = profileAt(phases, liftedTarget, seconds);
     if (
       Math.abs(q - request.q) > settings.entry_position_tolerance + 1e-9 ||
       Math.abs(v - request.v) > ENTRY_MATCH_VELOCITY_TOLERANCE + 1e-9
@@ -1220,7 +1585,7 @@ const entryForTime = (request: AxisRequest, seconds: number, u0: number, setting
     if (family === "rest" && seconds - profileDuration(phases) > ARRIVAL_TOLERANCE_MS / 1000 + 1e-9) continue;
     // 同一接入帧若已停在同一停车点，后续与准备V/A/D无关；只复用已由完整回放证实的失败
     const actualSeconds = (u0 - pythonRound(u0 - seconds * 1000, settings.entry_send_time_decimals)) / 1000;
-    const [actualQ, actualV] = profileAt(phases, move.pos, actualSeconds);
+    const [actualQ, actualV] = profileAt(phases, liftedTarget, actualSeconds);
     if (actualV === 0 && actualQ === move.pos && device.restTailFailures.has(`${index}|${u0}|${actualQ}`)) continue;
     const entry: Entry = {
       axis: AXIS_NAMES[index]!,
@@ -1228,12 +1593,17 @@ const entryForTime = (request: AxisRequest, seconds: number, u0: number, setting
       kind,
       lead_ms: kind === "in_place" ? 0 : seconds * 1000,
       join: [request.q, request.v],
+      referenceShift: referenceShift(device, index, u0),
       moves: [{ role: request.v ? "run_up" : "reposition", at: "clock_start", move, send_u: 0 }],
     };
     if (kind !== "in_place") entry.distance = request.L;
     if (kind === "run_up") entry.run_up_distance = (request.w * request.w) / (2 * move.accVel);
     const plan = materialize({ u0, lead_ms: seconds * 1000, entries: [[device, entry]], clock_start_u: 0 }, settings);
-    if (verify(plan, settings, true).passed) return entry;
+    try {
+      if (verify(plan, settings, true).passed) return entry;
+    } catch (error) {
+      if (!(error instanceof EntryInfeasible)) throw error;
+    }
   }
   return null;
 };
@@ -1287,8 +1657,49 @@ const planAt = (devices: readonly Device[], u0: number, settings: Settings, requ
   const slots = new Map(all.map((request, slot) => [slotKey(request), slot]));
   const preferred = priority.filter((key) => slots.has(key)).map((key) => slots.get(key)!);
   const order = [...preferred, ...all.map((_, slot) => slot).filter((slot) => !preferred.includes(slot))];
-  const candidates = [...times].filter((t) => lower - 1e-9 <= t && t <= upper + 1e-9).sort((left, right) => left - right);
-  for (const seconds of candidates) {
+  let motorReason: string | null = null;
+  let motorTimesExpanded = false;
+  const heap: number[] = [];
+  const siftUp = (index: number) => {
+    while (index > 0) {
+      const parent = (index - 1) >> 1;
+      if (heap[parent]! <= heap[index]!) break;
+      [heap[parent], heap[index]] = [heap[index]!, heap[parent]!];
+      index = parent;
+    }
+  };
+  const siftDown = (index: number) => {
+    for (;;) {
+      const left = index * 2 + 1;
+      const right = left + 1;
+      let smallest = index;
+      if (left < heap.length && heap[left]! < heap[smallest]!) smallest = left;
+      if (right < heap.length && heap[right]! < heap[smallest]!) smallest = right;
+      if (smallest === index) break;
+      [heap[smallest], heap[index]] = [heap[index]!, heap[smallest]!];
+      index = smallest;
+    }
+  };
+  const push = (value: number) => {
+    heap.push(value);
+    siftUp(heap.length - 1);
+  };
+  const pop = () => {
+    const top = heap[0]!;
+    const last = heap.pop()!;
+    if (heap.length > 0) {
+      heap[0] = last;
+      siftDown(0);
+    }
+    return top;
+  };
+  for (const value of times) {
+    if (lower - 1e-9 <= value && value <= upper + 1e-9) push(value);
+  }
+  const timeTick = 10 ** -settings.entry_send_time_decimals / 1000;
+  const scheduled = new Set(heap.map((value) => pythonRoundInt(value / timeTick)));
+  while (heap.length > 0) {
+    const seconds = pop();
     checkDeadline();
     const entries: ([Device, Entry] | null)[] = all.map(() => null);
     let failed = false;
@@ -1314,9 +1725,28 @@ const planAt = (devices: readonly Device[], u0: number, settings: Settings, requ
       { u0, lead_ms: seconds * 1000, entries: entries as [Device, Entry][], clock_start_u: 0 },
       settings,
     );
-    if (verify(plan, settings).passed) return plan;
+    if (!verify(plan, settings).passed) continue;
+    const [motorOk, reason] = verifyMotorPlan(plan, deviceTrack, checkDeadline);
+    if (motorOk) return plan;
+    motorReason = reason;
+    const extra: number[] = [];
+    if (!motorTimesExpanded && Number.isFinite(upper)) {
+      for (let k = 1; k < 64; k += 1) extra.push(lower + ((upper - lower) * k) / 64);
+      motorTimesExpanded = true;
+    }
+    if (plan.motorTimeHintScale !== undefined) {
+      const hint = Math.min(upper, Math.max(lower, seconds * plan.motorTimeHintScale));
+      extra.push(hint - timeTick, hint, hint + timeTick);
+    }
+    for (const value of extra) {
+      const key = pythonRoundInt(value / timeTick);
+      if (lower - 1e-9 <= value && value <= upper + 1e-9 && !scheduled.has(key)) {
+        scheduled.add(key);
+        push(value);
+      }
+    }
   }
-  throw new EntryInfeasible(["该帧无可编码的同时起步单Move自然接续方案"]);
+  throw new EntryInfeasible([motorReason ?? "该帧无可编码的同时起步单Move自然接续方案"]);
 };
 
 // ---------------------------------------------------------------------------
@@ -1372,12 +1802,20 @@ const phaseIsMonotone = (devices: readonly Device[], first: number, last: number
   for (const device of devices) {
     checkDeadline();
     for (let index = 0; index < device.tracks.length; index += 1) {
-      const track = device.tracks[index]!;
+      let track: AxisTrack;
+      try {
+        // 最短路方向在 phase 内翻转（参考平移不同）时不能二分
+        if (referenceShift(device, index, first) !== referenceShift(device, index, last)) return false;
+        track = referenceTrack(device, index, middle);
+      } catch (error) {
+        if (!(error instanceof EntryInfeasible)) throw error;
+        return false;
+      }
       const segment = track.segmentContaining(middle);
       if (first < segment.u0 || last >= segment.u1) return false;
       const [q1, v1] = segment.state(first);
       const [q2, v2] = segment.state(last);
-      if (Math.min(q1, q2) < device.lower[index]! - EPS || Math.max(q1, q2) > device.upper[index]! + EPS) return false;
+      if (!positionIntervalAllowed(device, index, Math.min(q1, q2), Math.max(q1, q2), EPS)) return false;
       if (segment.a === 0 && v1 === 0 && v2 === 0) continue;
       if (Math.min(Math.abs(v1), Math.abs(v2)) <= tolerance || v1 * v2 <= 0) return false;
       const [V, A, D] = device.prepareCaps[index]!;
@@ -1516,6 +1954,7 @@ const searchWindow = (
   for (const device of devices) {
     checkDeadline();
     for (const track of device.tracks) for (const value of track.boundaries(lower, upper)) pointSet.add(value);
+    for (const value of rotationBranchBoundaries(device, lower, upper)) pointSet.add(value);
   }
   const points = [...pointSet].sort((left, right) => left - right);
   const boundaryFrames = new Set(points.map((u) => toCurve(u)));
@@ -1795,7 +2234,7 @@ const candidateWitnessCache = (
   if (entry.moves.length !== 1) return [null, null];
   device.trajectoryErrorWitnesses ??= [new Map(), new Map(), new Map()];
   const groups = device.trajectoryErrorWitnesses;
-  const track = device.tracks[index]!;
+  const track = referenceTrack(device, index, u0, entry.referenceShift);
   const item = entry.moves[0]!;
   const move = item.move;
   const nextSend = bisectLeft(track.sendTimes, u0 - 1e-9);
@@ -1941,6 +2380,8 @@ const verify = (plan: Plan, settings: Settings, failFast = false): VerifyResult 
     settings.entry_position_tolerance,
     ENTRY_MATCH_VELOCITY_TOLERANCE,
     device.tracks[index]!.serial,
+    device.positionPeriodH,
+    entry.referenceShift,
     device.current[index],
     device.lower[index],
     device.upper[index],
@@ -1969,7 +2410,7 @@ const verifyUncached = (plan: Plan, settings: Settings, failFast: boolean): Veri
     lastEntry = entry;
     lastDevice = device;
     const index = entry.index;
-    const track = device.tracks[index]!;
+    const track = referenceTrack(device, index, u0, entry.referenceShift);
     const [witnessCache, witnessKey] = candidateWitnessCache(device, index, entry, u0, settings);
     const cachedWitness = witnessCache !== null ? witnessCache.get(witnessKey!) : undefined;
     if (failFast && cachedWitness !== undefined && u0 <= cachedWitness[0]) {
@@ -1987,7 +2428,7 @@ const verifyUncached = (plan: Plan, settings: Settings, failFast: boolean): Veri
     for (const [u, command] of track.sends) if (u >= u0 - 1e-9) sends.push([u, command]);
     // Python list.sort 稳定；Array.prototype.sort 也稳定
     sends.sort((left, right) => left[0] - right[0]);
-    actual = new AxisTrack(device.current[index]!, sends);
+    actual = deviceTrack(device, index, device.current[index]!, sends);
     const preparation = entry.moves;
     simultaneous &&= preparation.length === 1 && Math.abs(preparation[0]!.send_u - plan.clock_start_u) <= 1e-8;
     if (entry.kind !== "in_place") {
@@ -2042,8 +2483,7 @@ const verifyUncached = (plan: Plan, settings: Settings, failFast: boolean): Veri
         if (left < zero && zero < right) positions.push(segment.state(zero)[0]);
       }
       limitsOk &&=
-        Math.min(...positions) >= device.lower[index]! - 1e-8 &&
-        Math.max(...positions) <= device.upper[index]! + 1e-8 &&
+        positionIntervalAllowed(device, index, Math.min(...positions), Math.max(...positions)) &&
         Math.max(...velocities.map((value) => Math.abs(value))) <= device.repositionVelocity[index]! + 1e-8;
       const limit =
         segment.a * pythonSum(velocities) >= 0
@@ -2064,9 +2504,9 @@ const verifyUncached = (plan: Plan, settings: Settings, failFast: boolean): Veri
     }
     for (const [, command] of sends) {
       checkDeadline();
-      limitsOk &&= device.lower[index]! - 1e-8 <= command.pos && command.pos <= device.upper[index]! + 1e-8;
+      limitsOk &&= positionIntervalAllowed(device, index, command.pos, command.pos);
       limitsOk &&= -214748364.8 <= command.pos && command.pos <= 214748364.7;
-      limitsOk &&= Math.max(command.vel, command.accVel, command.decVel) <= RATE_LIMIT + 1e-8;
+      limitsOk &&= command.vel <= RATE_LIMIT + 1e-8 && Math.max(command.accVel, command.decVel) <= ACCELERATION_LIMIT + 1e-8;
       const checks = [
         [command.vel, device.repositionVelocity[index]!],
         [command.accVel, device.repositionAcceleration[index]!],
@@ -2150,6 +2590,18 @@ export const calculateNonforcedEntry = (parameters: unknown): NonforcedEntryResu
     return result;
   } catch (error) {
     if (error instanceof EntryCalculationTimeout) return timeoutResult(parameters);
+    if (error instanceof EntryInfeasible) {
+      // 例如帧表回放时旋转目标恰好半周期：无法核验，不是输入错误
+      const command = commandOf(parameters as Json);
+      const mode: NonforcedFrameSelectionMode = command.use_specified_time
+        ? "specified_frame"
+        : !command.nearest_start
+          ? "action_boundary"
+          : command.stopped_time_ms !== null
+            ? "current_segment_first"
+            : "nearest_whole_action";
+      return infeasible(command.reverse, mode, command.stopped_time_ms, error.message, [], error.reasons);
+    }
     return {
       status: "invalid_input",
       message: error instanceof Error ? error.message : String(error),
@@ -2258,7 +2710,25 @@ const calculate = (parameters: unknown): NonforcedEntryResult => {
       return infeasible(reverse, mode, reference, message, attempts, reasons);
     }
   }
-  return planned(devices, plan, reverse, settings, mode, reference, clamped, referenceWindow, selectedWindow, attempts, evaluated, toCurve);
+  try {
+    return planned(
+      devices,
+      plan,
+      reverse,
+      settings,
+      mode,
+      reference,
+      clamped,
+      referenceWindow,
+      selectedWindow,
+      attempts,
+      evaluated,
+      toCurve,
+    );
+  } catch (error) {
+    if (!(error instanceof EntryInfeasible)) throw error;
+    return infeasible(reverse, mode, reference, `最终下发时序实轴校验失败：${error.message}`, attempts, error.reasons);
+  }
 };
 
 const route = (device: Device) => ({ plc_id: device.plcId, model_id: device.modelId, device_id: device.deviceId });
@@ -2288,6 +2758,8 @@ const planned = (
     }
   }
   const verification = verify(plan, settings);
+  const [motorOk, motorReason] = verifyMotorPlan(plan, deviceTrack, checkDeadline);
+  if (!motorOk) throw new EntryInfeasible([motorReason]);
   const entryMoves: NonforcedEntryMove[] = [];
   const byDevice = new Map<Device, Entry[]>();
   for (const [device, entry] of plan.entries) {
@@ -2318,7 +2790,10 @@ const planned = (
     const joinVelocity: (number | null)[] = [null, null, null];
     const axes: NonforcedAxisSummary[] = [];
     for (const entry of entries) {
-      join[entry.index] = pythonRound(entry.join[0], 6);
+      const period = axisPeriod(device, entry.index);
+      const joinPosition =
+        period !== null ? rotationCoordinate(entry.join[0], period, device.rotationOriginH) : entry.join[0];
+      join[entry.index] = pythonRound(joinPosition, 6);
       joinVelocity[entry.index] = pythonRound(entry.join[1], 6);
       const axis: NonforcedAxisSummary = { axis: entry.axis, kind: entry.kind, lead_ms: pythonRound(entry.lead_ms, 6) };
       if (entry.distance !== undefined) axis.distance = pythonRound(entry.distance, 6);

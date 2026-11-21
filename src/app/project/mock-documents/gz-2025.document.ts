@@ -131,7 +131,7 @@ const GZ_SETUP = {
     {
       id: 8,
       name: "升降摆动架-01",
-      controlType: 8 as const,
+      controlType: 9 as const,
       enabledVirtualAxes: ["v1" as const, "v2" as const, "v3" as const],
       shapePreset: "cube" as const,
       shapeDimensions: { width: 2000, height: 500, depth: 1200 },
@@ -142,6 +142,8 @@ const GZ_SETUP = {
       color: "#4ade80",
       pulleyDistance: 0,
       modelRunDirection: 1 as const,
+      safetyRadius: 1850,
+      initialTiltDirection: 0,
       driveAxes: [
         { key: "0", mount: { x: -700, z: -400 } },
         { key: "1", mount: { x: 700, z: -400 } },
@@ -159,7 +161,7 @@ const GZ_SETUP = {
     {
       id: 9,
       name: "飘摆架-01",
-      controlType: 8 as const,
+      controlType: 9 as const,
       enabledVirtualAxes: ["v1" as const, "v2" as const, "v3" as const],
       shapePreset: "ring" as const,
       shapeDimensions: { outerDiameter: 1200, innerDiameter: 720, thickness: 200 },
@@ -170,6 +172,8 @@ const GZ_SETUP = {
       color: "#bac3ff",
       pulleyDistance: 0,
       modelRunDirection: 1 as const,
+      safetyRadius: 1850,
+      initialTiltDirection: 0,
       driveAxes: [
         { key: "0", mount: { x: -400, z: -400 } },
         { key: "1", mount: { x: 400, z: -400 } },

@@ -66,6 +66,7 @@ const fourPoint: ControlledObject = {
   id: 43,
   name: "Four",
   controlType: "dualTiltFourPointSwing",
+  safetyRadius: 1500,
   dimensions: { w: 1800, h: 1000, d: 900 },
   motionParams: {
     h: axisParams({ minAngle: 0, maxAngle: 800 }),
@@ -104,8 +105,8 @@ const multiPoint: ControlledObject = {
 describe("assignSolverIndexes", () => {
   it("uses 1-based array slots, not object ids", () => {
     const indexed = assignSolverIndexes([
-      { objectId: 42, payload: { type: 64 } },
-      { objectId: 99, payload: { type: 63 } },
+      { objectId: 42, payload: { type: 9 } },
+      { objectId: 99, payload: { type: 7 } },
     ]);
     expect(indexed.map((item) => item.index)).toEqual([1, 2]);
     expect(indexed.map((item) => item.objectId)).toEqual([42, 99]);
@@ -113,7 +114,7 @@ describe("assignSolverIndexes", () => {
 });
 
 describe("buildSolverCallItem", () => {
-  it("builds a four-point request with bbox spans and two rim values", () => {
+  it("builds an XY multi-point request with hoist xyz and the configured safety radius", () => {
     const item = buildSolverCallItem({
       object: fourPoint,
       motors: [
@@ -131,9 +132,15 @@ describe("buildSolverCallItem", () => {
       hpy: [100, 1, 2],
       index: 1,
     });
-    expect(item.type).toBe(64);
-    expect(item.params).toEqual([[800, 400]]);
-    expect(item.limit_rim).toEqual([1800, 900]);
+    expect(item.type).toBe(9);
+    expect(item.params).toEqual([
+      [-400, -200, 0],
+      [400, -200, 0],
+      [400, 200, 0],
+      [-400, 200, 0],
+    ]);
+    expect(item.limit_rim).toEqual([1500]);
+    expect(item.betainit).toBe(0);
     expect(item.motor_H).toEqual([10, 20, 30, 40]);
   });
 
@@ -150,7 +157,7 @@ describe("buildSolverCallItem", () => {
       index: 2,
     });
     expect(item.index).toBe(2);
-    expect(item.type).toBe(63);
+    expect(item.type).toBe(7);
     expect(item.origin_distance1).toBe(0);
     expect(item.origin_distance2).toBe(80);
     expect(item.params).toEqual([

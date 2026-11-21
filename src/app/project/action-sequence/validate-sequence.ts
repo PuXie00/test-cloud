@@ -92,6 +92,8 @@ export type SequenceValidationContext = {
     enabledVirtualAxes: VirtualAxisId[];
     limits: Partial<Record<VirtualAxisId, AxisLimit>>;
     safetyRadius?: number;
+    /** XY 多点摆（多点倾斜）：v2、v3 是 X、Y 两个倾角，角度保护按合成倾角算 */
+    xyTilt?: boolean;
   }>;
   hoistObjects?: MotorOverspeedObject[];
 };
@@ -124,6 +126,7 @@ const angleProtectObjectsOf = (context: SequenceValidationContext): AngleProtect
         maxHeight: height.max,
         minPitch: pitch.min,
         maxPitch: pitch.max,
+        ...(object.xyTilt ? { xyTilt: true } : {}),
       },
     ];
   });

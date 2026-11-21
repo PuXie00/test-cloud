@@ -3,6 +3,7 @@ import { DISCONNECTED_MASTER_STATUS, type PlcMasterStatus } from "@shared/csocke
 import type { PlcRuntimeState } from "./plc-runtime-types";
 import {
   composePlcRuntime,
+  hasMasterScanTriggerChange,
   mapMasterStatusToRuntimeFields,
   replaceMasterStatusMap,
   resolveSimulationSwitchState,
@@ -78,6 +79,31 @@ describe("replaceMasterStatusMap", () => {
   });
 });
 
+describe("hasMasterScanTriggerChange", () => {
+  const known = new Map([[1, item({ deviceId: 1 })]]);
+  const next = (overrides: Partial<PlcMasterStatus>) =>
+    new Map([[1, item({ deviceId: 1, ...overrides })]]);
+
+  it("triggers when masterStatus, simulationStatus or busStatus changes", () => {
+    expect(hasMasterScanTriggerChange(known, next({ masterStatus: 2 }))).toBe(true);
+    expect(hasMasterScanTriggerChange(known, next({ simulationStatus: 1 }))).toBe(true);
+    expect(hasMasterScanTriggerChange(known, next({ busStatus: 1 }))).toBe(true);
+  });
+
+  it("ignores the other status fields", () => {
+    expect(
+      hasMasterScanTriggerChange(known, next({ plcModel: 2, ruleStartStatus: 1, ruleId: 3, autoRunStatus: 1, autoId: 4 })),
+    ).toBe(false);
+  });
+
+  it("does not trigger for a master seen for the first time", () => {
+    expect(hasMasterScanTriggerChange(new Map(), next({ masterStatus: 2 }))).toBe(false);
+    expect(
+      hasMasterScanTriggerChange(known, new Map([[2, item({ deviceId: 2, busStatus: 1 })]])),
+    ).toBe(false);
+  });
+});
+
 describe("shouldApplyMasterStatusSnapshot", () => {
   it("applies only when no event has been received", () => {
     expect(shouldApplyMasterStatusSnapshot(false)).toBe(true);
@@ -86,19 +112,16 @@ describe("shouldApplyMasterStatusSnapshot", () => {
 });
 
 describe("composePlcRuntime", () => {
-  it("does not let scanAll override connection", () => {
+  it("keeps connection from master status and adds the verify record", () => {
     const masterById = new Map([
       [1, item({ deviceId: 1, masterStatus: DISCONNECTED_MASTER_STATUS })],
     ]);
     const result = composePlcRuntime(1, {
-      plcs: [{ id: 1, ip: "10.0.0.1", masterTypeId: "YZ_PLC_AC810_1" }],
       masterById,
       verify: { version: 1, proVerify: 0 },
-      scannedMasters: [{ ip: "10.0.0.1", plcModel: 1, axis: [] }],
     });
     expect(result.connection).toBe("disconnected");
     expect(result.protocolVersion).toBe(1);
-    expect(result.scannedAxes).toEqual([]);
   });
 });
 

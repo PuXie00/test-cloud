@@ -107,7 +107,6 @@ describe("ProjectStore document persist", () => {
         })),
         safetyRadius: 1200,
         initialTiltDirection: 30,
-        mountRotation: 15,
         mountLayout: { kind: "custom" },
         unbindAxisKeys: [],
         bindAxisMotors: [],
@@ -119,7 +118,6 @@ describe("ProjectStore document persist", () => {
     expect(result.current.store.objects.find((item) => item.id === objectId)).toMatchObject({
       safetyRadius: 1200,
       initialTiltDirection: 30,
-      mountRotation: 15,
     });
   });
 

@@ -61,7 +61,7 @@ describe("向导用到的工程操作", () => {
       position: { x: 5000, y: 4000, z: 0 },
     });
     expect(result.current.store.objects).toHaveLength(before + 1);
-    expect(result.current.store.objects.at(-1)?.axes).toHaveLength(4);
+    expect(result.current.store.objects.at(-1)?.axes).toHaveLength(2);
     expect(result.current.project.currentProject?.document?.setup.controlledObjects.at(-1)).toMatchObject(
       { name: "多点倾斜-01" },
     );
@@ -95,8 +95,8 @@ describe("向导用到的工程操作", () => {
       plan = result.current.store.autoBindAxes();
     });
 
-    expect(plan!.assignments.filter((item) => item.objectId === object.id)).toHaveLength(4);
-    expect(bindingsOf().map((motor) => motor.axisKey).sort()).toEqual(["0", "1", "2", "3"]);
+    expect(plan!.assignments.filter((item) => item.objectId === object.id)).toHaveLength(2);
+    expect(bindingsOf().map((motor) => motor.axisKey).sort()).toEqual(["0", "1"]);
     expect(new Set(bindingsOf().map((motor) => `${motor.plcId}:${motor.busNo}`)).size).toBe(1);
 
     expect(result.current.project.undoLabel).toBe("自动绑定");

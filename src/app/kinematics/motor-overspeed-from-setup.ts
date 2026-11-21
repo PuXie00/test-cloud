@@ -19,37 +19,48 @@ const pointInitPosOf = (object: ControlledObjectConfig): Vec3[] =>
     return [mount.x, mount.z, 0];
   });
 
+/** PLC 运行中每个电机都按该物体所有电机最大速度里的最小值限速 */
+const withSharedVelocityLimit = (motors: MotorOverspeedMotor[]): MotorOverspeedMotor[] => {
+  const limit = Math.min(...motors.map((motor) => motor.maxAxisVelocity));
+  return motors.map((motor) => ({ ...motor, maxAxisVelocity: limit }));
+};
+
 const motorsForObject = (
   object: ControlledObjectConfig,
   motors: readonly MotorConfig[],
 ): MotorOverspeedMotor[] =>
-  object.driveAxes.flatMap((axis) => {
-    const motor = motors.find(
-      (item) => item.controlledObjectId === object.id && item.axisKey === axis.key,
-    );
-    if (!motor) return [];
-    const maxAxisVelocity = isPositiveFinite(motor.params.maxAxisVelocity)
-      ? Number(motor.params.maxAxisVelocity)
-      : object.maxAxisVelocity;
-    if (!isPositiveFinite(maxAxisVelocity)) return [];
-    return [
-      {
-        id: motor.id,
-        name: motor.productModel || `电机 ${motor.id}`,
-        maxAxisVelocity,
-      },
-    ];
-  });
+  withSharedVelocityLimit(
+    object.driveAxes.flatMap((axis, ropeIndex) => {
+      const motor = motors.find(
+        (item) => item.controlledObjectId === object.id && item.axisKey === axis.key,
+      );
+      if (!motor) return [];
+      const maxAxisVelocity = isPositiveFinite(motor.params.maxAxisVelocity)
+        ? Number(motor.params.maxAxisVelocity)
+        : object.maxAxisVelocity;
+      if (!isPositiveFinite(maxAxisVelocity)) return [];
+      return [
+        {
+          id: motor.id,
+          name: motor.productModel || `电机 ${motor.id}`,
+          maxAxisVelocity,
+          ropeIndex,
+        },
+      ];
+    }),
+  );
 
 export const buildMotorOverspeedObjects = (
   objects: readonly ControlledObjectConfig[],
   motors: readonly MotorConfig[],
 ): MotorOverspeedObject[] =>
   objects.flatMap((object) => {
-    if (decodeControlType(object.controlType) !== "multiPointSwing") return [];
+    const controlType = decodeControlType(object.controlType);
+    if (controlType !== "multiPointSwing" && controlType !== "dualTiltFourPointSwing") return [];
     const pointInitPos = pointInitPosOf(object);
     const boundMotors = motorsForObject(object, motors);
     if (pointInitPos.length === 0 || boundMotors.length === 0) return [];
+    const xyTilt = controlType === "dualTiltFourPointSwing";
     const origins = originDistances(object);
     return [
       {
@@ -57,7 +68,8 @@ export const buildMotorOverspeedObjects = (
         pointInitPos,
         ...origins,
         maxHeight: object.motionParams.h?.maxAngle ?? 0,
-        betaInit: object.initialTiltDirection ?? 0,
+        betaInit: xyTilt ? 0 : object.initialTiltDirection ?? 0,
+        ...(xyTilt ? { xyTilt } : {}),
         motors: boundMotors,
       },
     ];

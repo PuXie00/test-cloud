@@ -43,10 +43,12 @@ export const scaleMotionParameters = (vad: AxisVad, scale: number): AxisVad => {
     throw new Error("运动参数缩放比例k必须大于0且不超过1");
   }
   const k = Math.min(scale, 1);
+  // 与 Python 相同先算 k²，(A·k)·k 会差最后一位
+  const squared = k * k;
   return {
     velocity: vad.velocity * k,
-    acceleration: vad.acceleration * k * k,
-    deceleration: vad.deceleration * k * k,
+    acceleration: vad.acceleration * squared,
+    deceleration: vad.deceleration * squared,
   };
 };
 

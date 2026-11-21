@@ -64,12 +64,10 @@ export type ControlledObject = {
   pulleyDistance: number;
   /** 模型运行方向：1 正向，2 反向 */
   modelRunDirection: 1 | 2;
-  /** 安全范围半径，单位 mm；仅多点摆必填 */
+  /** 安全范围半径，单位 mm；多点摆、多点倾斜必填 */
   safetyRadius?: number;
-  /** 初始倾斜角度，单位 deg，0–360；仅多点摆必填 */
+  /** 初始倾斜角度，单位 deg，0–360；多点摆、多点倾斜必填，多点倾斜固定 0 */
   initialTiltDirection?: number;
-  /** 吊点整体旋转，单位 deg，0–360；仅多点摆；缺省 0 */
-  mountRotation?: number;
   /** 多点吊点布局参数；缺失按 custom */
   mountLayout?: MountLayout;
   /** 多级升降的中间分段点和过分段点速度保留比例；仅多级升降 */

@@ -23,16 +23,12 @@ export const MODEL_RUN_DIRECTION_OPTIONS: ReadonlyArray<{
 export const normalizeModelRunDirection = (value: unknown): ModelRunDirection =>
   value === 2 ? 2 : DEFAULT_MODEL_RUN_DIRECTION;
 
-/** 安全范围半径，单位 mm（仅多点摆必填） */
+/** 安全范围半径，单位 mm（多点摆、多点倾斜必填） */
 export const DEFAULT_SAFETY_RADIUS = 1850;
 
-/** 初始倾斜角度，单位 deg（仅多点摆必填） */
+/** 初始倾斜角度，单位 deg（多点摆可设；多点倾斜固定 0） */
 export const DEFAULT_INITIAL_TILT_DIRECTION = 0;
 export const MAX_INITIAL_TILT_DIRECTION = 360;
-
-/** 吊点整体旋转，单位 deg（仅多点摆；绕物体原点） */
-export const DEFAULT_MOUNT_ROTATION = 0;
-export const MAX_MOUNT_ROTATION = 360;
 
 export const normalizeSafetyRadius = (value: unknown): number =>
   typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : DEFAULT_SAFETY_RADIUS;
@@ -40,11 +36,6 @@ export const normalizeSafetyRadius = (value: unknown): number =>
 export const normalizeInitialTiltDirection = (value: unknown): number => {
   if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_INITIAL_TILT_DIRECTION;
   return Math.min(MAX_INITIAL_TILT_DIRECTION, Math.max(0, value));
-};
-
-export const normalizeMountRotation = (value: unknown): number => {
-  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_MOUNT_ROTATION;
-  return Math.min(MAX_MOUNT_ROTATION, Math.max(0, value));
 };
 
 /** 默认吊点 mount，单位 mm */
@@ -60,7 +51,10 @@ const MOUNTS_BY_CONTROL_TYPE: Partial<Record<ControlType, AxisMount[]>> = {
   singlePointRotation: [{ x: 0, z: 0 }],
   continuousRotation: [{ x: 0, z: 0 }],
   multiLevelHoist: [{ x: 0, z: 0 }],
-  dualTiltFourPointSwing: FOUR_POINT_MOUNTS,
+  dualTiltFourPointSwing: [
+    { x: -400, z: 0 },
+    { x: 400, z: 0 },
+  ],
   multiPointSwing: FOUR_POINT_MOUNTS,
   railCar: [],
   staticProp: [],

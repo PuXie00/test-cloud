@@ -3,14 +3,12 @@ import {
   parseMasterStatusAck,
   type PlcMasterStatus,
 } from "@shared/csocket/plc-master-status";
-import { resolveMasterTypeIdByPlcModel } from "./motor-config";
 import type { PlcVerifyRecord } from "./project-verify";
 import {
   createDisconnectedPlcRuntime,
   type PlcConnectionState,
   type PlcLifecycle,
   type PlcRuntimeState,
-  type ScannedMaster,
 } from "./plc-runtime-types";
 import { isLifecycleBusy } from "./system-status-aggregate";
 
@@ -25,10 +23,8 @@ export type PlcMasterRuntimeFields = {
 };
 
 export type ComposePlcRuntimeInput = {
-  plcs: readonly { id: number; ip: string; masterTypeId: string }[];
   masterById: ReadonlyMap<number, PlcMasterStatus>;
   verify: PlcVerifyRecord | undefined;
-  scannedMasters: readonly ScannedMaster[];
 };
 
 export type SimulationSwitchState = {
@@ -108,6 +104,19 @@ export const replaceMasterStatusMap = (
 export const shouldApplyMasterStatusSnapshot = (alreadyReceived: boolean): boolean =>
   !alreadyReceived;
 
+/** 这几项变了，主控和电机的在线情况可能跟着变，要重新扫描主控 */
+const SCAN_TRIGGER_KEYS = ["masterStatus", "simulationStatus", "busStatus"] as const;
+
+/** 已记下的主控里有一台的主控 / 仿真 / 总线状态变了；第一次出现的主控不算 */
+export const hasMasterScanTriggerChange = (
+  known: ReadonlyMap<number, PlcMasterStatus>,
+  next: ReadonlyMap<number, PlcMasterStatus>,
+): boolean =>
+  [...next.values()].some((status) => {
+    const prev = known.get(status.deviceId);
+    return prev !== undefined && SCAN_TRIGGER_KEYS.some((key) => prev[key] !== status[key]);
+  });
+
 export const composePlcRuntime = (
   plcId: number,
   input: ComposePlcRuntimeInput,
@@ -117,19 +126,9 @@ export const composePlcRuntime = (
     ...createDisconnectedPlcRuntime(plcId),
     ...mapped,
   };
-  const withVerify = input.verify
+  return input.verify
     ? { ...base, protocolVersion: input.verify.version, proVerify: input.verify.proVerify }
     : base;
-  const plc = input.plcs.find((row) => row.id === plcId);
-  const scanned = plc
-    ? input.scannedMasters.find((row) => row.ip === plc.ip)
-    : undefined;
-  if (!scanned || !plc) return withVerify;
-  return {
-    ...withVerify,
-    modelMismatch: resolveMasterTypeIdByPlcModel(scanned.plcModel) !== plc.masterTypeId,
-    scannedAxes: scanned.axis,
-  };
 };
 
 export const resolveSimulationSwitchState = (

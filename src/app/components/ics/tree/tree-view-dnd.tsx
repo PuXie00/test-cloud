@@ -49,7 +49,8 @@ export const DropIndicator = ({ position }: { position: DropPosition }) => {
 
 export type DndRowProps = {
   dragHandleProps: React.HTMLAttributes<HTMLButtonElement>;
-  rowDragListeners: React.HTMLAttributes<HTMLDivElement>;
+  /** 只有可拖的行才有；只能放的行没有（不加 touch-none，触屏照样能滑动列表） */
+  rowDragListeners?: React.HTMLAttributes<HTMLDivElement>;
   showDragHandle: boolean;
   dropIndicator: ReactNode;
   setRowElement: (el: HTMLDivElement | null) => void;
@@ -121,7 +122,7 @@ const DndTreeRow = <T,>({
     >
       {children({
         dragHandleProps: { ...attributes, ...dragListeners },
-        rowDragListeners: dragListeners ?? {},
+        rowDragListeners: dragListeners,
         showDragHandle: draggable,
         dropIndicator: showDrop ? (
           <DropIndicator position={dropHighlight!.position} />

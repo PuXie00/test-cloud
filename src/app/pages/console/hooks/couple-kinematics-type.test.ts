@@ -3,19 +3,19 @@ import type { ControlType } from "@/app/project/configuration-types";
 import { encodeSolverType } from "./couple-kinematics-type";
 
 describe("encodeSolverType", () => {
-  it("maps swing and single-point move to Python type codes", () => {
-    expect(encodeSolverType("dualTiltFourPointSwing")).toBe(64);
-    expect(encodeSolverType("multiPointSwing")).toBe(63);
-    expect(encodeSolverType("singlePointMove")).toBe(31);
+  it("maps models to solver type codes", () => {
+    expect(encodeSolverType("singlePointMove")).toBe(2);
+    expect(encodeSolverType("multiLevelHoist")).toBe(3);
+    expect(encodeSolverType("multiPointSwing")).toBe(7);
+    expect(encodeSolverType("dualTiltFourPointSwing")).toBe(9);
   });
 
-  it("does not send rotation, rail, static, or multi-level hoist to the exe", () => {
+  it("does not send rotation, rail, or static props to the exe", () => {
     const skipped: ControlType[] = [
       "singlePointRotation",
       "continuousRotation",
       "railCar",
       "staticProp",
-      "multiLevelHoist",
     ];
     for (const controlType of skipped) {
       expect(encodeSolverType(controlType)).toBeNull();

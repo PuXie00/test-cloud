@@ -8,7 +8,7 @@ import { createEmptyDocument } from "./project-document-empty";
 const swingObject = (): ControlledObjectConfig => ({
   id: 8,
   name: "swing",
-  controlType: 8,
+  controlType: 9,
   enabledVirtualAxes: ["v1", "v2", "v3"],
   shapePreset: "cube",
   shapeDimensions: { width: 1, height: 1, depth: 1 },
@@ -87,7 +87,7 @@ describe("sequenceValidationContextFromSetup", () => {
     expect(timeline.maxDecelerationByAxis).toBeUndefined();
   });
 
-  it("copies safetyRadius only for multi-point swing", () => {
+  it("copies safetyRadius for dual tilt and multi-point swing", () => {
     const twoPoint = swingObject();
     const multiPoint: ControlledObjectConfig = {
       ...twoPoint,
@@ -105,7 +105,10 @@ describe("sequenceValidationContextFromSetup", () => {
     document.setup.motors = boundMotors();
     document.setup.plcs = [{ id: 1, masterTypeId: "AC810_1", ip: "127.0.0.1" }];
     const ctx = sequenceValidationContextFromSetup(document as ProjectDocument);
-    expect(ctx.objects[0]?.safetyRadius).toBeUndefined();
+    expect(ctx.objects[0]?.safetyRadius).toBe(1000);
     expect(ctx.objects[1]?.safetyRadius).toBe(1850);
+    expect(ctx.objects[0]?.xyTilt).toBe(true);
+    expect(ctx.objects[1]?.xyTilt).toBeUndefined();
+    expect(ctx.hoistObjects?.find((hoist) => hoist.objectId === 8)?.xyTilt).toBe(true);
   });
 });

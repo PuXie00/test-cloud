@@ -20,6 +20,7 @@ export const TreeView = <T,>({
   focusedId,
   onSelect,
   onDelete,
+  onClearSelection,
   renderLabel,
   renderIcon,
   renderExtra,
@@ -43,9 +44,13 @@ export const TreeView = <T,>({
     [nodes, getNodeId, getChildren, expandedIds],
   );
 
-  const [activeRowId, setActiveRowId] = useState<string | null>(
+  const [activeRowIdState, setActiveRowId] = useState<string | null>(
     rows[0]?.id ?? null,
   );
+  // 行被删 / 收起后，Tab 仍要能进到树里
+  const activeRowId = rows.some((row) => row.id === activeRowIdState)
+    ? activeRowIdState
+    : (rows[0]?.id ?? null);
 
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
@@ -93,6 +98,9 @@ export const TreeView = <T,>({
         } else if (row.parentId) {
           focusRow(row.parentId);
         }
+      } else if (event.key === "Escape" && onClearSelection) {
+        event.preventDefault();
+        onClearSelection();
       } else if (
         onDelete &&
         (event.key === "Delete" || event.key === "Backspace") &&
@@ -104,7 +112,7 @@ export const TreeView = <T,>({
         onDelete(row.node);
       }
     },
-    [rows, expandedIds, focusRow, handleToggleExpand, onDelete],
+    [rows, expandedIds, focusRow, handleToggleExpand, onClearSelection, onDelete],
   );
 
   const renderRow = (
@@ -141,6 +149,11 @@ export const TreeView = <T,>({
           tabIndex: isActive ? 0 : -1,
           onKeyDown: (event) => handleKeyDown(row, event),
           onFocus: () => setActiveRowId(row.id),
+          // 右键先选中这一行，菜单作用的就是高亮的那一行
+          onContextMenu: (event) => {
+            if (!selected) onSelect(row.node, event);
+          },
+          ...({ "data-tree-id": row.id } as React.HTMLAttributes<HTMLDivElement>),
           ...getRowProps?.(row.node),
         }}
       />

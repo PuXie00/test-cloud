@@ -55,6 +55,7 @@ import {
   applyDebugMotionParams,
   applyEnableMotor,
   applyJogMotor,
+  applyLightSlaveMotor,
   applyMoveAbsMotor,
   applyResetAlarmMotor,
   applySetPositionMotor,
@@ -906,6 +907,15 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
     }
   };
 
+  const handleLightSlave = async () => {
+    if (batchIds.length === 0) return;
+    try {
+      await applyLightSlaveMotor(batchIds);
+    } catch {
+      // silent
+    }
+  };
+
   const handleEnable = async (enabled: boolean) => {
     if (batchIds.length === 0) return;
     try {
@@ -1002,10 +1012,11 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
             void applyJogMotor(setPositionTargetIds, 0, limitRange).catch(() => {});
           }}
         >
+          
           {limitRange ? (
-            <ArrowUpToLine className="h-4 w-4" aria-hidden />
+            <ArrowDownToLine className="h-4 w-4" aria-hidden />
           ) : (
-            <ArrowUp className="h-4 w-4" aria-hidden />
+            <ArrowDown className="h-4 w-4" aria-hidden />
           )}
         </JogButton>
         <JogButton
@@ -1019,9 +1030,9 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
           }}
         >
           {limitRange ? (
-            <ArrowDownToLine className="h-4 w-4" aria-hidden />
+             <ArrowUpToLine className="h-4 w-4" aria-hidden />
           ) : (
-            <ArrowDown className="h-4 w-4" aria-hidden />
+            <ArrowUp className="h-4 w-4" aria-hidden />
           )}
         </JogButton>
 
@@ -1293,6 +1304,15 @@ export const BuildDebugBar = ({ className }: BuildDebugBarProps) => {
               className={barBtnClass}
             >
               清报警
+            </button>
+            <button
+              type="button"
+              disabled={batchDisabled}
+              aria-label="点亮灯"
+              onClick={() => void handleLightSlave()}
+              className={barBtnClass}
+            >
+              点亮灯
             </button>
             <button
               data-guide="console-real-axis-enable"

@@ -34,7 +34,7 @@ export type ResolveKinematicsWorkDirInput = {
 };
 
 /**
- * 运动学程序的工作目录：软件在这里写 YXZ_call.json，程序以它为当前目录读，再把 YXZ.json 写到 call 文件里的 path（也是这里）。
+ * 运动学程序的工作目录：软件在这里写 YXZ_call.json，程序以它为当前目录读，再把 YXZ.json 写回这里。
  * Windows、开发态还是程序所在的目录；Linux 打包版程序在 /opt 下，普通用户写不了，改用用户数据目录下的 kinematics。
  */
 export const resolveKinematicsWorkDirFrom = (

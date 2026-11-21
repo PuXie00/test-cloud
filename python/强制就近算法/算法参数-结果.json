@@ -1,0 +1,197 @@
+{
+  "status": "planned",
+  "can_dispatch": true,
+  "message": "全组同步准备参数计算完成",
+  "requires_group_wait": false,
+  "trajectory_run": true,
+  "reverse": false,
+  "effective_loop_once": true,
+  "effective_loop_count": 1,
+  "loop_fallback": [],
+  "selected_curve_time_ms": 3000,
+  "prepare_time_ms": 1408.3333333333333,
+  "frame_selection_mode": "current_segment_first",
+  "frame_selection_version": "current_original_segment_first_20261029",
+  "reference_frame_ms": 3500,
+  "search_origin_frame_ms": 3500.0,
+  "search_range_ms": [2000.0, 6000.0],
+  "selection_metric": "nearest_position",
+  "position_metric": "max(distance(target,current)/max_velocity_HPY); type4 uses modulo distance",
+  "search_statistics": {
+    "method": "position_envelope_branch_and_bound",
+    "evaluated_frames": 53,
+    "bound_intervals": 13,
+    "pruned_grid_frames": 390,
+    "full_fine_grid_covered": true,
+    "fine_grid_frames": 401,
+    "normalized_position_tolerance": 3.3333333333333334e-13,
+    "infeasible_frames": 0
+  },
+  "reference_segment_range_ms": [2000, 6000],
+  "selected_segment_range_ms": [2000, 6000],
+  "segment_search_phase": "current_segment",
+  "segment_search_attempts": [
+    {
+      "range_ms": [2000, 6000],
+      "phase": "current_segment",
+      "index": 0,
+      "reference_frame_ms": 3500,
+      "status": "planned"
+    }
+  ],
+  "prepare_time_ms_ceil": 1409,
+  "start_mode": "nearest",
+  "motor_limit_scale": 1.0,
+  "stationary_plc_ids": [],
+  "all_stationary": false,
+  "devices": [
+    {
+      "plc_id": "1",
+      "models": [
+        {
+          "plc_id": "1",
+          "model_id": 100,
+          "device_id": 100,
+          "model_type": 2,
+          "current_HPY": [2400.0, 0.0, 0.0],
+          "curve_target_HPY": [2200.0, 0.0, 0.0],
+          "target_HPY": [2200.0, 0.0, 0.0],
+          "velocity_HPY": [150.0, 0.0, 0.0],
+          "acceleration_HPY": [2000.0, 0.0, 0.0],
+          "deceleration_HPY": [2000.0, 0.0, 0.0],
+          "execute_HPY": [true, false, false],
+          "expected_arrival_ms": 1408.3333333333333,
+          "motor_velocity_upper_bound": 150.0,
+          "max_motor_velocity": 500.0
+        },
+        {
+          "plc_id": "1",
+          "model_id": 101,
+          "device_id": 200,
+          "model_type": 3,
+          "current_HPY": [2420.0, 0.0, 0.0],
+          "curve_target_HPY": [2220.0, 0.0, 0.0],
+          "target_HPY": [2220.0, 0.0, 0.0],
+          "velocity_HPY": [150.0, 0.0, 0.0],
+          "acceleration_HPY": [2000.0, 0.0, 0.0],
+          "deceleration_HPY": [2000.0, 0.0, 0.0],
+          "execute_HPY": [true, false, false],
+          "expected_arrival_ms": 1408.3333333333333,
+          "motor_velocity_upper_bound": 150.0,
+          "max_motor_velocity": 500.0
+        },
+        {
+          "plc_id": "1",
+          "model_id": 104,
+          "device_id": 500,
+          "model_type": 4,
+          "current_HPY": [352.0, 0.0, 0.0],
+          "curve_target_HPY": [352.25, 0.0, 0.0],
+          "target_HPY": [352.25, 0.0, 0.0],
+          "velocity_HPY": [0.35502958579881666, 0.0, 0.0],
+          "acceleration_HPY": [0.5041840271699172, 0.0, 0.0],
+          "deceleration_HPY": [0.5041840271699172, 0.0, 0.0],
+          "execute_HPY": [true, false, false],
+          "expected_arrival_ms": 1408.3333333333333,
+          "motor_velocity_upper_bound": 0.35502958579881666,
+          "max_motor_velocity": 500.0
+        },
+        {
+          "plc_id": "1",
+          "model_id": 102,
+          "device_id": 300,
+          "model_type": 7,
+          "current_HPY": [2440.0, 8.0, 0.0],
+          "curve_target_HPY": [2260.0, 4.0, 4.0],
+          "target_HPY": [2260.0, 4.0, 4.0],
+          "velocity_HPY": [135.79881656804733, 2.8530177514792903, 2.8530177514792903],
+          "acceleration_HPY": [1639.2283183361926, 452.20612723644143, 452.20612723644143],
+          "deceleration_HPY": [1639.2283183361926, 452.20612723644143, 452.20612723644143],
+          "execute_HPY": [true, true, true],
+          "expected_arrival_ms": 1408.3333333333333,
+          "motor_velocity_upper_bound": 165.04294733716918,
+          "max_motor_velocity": 500.0
+        },
+        {
+          "plc_id": "1",
+          "model_id": 103,
+          "device_id": 400,
+          "model_type": 9,
+          "current_HPY": [2460.0, 8.0, 8.0],
+          "curve_target_HPY": [2260.0, 4.0, 4.0],
+          "target_HPY": [2260.0, 4.0, 4.0],
+          "velocity_HPY": [230.7692307692308, 2.8618366863905327, 2.8618366863905327],
+          "acceleration_HPY": [426.0355029585801, 269.2343596177102, 269.2343596177102],
+          "deceleration_HPY": [426.0355029585801, 269.2343596177102, 269.2343596177102],
+          "execute_HPY": [true, true, true],
+          "expected_arrival_ms": 1408.3333333333333,
+          "motor_velocity_upper_bound": 260.67541128743267,
+          "max_motor_velocity": 500.0
+        }
+      ]
+    }
+  ],
+  "1006_payloads": [
+    {
+      "plc_id": "1",
+      "selectedCurveTimeMs": 3000,
+      "loopCount": 1,
+      "prepareTimeMs": 1409,
+      "devices": [
+        {
+          "deviceID": 100,
+          "model_id": 100,
+          "velocity_HPY": [150.0, 0.0, 0.0],
+          "acceleration_HPY": [2000.0, 0.0, 0.0],
+          "deceleration_HPY": [2000.0, 0.0, 0.0],
+          "execute_HPY": [true, false, false]
+        },
+        {
+          "deviceID": 200,
+          "model_id": 101,
+          "velocity_HPY": [150.0, 0.0, 0.0],
+          "acceleration_HPY": [2000.0, 0.0, 0.0],
+          "deceleration_HPY": [2000.0, 0.0, 0.0],
+          "execute_HPY": [true, false, false]
+        },
+        {
+          "deviceID": 500,
+          "model_id": 104,
+          "velocity_HPY": [0.35502958579881666, 0.0, 0.0],
+          "acceleration_HPY": [0.5041840271699172, 0.0, 0.0],
+          "deceleration_HPY": [0.5041840271699172, 0.0, 0.0],
+          "execute_HPY": [true, false, false]
+        },
+        {
+          "deviceID": 300,
+          "model_id": 102,
+          "velocity_HPY": [135.79881656804733, 2.8530177514792903, 2.8530177514792903],
+          "acceleration_HPY": [1639.2283183361926, 452.20612723644143, 452.20612723644143],
+          "deceleration_HPY": [1639.2283183361926, 452.20612723644143, 452.20612723644143],
+          "execute_HPY": [true, true, true]
+        },
+        {
+          "deviceID": 400,
+          "model_id": 103,
+          "velocity_HPY": [230.7692307692308, 2.8618366863905327, 2.8618366863905327],
+          "acceleration_HPY": [426.0355029585801, 269.2343596177102, 269.2343596177102],
+          "deceleration_HPY": [426.0355029585801, 269.2343596177102, 269.2343596177102],
+          "execute_HPY": [true, true, true]
+        }
+      ]
+    }
+  ],
+  "skipped_candidates": [],
+  "algorithm_version": "v9_five_models_rotation_pose_20261120",
+  "time_basis": "1007共同时间戳T0开始准备；全部PLC等待T0+prepareTimeMs且本机准备完成停稳后进入曲线",
+  "protocol": {
+    "1006_header_bytes": 17,
+    "1006_device_bytes": 14,
+    "prepareTimeMs_offset": 13,
+    "prepareTimeMs_bytes": 4,
+    "endianness": "big",
+    "requires_plc_common_prepare_deadline": true,
+    "1007_changed": false
+  },
+  "scope": "零速起止、Jerk=0、A=D；几何电机速度上界；不包含PLC通信/跟随延时、碰撞或硬件保护"
+}

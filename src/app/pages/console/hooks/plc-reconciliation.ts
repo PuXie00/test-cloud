@@ -5,9 +5,7 @@ import {
   toSetupEntityIdSource,
 } from "./setup-entity-id";
 import { removeMotorCascade } from "./setup-operations";
-import type { DiscoveredMotor, ScannedAxis } from "./plc-runtime-types";
-import { resolveProductModelByGourdNo } from "./motor-config";
-import type { Motor } from "../components/right-sidebar/config-wizard/config-wizard-types";
+import type { DiscoveredMotor } from "./plc-runtime-types";
 
 export type ConfiguredMotorRef = {
   id: number;
@@ -142,47 +140,4 @@ export const applyReconciliation = (
   }
 
   return next;
-};
-
-export type OrderMatchedMotor = {
-  motor: Motor;
-  axis: ScannedAxis;
-};
-
-export type MotorOrderReconciliation = {
-  online: OrderMatchedMotor[];
-  modelMismatch: OrderMatchedMotor[];
-  portMismatch: OrderMatchedMotor[];
-  offline: Motor[];
-  discoveredOnly: ScannedAxis[];
-};
-
-/** 按从站编号升序排序后，与配置电机按下标顺序配对（顺序对账） */
-export const reconcileMotorsByOrder = (
-  configured: readonly Motor[],
-  scanned: readonly ScannedAxis[],
-): MotorOrderReconciliation => {
-  const sorted = [...scanned].sort((a, b) => a.slaveNo - b.slaveNo);
-  const online: OrderMatchedMotor[] = [];
-  const modelMismatch: OrderMatchedMotor[] = [];
-  const portMismatch: OrderMatchedMotor[] = [];
-  const offline: Motor[] = [];
-  const discoveredOnly: ScannedAxis[] = [];
-
-  const pairCount = Math.min(configured.length, sorted.length);
-  for (let i = 0; i < pairCount; i += 1) {
-    const m = configured[i]!;
-    const axis = sorted[i]!;
-    if (resolveProductModelByGourdNo(axis.gourdNo) !== m.productModel) {
-      modelMismatch.push({ motor: m, axis });
-    } else if (axis.busNo !== m.busNo) {
-      portMismatch.push({ motor: m, axis });
-    } else {
-      online.push({ motor: m, axis });
-    }
-  }
-  for (let i = pairCount; i < configured.length; i += 1) offline.push(configured[i]!);
-  for (let i = pairCount; i < sorted.length; i += 1) discoveredOnly.push(sorted[i]!);
-
-  return { online, modelMismatch, portMismatch, offline, discoveredOnly };
 };
