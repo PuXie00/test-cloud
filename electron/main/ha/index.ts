@@ -55,7 +55,7 @@ export const registerHaHandlers = (csocket: CsocketApiService): void => {
     gate: (optCmd, params) => ha.commandGate(optCmd, params),
     sent: (envelope, stage) => ha.onCommandSent(envelope, stage),
     push: (optCmd, result) => {
-      if (optCmd === 'Info|ha') ha.ingestInfoHa(result)
+      if (optCmd === 'HA|info') ha.ingestInfoHa(result)
       else ha.ingestHaRecv(result)
     },
     connection: (state) => ha.onCsocketConnection(state),

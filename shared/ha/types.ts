@@ -1,6 +1,6 @@
 /**
  * 主备热备：主进程 ↔ 界面的契约。方案见 docs/cpp-hot-standby-api.md。
- * 机间链路由 C++ 搭（HA|start / HA|stop / HA|send，推送 Info|ha / Info|haRecv），C++ 只原样转发；
+ * 机间链路由 C++ 搭（HA|start / HA|stop / HA|send，推送 HA|info / HA|haRecv），C++ 只原样转发；
  * 机器按 IP 区分。热备设置跟着电脑走，存在本机用户数据目录。
  */
 

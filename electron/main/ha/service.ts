@@ -118,7 +118,7 @@ const toForwardEnvelope = (envelope: HaForwardEnvelope): HaForwardEnvelope => ({
 /**
  * 主备热备的主进程部分（方案第 4、6、7 节）：
  * - 开启、关闭：经本机 C++ 的 HA|start / HA|stop；C++ 搭链路、只当管道；
- * - 链路状态（Info|ha）、收到的消息（Info|haRecv）；连上后互发 hello，判断是不是同一个工程；
+ * - 链路状态（HA|info）、收到的消息（HA|haRecv）；连上后互发 hello，判断是不是同一个工程；
  * - 指令同步：本机执行的写指令发给另一台（停止类立即发，其它执行成功后发），
  *   收到的一律带「不写 PLC」标志交给本机 C++；
  * - 备机的指令规则：配置带标志，整台 PLC 的指令不能做，没核对完只能停止、急停。
@@ -446,7 +446,7 @@ export class HaService {
   // ── C++ 推送 ──
 
   /**
-   * Info|ha：data[0] = { role, peers: [{ ip }] }，只在变化时推。
+   * HA|info：data[0] = { role, peers: [{ ip }] }，只在变化时推。
    * peers 只列连着的（2026-11-20 定，没有 link 字段）：在列表里就是连着，不在就是没连上；
    * 版本不一致等连不上的也不列。主机上是连着的备机，备机上是主机（连着时）。
    */
@@ -481,7 +481,7 @@ export class HaService {
     this.emit()
   }
 
-  /** Info|haRecv：data = [{ from, payload }]，按收到的顺序处理 */
+  /** HA|haRecv：data = [{ from, payload }]，按收到的顺序处理 */
   ingestHaRecv(result: CppAckResult | undefined): void {
     if (!this.active) return
     for (const item of result?.data ?? []) {

@@ -154,15 +154,15 @@ describe('CsocketApiService with hot standby hooks', () => {
     ])
   })
 
-  it('routes Info|ha, Info|haRecv and the connection state to the hooks', () => {
+  it('routes HA|info, HA|haRecv and the connection state to the hooks', () => {
     const { api, push, setStatus } = createApi()
     const h = hooks()
     api.setHaHooks(h.value)
-    push('Info|ha', [{ role: 'primary', peers: [] }])
-    push('Info|haRecv', [{ from: '192.168.0.101', payload: { type: 'hello' } }])
+    push('HA|info', [{ role: 'primary', peers: [] }])
+    push('HA|haRecv', [{ from: '192.168.0.101', payload: { type: 'hello' } }])
     push('Info|plc', [])
     setStatus('reconnecting')
-    expect(h.pushes.map((item) => item.optCmd)).toEqual(['Info|ha', 'Info|haRecv'])
+    expect(h.pushes.map((item) => item.optCmd)).toEqual(['HA|info', 'HA|haRecv'])
     expect(h.pushes[1].result?.data).toEqual([{ from: '192.168.0.101', payload: { type: 'hello' } }])
     expect(h.states).toEqual(['reconnecting'])
   })

@@ -57,7 +57,7 @@ const createHarness = (settings: HaSettings, startAck: CppAckResult = { success:
     defaultHostName: 'PC',
     onState: (state) => states.push(state),
   })
-  // Info|ha 只列连着的（没有 link 字段）：断开就是不在列表里
+  // HA|info 只列连着的（没有 link 字段）：断开就是不在列表里
   const linkUp = (ip: string, link: 'up' | 'down' = 'up') =>
     service.ingestInfoHa({ success: true, data: [{ role: settings.role, peers: link === 'up' ? [{ ip }] : [] }] })
   const receive = (from: string, payload: unknown) =>
@@ -227,7 +227,7 @@ describe('HaService link', () => {
     ])
   })
 
-  it('reads Info|ha as the list of online peers and ignores any link field', async () => {
+  it('reads HA|info as the list of online peers and ignores any link field', async () => {
     const standby = createHarness(standbySettings)
     await standby.service.start()
     // 还没连上：主机不在列表里，显示连接中
@@ -582,7 +582,7 @@ describe('HaService model and cover files', () => {
     }
   }
 
-  /** 两个服务接在一起：一台的 haSend 直接交给另一台的 Info|haRecv */
+  /** 两个服务接在一起：一台的 haSend 直接交给另一台的 HA|haRecv */
   const pair = async (primaryFiles: Files, standbyFiles: Files, primaryCover: { fileName: string; data: Buffer } | null = null) => {
     let primary!: HaService
     let standby!: HaService

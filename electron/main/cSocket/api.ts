@@ -65,7 +65,7 @@ export type CsocketHaHooks = {
   gate: (optCmd: string, params: unknown[]) => { block: string } | { noPlc: boolean }
   /** 本机的指令发出（sent）、执行成功（acked）；带标志的不会调 */
   sent: (envelope: HaForwardEnvelope, stage: 'sent' | 'acked') => void
-  /** C++ 推来的 Info|ha、Info|haRecv */
+  /** C++ 推来的 HA|info、HA|haRecv */
   push: (optCmd: string, result: CppAckResult | undefined) => void
   /** 本机 C++ 的连接状态 */
   connection: (state: CsocketConnectionState['state']) => void
@@ -263,7 +263,7 @@ export class CsocketApiService {
       const msg = envelope.result
       const optCmd = envelope.OptCmd
       if (!optCmd) return
-      if (optCmd === 'Info|ha' || optCmd === 'Info|haRecv') {
+      if (optCmd === 'HA|info' || optCmd === 'HA|haRecv') {
         this.haHooks?.push(optCmd, msg)
         return
       }
