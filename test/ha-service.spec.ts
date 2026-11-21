@@ -57,8 +57,9 @@ const createHarness = (settings: HaSettings, startAck: CppAckResult = { success:
     defaultHostName: 'PC',
     onState: (state) => states.push(state),
   })
-  const linkUp = (ip: string, link: 'up' | 'connecting' | 'down' = 'up') =>
-    service.ingestInfoHa({ success: true, data: [{ role: settings.role, peers: [{ ip, link }] }] })
+  // Info|ha 只列连着的（没有 link 字段）：断开就是不在列表里
+  const linkUp = (ip: string, link: 'up' | 'down' = 'up') =>
+    service.ingestInfoHa({ success: true, data: [{ role: settings.role, peers: link === 'up' ? [{ ip }] : [] }] })
   const receive = (from: string, payload: unknown) =>
     service.ingestHaRecv({ success: true, data: [{ from, payload }] })
   const helloFrom = (from: string, project = PROJECT, extra: Record<string, unknown> = {}) =>
@@ -226,6 +227,24 @@ describe('HaService link', () => {
     ])
   })
 
+  it('reads Info|ha as the list of online peers and ignores any link field', async () => {
+    const standby = createHarness(standbySettings)
+    await standby.service.start()
+    // 还没连上：主机不在列表里，显示连接中
+    standby.service.ingestInfoHa({ success: true, data: [{ role: 'standby', peers: [] }] })
+    expect(standby.service.getState().peers).toMatchObject([{ ip: '192.168.0.100', link: 'connecting' }])
+    // 在列表里就是连着，带不带 link 都一样；备机上别的 IP 不认
+    standby.service.ingestInfoHa({
+      success: true,
+      data: [{ role: 'standby', peers: [{ ip: '192.168.0.100', link: 'down' }, { ip: '192.168.0.77' }] }],
+    })
+    expect(standby.service.getState().peers).toMatchObject([{ ip: '192.168.0.100', link: 'up' }])
+    expect(standby.sent.at(-1)).toMatchObject({ to: ['192.168.0.100'], payload: { type: 'hello' } })
+    // 连过又不在列表里：断开
+    standby.service.ingestInfoHa({ success: true, data: [{ role: 'standby', peers: [] }] })
+    expect(standby.service.getState().peers).toMatchObject([{ ip: '192.168.0.100', link: 'down' }])
+  })
+
   it('tells standbys before the primary closes hot standby', async () => {
     const { service, sent, linkUp } = createHarness(primarySettings)
     await service.start()
@@ -357,7 +376,7 @@ describe('HaService command sync', () => {
     // linkUp only reported .102: keep .101 up as well
     service.ingestInfoHa({
       success: true,
-      data: [{ role: 'primary', peers: [{ ip: '192.168.0.101', link: 'up' }, { ip: '192.168.0.102', link: 'up' }] }],
+      data: [{ role: 'primary', peers: [{ ip: '192.168.0.101' }, { ip: '192.168.0.102' }] }],
     })
     helloFrom('192.168.0.101')
     sent.length = 0
@@ -597,8 +616,8 @@ describe('HaService model and cover files', () => {
     await standby.start()
     primary.setLocalProject(PROJECT)
     standby.setLocalProject(PROJECT)
-    primary.ingestInfoHa({ success: true, data: [{ role: 'primary', peers: [{ ip: '192.168.0.101', link: 'up' }] }] })
-    standby.ingestInfoHa({ success: true, data: [{ role: 'standby', peers: [{ ip: '192.168.0.100', link: 'up' }] }] })
+    primary.ingestInfoHa({ success: true, data: [{ role: 'primary', peers: [{ ip: '192.168.0.101' }] }] })
+    standby.ingestInfoHa({ success: true, data: [{ role: 'standby', peers: [{ ip: '192.168.0.100' }] }] })
     await vi.waitFor(() => expect(primary.getState().peers[0]?.project).toEqual(PROJECT))
     await vi.waitFor(() => expect(standby.getState().peers[0]?.project).toEqual(PROJECT))
     standby.setSynced(PROJECT.id, { motion: true, rules: true, meta: true, models: true })

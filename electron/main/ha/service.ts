@@ -94,9 +94,6 @@ type ActiveConfig = {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-const toLink = (value: unknown): HaLinkState =>
-  value === 'up' || value === 'connecting' ? value : 'down'
-
 const sameProject = (a: HaProjectInfo | null, b: HaProjectInfo | null): boolean =>
   a === b ||
   (a !== null && b !== null && a.id === b.id && a.name === b.name && a.formatVersion === b.formatVersion)
@@ -448,34 +445,38 @@ export class HaService {
 
   // ── C++ 推送 ──
 
-  /** Info|ha：data[0] = { role, peers: [{ ip, link }] }，只在变化时推 */
+  /**
+   * Info|ha：data[0] = { role, peers: [{ ip }] }，只在变化时推。
+   * peers 只列连着的（2026-11-20 定，没有 link 字段）：在列表里就是连着，不在就是没连上；
+   * 版本不一致等连不上的也不列。主机上是连着的备机，备机上是主机（连着时）。
+   */
   ingestInfoHa(result: CppAckResult | undefined): void {
     const active = this.active
     if (!active) return
     const data = result?.data?.[0]
     if (!isRecord(data) || !Array.isArray(data.peers)) return
-    const seen = new Set<string>()
+    const online = new Set<string>()
     for (const item of data.peers) {
       if (!isRecord(item) || typeof item.ip !== 'string' || !item.ip) continue
-      seen.add(item.ip)
-      const link = toLink(item.link)
+      // 备机只认主机
+      if (active.role === 'standby' && item.ip !== active.primaryIp) continue
+      online.add(item.ip)
       const peer = this.peers.get(item.ip) ?? { ip: item.ip, link: 'down', hello: null, closedByPeer: false }
-      const wasUp = peer.link === 'up'
-      peer.link = link
       this.peers.set(item.ip, peer)
-      if (link === 'up' && !wasUp) {
+      if (peer.link !== 'up') {
+        peer.link = 'up'
         peer.closedByPeer = false
         void this.transport.send([peer.ip], this.hello(false))
-      } else if (link !== 'up' && wasUp) {
-        this.onPeerLost(peer)
       }
     }
-    // 不在列表里的：主机上是已经断开的备机，去掉；备机上的主机留着，显示断开
+    // 不在列表里的就是没连上：主机上去掉这台备机；备机上的主机留着，连过又断了显示断开，没连上过显示连接中
     for (const [ip, peer] of this.peers) {
-      if (seen.has(ip)) continue
-      if (peer.link === 'up') this.onPeerLost(peer)
+      if (online.has(ip)) continue
+      if (peer.link === 'up') {
+        this.onPeerLost(peer)
+        peer.link = 'down'
+      }
       if (active.role === 'primary') this.peers.delete(ip)
-      else peer.link = 'down'
     }
     this.emit()
   }
