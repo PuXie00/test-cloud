@@ -1267,7 +1267,7 @@ export class CsocketApiService {
     }
     return this.licenseVerifying
   }
-  // 开发模式（未打包）连不上 C++ 时跳过授权
+  // 开发模式（未打包）跳过授权（授权页每一步都给）
   authSkip(): Promise<LicenseAck> {
     if (!this.license.skip()) {
       return Promise.resolve(this.licenseAck(false, 'NOT_ALLOWED', '正式版不能跳过授权'))
