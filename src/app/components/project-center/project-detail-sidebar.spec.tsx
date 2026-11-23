@@ -55,6 +55,31 @@ describe("工程格式版本", () => {
     expect((screen.getByRole("button", { name: "打开工程" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("当前打开的工程不能删除，其它工程可以", () => {
+    const onDelete = vi.fn();
+    const { rerender } = render(
+      <ProjectDetailSidebar
+        project={record({})}
+        onOpen={vi.fn()}
+        onDelete={onDelete}
+        deleteDisabled
+      />,
+    );
+    const blocked = screen.getByRole("button", { name: "删除工程" }) as HTMLButtonElement;
+    expect(blocked.disabled).toBe(true);
+    expect(blocked.title).toBe("当前打开的工程不能删除");
+    fireEvent.click(blocked);
+    expect(onDelete).not.toHaveBeenCalled();
+
+    rerender(
+      <ProjectDetailSidebar project={record({})} onOpen={vi.fn()} onDelete={onDelete} />,
+    );
+    const allowed = screen.getByRole("button", { name: "删除工程" }) as HTMLButtonElement;
+    expect(allowed.disabled).toBe(false);
+    fireEvent.click(allowed);
+    expect(onDelete).toHaveBeenCalledTimes(1);
+  });
+
   it("卡片角标", () => {
     const { rerender } = render(
       <ProjectCard project={record({ compat: "too-new" })} selected={false} onSelect={vi.fn()} />,

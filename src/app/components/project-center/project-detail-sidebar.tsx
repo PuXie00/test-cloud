@@ -10,6 +10,8 @@ type ProjectDetailSidebarProps = {
   onSaveAs?: () => void;
   onExport?: () => void;
   onDelete?: () => void;
+  /** 当前打开的工程不可删，按钮保留并说明原因 */
+  deleteDisabled?: boolean;
   onRestore?: (entry: ProjectVersionEntry) => void;
 };
 
@@ -23,6 +25,7 @@ export const ProjectDetailSidebar = ({
   onSaveAs,
   onExport,
   onDelete,
+  deleteDisabled = false,
   onRestore,
 }: ProjectDetailSidebarProps) => {
   if (!project) {
@@ -111,8 +114,13 @@ export const ProjectDetailSidebar = ({
           <button
             data-guide="project-center-delete"
             type="button"
-            className="flex h-10 w-full items-center justify-center gap-2 rounded-md border border-border bg-transparent text-body-sm text-destructive hover:bg-destructive/10"
-            onClick={onDelete}
+            disabled={deleteDisabled}
+            title={deleteDisabled ? "当前打开的工程不能删除" : undefined}
+            className="flex h-10 w-full items-center justify-center gap-2 rounded-md border border-border bg-transparent text-body-sm text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+            onClick={() => {
+              if (deleteDisabled) return;
+              onDelete();
+            }}
           >
             <Trash2 className="h-4 w-4" aria-hidden />
             删除工程

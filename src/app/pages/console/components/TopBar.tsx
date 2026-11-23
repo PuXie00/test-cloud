@@ -390,7 +390,6 @@ export const TopBar = ({
         onProjectManage={() => void handleProjectManage()}
         onSaveProject={() => void handleSaveProject()}
         onSaveProjectAs={() => void handleSaveProjectAs()}
-        onCloseProject={() => void handleCloseProject()}
         onVersionHistory={handleProjectManage}
         onImportExport={() => void handleImportExport()}
         onOperationLog={() => setOperationLogOpen(true)}

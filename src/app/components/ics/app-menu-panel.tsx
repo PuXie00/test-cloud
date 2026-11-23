@@ -3,7 +3,6 @@ import {
   CircleHelp,
   Copy,
   FolderOpen,
-  FolderX,
   Globe,
   LockKeyhole,
   LogOut,
@@ -37,7 +36,6 @@ const MENU_SECTIONS: MenuSection[] = [
       { id: "project", label: "工程管理", icon: FolderOpen },
       { id: "save", label: "保存工程", icon: Save },
       { id: "save-as", label: "工程另存为", icon: Copy },
-      { id: "close", label: "关闭工程", icon: FolderX },
     ],
   },
   {
@@ -89,7 +87,6 @@ type AppMenuPanelProps = {
   onProjectManage?: () => void;
   onSaveProject?: () => void;
   onSaveProjectAs?: () => void;
-  onCloseProject?: () => void;
   onVersionHistory?: () => void;
   onImportExport?: () => void;
   onOperationLog?: () => void;
@@ -119,7 +116,6 @@ export const AppMenuPanel = ({
   onProjectManage,
   onSaveProject,
   onSaveProjectAs,
-  onCloseProject,
   onVersionHistory,
   onImportExport,
   onOperationLog,
@@ -171,10 +167,6 @@ export const AppMenuPanel = ({
         return;
       case "save-as":
         onSaveProjectAs?.();
-        onClose();
-        return;
-      case "close":
-        onCloseProject?.();
         onClose();
         return;
       case "undo":
@@ -257,13 +249,7 @@ export const AppMenuPanel = ({
                   return (
                     <li key={resolved.id}>
                       <button
-                        data-guide={
-                          resolved.id === "save"
-                            ? "console-app-menu-save"
-                            : resolved.id === "close"
-                              ? "console-app-menu-close"
-                              : undefined
-                        }
+                        data-guide={resolved.id === "save" ? "console-app-menu-save" : undefined}
                         type="button"
                         disabled={disabled}
                         aria-disabled={disabled || undefined}

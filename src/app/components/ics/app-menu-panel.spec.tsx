@@ -18,6 +18,7 @@ describe("AppMenuPanel 按权限隐藏", () => {
     expect(screen.queryByRole("button", { name: "用户与权限" })).toBeNull();
     expect(screen.queryByRole("button", { name: "撤销" })).toBeNull();
     expect(screen.getByRole("button", { name: "工程管理" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "关闭工程" })).toBeNull();
     expect(screen.getByRole("button", { name: "切换用户" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "退出登录" })).toBeTruthy();
     // 撤销 / 重做那组整组隐藏后，分隔线只剩组与组之间

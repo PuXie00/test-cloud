@@ -601,6 +601,9 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
 
   const deleteProject = useCallback(
     async (folderName: string) => {
+      if (currentProjectRef.current?.folderName === folderName) {
+        throw new ProjectIpcError("IN_USE", "当前打开的工程不能删除");
+      }
       const api = getProjectAPI();
       unwrapResult(await api.delete({ name: folderName }));
       if (currentProjectRef.current?.folderName === folderName) {
