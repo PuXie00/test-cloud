@@ -9,7 +9,9 @@ import { useControlledObjects } from "../../../hooks/use-controlled-objects";
 import { goEntriesForObjectIds, pendingGoEntries } from "../../../hooks/go-ready";
 import { useGoReady } from "../../../hooks/go-ready-provider";
 import { useProjectStore } from "../../../hooks/use-project-store";
-import { AXIS_MODE_TABS, type AxisEditMode } from "../../action-builder/virtual-axis-edit";
+import { AXIS_MODE_TABS, virtualAxisLabel, type AxisEditMode } from "../../action-builder/virtual-axis-edit";
+import { formatQuantity } from "../../action-builder/motion-profile/quantity-format";
+import { useSessionDisplayLengthUnit } from "@/app/project/display-length-unit-provider";
 import { VirtualAxisRow } from "../../action-builder/virtual-axis-row";
 import {
   axisInputRange,
@@ -18,6 +20,7 @@ import {
   buildDimensionParticipants,
   sharedAxisValue,
   unionAxes,
+  type DimensionWrite,
 } from "./dimension-edit";
 
 type DimensionControlProps = {
@@ -26,6 +29,15 @@ type DimensionControlProps = {
   objectIds?: readonly number[];
   /** 「清除」时另外要做的事（动作页：取消选中的位姿）；给了时没有 GO 目标也能点 */
   onClear?: () => void;
+  /**
+   * 写到别处而不是设 GO 目标（动作页选着位姿：直接改位姿，影子跟着位姿动）；
+   * 相对时加在位姿的值上
+   */
+  onWrite?: (write: DimensionWrite) => void;
+  /** 每根轴下面显示物体当前的实际位置（和输入框里的目标对照） */
+  showCurrent?: boolean;
+  /** 单轴取当前：只把这一根轴的实时位置写回（动作页选着位姿时） */
+  onCaptureAxis?: (axis: VirtualAxisId) => void;
 };
 
 /** 输入框里还没写入 GO 目标的值：绝对是输入的位置，相对是相对当前实际位置的增量 */
@@ -38,7 +50,15 @@ const targetSignature = (target: VirtualAxisValues | undefined): string =>
  * 维度控制：虚轴的批量编辑规则和动作页「多选位姿」一致（见 dimension-edit.ts），
  * 区别是写入先设为 GO 目标并显示影子模型，按 GO 才执行。
  */
-export const DimensionControl = ({ disabled = false, objectIds, onClear }: DimensionControlProps) => {
+export const DimensionControl = ({
+  disabled = false,
+  objectIds,
+  onClear,
+  onWrite,
+  showCurrent = false,
+  onCaptureAxis,
+}: DimensionControlProps) => {
+  const display = useSessionDisplayLengthUnit();
   const { selectedId, multiSelectedIds } = useSelection();
   const { getById } = useControlledObjects();
   const { objects } = useProjectStore();
@@ -82,6 +102,11 @@ export const DimensionControl = ({ disabled = false, objectIds, onClear }: Dimen
       delete next[axis];
       return next;
     });
+    if (onWrite) {
+      if (mode === "rel" && value === 0) return;
+      onWrite({ mode, axis, value });
+      return;
+    }
     const { entries, missingPosition } = buildDimensionEntries(
       participants,
       { mode, axis, value },
@@ -137,19 +162,42 @@ export const DimensionControl = ({ disabled = false, objectIds, onClear }: Dimen
               const value = mode === "rel" ? (draft ?? 0) : (draft ?? shared ?? 0);
               const mixed = mode === "abs" && draft === undefined && shared === undefined;
               const unit = axisUnit(participants, axis);
+              // 当前实际位置：各物体一致时显示，不一致或没有数据时 --
+              const current = showCurrent ? sharedAxisValue(participants, axis, {}) : undefined;
+              const label = virtualAxisLabel(axis);
               return (
-                <VirtualAxisRow
-                  key={axis}
-                  axis={axis}
-                  value={value}
-                  mixed={mixed}
-                  unit={unit}
-                  min={mode === "abs" ? range.min : undefined}
-                  max={mode === "abs" ? range.max : undefined}
-                  disabled={disabled}
-                  onChange={(next) => handleDraftChange(axis, next)}
-                  onCommit={(next) => handleCommit(axis, next)}
-                />
+                <div key={axis} className="space-y-1">
+                  <VirtualAxisRow
+                    axis={axis}
+                    value={value}
+                    mixed={mixed}
+                    unit={unit}
+                    min={mode === "abs" ? range.min : undefined}
+                    max={mode === "abs" ? range.max : undefined}
+                    disabled={disabled}
+                    onChange={(next) => handleDraftChange(axis, next)}
+                    onCommit={(next) => handleCommit(axis, next)}
+                  />
+                  {showCurrent ? (
+                    <div className="flex min-h-7 items-center justify-between gap-2 pl-14 text-body-sm text-muted-foreground">
+                      <span aria-label={`${label} 当前位置`} className="font-mono tabular-nums">
+                        当前 {current === undefined ? "--" : unit ? formatQuantity(current, unit, display) : current.toFixed(1)}
+                      </span>
+                      {onCaptureAxis ? (
+                        <button
+                          type="button"
+                          aria-label={`${label} 取当前`}
+                          title="只把这一根轴的实时位置写进位姿"
+                          disabled={current === undefined && participants.every((item) => item.snapshot.positions == null)}
+                          onClick={() => onCaptureAxis(axis)}
+                          className="h-7 shrink-0 rounded-sm border border-border px-2 text-foreground hover:bg-accent disabled:pointer-events-none disabled:opacity-40"
+                        >
+                          取当前
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
               );
             })}
             <div className="flex gap-2">

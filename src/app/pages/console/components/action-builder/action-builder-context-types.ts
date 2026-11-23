@@ -92,6 +92,9 @@ export type ActionBuilderContextValue = {
   handleObjectsFollow: (objectIds: number[]) => void;
   handleCursorChange: (ms: number) => void;
   handlePlaybackCursorChange: (ms: number) => void;
+  /** 时间轴在播放（编辑坞报上来）：联机时影子不跟着游标走 */
+  timelinePlaying: boolean;
+  handleTimelinePlayingChange: (playing: boolean) => void;
   handleInsertTimelineBlock: (block: TimelineBlock) => boolean;
   handleReplaceTimelineBlock: (block: TimelineBlock) => boolean;
   handleApplyPoseAxisWrite: (blockIds: readonly string[], write: PoseAxisWrite) => boolean;

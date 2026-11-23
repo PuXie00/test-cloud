@@ -21,6 +21,8 @@ import { StatusControlBar } from "./status-control-bar";
 import { CouplePreviewDialog } from "./couple-preview-dialog";
 import { JogControl } from "./jog-control";
 import { DimensionControl } from "./dimension-control";
+import type { DimensionWrite } from "./dimension-edit";
+import type { VirtualAxisId } from "@/app/project/project-document-types";
 import { QuickActions } from "./quick-actions";
 import { poseFromControlSnapshot } from "./pose-from-control-snapshot";
 import { unionDimensions } from "./shared-dimensions";
@@ -49,6 +51,14 @@ type ManualControlPanelProps = {
   saveBlockedReason?: string | null;
   /** 顶部的联机说明 */
   liveLabel?: string | null;
+  /** 联机说明下面的一句提示 */
+  liveHint?: string | null;
+  /** 维度控制写到别处而不是设 GO 目标（动作页选着位姿：直接改位姿） */
+  onDimensionWrite?: (write: DimensionWrite) => void;
+  /** 维度控制每根轴下面显示当前实际位置 */
+  showCurrentValues?: boolean;
+  /** 维度控制的单轴取当前 */
+  onCaptureAxis?: (axis: VirtualAxisId) => void;
   /** 维度控制「清除」时另外要做的事（动作页：取消选中的位姿） */
   onClearTargets?: () => void;
   /** 存为造型（动作页）：选中的物体，没选就是所有有位置数据的物体 */
@@ -63,6 +73,10 @@ export const ManualControlPanel = ({
   saveLabel,
   saveBlockedReason = null,
   liveLabel = null,
+  liveHint = null,
+  onDimensionWrite,
+  showCurrentValues = false,
+  onCaptureAxis,
   onClearTargets,
   onSaveShape,
 }: ManualControlPanelProps) => {
@@ -193,9 +207,7 @@ export const ManualControlPanel = ({
             <Link2 className="h-4 w-4 shrink-0" aria-hidden />
             <span className="min-w-0 truncate">{liveLabel}</span>
           </div>
-          <p className="mt-1 px-1 text-body-sm text-muted-foreground">
-            位姿已设为 GO 目标；点动或改目标到位后按「取当前」写回
-          </p>
+          {liveHint ? <p className="mt-1 px-1 text-body-sm text-muted-foreground">{liveHint}</p> : null}
         </div>
       ) : null}
       <StatusControlBar
@@ -225,6 +237,9 @@ export const ManualControlPanel = ({
             objectIds={selectedIds}
             disabled={!availability.allowed("dimension")}
             onClear={onClearTargets}
+            onWrite={onDimensionWrite}
+            showCurrent={showCurrentValues}
+            onCaptureAxis={onCaptureAxis}
           />
         </>
       )}

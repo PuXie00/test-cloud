@@ -57,9 +57,11 @@ describe("去这里", () => {
     result.current!(sequence);
     expect(state.handleSelectionChange).toHaveBeenCalledWith(null);
     expect(state.setLiveMode).toHaveBeenCalledWith(true);
+    // GO 条上写明是「开场」的起点
+    const source = { kind: "sequence", name: "开场" };
     expect(state.setTargets).toHaveBeenCalledWith([
-      { objectId: "1", target: { v1: 100 }, current: { v1: 0 } },
-      { objectId: "2", target: { v1: 50, v2: 10 }, current: { v1: 40, v2: 0 } },
+      { objectId: "1", target: { v1: 100 }, current: { v1: 0 }, source },
+      { objectId: "2", target: { v1: 50, v2: 10 }, current: { v1: 40, v2: 0 }, source },
     ]);
     expect(state.toastInfo).toHaveBeenCalledWith("1 个物体不在线，已跳过");
   });

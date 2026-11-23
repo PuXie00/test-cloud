@@ -16,9 +16,12 @@ const LiveManualTab = () => (
 type PanelProps = {
   objectIds?: readonly number[];
   liveLabel?: string | null;
+  liveHint?: string | null;
   saveLabel?: string;
   saveBlockedReason?: string | null;
   onSaveCurrentPose: (request: { objectIds: readonly number[] }) => void;
+  onDimensionWrite?: (write: { mode: "abs" | "rel"; axis: "v1" | "v2" | "v3"; value: number }) => void;
+  onCaptureAxis?: (axis: "v1" | "v2" | "v3") => void;
 };
 
 const { state } = vi.hoisted(() => ({
@@ -74,15 +77,25 @@ const snapshot = (id: number, positions: { h?: number; p?: number }, status = "r
 
 const handleSaveCurrentPose = vi.fn();
 const handleUpdatePosesFromLive = vi.fn();
+const handleApplyPoseAxisWrite = vi.fn();
 
-const setBuilder = (selection: unknown) => {
+const setBuilder = (selection: unknown, extra: Record<string, unknown> = {}) => {
   state.builder = {
     sequence,
     selection,
     cursorMs: 2500,
+    selectedObjectIds: [],
+    timelinePlaying: false,
     handleSaveCurrentPose,
     handleUpdatePosesFromLive,
+    handleApplyPoseAxisWrite,
+    ...extra,
   };
+};
+
+const lastTargets = () => {
+  const bindings = state.bind.mock.calls.at(-1)?.[0] as Map<string, { target: unknown; source?: unknown }> | null;
+  return bindings ? [...bindings].map(([id, binding]) => [id, binding.target, binding.source]) : null;
 };
 
 beforeEach(() => {
@@ -95,6 +108,7 @@ beforeEach(() => {
   state.panel = null;
   handleSaveCurrentPose.mockClear();
   handleUpdatePosesFromLive.mockClear();
+  handleApplyPoseAxisWrite.mockClear();
 });
 
 afterEach(cleanup);
@@ -164,9 +178,77 @@ describe("ActionManualControlTab live pose editing", () => {
   it("without selected poses saves at the playhead as before", () => {
     setBuilder(null);
     render(<ActionManualControlTab />);
-    expect(state.panel).toMatchObject({ saveLabel: "取当前 → 写入 2.5 s", liveLabel: null });
+    // 没选位姿：影子跟着游标（两台都在序列里）
+    expect(state.panel).toMatchObject({
+      saveLabel: "取当前 → 写入 2.5 s",
+      liveLabel: "影子跟着游标：2.5 s · 2 台",
+    });
     state.panel!.onSaveCurrentPose({ objectIds: [7] });
     expect(handleSaveCurrentPose).toHaveBeenCalledWith({ objectIds: [7] });
     expect(handleUpdatePosesFromLive).not.toHaveBeenCalled();
+  });
+});
+
+describe("the shadow on the action page", () => {
+  it("follows the playhead without a selected pose and holds still while playing", () => {
+    setBuilder(null);
+    const { rerender } = render(<LivePoseGoBinding />);
+    // 2.5 s 在第一个位姿之前：取它们的第一帧
+    const cursor = { kind: "cursor", atMs: 2500 };
+    expect(lastTargets()).toEqual([
+      ["7", { v1: 400 }, cursor],
+      ["8", { v1: 500, v2: 10 }, cursor],
+    ]);
+    expect(state.bind.mock.calls.at(-1)?.[1]).toEqual({ exclusive: true });
+
+    state.bind.mockClear();
+    setBuilder(null, { cursorMs: 5000, timelinePlaying: true });
+    rerender(<LivePoseGoBinding />);
+    expect(state.bind).not.toHaveBeenCalled();
+
+    setBuilder(null, { cursorMs: 5000, timelinePlaying: false });
+    rerender(<LivePoseGoBinding />);
+    expect(lastTargets()?.[0]?.[2]).toEqual({ kind: "cursor", atMs: 5000 });
+  });
+
+  it("shadows only the selected objects of the sequence", () => {
+    setBuilder(null, { selectedObjectIds: [8] });
+    render(<LivePoseGoBinding />);
+    expect(lastTargets()?.map(([id]) => id)).toEqual(["8"]);
+  });
+
+  it("keeps targets set by 去这里 until the playhead moves", () => {
+    state.goEntries = [
+      { objectId: "7", target: { v1: 100 }, current: { v1: 0 }, source: { kind: "sequence", name: "开场" } },
+    ];
+    setBuilder(null);
+    const { rerender } = render(<LivePoseGoBinding />);
+    expect(state.bind).not.toHaveBeenCalled();
+    setBuilder(null, { cursorMs: 3000 });
+    rerender(<LivePoseGoBinding />);
+    expect(state.bind.mock.calls.at(-1)?.[1]).toEqual({ exclusive: true });
+  });
+
+  it("writes 维度控制 straight into the selected poses and takes one axis from the live position", () => {
+    setBuilder({ kind: "multi-block", blockIds: ["a", "b"] });
+    render(<ActionManualControlTab />);
+    expect(state.panel?.liveHint).toBe("维度控制直接改位姿（可撤销）；点动到位后按「取当前」写回");
+    state.panel!.onDimensionWrite!({ mode: "abs", axis: "v1", value: 450 });
+    expect(handleApplyPoseAxisWrite).toHaveBeenCalledWith(["a", "b"], { mode: "abs", axis: "v1", value: 450 });
+
+    state.panel!.onCaptureAxis!("v2");
+    const [ids, liveFor] = handleUpdatePosesFromLive.mock.calls[0] as [string[], (id: number) => unknown];
+    expect(ids).toEqual(["a", "b"]);
+    // 只取这一根轴：物体 8 的虚轴2，物体 7 没有虚轴2
+    expect(liveFor(8)).toEqual({ v2: 2 });
+    expect(liveFor(7)).toBeNull();
+  });
+
+  it("leaves 维度控制 setting manual targets without a selected pose", () => {
+    setBuilder(null);
+    render(<ActionManualControlTab />);
+    expect(state.panel?.onDimensionWrite).toBeUndefined();
+    expect(state.panel?.onCaptureAxis).toBeUndefined();
+    expect(state.panel?.liveHint).toBe("拖游标影子跟着走，按 GO 走到这一帧；设备不会自己动");
   });
 });

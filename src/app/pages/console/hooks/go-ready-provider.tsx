@@ -53,8 +53,11 @@ type GoReadyContextValue = {
   go: (objectIds?: readonly string[]) => Promise<void>;
   cancel: (objectIds?: readonly string[]) => void;
   clear: () => void;
-  /** 动作页联机：把这些物体的 GO 目标钉在选中的位姿上；null 解除 */
-  bind: (bindings: GoBindings | null) => void;
+  /**
+   * 动作页联机：把这些物体的 GO 目标钉在选中的位姿（或游标处的样子）上；null 解除。
+   * exclusive 时别的还没下发的目标一起去掉（影子跟着游标时只剩这一帧）
+   */
+  bind: (bindings: GoBindings | null, options?: { exclusive?: boolean }) => void;
   /** 换成这些目标（去掉别的准备目标和位姿绑定），如序列库的「去这里」 */
   setTargets: (entries: GoReadyEntry[]) => void;
   /** 走法：各自默认速度 / 同时到达 / 指定时长，本次运行期间记住 */
@@ -121,13 +124,13 @@ export const GoReadyProvider = ({ children }: GoReadyProviderProps) => {
     setState(IDLE_STATE);
   }, []);
 
-  const bind = useCallback((bindings: GoBindings | null) => {
+  const bind = useCallback((bindings: GoBindings | null, options?: { exclusive?: boolean }) => {
     const previous = bindingsRef.current;
     const next = bindings ?? NO_BINDINGS;
-    if (previous.size === 0 && next.size === 0) return;
+    if (previous.size === 0 && next.size === 0 && !options?.exclusive) return;
     bindingsRef.current = next;
     setState((current) =>
-      stateFromEntries(current, applyGoBindings(current.entries, previous, next)),
+      stateFromEntries(current, applyGoBindings(current.entries, previous, next, options?.exclusive)),
     );
   }, []);
 
@@ -151,6 +154,8 @@ export const GoReadyProvider = ({ children }: GoReadyProviderProps) => {
           current: entry.current,
           target: prev ? { ...prev.target, ...entry.target } : entry.target,
           dispatched: false,
+          // 维度控制改过的就是手动目标（改的是位姿时由位姿重新绑上，不走这里）
+          source: entry.source ?? { kind: "manual" },
         });
       }
       return { phase: "armed", mode, entries: [...byId.values()] };

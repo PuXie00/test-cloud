@@ -61,7 +61,7 @@ afterEach(cleanup);
 describe("GO bar", () => {
   it("says how long GO takes and which object is slowest, without listing every object", () => {
     render(<GoReadyOverlay />);
-    expect(screen.getByText("GO 准备 · 2 个物体")).not.toBeNull();
+    expect(screen.getByText("GO 准备 · 手动目标 · 2 台")).not.toBeNull();
     expect(screen.getByText("约 5.0 s")).not.toBeNull();
     expect(screen.getByText("升降台-01 最慢")).not.toBeNull();
     // 只有无极旋转单独一行（选转向），普通物体不逐台列出
@@ -102,5 +102,20 @@ describe("GO bar", () => {
     expect(screen.getByText("太短了，最短 2.1 s")).not.toBeNull();
     expect((screen.getByRole("button", { name: "全部物体 GO" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByLabelText("指定时长")).not.toBeNull();
+  });
+});
+
+describe("GO bar summary", () => {
+  it("says where the targets come from", async () => {
+    const { goTargetSummary } = await import("../../hooks/go-ready");
+    expect(
+      goTargetSummary([
+        { objectId: "1", target: {}, current: {}, source: { kind: "cursor", atMs: 12_000 } },
+        { objectId: "2", target: {}, current: {}, source: { kind: "cursor", atMs: 12_000 } },
+        { objectId: "3", target: {}, current: {}, source: { kind: "pose", atMs: 4000 } },
+        { objectId: "4", target: {}, current: {}, source: { kind: "sequence", name: "开场" } },
+        { objectId: "5", target: {}, current: {} },
+      ]),
+    ).toBe("游标 12.0 s · 2 台，4.0 s 的位姿 · 1 台，「开场」的起点 · 1 台，手动目标 · 1 台");
   });
 });

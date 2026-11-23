@@ -3,7 +3,9 @@ import type { ActionSequenceConfig, PoseBlock } from "@/app/project/action-seque
 import type { ControlledObjectSnapshot } from "../monitor-grid/monitor-data";
 import type { DimensionParticipant } from "../right-tab-panel/manual-control-tab/dimension-edit";
 import {
+  buildCursorGoBindings,
   buildPoseGoBindings,
+  cursorShadowObjectIds,
   captureLabel,
   livePoseLabel,
   resolveLivePoseSelection,
@@ -70,10 +72,29 @@ describe("buildPoseGoBindings", () => {
         participant(8, { h: 300, p: 2 }, ["v1", "v2"]),
       ],
     );
+    // 三个位姿不在同一时刻：GO 条写「选中的位姿」（物体 9 没有监控数据，跳过）
+    const source = { kind: "pose", atMs: undefined };
     expect([...bindings]).toEqual([
-      ["7", { target: { v1: 8000 }, current: { v1: 120, v2: 4 } }],
-      ["8", { target: { v1: 300, v2: 10 }, current: { v1: 300, v2: 2 } }],
+      ["7", { target: { v1: 8000 }, current: { v1: 120, v2: 4 }, source }],
+      ["8", { target: { v1: 300, v2: 10 }, current: { v1: 300, v2: 2 }, source }],
     ]);
+  });
+
+  it("follows the playhead with the sequence's values when no pose is selected", () => {
+    const bindings = buildCursorGoBindings(
+      new Map([[7, { v1: 250 }]]),
+      [participant(7, { h: 120, p: 4 }, ["v1", "v2"])],
+      2500,
+    );
+    expect([...bindings]).toEqual([
+      ["7", { target: { v1: 250, v2: 4 }, current: { v1: 120, v2: 4 }, source: { kind: "cursor", atMs: 2500 } }],
+    ]);
+  });
+
+  it("shadows the selected objects of the sequence, or all of them", () => {
+    expect(cursorShadowObjectIds([7, 8, 9], [8, 42])).toEqual([8]);
+    expect(cursorShadowObjectIds([7, 8, 9], [42])).toEqual([7, 8, 9]);
+    expect(cursorShadowObjectIds([7, 8], [])).toEqual([7, 8]);
   });
 });
 

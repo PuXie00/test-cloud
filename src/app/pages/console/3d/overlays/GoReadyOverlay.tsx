@@ -2,7 +2,7 @@ import { NumericInput } from "@/app/components/ics/numeric-input";
 import { resolveLivePoseSelection } from "../../components/action-builder/live-pose-edit";
 import { useActionBuilder } from "../../components/action-builder/use-action-builder";
 import type { GoTiming } from "../../hooks/go-motion";
-import { pendingGoEntries } from "../../hooks/go-ready";
+import { goTargetSummary, pendingGoEntries } from "../../hooks/go-ready";
 import { useGoReady } from "../../hooks/go-ready-provider";
 import { useConsoleNav } from "../../hooks/use-console-nav";
 import { useProjectStore } from "../../hooks/use-project-store";
@@ -31,19 +31,19 @@ const segmentClass = (pressed: boolean) =>
  * 走法三选一：各自默认速度、同时到达、指定时长。用时只在目标变化时算，按 GO 时按最新位置再算一次。
  */
 export const GoReadyOverlay = () => {
-  const { state, go, cancel, timing, setTiming, setDirection, plan } = useGoReady();
+  const { state, go, cancel, clear, timing, setTiming, setDirection, plan } = useGoReady();
   const { activeNav } = useConsoleNav();
   const { objects } = useProjectStore();
   const { sequence, selection, liveMode, handleSelectionChange } = useActionBuilder();
-  // 动作页「当前位置」里 GO 目标是选中的位姿：清除时连选中的位姿一起清掉，和手动控制里的「清除」一样
-  const clearsPoses =
-    activeNav === "sequences" &&
-    liveMode &&
-    resolveLivePoseSelection(sequence, selection).kind !== "none";
+  // 动作页「当前位置」里 GO 目标是选中的位姿：清除时连选中的位姿一起清掉，和手动控制里的「清除」一样；
+  // 没选位姿时影子跟着游标：清除就收起影子，拖游标再跟
+  const liveShadow = activeNav === "sequences" && liveMode;
+  const clearsPoses = liveShadow && resolveLivePoseSelection(sequence, selection).kind !== "none";
 
   if (state.phase === "idle") return null;
 
-  const pendingCount = pendingGoEntries(state.entries).length;
+  const pending = pendingGoEntries(state.entries);
+  const pendingCount = pending.length;
   const canGoAll = pendingCount > 0;
   const nameOf = (objectId: string) =>
     objects.find((object) => String(object.id) === objectId)?.name ?? `物体 ${objectId}`;
@@ -61,6 +61,10 @@ export const GoReadyOverlay = () => {
     void go();
   };
   const handleCancelAll = () => {
+    if (liveShadow && !clearsPoses) {
+      clear();
+      return;
+    }
     cancel();
     if (clearsPoses) handleSelectionChange(null);
   };
@@ -109,7 +113,7 @@ export const GoReadyOverlay = () => {
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-2 text-body-sm text-foreground">
             <span className="inline-block size-2 rounded-full bg-show" aria-hidden />
-            {canGoAll ? `GO 准备 · ${pendingCount} 个物体` : "GO 执行中"}
+            {canGoAll ? `GO 准备 · ${goTargetSummary(pending)}` : "GO 执行中"}
           </span>
           {canGoAll ? (
             <span className="flex items-baseline gap-1.5 text-body-sm">

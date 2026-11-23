@@ -80,6 +80,7 @@ const SequenceEditor = () => {
     handleObjectsFollow,
     handleCursorChange,
     handlePlaybackCursorChange,
+    handleTimelinePlayingChange,
     handleMoveTimelineBlock,
     handleShiftTimelineBlocks,
     handleShiftTimelineBlocksEnd,
@@ -233,6 +234,11 @@ const SequenceEditor = () => {
     onCursorMs: handlePlaybackCursorChange ?? (() => {}),
     pauseKey: sequence,
   });
+  // 播放中联机的影子不跟着游标走：把播放状态报给 context
+  useEffect(() => {
+    handleTimelinePlayingChange?.(isPlaying);
+  }, [isPlaying, handleTimelinePlayingChange]);
+  useEffect(() => () => handleTimelinePlayingChange?.(false), [handleTimelinePlayingChange]);
 
   // 选中位姿（同一时刻）时游标跳过去，3D 显示的就是正在改的那一帧；改了位姿的时刻也跟着走。
   // 只看选中和位姿时刻：播放、拖游标都不触发

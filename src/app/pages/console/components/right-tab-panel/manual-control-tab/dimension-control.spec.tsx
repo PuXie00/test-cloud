@@ -368,3 +368,31 @@ describe("DimensionControl 没有当前位置读数", () => {
     expect(hookState.go).toHaveBeenCalledWith(["2"]);
   });
 });
+
+describe("DimensionControl 动作页联机", () => {
+  it("选着位姿时写进位姿而不是设 GO 目标；每根轴对照当前位置，可以只取一根轴", () => {
+    selectLiftAndSwing();
+    const onWrite = vi.fn();
+    const onCaptureAxis = vi.fn();
+    render(
+      <DisplayLengthUnitProvider initialUnit="mm">
+        <DimensionControl showCurrent onWrite={onWrite} onCaptureAxis={onCaptureAxis} />
+      </DisplayLengthUnitProvider>,
+    );
+    stepUp("虚轴1");
+    expect(onWrite).toHaveBeenCalledWith({ mode: "abs", axis: "v1", value: 101 });
+    expect(hookState.arm).not.toHaveBeenCalled();
+    // 两台的虚轴1 都在 100；虚轴2 只有物体 2 有
+    expect(screen.getByLabelText("虚轴1 当前位置").textContent).toBe("当前 100 mm");
+    expect(screen.getByLabelText("虚轴2 当前位置").textContent).toMatch(/^当前 5 ?°$/);
+    fireEvent.click(screen.getByRole("button", { name: "虚轴2 取当前" }));
+    expect(onCaptureAxis).toHaveBeenCalledWith("v2");
+  });
+
+  it("控制页不显示当前位置和单轴取当前", () => {
+    selectLiftAndSwing();
+    renderControl();
+    expect(screen.queryByLabelText("虚轴1 当前位置")).toBeNull();
+    expect(screen.queryByRole("button", { name: "虚轴1 取当前" })).toBeNull();
+  });
+});

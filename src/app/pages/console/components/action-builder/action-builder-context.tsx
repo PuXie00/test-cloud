@@ -757,6 +757,9 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     setCursorMs(Math.max(0, ms));
   }, []);
 
+  // 时间轴在播放：联机时影子不跟着游标走（停下再跟）
+  const [timelinePlaying, setTimelinePlaying] = useState(false);
+
   const sequenceEditOptions = useMemo<SequenceEditOptions>(
     () => ({
       minAccelTimeByObject: (objectId) => getTimelineObject(objectId)?.minAccelTimeByAxis,
@@ -2289,6 +2292,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleObjectsFollow,
       handleCursorChange,
       handlePlaybackCursorChange,
+      timelinePlaying,
+      handleTimelinePlayingChange: setTimelinePlaying,
       handleInsertTimelineBlock,
       handleReplaceTimelineBlock,
       handleApplyPoseAxisWrite,
@@ -2388,6 +2393,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleObjectsFollow,
       handleCursorChange,
       handlePlaybackCursorChange,
+      timelinePlaying,
       handleInsertTimelineBlock,
       handleReplaceTimelineBlock,
       handleApplyPoseAxisWrite,

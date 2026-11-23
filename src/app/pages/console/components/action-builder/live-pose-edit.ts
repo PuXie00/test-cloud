@@ -1,9 +1,10 @@
-import type { ActionSequenceConfig, PoseBlock } from "@/app/project/action-sequence/types";
+import type { ActionSequenceConfig, KeyframePose, PoseBlock } from "@/app/project/action-sequence/types";
 import type { VirtualAxisValues } from "@/app/project/project-document-types";
 import {
   clampToAxisRange,
   positionsToAxisValues,
   type GoBinding,
+  type GoTargetSource,
 } from "../../hooks/go-ready";
 import type { DimensionParticipant } from "../right-tab-panel/manual-control-tab/dimension-edit";
 import { selectionBlockIds, type SequenceSelection } from "./sequence-selection";
@@ -37,28 +38,56 @@ export const resolveLivePoseSelection = (
 };
 
 /**
- * 选中位姿的 GO 目标：位姿里设定了值的轴取位姿值，其余轴（经过、序列不控制）保持当前位置；
+ * 物体的 GO 目标：给了值的轴取这个值，其余轴（经过、序列不控制）保持当前位置；
  * 都按物体行程截断。没有监控数据的物体跳过。
  */
-export const buildPoseGoBindings = (
-  poses: readonly PoseBlock[],
+const buildGoBindings = (
+  poses: ReadonlyMap<number, KeyframePose>,
   participants: readonly DimensionParticipant[],
+  source: GoTargetSource,
 ): Map<string, GoBinding> => {
   const byId = new Map(participants.map((item) => [item.objectId, item]));
   const bindings = new Map<string, GoBinding>();
-  for (const block of poses) {
-    const participant = byId.get(String(block.objectId));
+  for (const [objectId, pose] of poses) {
+    const participant = byId.get(String(objectId));
     if (!participant) continue;
     const current = positionsToAxisValues(participant.snapshot.positions);
     const target: VirtualAxisValues = {};
     for (const axis of participant.axes) {
-      const value = block.pose[axis] ?? current[axis];
+      const value = pose[axis] ?? current[axis];
       if (value !== undefined) target[axis] = clampToAxisRange(value, participant.ranges[axis]);
     }
     if (Object.keys(target).length === 0) continue;
-    bindings.set(participant.objectId, { target, current });
+    bindings.set(participant.objectId, { target, current, source });
   }
   return bindings;
+};
+
+/** 选中位姿的 GO 目标（影子停在位姿上）：位姿里设定了值的轴取位姿值 */
+export const buildPoseGoBindings = (
+  poses: readonly PoseBlock[],
+  participants: readonly DimensionParticipant[],
+): Map<string, GoBinding> =>
+  buildGoBindings(
+    new Map(poses.map((block) => [block.objectId, block.pose])),
+    participants,
+    { kind: "pose", atMs: sharedTimeMs(poses) },
+  );
+
+/** 没选位姿时影子跟着游标：游标处序列的样子（只含序列控制的轴） */
+export const buildCursorGoBindings = (
+  poses: ReadonlyMap<number, KeyframePose>,
+  participants: readonly DimensionParticipant[],
+  cursorMs: number,
+): Map<string, GoBinding> => buildGoBindings(poses, participants, { kind: "cursor", atMs: cursorMs });
+
+/** 影子跟着游标时看哪些物体：选中的物体里在序列中的；一个都不在（或没选）就是序列里全部物体 */
+export const cursorShadowObjectIds = (
+  sequenceObjectIds: readonly number[],
+  selectedObjectIds: readonly number[],
+): number[] => {
+  const picked = sequenceObjectIds.filter((objectId) => selectedObjectIds.includes(objectId));
+  return picked.length > 0 ? picked : [...sequenceObjectIds];
 };
 
 /** 位姿的值变了才需要重新设 GO 目标 */
@@ -67,10 +96,10 @@ export const livePoseBindingKey = (poses: readonly PoseBlock[]): string =>
     .map((block) => `${block.id}:${block.objectId}:${block.pose.v1 ?? ""},${block.pose.v2 ?? ""},${block.pose.v3 ?? ""}`)
     .join("|");
 
-const sharedTimeMs = (poses: readonly PoseBlock[]): number | undefined => {
+function sharedTimeMs(poses: readonly PoseBlock[]): number | undefined {
   const first = poses[0]?.atMs;
   return first !== undefined && poses.every((block) => block.atMs === first) ? first : undefined;
-};
+}
 
 /** 手动控制顶部的联机说明 */
 export const livePoseLabel = (poses: readonly PoseBlock[]): string => {
@@ -92,3 +121,11 @@ export const captureLabel = (
   }
   return sequence ? `取当前 → 写入 ${formatTime(cursorMs)} s` : "取当前 → 新建动作序列";
 };
+
+/** 手动控制顶部：影子跟着游标时的说明 */
+export const cursorShadowLabel = (cursorMs: number, count: number): string =>
+  `影子跟着游标：${formatTime(cursorMs)} s · ${count} 台`;
+
+/** 联机说明下面的一句提示：维度控制改的是什么、怎么写回 */
+export const LIVE_POSE_HINT = "维度控制直接改位姿（可撤销）；点动到位后按「取当前」写回";
+export const CURSOR_SHADOW_HINT = "拖游标影子跟着走，按 GO 走到这一帧；设备不会自己动";

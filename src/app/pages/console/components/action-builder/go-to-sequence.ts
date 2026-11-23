@@ -36,7 +36,12 @@ export const useGoToSequence = (): ((sequence: ActionSequenceConfig) => void) | 
         offline += 1;
         continue;
       }
-      entries.push({ objectId: String(objectId), target: { ...pose }, current });
+      entries.push({
+        objectId: String(objectId),
+        target: { ...pose },
+        current,
+        source: { kind: "sequence", name: sequence.name },
+      });
     }
     // 选着的位姿也是 GO 目标：先取消选中，免得和这条序列的目标混在一起
     handleSelectionChange(null);
