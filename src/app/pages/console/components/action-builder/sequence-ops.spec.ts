@@ -9,7 +9,6 @@ import type {
 import {
   alignMotionSegments,
   alignPoseBlocks,
-  applyPlannedPoses,
   applyPoseAxisWrite,
   copyTimelineBlocks,
   deleteTimelineBlocks,
@@ -1318,49 +1317,6 @@ describe("alignMotionSegments", () => {
     expect(result.ok && timesOf(result.sequence)).toMatchObject({
       a2: 4000, a3: 7000, a4: 9000, b2: 6000, b3: 9000,
     });
-  });
-});
-
-describe("applyPlannedPoses", () => {
-  it("merges planned values into an existing pose, keeps later blocks in place and writes the curves", () => {
-    const sequence: ActionSequenceConfig = {
-      id: 1,
-      name: "s",
-      trajectoryMode: false,
-      blocks: [
-        { id: "a", kind: "pose", objectId: 1, atMs: 0, pose: { v1: 0, v2: 5 } },
-        { id: "b", kind: "pose", objectId: 1, atMs: 4000, pose: { v1: 400 } },
-        { id: "later", kind: "pose", objectId: 1, atMs: 9000, pose: { v1: 0 } },
-      ],
-      segments: [],
-    };
-    const result = applyPlannedPoses(sequence, {
-      objects: [
-        {
-          objectId: 1,
-          poses: [
-            { atMs: 0, pose: { v1: 0 }, passSpeeds: { v1: 0 } },
-            { atMs: 2000, pose: { v1: 150 }, passSpeeds: { v1: 100 } },
-          ],
-          segments: [
-            { fromIndex: 0, toIndex: 1, profiles: { v1: { kind: "trapezoid", params: { accelMs: 1000, decelMs: 100 } } } },
-          ],
-        },
-      ],
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    const byId = new Map(result.sequence.blocks.map((block) => [block.id, block]));
-    // 0 s 已有位姿：V2 照旧，填上经过速度
-    expect(byId.get("a")).toMatchObject({ atMs: 0, pose: { v1: 0, v2: 5 }, passSpeeds: { v1: 0 } });
-    expect(byId.get("later")).toMatchObject({ atMs: 9000 });
-    const added = result.sequence.blocks.find((block) => block.kind === "pose" && block.atMs === 2000);
-    expect(added).toMatchObject({ pose: { v1: 150 }, passSpeeds: { v1: 100 } });
-    expect(result.poseIds).toEqual(["a", added!.id]);
-    const segment = resolveActionSequence(result.sequence).segments.find(
-      (item) => item.startMs === 0 && item.endMs === 2000,
-    );
-    expect(segment?.settings.profiles.v1).toEqual({ kind: "trapezoid", params: { accelMs: 1000, decelMs: 100 } });
   });
 });
 

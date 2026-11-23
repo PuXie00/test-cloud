@@ -18,7 +18,6 @@ const { builderState, toastWarning } = vi.hoisted(() => ({
       handleAlignSegments: vi.fn(),
       handleAlignPoses: vi.fn(),
       handleStaggerSegments: vi.fn(),
-      handleMergeSegments: vi.fn(),
       handlePhaseInputModeChange: vi.fn(),
       phaseInputMode: "time" as "time" | "speed",
       sequenceIssues: [] as unknown[],
@@ -77,17 +76,7 @@ const renderPanel = (sequence: ActionSequenceConfig, selection: SequenceSelectio
   return { onUpdateSegment, onReplaceBlock };
 };
 
-/** 阶段的数值收在「精确设置」里：没展开就先展开 */
-const openDetails = () => {
-  if (!screen.queryByRole("region", { name: "阶段" })) {
-    fireEvent.click(screen.getByRole("button", { name: "精确设置" }));
-  }
-};
-
-const phases = () => {
-  openDetails();
-  return within(screen.getByRole("region", { name: "阶段" }));
-};
+const phases = () => within(screen.getByRole("region", { name: "阶段" }));
 
 const retimeWrites = () =>
   builderState.current.handleRetimeSegmentCurves.mock.calls.map(([writes]) => writes[0]);
@@ -149,8 +138,12 @@ describe("one selected segment", () => {
     fireEvent.mouseDown(within(endV1 as HTMLElement).getByRole("button", { name: "增加" }));
     expect(onReplaceBlock).toHaveBeenCalledWith(expect.objectContaining({ id: "b", pose: { v1: 401 } }));
     expect(onReplaceBlock).not.toHaveBeenCalledWith(expect.objectContaining({ id: "a" }));
-    // 变速时间这些数值收着，要看再展开
-    expect(screen.queryByRole("region", { name: "阶段" })).toBeNull();
+    // 阶段和运动结果直接摆出来，不折叠，没有起步收尾、起点终点那两块
+    expect(screen.getByRole("region", { name: "阶段" })).not.toBeNull();
+    expect(screen.getByRole("region", { name: "V1 运动结果" })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "精确设置" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "起步收尾" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "起点和终点怎么走" })).toBeNull();
   });
 
   it("deletes both ends from the segment view", () => {
@@ -245,78 +238,9 @@ describe("one segment in plain words", () => {
     ]);
   });
 
-  it("sets the start and the end ramp to one preset without changing the duration", () => {
-    builderState.current.getTimelineObject = () => configured;
-    const { onUpdateSegment } = renderPanel(oneSpan, segmentOf("a", "b"));
-    // 起步收尾只有一组，不再分起点、终点
-    expect(screen.getAllByRole("group", { name: "起步收尾" })).toHaveLength(1);
-    const ramps = within(screen.getByRole("group", { name: "起步收尾" }));
-    expect(ramps.getByRole("button", { name: "标准" }).getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(ramps.getByRole("button", { name: "快" }));
-    // 两头都按 200 mm/s²：匀速约 89 mm/s，变速 0.5 s
-    expect(onUpdateSegment).toHaveBeenCalledWith("a", "b", {
-      profiles: expect.objectContaining({ v1: trap(500, 500) }),
-    });
-    expect(builderState.current.handleRetimeSegmentCurves).not.toHaveBeenCalled();
-  });
-
-  it("refuses a preset the duration cannot fit", () => {
-    builderState.current.getTimelineObject = () => configured;
-    const { onUpdateSegment } = renderPanel(oneSpan, segmentOf("a", "b"));
-    // 两头都按 50 mm/s²，5 s 最多走 312.5，走不完 400
-    fireEvent.click(within(screen.getByRole("group", { name: "起步收尾" })).getByRole("button", { name: "缓" }));
-    expect(toastWarning).toHaveBeenCalledWith("V1 这段时间放不下「缓」，把时长改长或换一档");
-    expect(onUpdateSegment).not.toHaveBeenCalled();
-  });
-
-  it("shows the ramp times when the two ends are not on one preset", () => {
-    builderState.current.getTimelineObject = () => configured;
-    const mixed: ActionSequenceConfig = {
-      ...oneSpan,
-      segments: [
-        {
-          fromRef: "a",
-          toRef: "b",
-          settings: { profiles: { v1: trap(2600, 1300), v2: trap(1000, 1000), v3: trap(1000, 1000) } },
-        },
-      ],
-    };
-    renderPanel(mixed, segmentOf("a", "b"));
-    const ramps = within(screen.getByRole("group", { name: "起步收尾" }));
-    expect(ramps.queryByRole("button", { pressed: true })).toBeNull();
-    expect(screen.getByText("现在 起步 2.6 s · 收尾 1.3 s")).not.toBeNull();
-  });
-
-  it("says there are no presets when setup has no acceleration", () => {
+  it("offers no reference times when setup has no speed limits", () => {
     renderPanel(oneSpan, segmentOf("a", "b"));
-    expect(screen.getAllByText("搭建里没设加速度，没有档位")).toHaveLength(1);
     expect(screen.queryByRole("group", { name: "参考时长" })).toBeNull();
-  });
-
-  it("explains a fixed start and lets the end stop or keep going", () => {
-    const { onReplaceBlock } = renderPanel(twoLegs, segmentOf("a", "b"));
-    expect(within(screen.getByRole("group", { name: "起点" })).getByText("开头，从静止起步")).not.toBeNull();
-    const end = within(screen.getByRole("group", { name: "终点" }));
-    const stop = within(end.getByRole("group", { name: "终点停不停" }));
-    expect(stop.getByRole("button", { name: "接下一段" }).getAttribute("aria-pressed")).toBe("true");
-    // 不停时显示这个轴过点的速度（前后两段平均速度的调和平均）
-    expect(end.getByLabelText("V1 终点经过速度").textContent).toContain("80.0");
-    fireEvent.click(stop.getByRole("button", { name: "停在这里" }));
-    expect(onReplaceBlock).toHaveBeenCalledWith(expect.objectContaining({ id: "b", passSpeeds: { v1: 0 } }));
-  });
-
-  it("puts a typed pass speed back to automatic", () => {
-    const typed: ActionSequenceConfig = {
-      ...twoLegs,
-      blocks: twoLegs.blocks.map((block) =>
-        block.id === "b" && block.kind === "pose" ? { ...block, passSpeeds: { v1: 120 } } : block,
-      ),
-    };
-    const { onReplaceBlock } = renderPanel(typed, segmentOf("a", "b"));
-    fireEvent.click(screen.getByRole("button", { name: "V1 终点经过速度改回自动" }));
-    const [replaced] = onReplaceBlock.mock.calls[0]!;
-    expect(replaced.id).toBe("b");
-    expect("passSpeeds" in replaced).toBe(false);
   });
 
   it("shows an axis passing through the end and sets it to the passing value on tap", () => {
@@ -469,10 +393,10 @@ describe("batch editing several segments", () => {
     expect(accel.placeholder).toBe("--");
   });
 
-  it("leaves 统一时长, 错峰 and 汇合 to the timeline's right-click menu", () => {
+  it("leaves 统一时长 and 错峰 to the timeline's right-click menu", () => {
     renderPanel(twoSpans, both);
     expect(screen.queryByLabelText("统一时长")).toBeNull();
-    expect(screen.queryByRole("region", { name: "错峰和汇合" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "错峰" })).toBeNull();
   });
 
   it("aligns the selected segments to start or arrive together", () => {

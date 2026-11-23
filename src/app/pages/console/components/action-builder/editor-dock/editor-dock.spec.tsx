@@ -868,7 +868,6 @@ describe("segment tools in the right-click menu", () => {
   const tools = () => ({
     handleRetimeSegmentCurves: vi.fn(() => true),
     handleStaggerSegments: vi.fn(),
-    handleMergeSegments: vi.fn(),
     getTimelineObject: (id: number) => timelineObjects.find((object) => object.id === id),
   });
   const openMenu = async () => {
@@ -896,7 +895,7 @@ describe("segment tools in the right-click menu", () => {
     expect(writes.map((write) => write.durationMs)).toEqual([3000, 3000]);
   });
 
-  it("staggers with a typed gap and merges two segments", async () => {
+  it("staggers with a typed gap and has no 汇合", async () => {
     const handlers = tools();
     mockBuilder({
       sequence: twoSpans,
@@ -914,8 +913,7 @@ describe("segment tools in the right-click menu", () => {
 
     cleanup();
     await openMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: "汇合" }));
-    expect(handlers.handleMergeSegments).toHaveBeenCalledWith(keys);
+    expect(screen.queryByRole("menuitem", { name: /汇合/ })).toBeNull();
   });
 
   it("offers none of them without two selected segments", async () => {
@@ -926,7 +924,7 @@ describe("segment tools in the right-click menu", () => {
       ...tools(),
     });
     await openMenu();
-    expect(screen.queryByRole("menuitem", { name: /统一时长|错峰|汇合/ })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /统一时长|错峰/ })).toBeNull();
   });
 });
 

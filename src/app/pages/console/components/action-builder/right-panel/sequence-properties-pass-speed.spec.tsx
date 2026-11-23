@@ -129,15 +129,11 @@ describe("pass speed on a pose", () => {
     expect(within(v1).queryByRole("button", { name: "增加" })).toBeNull();
   });
 
-  it("shows the entry speed and speed-change phases on the next segment", () => {
+  it("shows the speed-change phases of a segment entered at speed", () => {
     renderPanel(slowFast(), { kind: "multi-block", blockIds: ["p1", "p2"], focus: "segments" });
     fireEvent.click(screen.getByRole("button", { name: "看 V1 的曲线" }));
-    // 起点接着上一段走，进入速度是前后两段平均速度的调和平均
-    const start = within(screen.getByRole("group", { name: "起点" }));
-    const stop = within(start.getByRole("group", { name: "起点停不停" }));
-    expect(stop.getByRole("button", { name: "接上一段" }).getAttribute("aria-pressed")).toBe("true");
-    expect(start.getByLabelText("V1 起点经过速度").textContent).toContain("150.0");
-    fireEvent.click(screen.getByRole("button", { name: "精确设置" }));
+    // 起点接着上一段走：段首、段尾变速直接显示；停不停、经过速度在位姿上改
+    expect(screen.queryByRole("group", { name: "起点停不停" })).toBeNull();
     expect(screen.getByLabelText("段首变速")).not.toBeNull();
     expect(screen.getByLabelText("段尾变速")).not.toBeNull();
   });

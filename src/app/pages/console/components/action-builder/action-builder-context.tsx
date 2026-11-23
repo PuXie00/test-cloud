@@ -150,7 +150,7 @@ import { ActionBuilderContext } from "./action-builder-react-context";
 import type { ContextSelection } from "./context-bar/selection-context-bar";
 import { LivePoseBridge, type LivePoseLookup } from "./live-pose-bridge";
 import type { PhaseInputMode } from "./motion-profile/phase-rates";
-import { mergeSegments, staggerSegments } from "./right-panel/segment-rhythm";
+import { staggerSegments } from "./right-panel/segment-rhythm";
 import type { CurveGraph, TimelineViewMode } from "./timeline/curve-data";
 import type { ActionRightTab } from "./right-panel/action-right-panel";
 
@@ -266,15 +266,10 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   const [selectedObjectIds, setSelectedObjectIds] = useState<number[]>([]);
   const [cursorMs, setCursorMs] = useState(0);
   const [activeRightTab, setActiveRightTab] = useState<ActionRightTab>("selection");
-  const [liveMode, setLiveModeState] = useState(false);
-  // 打开「手动控制」顺带打开「当前位置」；关掉「当前位置」时在「手动控制」就回到「属性」
-  const handleActiveRightTabChange = useCallback((tab: ActionRightTab) => {
-    setActiveRightTab(tab);
-    if (tab === "manual") setLiveModeState(true);
-  }, []);
+  // 「当前位置」和「手动控制」页签同步：在「手动控制」页就显示当前位置，切走就关
+  const liveMode = activeRightTab === "manual";
   const setLiveMode = useCallback((on: boolean) => {
-    setLiveModeState(on);
-    if (!on) setActiveRightTab((tab) => (tab === "manual" ? "selection" : tab));
+    setActiveRightTab((tab) => (on ? "manual" : tab === "manual" ? "selection" : tab));
   }, []);
   const [selectedProgramNodeId, setSelectedProgramNodeId] = useState<string | null>(null);
   const [programs, setPrograms] = useState<ProgramNode[]>([]);
@@ -966,7 +961,6 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   );
 
   const [phaseInputMode, setPhaseInputMode] = useState<PhaseInputMode>("time");
-  const [segmentDetailsOpen, setSegmentDetailsOpen] = useState(false);
   // 时间轴看轨道还是曲线、曲线看哪根轴、看位置还是速度：离开动作页再回来也保持
   const [timelineViewMode, setTimelineViewMode] = useState<TimelineViewMode>("tracks");
   const [curveAxis, setCurveAxis] = useState<VirtualAxisId>("v1");
@@ -1366,23 +1360,6 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       let message: string | null = null;
       updateSelectedSequence((current) => {
         const result = staggerSegments(current, keys, gapMs, getTimelineObject, sequenceEditOptions);
-        if (!result.ok) {
-          message = result.message;
-          return null;
-        }
-        return result.sequence;
-      });
-      if (message) toast.warning(message);
-    },
-    [updateSelectedSequence, getTimelineObject, sequenceEditOptions],
-  );
-
-  /** 汇合：两台各一段、同时到同一位置，重排成后出发的追上、之后并排 */
-  const handleMergeSegments = useCallback(
-    (keys: readonly string[]) => {
-      let message: string | null = null;
-      updateSelectedSequence((current) => {
-        const result = mergeSegments(current, keys, getTimelineObject, sequenceEditOptions);
         if (!result.ok) {
           message = result.message;
           return null;
@@ -2003,8 +1980,6 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       canPasteSequence: clipboard.sequence !== null,
       phaseInputMode,
       handlePhaseInputModeChange: setPhaseInputMode,
-      segmentDetailsOpen,
-      handleSegmentDetailsOpenChange: setSegmentDetailsOpen,
       timelineViewMode,
       handleTimelineViewModeChange: setTimelineViewMode,
       curveAxis,
@@ -2015,7 +1990,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleCurveUnderlayChange: setCurveUnderlay,
       poseCursorFollow,
       handlePoseCursorFollowChange: setPoseCursorFollow,
-      setActiveRightTab: handleActiveRightTabChange,
+      setActiveRightTab,
       liveMode,
       setLiveMode,
       handleSequenceSelect,
@@ -2065,7 +2040,6 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleSaveShape,
       handleSaveShapeAtCursor,
       handleStaggerSegments,
-      handleMergeSegments,
       getLivePose,
       handleRenameSequence,
       handleDeleteSequence,
@@ -2105,7 +2079,6 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       timelinePxPerSecond,
       clipboard,
       phaseInputMode,
-      segmentDetailsOpen,
       timelineViewMode,
       curveAxis,
       curveGraph,
@@ -2161,7 +2134,6 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleSaveShape,
       handleSaveShapeAtCursor,
       handleStaggerSegments,
-      handleMergeSegments,
       getLivePose,
       handleRenameSequence,
       handleDeleteSequence,

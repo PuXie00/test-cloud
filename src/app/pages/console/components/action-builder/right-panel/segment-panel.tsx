@@ -1,6 +1,4 @@
 import { useMemo, useState } from "react";
-import { toast } from "sonner";
-import { CollapsePanel } from "@/app/components/ics/collapse-panel";
 import { clampNumeric } from "@/app/components/ics/numeric-input-utils";
 import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-input";
 import { isAxisSet } from "@/app/project/action-sequence/keyframe-pose";
@@ -41,15 +39,7 @@ import {
 } from "../motion-profile/motion-profile-status";
 import { profileKindMeta } from "../motion-profile/profile-kind";
 import { formatQuantity, formatQuantityValue } from "../motion-profile/quantity-format";
-import {
-  RAMP_PRESETS,
-  presetRate,
-  rampPresetOf,
-  referencePlan,
-  withRampPreset,
-  type RampPreset,
-  type ReferenceKind,
-} from "../motion-profile/segment-presets";
+import { referencePlan, type ReferenceKind } from "../motion-profile/segment-presets";
 import { TrapezoidProfileEditor } from "../motion-profile/trapezoid-profile-editor";
 import { VelocityChart } from "../motion-profile/velocity-chart";
 import type { SegmentRetimeWrite } from "../sequence-ops";
@@ -66,19 +56,11 @@ import { virtualAxisStep } from "../virtual-axis-edit";
 import { RepairBand } from "./repair-band";
 import { segmentEditContext } from "./segment-editor";
 import { segmentDurationWrites, segmentRampAxes } from "./segment-retime";
-import {
-  endJunctionView,
-  withAxisPassSpeed,
-  withEndStop,
-  type EndJunctionView,
-  type SegmentEnd,
-} from "./segment-junctions";
 
 const axisName = (axis: VirtualAxisId): string => axis.toUpperCase();
 
+type SegmentEnd = "start" | "end";
 const END_LABEL: Record<SegmentEnd, string> = { start: "起点", end: "终点" };
-const STOP_LABEL: Record<SegmentEnd, string> = { start: "停稳再走", end: "停在这里" };
-const GO_LABEL: Record<SegmentEnd, string> = { start: "接上一段", end: "接下一段" };
 
 const REFERENCES: ReadonlyArray<{ kind: ReferenceKind; label: string }> = [
   { kind: "fastest", label: "最快" },
@@ -102,41 +84,6 @@ const pickDefaultAxis = (axes: readonly VirtualAxisId[], travel: Pick<ModelPose,
   return selected;
 };
 
-/** 一排互斥按钮：停不停、起步收尾的档位 */
-const Segmented = <T extends string>({
-  label,
-  options,
-  value,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  options: ReadonlyArray<{ id: T; label: string }>;
-  value: T | null;
-  disabled?: boolean;
-  onChange: (id: T) => void;
-}) => (
-  <div role="group" aria-label={label} className="flex overflow-hidden rounded-md bg-input-background">
-    {options.map((option) => {
-      const pressed = option.id === value;
-      return (
-        <button
-          key={option.id}
-          type="button"
-          aria-pressed={pressed}
-          disabled={disabled}
-          onClick={() => onChange(option.id)}
-          className={`h-8 min-w-0 flex-1 truncate px-1 text-body-sm disabled:opacity-50 ${touchHeight} ${
-            pressed ? "bg-accent font-semibold text-primary" : "text-foreground hover:bg-accent"
-          }`}
-        >
-          {option.label}
-        </button>
-      );
-    })}
-  </div>
-);
-
 const MetricTile = ({ label, value, warning = false }: { label: string; value: string; warning?: boolean }) => (
   <div className="min-w-0 rounded-md bg-input-background px-2 py-2">
     <p className="text-body-sm text-muted-foreground">{label}</p>
@@ -151,8 +98,7 @@ const MetricTile = ({ label, value, warning = false }: { label: string; value: s
 );
 
 /**
- * 一个运动区间：时长和参考时长、各轴「起点 » 终点」、速度曲线、两头停不停和起步收尾的档位；
- * 变速时间、加减速度这些数值收在「精确设置」里。
+ * 一个运动区间：时长和参考时长、各轴「起点 » 终点」、速度曲线，下面直接是看的那根轴的阶段和运动结果。
  */
 export const SegmentPanel = ({
   sequence,
@@ -174,8 +120,6 @@ export const SegmentPanel = ({
     phaseInputMode,
     handlePhaseInputModeChange,
     handleRetimeSegmentCurves,
-    segmentDetailsOpen,
-    handleSegmentDetailsOpenChange,
   } = useActionBuilder();
   const display = useSessionDisplayLengthUnit();
   const object = getTimelineObject(segment.objectId);
@@ -188,10 +132,6 @@ export const SegmentPanel = ({
   const currentAxis = enabledAxes.includes(selectedAxis)
     ? selectedAxis
     : pickDefaultAxis(enabledAxes, axisContext.travel);
-  // 测试里没有挂动作页的上下文时，展开状态只记在这一个面板里
-  const [localDetailsOpen, setLocalDetailsOpen] = useState(false);
-  const detailsOpen = segmentDetailsOpen ?? localDetailsOpen;
-  const setDetailsOpen = handleSegmentDetailsOpenChange ?? setLocalDetailsOpen;
 
   const pointOf = (ref: string) => resolved.poses.find((point) => point.sourceRef === ref);
   const blockOf = (point: ResolvedPosePoint | undefined) =>
@@ -204,9 +144,8 @@ export const SegmentPanel = ({
   ends.end.block = blockOf(ends.end.point);
   const uncontrolled = uncontrolledAxesOf(resolved, segment.objectId);
 
-  // 这段自己的、在动的轴：起步收尾的档位、参考时长和改时长都只管它们
+  // 这段自己的、在动的轴：参考时长和改时长都只管它们
   const rampAxes = segmentRampAxes(segment, object);
-  const movingAxes = enabledAxes.filter((axis) => motions[axis].to !== motions[axis].from);
 
   const plans = useMemo(
     () =>
@@ -227,15 +166,6 @@ export const SegmentPanel = ({
     const motion = motions[axis];
     const base = configProfiles(motion.fromRef, motion.toRef, motion.durationMs);
     onUpdateSegment(motion.fromRef, motion.toRef, { profiles: { ...base, [axis]: profile } });
-  };
-
-  /** 这段自己的几个轴一起换曲线（一步撤销） */
-  const writeOwnProfiles = (next: Map<VirtualAxisId, MotionProfile>) => {
-    const profilesNext = { ...configProfiles(segment.fromRef, segment.toRef, segment.durationMs) };
-    next.forEach((profile, axis) => {
-      profilesNext[axis] = profile;
-    });
-    onUpdateSegment(segment.fromRef, segment.toRef, { profiles: profilesNext });
   };
 
   /** 改这段的时长：终点和这个物体后面的块一起挪，各轴换成给的曲线 */
@@ -263,28 +193,6 @@ export const SegmentPanel = ({
     handleRetimeSegmentCurves([
       { objectId: segment.objectId, fromRef: motion.fromRef, toRef: motion.toRef, axis, profile, durationMs },
     ]);
-  };
-
-  // 起步收尾一起按档：各轴两头都在同一档才算这一档
-  const rampPreset = ((): RampPreset | null => {
-    const found = rampAxes.map((axis) => rampPresetOf(axis));
-    const first = found[0] ?? null;
-    return first !== null && found.every((preset) => preset === first) ? first : null;
-  })();
-  const presetsAvailable = rampAxes.length > 0 && rampAxes.every((axis) => presetRate(axis.limits, "standard") !== null);
-
-  const applyRampPreset = (preset: RampPreset) => {
-    const label = RAMP_PRESETS.find((item) => item.id === preset)?.label ?? preset;
-    const next = new Map<VirtualAxisId, MotionProfile>();
-    for (const axis of rampAxes) {
-      const profile = withRampPreset(axis, preset);
-      if (!profile) {
-        toast.warning(`${axisName(axis.axis)} 这段时间放不下「${label}」，把时长改长或换一档`);
-        return;
-      }
-      next.set(axis.axis, profile);
-    }
-    writeOwnProfiles(next);
   };
 
   const applyReference = (plan: { durationMs: number; profiles: Map<VirtualAxisId, MotionProfile> }) => {
@@ -394,86 +302,6 @@ export const SegmentPanel = ({
       />
     );
   };
-
-  const junctionOf = (end: SegmentEnd): EndJunctionView => endJunctionView(ends[end].point, movingAxes, end);
-
-  const renderPassSpeed = (end: SegmentEnd, view: EndJunctionView) => {
-    const { block, point } = ends[end];
-    if (view.kind !== "choice" || !view.axes.includes(currentAxis) || block?.kind !== "pose") return null;
-    const junction = point?.junctions?.[currentAxis];
-    if (!junction || junction.speed === 0) return null;
-    const label = `${axisName(currentAxis)} ${END_LABEL[end]}经过速度`;
-    return (
-      <div className="flex flex-col gap-1">
-        <p className="flex items-center justify-between gap-1 text-body-sm text-muted-foreground">
-          <span className="truncate">{axisName(currentAxis)} 经过速度</span>
-          {junction.kind === "manual" ? (
-            <button
-              type="button"
-              aria-label={`${label}改回自动`}
-              disabled={readOnly}
-              onClick={() => onReplaceBlock(withAxisPassSpeed(block, currentAxis, null))}
-              className="shrink-0 rounded-sm px-1 text-body-sm text-primary hover:bg-accent"
-            >
-              改回自动
-            </button>
-          ) : (
-            <span className="shrink-0">自动</span>
-          )}
-        </p>
-        <UnitAwareNumericInput
-          aria-label={label}
-          value={roundProjectCoordinate(junction.speed)}
-          unit={speedUnit}
-          min={0}
-          step={1}
-          precision={1}
-          disabled={readOnly}
-          onCommit={(value) =>
-            onReplaceBlock(withAxisPassSpeed(block, currentAxis, roundProjectCoordinate(Math.max(0, value))))
-          }
-          className="w-full border border-border"
-        />
-      </div>
-    );
-  };
-
-  const renderEndColumn = (end: SegmentEnd) => {
-    const view = junctionOf(end);
-    const { block, atMs } = ends[end];
-    return (
-      <div role="group" aria-label={END_LABEL[end]} className="flex min-w-0 flex-col gap-1.5 rounded-md bg-muted p-2">
-        <p className="flex items-baseline justify-between gap-1 text-body-sm text-muted-foreground">
-          <span>{END_LABEL[end]}</span>
-          <span className="font-mono text-mono-sm tabular-nums">{formatTime(atMs)} s</span>
-        </p>
-        {view.kind === "choice" && block?.kind === "pose" ? (
-          <Segmented
-            label={`${END_LABEL[end]}停不停`}
-            options={[
-              { id: "stop", label: STOP_LABEL[end] },
-              { id: "go", label: GO_LABEL[end] },
-            ]}
-            value={view.stop === true ? "stop" : view.stop === false ? "go" : null}
-            disabled={readOnly}
-            onChange={(id) => onReplaceBlock(withEndStop(block, view.axes, id === "stop"))}
-          />
-        ) : null}
-        {view.kind === "choice" && view.stop === "mixed" ? (
-          <p className="text-body-sm text-muted-foreground">各轴不一样</p>
-        ) : null}
-        {view.kind === "fixed" ? <p className="text-body-sm text-foreground">{view.text}</p> : null}
-        {renderPassSpeed(end, view)}
-      </div>
-    );
-  };
-
-  // 看的那根轴现在的起步、收尾时间（不在档上时显示）
-  const rampProfile = (rampAxes.find((axis) => axis.axis === currentAxis) ?? rampAxes[0])?.profile;
-  const rampTimes =
-    rampProfile?.kind === "trapezoid"
-      ? `现在 起步 ${formatTime(rampProfile.params.accelMs)} s · 收尾 ${formatTime(rampProfile.params.decelMs)} s`
-      : null;
 
   return (
     <div className="flex flex-col gap-2">
@@ -603,40 +431,6 @@ export const SegmentPanel = ({
         </div>
       ) : null}
 
-      {rampAxes.length > 0 ? (
-        <section aria-label="起步收尾" className="rounded-md bg-muted p-2">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-body-sm text-muted-foreground">起步收尾</span>
-            <div className="w-44 shrink-0">
-              <Segmented
-                label="起步收尾"
-                options={RAMP_PRESETS}
-                value={rampPreset}
-                disabled={readOnly || !presetsAvailable}
-                onChange={applyRampPreset}
-              />
-            </div>
-          </div>
-          {!presetsAvailable ? (
-            <p className="mt-1 text-body-sm text-muted-foreground">搭建里没设加速度，没有档位</p>
-          ) : rampPreset === null && rampTimes ? (
-            // 不在档上（新建区间默认按时长的两成变速，或两头不一样）：说现在是多久，不说「自定义」
-            <p className="mt-1 text-body-sm text-muted-foreground">{rampTimes}</p>
-          ) : null}
-        </section>
-      ) : null}
-
-      <section aria-label="起点和终点怎么走" className="grid grid-cols-2 gap-2">
-        {renderEndColumn("start")}
-        {renderEndColumn("end")}
-      </section>
-
-      <CollapsePanel
-        title="精确设置"
-        open={detailsOpen}
-        onOpenChange={setDetailsOpen}
-        contentClassName="flex flex-col gap-2 bg-background p-0 pt-2"
-      >
         <section className="rounded-md bg-muted p-3" aria-label="阶段">
           <div className="mb-2 flex items-center justify-between gap-2">
             <h3 className="text-label-caps text-muted-foreground">{axisName(currentAxis)} 阶段</h3>
@@ -683,7 +477,6 @@ export const SegmentPanel = ({
             />
           </div>
         </section>
-      </CollapsePanel>
     </div>
   );
 };

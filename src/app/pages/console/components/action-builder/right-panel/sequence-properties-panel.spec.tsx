@@ -399,8 +399,8 @@ describe("SequencePropertiesPanel edits", () => {
 
     expect(screen.getByLabelText("时长").textContent).toContain("1.5");
 
-    // 变速时间收在「精确设置」里
-    fireEvent.click(screen.getByRole("button", { name: "精确设置" }));
+    // 变速时间直接摆出来，不用展开
+    expect(screen.queryByRole("button", { name: "精确设置" })).toBeNull();
 
     expect(screen.getByRole("spinbutton", { name: "加速时间" })).not.toBeNull();
 
@@ -468,8 +468,6 @@ describe("SequencePropertiesPanel edits", () => {
 
     // 只有梯形一种，区间里不再给曲线类型
     expect(screen.queryByRole("combobox", { name: "曲线类型" })).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "精确设置" }));
 
     const accel = screen.getByRole("spinbutton", { name: "加速时间" });
 

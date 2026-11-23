@@ -9,7 +9,6 @@ export const ActionBuilderRightSidebar = () => {
     activeRightTab,
     setActiveRightTab,
     liveMode,
-    handleSaveShape,
     dockMode,
     sequence,
     selection,
@@ -41,7 +40,6 @@ export const ActionBuilderRightSidebar = () => {
     <ActionRightPanel
       activeTab={activeRightTab}
       liveMode={liveMode}
-      onSaveShape={handleSaveShape}
       onTabChange={setActiveRightTab}
       dockMode={dockMode}
       sequence={sequence}

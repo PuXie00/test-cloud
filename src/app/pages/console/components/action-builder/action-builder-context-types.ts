@@ -46,7 +46,7 @@ export type ActionBuilderContextValue = {
   activeRightTab: ActionRightTab;
   /**
    * 「当前位置」开着（联机编辑）：3D 显示实时位置，选中的位姿就是 GO 目标。
-   * 和页签分开：打开「手动控制」顺带打开它，切到「属性」仍然开着，只由 3D 上的按钮关掉。
+   * 和「手动控制」页签同步：在「手动控制」页就开着，切到别的页签就关。
    */
   liveMode: boolean;
   setLiveMode: (on: boolean) => void;
@@ -67,9 +67,6 @@ export type ActionBuilderContextValue = {
   /** 运动区间阶段的填法（按时间 / 按速度），本次运行期间记住 */
   phaseInputMode: PhaseInputMode;
   handlePhaseInputModeChange: (mode: PhaseInputMode) => void;
-  /** 运动区间的「精确设置」展开着没有，本次运行期间记住 */
-  segmentDetailsOpen: boolean;
-  handleSegmentDetailsOpenChange: (open: boolean) => void;
   /** 时间轴看轨道还是曲线、曲线看哪根虚轴、看位置还是速度；离开动作页再回来也保持 */
   timelineViewMode: TimelineViewMode;
   handleTimelineViewModeChange: (mode: TimelineViewMode) => void;
@@ -149,8 +146,6 @@ export type ActionBuilderContextValue = {
   handleTimelineZoomOut: () => void;
   /** 错峰：选中的区间（每台一段）到达不动，起点依次晚 gapMs 出发 */
   handleStaggerSegments: (keys: readonly string[], gapMs: number) => void;
-  /** 汇合：两台各一段、同时到同一位置，重排成追赶后并排 */
-  handleMergeSegments: (keys: readonly string[]) => void;
   /** 存为造型：当前位置存成新的单帧动作序列「造型 N」，不切换正在编的序列 */
   handleSaveShape: (request: CapturedPoseRequest) => void;
   /** 游标处存为造型：序列在游标那一刻的值存成新的单帧动作序列 */

@@ -223,23 +223,21 @@ describe("action builder save current pose", () => {
     expect(result.current.builder.activeRightTab).toBe("selection");
   });
 
-  it("keeps 当前位置 on after leaving 手动控制, and only the toggle turns it off", async () => {
+  it("keeps 当前位置 in step with the 手动控制 tab", async () => {
     const { result } = renderBuilder();
     await openFixtureProject(result);
     expect(result.current.builder.liveMode).toBe(false);
-    // 打开手动控制顺带打开当前位置
+    // 到手动控制就是当前位置
     act(() => result.current.builder.setActiveRightTab("manual"));
     expect(result.current.builder.liveMode).toBe(true);
-    // 切到属性还在联机
+    // 切到属性就关
     act(() => result.current.builder.setActiveRightTab("selection"));
-    expect(result.current.builder.liveMode).toBe(true);
-    // 在属性页关掉：留在属性页
-    act(() => result.current.builder.setLiveMode(false));
     expect(result.current.builder.liveMode).toBe(false);
-    expect(result.current.builder.activeRightTab).toBe("selection");
-    // 在手动控制页关掉：回到属性页
-    act(() => result.current.builder.setActiveRightTab("manual"));
+    // 3D 上打开当前位置就到手动控制，关掉回到属性
+    act(() => result.current.builder.setLiveMode(true));
+    expect(result.current.builder.activeRightTab).toBe("manual");
     act(() => result.current.builder.setLiveMode(false));
     expect(result.current.builder.activeRightTab).toBe("selection");
+    expect(result.current.builder.liveMode).toBe(false);
   });
 });

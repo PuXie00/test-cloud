@@ -1,15 +1,11 @@
 import { useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
-import { usePermissions } from "@/app/auth/permissions";
 import type { CapturedPoseRequest } from "@/app/project/capture-pose-sequence";
-import { isGoStarting, pendingGoEntries, positionsToAxisValues } from "../../../hooks/go-ready";
+import { isGoStarting, positionsToAxisValues } from "../../../hooks/go-ready";
 import { useGoReady } from "../../../hooks/go-ready-provider";
 import { useControlledObjects } from "../../../hooks/use-controlled-objects";
 import { useProjectStore } from "../../../hooks/use-project-store";
-import { useSelection } from "../../../hooks/use-selection";
 import { buildDimensionParticipants } from "../../right-tab-panel/manual-control-tab/dimension-edit";
-import { resolveManualControlAvailability } from "../../right-tab-panel/manual-control-tab/manual-control-availability";
-import { poseFromControlSnapshot } from "../../right-tab-panel/manual-control-tab/pose-from-control-snapshot";
 import {
   LIVE_POSE_CONFLICT_NOTICE,
   LIVE_POSE_MOVING_NOTICE,
@@ -22,7 +18,7 @@ import {
 import { useActionBuilder } from "../use-action-builder";
 
 /**
- * 「当前位置」开着时：选中的位姿成为 GO 目标（影子停在位姿上），在哪个页签都一样。
+ * 「当前位置」开着（在「手动控制」页）时：选中的位姿成为 GO 目标（影子停在位姿上）。
  * 只在动作页、联机时挂着；关掉联机就解除绑定。
  */
 export const LivePoseGoBinding = () => {
@@ -107,89 +103,4 @@ export const useLiveCapture = () => {
     liveLabel: live.kind === "poses" ? livePoseLabel(poses) : null,
     save,
   };
-};
-
-const stripButtonClass =
-  "h-8 rounded-md px-3 text-body-sm font-semibold disabled:pointer-events-none disabled:opacity-40 [@media(pointer:coarse)]:h-10";
-
-/**
- * 属性页顶上的联机条（「当前位置」开着时）：取当前写到哪里、GO 要多久。
- * 点动和维度控制还在「手动控制」页；GO 还是按 3D 下面的 GO 条。
- */
-export const LiveEditStrip = ({ onSaveShape }: { onSaveShape?: (request: CapturedPoseRequest) => void }) => {
-  const { live, poses, saveLabel, saveBlockedReason, liveLabel, save } = useLiveCapture();
-  const { selectedId, multiSelectedIds } = useSelection();
-  const { getById, snapshots: allSnapshots } = useControlledObjects();
-  const { state, plan } = useGoReady();
-  const canWritePose = usePermissions().can("action.edit");
-
-  const objectIds =
-    live.kind === "poses"
-      ? poses.map((block) => block.objectId)
-      : multiSelectedIds.length > 0
-        ? multiSelectedIds
-        : selectedId != null
-          ? [selectedId]
-          : [];
-  const snapshots = objectIds.flatMap((id) => {
-    const snapshot = getById(id);
-    return snapshot ? [snapshot] : [];
-  });
-  const availability = resolveManualControlAvailability(
-    snapshots.map((snapshot) => ({ name: snapshot.descriptor.name, status: snapshot.descriptor.status })),
-    null,
-  );
-  const canSave = objectIds.length > 0 && !saveBlockedReason && availability.allowed("savePose");
-  const pending = pendingGoEntries(state.entries).length;
-
-  const poseForObject = (objectId: number) => {
-    const snapshot = getById(objectId);
-    return snapshot ? poseFromControlSnapshot(snapshot) : null;
-  };
-  const handleSave = () => save({ objectIds, poseForObject });
-  // 存为造型：选中的物体；没选就存所有有位置数据的物体
-  const shapeIds =
-    objectIds.length > 0
-      ? objectIds
-      : (allSnapshots ?? []).filter((snapshot) => snapshot.positions).map((snapshot) => snapshot.descriptor.id);
-
-  return (
-    <section aria-label="联机" className="shrink-0 bg-primary/10 px-3 py-2">
-      <p className="truncate text-body-sm font-semibold text-primary">
-        {liveLabel ?? "当前位置开着：选中的位姿就是 GO 目标"}
-      </p>
-      {canWritePose ? (
-        <div className="mt-2 flex flex-wrap gap-2">
-          <button
-            type="button"
-            disabled={!canSave}
-            onClick={handleSave}
-            className={`${stripButtonClass} bg-primary text-primary-foreground`}
-          >
-            {saveLabel}
-          </button>
-          {onSaveShape ? (
-            <button
-              type="button"
-              disabled={shapeIds.length === 0}
-              onClick={() => onSaveShape({ objectIds: shapeIds, poseForObject })}
-              className={`${stripButtonClass} border border-border text-foreground hover:bg-accent`}
-            >
-              存为造型
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-      {saveBlockedReason ? <p className="mt-1 text-body-sm text-warning">{saveBlockedReason}</p> : null}
-      {pending > 0 ? (
-        <p className="mt-1 text-body-sm text-muted-foreground">
-          GO
-          {plan.totalSeconds !== null ? (
-            <span className="font-mono tabular-nums text-foreground"> 约 {plan.totalSeconds.toFixed(1)} s</span>
-          ) : null}
-          ，在 3D 下面的 GO 条执行
-        </p>
-      ) : null}
-    </section>
-  );
 };

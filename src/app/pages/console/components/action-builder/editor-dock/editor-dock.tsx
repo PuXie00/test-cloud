@@ -101,7 +101,6 @@ const SequenceEditor = () => {
     handleCreatePose,
     handleSaveShapeAtCursor,
     handleStaggerSegments,
-    handleMergeSegments,
     handleRetimeSegmentCurves,
     getTimelineObject,
     handleResizeDynamicPreset,
@@ -361,7 +360,7 @@ const SequenceEditor = () => {
       : []),
   ];
 
-  // 选中了两段以上运动区间（两端都选中）：右键里统一时长、错峰、汇合
+  // 选中了两段以上运动区间（两端都选中）：右键里统一时长、错峰
   const selectedSegments = resolved ? selectedSegmentsOf(resolved, selectedBlockIds) : [];
   const segmentKeys = selectedSegments.map((segment) => segment.key);
   const onePerObject =
@@ -404,15 +403,6 @@ const SequenceEditor = () => {
                       min: 0.1,
                       onConfirm: (seconds) => handleStaggerSegments(segmentKeys, secondsToMs(seconds)),
                     }),
-                },
-              ]
-            : []),
-          ...(handleMergeSegments
-            ? [
-                {
-                  label: onePerObject && selectedSegments.length === 2 ? "汇合" : "汇合（两台各选一段）",
-                  disabled: !onePerObject || selectedSegments.length !== 2,
-                  onSelect: () => handleMergeSegments(segmentKeys),
                 },
               ]
             : []),
