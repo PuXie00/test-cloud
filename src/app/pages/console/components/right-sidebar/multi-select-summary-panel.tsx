@@ -48,7 +48,7 @@ import { OBJECT_COLORS } from "./config-wizard/config-wizard-constants";
 import type { ControlledObject, ShapePresetId } from "./config-wizard/config-wizard-types";
 import { ControlTypeSelector } from "./property-forms/control-type-selector";
 import { ControlTypeChangeConfirmDialog } from "./property-forms/control-type-change-confirm-dialog";
-import { strokeLimitsFor } from "@/app/project/stroke-limits";
+import { clampStroke, STROKE_LIMITS, strokeLimitsFor } from "@/app/project/stroke-limits";
 import { AXIS_RANGE_CONFIG } from "./property-forms/motion-axis-range";
 import { MotionAxisSection } from "./property-forms/motion-axis-section";
 import { SceneArrangeSection } from "./scene-arrange-section";
@@ -414,17 +414,23 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
     range: { min: number; max: number },
   ) => {
     const rangeConfig = AXIS_RANGE_CONFIG[axis];
+    const axisId = motionAxisIdForKind(axis);
     patchAll((object) => {
       const motionParams = object.motionParams ?? {};
       const current = readAxisParams(object, axis);
       return {
         motionParams: {
           ...motionParams,
-          [motionAxisIdForKind(axis)]: normalizeMotionAxisParams({
-            ...current,
-            [rangeConfig.minKey]: range.min,
-            [rangeConfig.maxKey]: range.max,
-          }),
+          [axisId]: normalizeMotionAxisParams(
+            clampStroke(
+              {
+                ...current,
+                [rangeConfig.minKey]: range.min,
+                [rangeConfig.maxKey]: range.max,
+              },
+              STROKE_LIMITS[object.controlType][axisId],
+            ),
+          ),
         },
       };
     });
@@ -657,7 +663,7 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
                         maxFloor={limits?.maxStroke.min}
                         max={limits?.maxStroke.max}
                         unit={rangeFieldSpec.unit}
-                        step={rangeFieldSpec.step ?? 1}
+                        step={limits?.maxStrokeMultiple ?? rangeFieldSpec.step ?? 1}
                         precision={rangeFieldSpec.precision ?? 1}
                         minAriaLabel={rangeConfig.minAriaLabel}
                         maxAriaLabel={rangeConfig.maxAriaLabel}

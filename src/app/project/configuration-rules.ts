@@ -181,9 +181,10 @@ export const MOTION_DEFAULTS = {
     abnormalDeceleration: 0,
     defaultMaxVelocity: DEFAULT_SWING_AXIS_MAX_VELOCITY,
   }, DEFAULT_SWING_AXIS_MAX_VELOCITY),
+  /** PLC 里多点摆虚轴3 是无极轴，范围必须是 360 的整数倍才能下发 */
   yawY: normalizeMotionAxisParams({
-    minAngle: -20,
-    maxAngle: 20,
+    minAngle: 0,
+    maxAngle: 360,
     speed: 2,
     accelTime: 3,
     minAccelTime: 1,

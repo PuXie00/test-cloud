@@ -66,7 +66,11 @@ describe("changeObjectControlType motionParams", () => {
       }),
       "multiPointSwing",
     );
-    expect(next.motionParams).toEqual(motionParams);
+    // 多点摆虚轴3 是无极轴，沿用的范围收成 0~360
+    expect(next.motionParams).toEqual({
+      ...motionParams,
+      y: { ...motionParams.y, minAngle: 0, maxAngle: 360 },
+    });
     expect(next.motionSpeedControl?.overrides).toEqual({ y: { enabled: true, speed: 1 } });
   });
 
