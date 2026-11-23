@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StepAddObjects } from "./step-add-objects";
 import { StepAddPlc } from "./step-add-plc";
@@ -289,21 +289,63 @@ describe("绑定", () => {
     expect(onNavigate).toHaveBeenCalledWith("hardware");
   });
 
-  it("自动绑定后报告绑定数量", () => {
+  const twoAxisPlan = {
+    assignments: [
+      { objectId: 1, axisKey: "0", motorId: 10 },
+      { objectId: 1, axisKey: "1", motorId: 11 },
+    ],
+    unplacedAxisCount: 0,
+  };
+
+  it("自动绑定后报告绑定数量", async () => {
     store = { ...store, objects: [object(1, 2)], plcs: [plc], motors: [motor(10), motor(11)] };
-    autoBindAxes.mockReturnValue({
-      assignments: [
-        { objectId: 1, axisKey: "0", motorId: 10 },
-        { objectId: 1, axisKey: "1", motorId: 11 },
-      ],
-      unplacedAxisCount: 0,
-    });
+    autoBindAxes.mockReturnValue(twoAxisPlan);
     render(<StepBindAxes onNavigate={onNavigate} />);
 
     fireEvent.click(screen.getByRole("button", { name: "自动绑定" }));
 
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith("已绑定 2 个吊点"));
     expect(autoBindAxes).toHaveBeenCalledTimes(1);
-    expect(toastSuccess).toHaveBeenCalledWith("已绑定 2 个吊点");
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("自动绑定会改写轴类型时先确认，取消则不绑定", async () => {
+    store = {
+      ...store,
+      objects: [object(1, 2)],
+      plcs: [plc],
+      motors: [motor(10, { axisType: 1 }), motor(11)],
+    };
+    render(<StepBindAxes onNavigate={onNavigate} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "自动绑定" }));
+
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog.textContent).toContain("无极旋转轴");
+    expect(dialog.textContent).toContain("线性轴");
+    fireEvent.click(screen.getByRole("button", { name: "取消绑定" }));
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(autoBindAxes).not.toHaveBeenCalled();
+    expect(toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it("确认改写轴类型后执行自动绑定", async () => {
+    store = {
+      ...store,
+      objects: [object(1, 2)],
+      plcs: [plc],
+      motors: [motor(10, { axisType: 1 }), motor(11)],
+    };
+    autoBindAxes.mockReturnValue(twoAxisPlan);
+    render(<StepBindAxes onNavigate={onNavigate} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "自动绑定" }));
+    await screen.findByRole("alertdialog");
+    fireEvent.click(screen.getByRole("button", { name: "改写并绑定" }));
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith("已绑定 2 个吊点"));
+    expect(autoBindAxes).toHaveBeenCalledTimes(1);
   });
 
   it("电机不够时说明还差多少，并能去添加", () => {

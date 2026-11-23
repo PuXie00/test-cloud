@@ -8,6 +8,7 @@ import {
   listAxisBindingsFromMotors,
   planAutoBind,
 } from "@/app/pages/console/hooks/binding-utils";
+import { useConfirmedBinding } from "@/app/pages/console/hooks/use-confirmed-binding";
 import { useProjectStore } from "@/app/pages/console/hooks/use-project-store";
 import { useSelection } from "@/app/pages/console/hooks/use-selection";
 import { AxisMotorTreeSelect } from "../axis-motor-tree-select";
@@ -41,7 +42,8 @@ type StepBindAxesProps = {
 };
 
 export const StepBindAxes = ({ onNavigate }: StepBindAxesProps) => {
-  const { objects, plcs, motors, bindAxis, autoBindAxes } = useProjectStore();
+  const { objects, plcs, motors } = useProjectStore();
+  const { confirmBindAxis, confirmAutoBind, confirmDialog } = useConfirmedBinding();
   const { multiSelectedIds, select, setTreeFocus } = useSelection();
   const counts = getWizardCounts({ objects, plcs, motors });
   const bindable = objects.filter((object) => !controlTypeHasNoDriveAxes(object.controlType));
@@ -49,8 +51,10 @@ export const StepBindAxes = ({ onNavigate }: StepBindAxesProps) => {
   const plan = useMemo(() => planAutoBind(objects, motors), [motors, objects]);
   const unbound = counts.axes - counts.boundAxes;
 
-  const handleAutoBind = () => {
-    const { assignments, unplacedAxisCount } = autoBindAxes();
+  const handleAutoBind = async () => {
+    const result = await confirmAutoBind();
+    if (!result) return;
+    const { assignments, unplacedAxisCount } = result;
     if (assignments.length === 0) return;
     if (unplacedAxisCount > 0) {
       toast.warning(
@@ -61,8 +65,9 @@ export const StepBindAxes = ({ onNavigate }: StepBindAxesProps) => {
     }
   };
 
-  const handleBind = (objectId: number, axisKey: string, motorId: number | null) => {
-    if (!bindAxis(objectId, axisKey, motorId)) {
+  const handleBind = async (objectId: number, axisKey: string, motorId: number | null) => {
+    const outcome = await confirmBindAxis(objectId, axisKey, motorId);
+    if (outcome === "rejected") {
       toast.warning("这台驱动单元和该物体已绑定的不在同一主控或同一个口");
     }
   };
@@ -195,6 +200,7 @@ export const StepBindAxes = ({ onNavigate }: StepBindAxesProps) => {
       <p className="text-body-sm text-muted-foreground">
         同一个物体的吊点要用同一主控、同一个口的驱动单元。熟悉之后，也可以把电机从工程结构直接拖到 3D 吊点上。
       </p>
+      {confirmDialog}
     </div>
   );
 };

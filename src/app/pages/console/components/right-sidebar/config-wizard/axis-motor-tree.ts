@@ -1,25 +1,15 @@
 import type { BusNo, Motor, Plc } from "./config-wizard-types";
-import {
-  getMotorAxisType,
-  type AxisBindingRef,
-} from "@/app/pages/console/hooks/binding-utils";
+import type { AxisBindingRef } from "@/app/pages/console/hooks/binding-utils";
 import { busNoLabel } from "@/app/pages/console/hooks/motor-bus";
-import type { AxisTypeCode } from "../property-forms/motor-drive-params";
 import { formatMotorDisplayName } from "@/app/pages/console/hooks/motor-mid";
 import { formatPlcDisplayName } from "@/app/pages/console/hooks/plc-display-name";
 
-export type MotorBindDisabledReason =
-  | "taken"
-  | "plc"
-  | "bus"
-  | "axisType"
-  | "unselected";
+export type MotorBindDisabledReason = "taken" | "plc" | "bus" | "unselected";
 
 export const MOTOR_BIND_DISABLED_LABELS: Record<MotorBindDisabledReason, string> = {
   taken: "已绑定其他吊点",
   plc: "不同主控",
   bus: "不同从站口",
-  axisType: "不同轴类型",
   unselected: "未启用",
 };
 
@@ -49,10 +39,10 @@ export type AxisMotorTreePlcNode = {
 
 export type AxisMotorTree = AxisMotorTreePlcNode[];
 
+/** 轴类型不设限：绑定时按物体控制类型改写，改写前弹窗确认 */
 export type AxisBindingConstraints = {
   plcId: number | null;
   busNo: BusNo | null;
-  axisType: AxisTypeCode | null;
 };
 
 export const getBindingConstraintsForAxis = (
@@ -75,17 +65,15 @@ export const getBindingConstraintsForAxis = (
 
   let plcId: number | null = null;
   let busNo: BusNo | null = null;
-  let axisType: AxisTypeCode | null = null;
 
   for (const motorId of constraintMotorIds) {
     const motor = motorById.get(motorId);
     if (!motor) continue;
     plcId ??= motor.plcId;
     busNo ??= motor.busNo;
-    axisType ??= getMotorAxisType(motor);
   }
 
-  return { plcId, busNo, axisType };
+  return { plcId, busNo };
 };
 
 export const getMotorBindDisabledReason = (
@@ -115,12 +103,6 @@ export const getMotorBindDisabledReason = (
     motor.busNo !== options.constraints.busNo
   ) {
     return "bus";
-  }
-  if (
-    options.constraints.axisType !== null &&
-    getMotorAxisType(motor) !== options.constraints.axisType
-  ) {
-    return "axisType";
   }
 
   return null;

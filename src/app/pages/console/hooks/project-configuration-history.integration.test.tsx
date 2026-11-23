@@ -232,6 +232,7 @@ const addModelWithDefaultValues = vi.fn();
 const modifyModelType = vi.fn();
 const configureModelParamModel = vi.fn();
 const deleteModelPlc = vi.fn();
+const syncMotorPlc = vi.fn();
 
 const flushCsocketMicrotasks = async () => {
   for (let i = 0; i < 12; i++) {
@@ -270,6 +271,8 @@ const installSideEffectMocks = () => {
   modifyModelType.mockImplementation(ok);
   configureModelParamModel.mockImplementation(ok);
   deleteModelPlc.mockImplementation(ok);
+  syncMotorPlc.mockReset();
+  syncMotorPlc.mockImplementation(ok);
   window.csocketApi = {
     openProject: () => ok(),
     addDevicePlc: (...args: unknown[]) => {
@@ -281,7 +284,7 @@ const installSideEffectMocks = () => {
       return ok();
     },
     configureAxisParamMotor: () => ok(),
-    syncMotorPlc: () => ok(),
+    syncMotorPlc,
     deleteMotorPlc: () => ok(),
     addModelWithDefaultValues,
     modifyModelType,
@@ -911,5 +914,54 @@ describe("project configuration history integration", () => {
     expect(addModelWithDefaultValues).toHaveBeenCalledTimes(1);
     expect(deleteModelPlc).not.toHaveBeenCalled();
     expect(result.current.project.documentRevision.origin).toBe("history");
+  });
+
+  it("resends addAxis when binding rewrites the axis type, keeps it on unbind, and resends on manual edit", async () => {
+    const { result } = renderIntegration();
+    await openFixture(result);
+
+    let objectId = 0;
+    act(() => {
+      objectId = result.current.store.addObjectFromShape("cube")!.id;
+    });
+    act(() => {
+      expect(
+        result.current.store.changeObjectControlType([objectId], "continuousRotation").ok,
+      ).toBe(true);
+    });
+    const motorId = result.current.store.motors.find(
+      (motor) => motor.controlledObjectId == null,
+    )!.id;
+    await flushCsocketMicrotasks();
+    syncMotorPlc.mockClear();
+
+    act(() => {
+      expect(result.current.store.bindAxis(objectId, "0", motorId)).toBe(true);
+    });
+    await flushCsocketMicrotasks();
+    expect(syncMotorPlc).toHaveBeenCalledTimes(1);
+    expect(syncMotorPlc.mock.calls[0]![0]).toContainEqual(
+      expect.objectContaining({ deviceId: motorId, deviceType: 1 }),
+    );
+    syncMotorPlc.mockClear();
+
+    act(() => {
+      expect(result.current.store.updateMotor(motorId, { axisType: 0 })).toBe(false);
+    });
+    act(() => {
+      expect(result.current.store.bindAxis(objectId, "0", null)).toBe(true);
+    });
+    await flushCsocketMicrotasks();
+    expect(syncMotorPlc).not.toHaveBeenCalled();
+    expect(result.current.store.findMotor(motorId)?.axisType).toBe(1);
+
+    act(() => {
+      expect(result.current.store.updateMotor(motorId, { axisType: 0 })).toBe(true);
+    });
+    await flushCsocketMicrotasks();
+    expect(syncMotorPlc).toHaveBeenCalledTimes(1);
+    expect(syncMotorPlc.mock.calls[0]![0]).toContainEqual(
+      expect.objectContaining({ deviceId: motorId, deviceType: 0 }),
+    );
   });
 });

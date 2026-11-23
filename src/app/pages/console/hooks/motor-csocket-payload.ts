@@ -171,6 +171,20 @@ export const syncAllMotors = (
   });
 };
 
+/** 同一电机前后轴类型不同（绑定、解绑、改物体控制类型会改写） */
+export const motorAxisTypesChanged = (prev: readonly Motor[], next: readonly Motor[]): boolean => {
+  const prevAxisTypeById = new Map(prev.map((motor) => [motor.id, motor.axisType]));
+  return next.some((motor) => {
+    const before = prevAxisTypeById.get(motor.id);
+    return before !== undefined && before !== motor.axisType;
+  });
+};
+
+/** 轴类型是 addAxis 的 deviceType：变了就重发完整电机列表 */
+export const syncMotorAxisTypesByDiff = (prev: readonly Motor[], next: readonly Motor[]): void => {
+  if (motorAxisTypesChanged(prev, next)) syncAllMotors(next);
+};
+
 /** undo/redo：全量同步电机列表，再给新增/改参的电机配参 */
 export const syncMotorsByDiff = (prev: readonly Motor[], next: readonly Motor[]): void => {
   const prevById = new Map(prev.map((motor) => [motor.id, motor]));

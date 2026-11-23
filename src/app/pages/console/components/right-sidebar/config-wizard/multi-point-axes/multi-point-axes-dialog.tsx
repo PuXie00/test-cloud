@@ -77,6 +77,10 @@ import {
 import { createShapeFootprint } from "./multi-point-axes-geometry";
 import { formatAxisLabel } from "../axis-utils";
 
+export type MultiPointAxesApplyResult =
+  | boolean
+  | { applied: boolean; cancelled?: boolean; reason?: string };
+
 export type MultiPointAxesDialogProps = {
   open: boolean;
   object: ControlledObject;
@@ -85,9 +89,10 @@ export type MultiPointAxesDialogProps = {
   /** When provided on open, selects this axis if it exists in the draft. */
   initialSelectedAxisKey?: string | null;
   onOpenChange: (open: boolean) => void;
+  /** cancelled：用户在后续确认中取消，保持弹窗打开且不提示失败 */
   onApply: (
     input: MultiPointAxesConfigurationInput,
-  ) => boolean | { applied: boolean; reason?: string };
+  ) => MultiPointAxesApplyResult | Promise<MultiPointAxesApplyResult>;
 };
 
 const emptyDraft = (): MultiPointAxesDraft => ({
@@ -245,6 +250,18 @@ export const MultiPointAxesDialog = ({
     onOpenChange(false);
   };
 
+  const finishApply = (result: MultiPointAxesApplyResult) => {
+    if (typeof result !== "boolean" && result.cancelled) return;
+    const applied = typeof result === "boolean" ? result : result.applied;
+    const reason = typeof result === "boolean" ? undefined : result.reason;
+    if (!applied) {
+      toast.error(reason ? `吊点配置保存失败：${reason}` : "吊点配置保存失败");
+      return;
+    }
+    toast.success("吊点配置已保存");
+    onOpenChange(false);
+  };
+
   const handleApply = () => {
     if (!canApply) return;
     const result = onApply({
@@ -258,14 +275,11 @@ export const MultiPointAxesDialog = ({
         motorId,
       })),
     });
-    const applied = typeof result === "boolean" ? result : result.applied;
-    const reason = typeof result === "boolean" ? undefined : result.reason;
-    if (!applied) {
-      toast.error(reason ? `吊点配置保存失败：${reason}` : "吊点配置保存失败");
+    if (result instanceof Promise) {
+      void result.then(finishApply);
       return;
     }
-    toast.success("吊点配置已保存");
-    onOpenChange(false);
+    finishApply(result);
   };
 
   const handleBindChange = (axisKey: string, motorId: number | null) => {

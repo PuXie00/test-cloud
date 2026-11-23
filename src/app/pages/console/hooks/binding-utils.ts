@@ -24,9 +24,6 @@ export const requiredAxisTypeForControlType = (
 export const axisTypeLabel = (axisType: AxisTypeCode): string =>
   axisType === AXIS_TYPE.continuous ? "无极旋转轴" : "线性轴";
 
-/** 解绑后的默认轴类型 */
-export const unboundMotorAxisType = (): AxisTypeCode => AXIS_TYPE.linear;
-
 export const bindMotorToAxis = (
   motor: Motor,
   objectId: number,
@@ -39,16 +36,33 @@ export const bindMotorToAxis = (
   axisType: requiredAxisTypeForControlType(controlType),
 });
 
+/** 解绑保留轴类型：轴类型由用户在未绑定时设置 */
 export const unbindMotor = (motor: Motor): Motor => ({
   ...motor,
   controlledObjectId: null,
   axisKey: null,
-  axisType: unboundMotorAxisType(),
 });
+
+export type AxisTypeRewrite = { motor: Motor; from: AxisTypeCode; to: AxisTypeCode };
+
+/** 绑定预演前后轴类型被改写的电机（新出现的电机不算） */
+export const listAxisTypeRewrites = (
+  prev: readonly Motor[],
+  next: readonly Motor[],
+): AxisTypeRewrite[] => {
+  const prevById = new Map(prev.map((motor) => [motor.id, motor]));
+  return next.flatMap((motor) => {
+    const before = prevById.get(motor.id);
+    if (!before) return [];
+    const from = getMotorAxisType(before);
+    const to = getMotorAxisType(motor);
+    return from === to ? [] : [{ motor: before, from, to }];
+  });
+};
 
 /**
  * 变更控制类型后仍保留绑定、且 axisType 需要改写的电机数量。
- * 切到无驱动轴类型时返回 0（走独立确认，解绑时再回线性）。
+ * 切到无驱动轴类型时返回 0（电机全部解绑，轴类型不变）。
  */
 export const countBoundMotorsNeedingAxisTypeChange = (
   object: ControlledObject,
@@ -247,6 +261,25 @@ export type AutoBindPlan = {
   assignments: AutoBindAssignment[];
   /** 没有可用电机、这次没分配到的吊点数 */
   unplacedAxisCount: number;
+};
+
+/** 按分配把电机绑到吊点（轴类型按物体控制类型改写），只改电机侧 */
+export const bindMotorsByAssignments = (
+  objects: readonly ControlledObject[],
+  motors: readonly Motor[],
+  assignments: readonly AutoBindAssignment[],
+): Motor[] => {
+  const objectById = new Map(objects.map((object) => [object.id, object]));
+  const assignmentByMotorId = new Map(
+    assignments.map((assignment) => [assignment.motorId, assignment]),
+  );
+  return motors.map((motor) => {
+    const assignment = assignmentByMotorId.get(motor.id);
+    const object = assignment && objectById.get(assignment.objectId);
+    return assignment && object
+      ? bindMotorToAxis(motor, object.id, assignment.axisKey, object.controlType)
+      : motor;
+  });
 };
 
 const busGroupKey = (motor: Motor) => `${motor.plcId}:${motor.busNo}`;

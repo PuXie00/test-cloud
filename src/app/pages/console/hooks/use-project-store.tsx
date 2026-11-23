@@ -52,6 +52,7 @@ import {
 import {
   applyBindMotorsFromAxis,
   bindMotorToAxis,
+  bindMotorsByAssignments,
   canBindMotorToObject,
   planAutoBind,
   type AutoBindPlan,
@@ -93,6 +94,7 @@ import {
   onlyNumericDriveParamsChanged,
   runCsocket,
   syncAllMotors,
+  syncMotorAxisTypesByDiff,
   syncPlcDevicesByDiff,
   syncMotorsByDiff,
 } from "./motor-csocket-payload";
@@ -424,6 +426,7 @@ export const ProjectStoreProvider = ({ children }: { children: ReactNode }) => {
         dispatchSetup({ type: "replace", payload: nextLocal });
       }
       if (previousLocal && nextLocal) {
+        syncMotorAxisTypesByDiff(previousLocal.motors, nextLocal.motors);
         syncModelsByDiff(
           { objects: previousLocal.objects, motors: previousLocal.motors },
           { objects: nextLocal.objects, motors: nextLocal.motors },
@@ -1083,6 +1086,9 @@ export const ProjectStoreProvider = ({ children }: { children: ReactNode }) => {
     (id: number, patch: Partial<Motor>): boolean => {
       const current = setupRef.current.motors.find((motor) => motor.id === id);
       if (!current) return false;
+      const axisTypeChanging =
+        patch.axisType !== undefined && patch.axisType !== current.axisType;
+      if (axisTypeChanging && current.controlledObjectId != null) return false;
       const busNoChanging =
         patch.busNo !== undefined && isBusNo(patch.busNo) && patch.busNo !== current.busNo;
       if (busNoChanging) {
@@ -1107,7 +1113,9 @@ export const ProjectStoreProvider = ({ children }: { children: ReactNode }) => {
       if (!result.ok || !result.changed) return result.ok;
       const next = setupRef.current.motors.find((motor) => motor.id === id);
       if (!next) return true;
-      if (busNoChanging || next.axisType !== current.axisType) {
+      // 轴类型变了时 patchSetup 已重发电机列表
+      if (next.axisType !== current.axisType) return true;
+      if (busNoChanging) {
         syncAllMotors(setupRef.current.motors);
       } else if (motorDriveParamsChanged(current, next)) {
         if (isTrackedEditActive && onlyNumericDriveParamsChanged(current, next)) {
@@ -1325,18 +1333,10 @@ export const ProjectStoreProvider = ({ children }: { children: ReactNode }) => {
     const result = patchSetup("自动绑定", (prev) => {
       const plan = planAutoBind(prev.objects, prev.motors);
       if (plan.assignments.length === 0) return prev;
-      const objectById = new Map(prev.objects.map((object) => [object.id, object]));
-      const assignmentByMotorId = new Map(
-        plan.assignments.map((assignment) => [assignment.motorId, assignment]),
+      return withClampedObjectsForMotors(
+        prev,
+        bindMotorsByAssignments(prev.objects, prev.motors, plan.assignments),
       );
-      const nextMotors = prev.motors.map((motor) => {
-        const assignment = assignmentByMotorId.get(motor.id);
-        const object = assignment && objectById.get(assignment.objectId);
-        return assignment && object
-          ? bindMotorToAxis(motor, object.id, assignment.axisKey, object.controlType)
-          : motor;
-      });
-      return withClampedObjectsForMotors(prev, nextMotors);
     });
     return result.ok
       ? preview
