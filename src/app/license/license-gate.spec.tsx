@@ -130,4 +130,20 @@ describe("LicenseGate", () => {
     fireEvent.click(await screen.findByRole("button", { name: "跳过（开发模式）" }));
     expect(await screen.findByText("登录页")).toBeTruthy();
   });
+
+  it("开发模式 C++ 回了未激活也可以跳过", async () => {
+    const api = installFakeLicenseApi({ devSkipAllowed: true }, { check: [{ status: "inactive" }] });
+    renderGate();
+    expect(await screen.findByText("软件未激活")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "跳过（开发模式）" }));
+    expect(await screen.findByText("登录页")).toBeTruthy();
+    expect(api.authActivate).not.toHaveBeenCalled();
+  });
+
+  it("正式版未激活没有跳过", async () => {
+    installFakeLicenseApi({}, { check: [{ status: "inactive" }] });
+    renderGate();
+    expect(await screen.findByText("软件未激活")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "跳过（开发模式）" })).toBeNull();
+  });
 });
