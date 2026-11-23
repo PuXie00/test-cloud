@@ -263,7 +263,8 @@ export class CsocketApiService {
       const msg = envelope.result
       const optCmd = envelope.OptCmd
       if (!optCmd) return
-      if (optCmd === 'HA|info' || optCmd === 'HA|haRecv') {
+      if (optCmd === 'HA|info' || optCmd === 'HA|recv') {
+        console.log('HA|info or HA|recv', JSON.stringify(msg));
         this.haHooks?.push(optCmd, msg)
         return
       }
