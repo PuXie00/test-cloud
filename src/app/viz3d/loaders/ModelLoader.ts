@@ -1,4 +1,5 @@
-import "@babylonjs/loaders/glTF/glTFFileLoader";
+// Babylon 9.15 起 glTFFileLoader 不再自带 2.0 解析器，只引它会报 "Unsupported version: 2.0"
+import "@babylonjs/loaders/glTF/2.0";
 import "@babylonjs/loaders/OBJ/objFileLoader";
 import { ImportMeshAsync, type ISceneLoaderAsyncResult } from "@babylonjs/core/Loading/sceneLoader";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
