@@ -23,6 +23,7 @@ import {
 import {
   followedObjectIds,
   isBlockSelected,
+  segmentSelection,
   selectionBlockIds,
   selectionMarkerIds,
   type ObjectFollow,
@@ -30,13 +31,9 @@ import {
   selectedPosesTimeMs,
   selectedSegmentsOf,
 } from "../sequence-selection";
-import {
-  TIMELINE_PX_PER_SECOND_MAX,
-  TIMELINE_PX_PER_SECOND_MIN,
-  VIRTUAL_AXIS_IDS,
-  secondsToMs,
-} from "../timeline/timeline-data";
+import { VIRTUAL_AXIS_IDS, secondsToMs } from "../timeline/timeline-data";
 import { uniformDurationWrites } from "../right-panel/segment-retime";
+import { blocksSpanMs } from "../sequence-ops";
 import {
   availableCurveAxes,
   curveRowObjectIds,
@@ -47,11 +44,11 @@ import {
   nextKeyframeMs,
   previousKeyframeMs,
 } from "../timeline/timeline-keyframes";
-import { pickNiceMajorStepSec } from "../timeline/timeline-ticks";
 import { TimelineEditor } from "../timeline/timeline-editor";
 import { TimelineToolbar } from "../timeline/timeline-toolbar";
 import { MarkerRenameDialog } from "./marker-rename-dialog";
 import { SecondsPromptDialog, type SecondsPrompt } from "./seconds-prompt-dialog";
+import { ScalePromptDialog, type ScalePrompt } from "./scale-prompt-dialog";
 import { SequenceDeleteDialog } from "./sequence-delete-dialog";
 import { sortedMarkers } from "../marker-ops";
 import { useTimelinePlayback } from "../timeline/use-timeline-playback";
@@ -86,6 +83,9 @@ const SequenceEditor = () => {
     handleMoveTimelineBlock,
     handleShiftTimelineBlocks,
     handleShiftTimelineBlocksEnd,
+    handleScaleTimelineBlocks,
+    handleScaleTimelineBlocksEnd,
+    handleInsertSpeedPoints,
     handleDragPoseAxis,
     handleDragPoseAxisEnd,
     timelineViewMode: viewMode,
@@ -114,8 +114,6 @@ const SequenceEditor = () => {
     handleBlockPaste,
     canPasteBlock,
     handleTimelinePxPerSecondChange,
-    handleTimelineZoomIn,
-    handleTimelineZoomOut,
     handleSave,
     draftSequenceIds,
     canUndoEdit,
@@ -168,15 +166,12 @@ const SequenceEditor = () => {
   const [renamingMarkerId, setRenamingMarkerId] = useState<string | null>(null);
   // 右键「统一时长…」「错峰…」要填的秒数
   const [secondsPrompt, setSecondsPrompt] = useState<SecondsPrompt | null>(null);
+  // 右键「整体缩放…」
+  const [scalePrompt, setScalePrompt] = useState<ScalePrompt | null>(null);
   const selectedBlockIds = selectionBlockIds(selection);
   const invalidTargets = useMemo(
     () => invalidTimelineTargets(sequenceIssues),
     [sequenceIssues],
-  );
-
-  const majorStepSec = useMemo(
-    () => pickNiceMajorStepSec(timelinePxPerSecond),
-    [timelinePxPerSecond],
   );
 
   const resolved = useMemo(() => {
@@ -360,8 +355,9 @@ const SequenceEditor = () => {
       : []),
   ];
 
-  // 选中了两段以上运动区间（两端都选中）：右键里统一时长、错峰
+  // 选中了两段以上运动区间（两端都选中）：右键里整体缩放、统一时长、错峰
   const selectedSegments = resolved ? selectedSegmentsOf(resolved, selectedBlockIds) : [];
+  const selectionSpan = blocksSpanMs(sequence, selectedBlockIds);
   const segmentKeys = selectedSegments.map((segment) => segment.key);
   const onePerObject =
     new Set(selectedSegments.map((segment) => segment.objectId)).size === selectedSegments.length;
@@ -370,6 +366,20 @@ const SequenceEditor = () => {
   const segmentActions: ContextMenuAction[] =
     canEdit && selectedSegments.length >= 2
       ? [
+          ...(selectionSpan && selectionSpan.endMs > selectionSpan.startMs
+            ? [
+                {
+                  label: "整体缩放…",
+                  onSelect: () =>
+                    setScalePrompt({
+                      durationMs: selectionSpan.endMs - selectionSpan.startMs,
+                      segmentCount: selectedSegments.length,
+                      onConfirm: (durationMs, shiftAll) =>
+                        handleScaleTimelineBlocks({ blockIds: selectedBlockIds, durationMs, shiftAll }),
+                    }),
+                },
+              ]
+            : []),
           ...(handleRetimeSegmentCurves
             ? [
                 {
@@ -409,16 +419,44 @@ const SequenceEditor = () => {
         ]
       : [];
 
+  // 游标在选中区间的中间：右键里在游标处插入变速点（切开这段，改后半段的速度就是加速、减速）
+  const speedPointKeys = selectedSegments
+    .filter((segment) => segment.startMs < cursorMs && cursorMs < segment.endMs)
+    .map((segment) => segment.key);
+  const speedPointActions: ContextMenuAction[] =
+    canEdit && speedPointKeys.length > 0
+      ? [
+          {
+            label:
+              speedPointKeys.length > 1
+                ? `在游标处插入变速点（${speedPointKeys.length} 段）`
+                : "在游标处插入变速点",
+            onSelect: () => handleInsertSpeedPoints(speedPointKeys),
+          },
+        ]
+      : [];
+
   const timelineResolved = resolved ?? unresolvedSequenceStub(sequence);
 
-  /** 右键点在没选中的块上时先选中它，菜单里的“复制”作用于这个块 */
+  /**
+   * 右键点在没选中的块上时先选中它，菜单里的“复制”作用于这个块；
+   * 点在没选中的运动区间上时选中它两端（右键里插入变速点等作用于它）
+   */
   const handleTimelineContextMenu = (event: MouseEvent<HTMLElement>) => {
-    const target =
-      event.target instanceof Element ? event.target.closest<HTMLElement>("[data-block-id]") : null;
+    const element = event.target instanceof Element ? event.target : null;
+    const target = element?.closest<HTMLElement>("[data-block-id]");
     const blockId = target?.dataset.blockId;
     if (blockId && !isBlockSelected(selection, blockId)) {
       handleTimelineSelectionChange({ kind: "block", blockId }, "replace");
+      return;
     }
+    const band = blockId ? null : element?.closest<HTMLElement>("[data-from-ref][data-to-ref]");
+    if (!band || !resolved) return;
+    const segment = resolved.segments.find(
+      (item) => item.fromRef === band.dataset.fromRef && item.toRef === band.dataset.toRef,
+    );
+    if (!segment || selectedSegments.some((item) => item.key === segment.key)) return;
+    handleTimelineSelectionChange(segmentSelection(resolved, segment), "replace");
   };
 
   return (
@@ -435,9 +473,8 @@ const SequenceEditor = () => {
         canLoop={resolved !== null && sequencePathIsClosed(resolved)}
         loopDisabledHint={SEQUENCE_LOOP_DISABLED_HINT}
         onLoopChange={handleLoopChange}
-        majorStepSec={majorStepSec}
-        canZoomIn={timelinePxPerSecond > TIMELINE_PX_PER_SECOND_MIN}
-        canZoomOut={timelinePxPerSecond < TIMELINE_PX_PER_SECOND_MAX}
+        pxPerSecond={timelinePxPerSecond}
+        onPxPerSecondChange={handleTimelinePxPerSecondChange}
         canDelete
         canPlay={canPlay}
         isPlaying={isPlaying}
@@ -454,8 +491,6 @@ const SequenceEditor = () => {
             ? toast.warning(runningSequenceMessage([sequence.name], "删除"))
             : setDeleteOpen(true)
         }
-        onZoomIn={handleTimelineZoomIn}
-        onZoomOut={handleTimelineZoomOut}
         onZoomFit={handleZoomFit}
         onPrevKeyframe={() => jumpTo(prevKeyframe)}
         onNextKeyframe={() => jumpTo(nextKeyframe)}
@@ -482,6 +517,7 @@ const SequenceEditor = () => {
       <SequenceDeleteDialog open={deleteOpen} onOpenChange={setDeleteOpen} />
       <MarkerRenameDialog marker={renamingMarker} onClose={() => setRenamingMarkerId(null)} />
       <SecondsPromptDialog prompt={secondsPrompt} onClose={() => setSecondsPrompt(null)} />
+      <ScalePromptDialog prompt={scalePrompt} onClose={() => setScalePrompt(null)} />
       {resolved === null && (
         <div className="shrink-0 bg-warning-surface px-3 py-2 text-body-sm text-warning">
           预设无法解析，可继续编辑块
@@ -495,7 +531,7 @@ const SequenceEditor = () => {
         onCopy={handleBlockCopy}
         onPaste={handleBlockPaste}
         onContextMenu={handleTimelineContextMenu}
-        actions={[...segmentActions, ...presetActions]}
+        actions={[...speedPointActions, ...segmentActions, ...presetActions]}
       >
         <div data-guide="console-action-timeline" className="flex min-h-0 flex-1">
           <TimelineEditor
@@ -532,6 +568,12 @@ const SequenceEditor = () => {
             curveUnderlay={curveUnderlay}
             onPoseAxisDrag={canEdit ? handleDragPoseAxis : undefined}
             onPoseAxisDragEnd={canEdit ? handleDragPoseAxisEnd : undefined}
+            onScaleSelection={
+              canEdit && handleScaleTimelineBlocks
+                ? (blockIds, durationMs) => handleScaleTimelineBlocks({ blockIds, durationMs }, true)
+                : undefined
+            }
+            onScaleSelectionEnd={handleScaleTimelineBlocksEnd}
           />
         </div>
       </ClipboardContextMenu>

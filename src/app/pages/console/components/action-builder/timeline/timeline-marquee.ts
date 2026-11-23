@@ -54,3 +54,31 @@ export const collectMarqueeBlockIds = (
   }
   return hits;
 };
+
+/** 算「一列」的块：位姿和静态预设（指令、动态预设不算） */
+const isColumnBlock = (block: TimelineBlock): block is Extract<TimelineBlock, { atMs: number }> =>
+  block.kind === "pose" || block.kind === "static-preset";
+
+/** 标尺上画菱形的时刻：有位姿（或静态预设）的时刻，从早到晚 */
+export const columnTimesMs = (sequence: Pick<ActionSequenceConfig, "blocks">): number[] =>
+  [...new Set(sequence.blocks.filter(isColumnBlock).map((block) => block.atMs))].sort((a, b) => a - b);
+
+/** 这一时刻所有物体的位姿（和静态预设），不看选中了哪些物体 */
+export const columnBlockIds = (sequence: Pick<ActionSequenceConfig, "blocks">, atMs: number): string[] =>
+  sequence.blocks.filter((block) => isColumnBlock(block) && block.atMs === atMs).map((block) => block.id);
+
+/** 标尺上 Shift 拖出的时间段里所有物体的块（动态预设和时间段有重叠就算） */
+export const collectTimeRangeBlockIds = (
+  sequence: Pick<ActionSequenceConfig, "blocks">,
+  range: { startMs: number; endMs: number },
+): string[] => {
+  const startMs = Math.min(range.startMs, range.endMs);
+  const endMs = Math.max(range.startMs, range.endMs);
+  return sequence.blocks
+    .filter((block) =>
+      block.kind === "dynamic-preset"
+        ? rangesOverlap(block.startMs, block.endMs, startMs, endMs)
+        : block.atMs >= startMs && block.atMs <= endMs,
+    )
+    .map((block) => block.id);
+};

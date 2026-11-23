@@ -3,6 +3,7 @@ import type {
   ActionSequenceConfig,
   ModelPose,
   MotionSegmentSettings,
+  PassSpeedMode,
   TimelineBlock,
 } from "@/app/project/action-sequence/types";
 import type { SequenceIssue } from "@/app/project/action-sequence/validate-sequence";
@@ -14,6 +15,7 @@ import type { CurveGraph, TimelineViewMode } from "./timeline/curve-data";
 import type { ActionRightTab } from "./right-panel/action-right-panel";
 import type {
   PoseAxisWrite,
+  ScaleBlocksRequest,
   SegmentAlignEdge,
   SegmentProfileWrite,
   SegmentRetimeWrite,
@@ -100,6 +102,21 @@ export type ActionBuilderContextValue = {
   handleMoveTimelineBlock: (blockId: string, atMs: number) => void;
   handleShiftTimelineBlocks: (blockIds: string[], deltaMs: number) => void;
   handleShiftTimelineBlocksEnd: () => void;
+  /**
+   * 整体缩放：选中的块从最早到最晚按新总时长等比伸缩，后面的块跟着挪；改不了时提示是哪台哪段。
+   * live 为时间轴上拖动中（相对拖动开始），松手调 handleScaleTimelineBlocksEnd
+   */
+  handleScaleTimelineBlocks: (request: ScaleBlocksRequest, live?: boolean) => boolean;
+  handleScaleTimelineBlocksEnd: () => void;
+  /** 位姿某轴的经过速度：跟前段 / 跟后段，null 改回自动；带 profileWrite 时同一步改那段曲线 */
+  handleSetPassSpeedMode: (
+    blockId: string,
+    axis: VirtualAxisId,
+    mode: PassSpeedMode | null,
+    profileWrite?: SegmentProfileWrite,
+  ) => boolean;
+  /** 在游标处插入变速点：给的区间里游标在中间的切开（曲线不变），切完选中后半段 */
+  handleInsertSpeedPoints: (segmentKeys: readonly string[]) => boolean;
   /** 曲线上拖位姿的值：这些位姿的这根轴都加 deltaValue（相对拖动开始） */
   handleDragPoseAxis: (blockIds: readonly string[], axis: VirtualAxisId, deltaValue: number) => void;
   handleDragPoseAxisEnd: () => void;
@@ -142,8 +159,6 @@ export type ActionBuilderContextValue = {
   handleSequenceCopy: (sequenceId: number) => void;
   handleSequencePaste: () => void;
   handleTimelinePxPerSecondChange: (pxPerSecond: number) => void;
-  handleTimelineZoomIn: () => void;
-  handleTimelineZoomOut: () => void;
   /** 错峰：选中的区间（每台一段）到达不动，起点依次晚 gapMs 出发 */
   handleStaggerSegments: (keys: readonly string[], gapMs: number) => void;
   /** 存为造型：当前位置存成新的单帧动作序列「造型 N」，不切换正在编的序列 */

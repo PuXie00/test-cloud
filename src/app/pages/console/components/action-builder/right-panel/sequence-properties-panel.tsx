@@ -19,6 +19,7 @@ import type {
   KeyframePose,
   ModelPose,
   MotionSegmentSettings,
+  PassSpeedMode,
   PoseBlock,
   TimelineBlock,
   TimelineMarker,
@@ -199,8 +200,9 @@ const AxisToggle = ({
 );
 
 type PassSpeeds = Partial<Record<VirtualAxisId, number>>;
+type PassSpeedModes = Partial<Record<VirtualAxisId, PassSpeedMode>>;
 
-type PoseAxesChange = { pose: KeyframePose; passSpeeds: PassSpeeds };
+type PoseAxesChange = { pose: KeyframePose; passSpeeds: PassSpeeds; passSpeedModes: PassSpeedModes };
 
 const JUNCTION_LABEL: Record<PoseJunctionKind, string> = {
   auto: "自动",
@@ -208,11 +210,26 @@ const JUNCTION_LABEL: Record<PoseJunctionKind, string> = {
   edge: "起止停",
   reverse: "折返停",
   hold: "停留",
+  "follow-prev": "跟前段",
+  "follow-next": "跟后段",
 };
+
+/** 经过速度怎么定：自动、跟前段（前段末尾不变速，加加速用）、跟后段（后段开头不变速，减减速用） */
+const PASS_SPEED_CHOICES: ReadonlyArray<{
+  kind: PoseJunctionKind;
+  mode: PassSpeedMode | null;
+  text: string;
+  title: string;
+}> = [
+  { kind: "auto", mode: null, text: "自动", title: "前后两段平均速度的调和平均" },
+  { kind: "follow-prev", mode: "prev", text: "跟前段", title: "等于前一段的匀速：前段末尾不变速，后段从这个速度接着加速（加加速）" },
+  { kind: "follow-next", mode: "next", text: "跟后段", title: "等于后一段的匀速：后段开头不变速，前段末尾减到这个速度（减减速）" },
+];
 
 const PoseAxesEditor = ({
   pose,
   passSpeeds,
+  passSpeedModes,
   passThrough,
   junctions,
   uncontrolledAxes,
@@ -221,6 +238,7 @@ const PoseAxesEditor = ({
 }: {
   pose: KeyframePose;
   passSpeeds: PassSpeeds;
+  passSpeedModes: PassSpeedModes;
   /** 解析后的位姿：不设定的轴取这一帧的经过值 */
   passThrough: ModelPose | undefined;
   /** 各设定轴在这一帧的经过速度及原因 */
@@ -250,13 +268,21 @@ const PoseAxesEditor = ({
 
   const enabledAxes = resolveEnabledAxes(object?.enabledAxes ?? []);
   const setCount = enabledAxes.filter((axis) => isAxisSet(pose, axis)).length;
-  const emit = (nextPose: KeyframePose, nextSpeeds: PassSpeeds = passSpeeds) => {
+  const emit = (
+    nextPose: KeyframePose,
+    nextSpeeds: PassSpeeds = passSpeeds,
+    nextModes: PassSpeedModes = passSpeedModes,
+  ) => {
     const kept: PassSpeeds = {};
+    const keptModes: PassSpeedModes = {};
     for (const axis of VIRTUAL_AXIS_IDS) {
+      if (!isAxisSet(nextPose, axis)) continue;
       const speed = nextSpeeds[axis];
-      if (speed !== undefined && isAxisSet(nextPose, axis)) kept[axis] = speed;
+      const mode = nextModes[axis];
+      if (mode !== undefined) keptModes[axis] = mode;
+      else if (speed !== undefined) kept[axis] = speed;
     }
-    onChange({ pose: nextPose, passSpeeds: kept });
+    onChange({ pose: nextPose, passSpeeds: kept, passSpeedModes: keptModes });
   };
 
   const handleDraftChange = (axis: VirtualAxisId, value: number) => {
@@ -290,14 +316,21 @@ const PoseAxesEditor = ({
     emit({ ...pose, [axis]: roundProjectCoordinate(value) });
   };
 
+  /** 填了数值就是手填（跟前段 / 跟后段去掉） */
   const handlePassSpeedCommit = (axis: VirtualAxisId, value: number) => {
-    emit(pose, { ...passSpeeds, [axis]: roundProjectCoordinate(Math.max(0, value)) });
+    const modes = { ...passSpeedModes };
+    delete modes[axis];
+    emit(pose, { ...passSpeeds, [axis]: roundProjectCoordinate(Math.max(0, value)) }, modes);
   };
 
-  const handlePassSpeedAuto = (axis: VirtualAxisId) => {
-    const next = { ...passSpeeds };
-    delete next[axis];
-    emit(pose, next);
+  /** 自动（mode 为 null）、跟前段、跟后段：手填的数值去掉 */
+  const handlePassSpeedChoice = (axis: VirtualAxisId, mode: PassSpeedMode | null) => {
+    const speeds = { ...passSpeeds };
+    delete speeds[axis];
+    const modes = { ...passSpeedModes };
+    if (mode === null) delete modes[axis];
+    else modes[axis] = mode;
+    emit(pose, speeds, modes);
   };
 
   const passingAxes = enabledAxes.filter(
@@ -364,40 +397,63 @@ const PoseAxesEditor = ({
           {speedAxes.map((axis) => {
             const junction = junctions[axis]!;
             const label = virtualAxisLabel(axis);
-            const editable = junction.kind === "auto" || junction.kind === "manual";
+            // 必须停的（起止、折返、前后不动）不能改；其余可手填，或选自动、跟前段、跟后段
+            const editable = !["edge", "reverse", "hold"].includes(junction.kind);
             const status =
-              junction.kind === "manual" && junction.speed === 0 ? "停" : JUNCTION_LABEL[junction.kind];
+              junction.kind === "manual"
+                ? junction.speed === 0
+                  ? "停"
+                  : "手填"
+                : editable
+                  ? null
+                  : JUNCTION_LABEL[junction.kind];
             return (
-              <div
-                key={axis}
-                role="group"
-                aria-label={`${label} 经过速度设置`}
-                className="flex items-center gap-2"
-              >
-                <span className="w-12 shrink-0 text-body-sm text-foreground">{label}</span>
-                <div className="min-w-0 flex-1">
-                  <UnitAwareNumericInput
-                    aria-label={`${label} 经过速度`}
-                    value={roundProjectCoordinate(junction.speed)}
-                    unit={`${getVirtualAxisCanonicalUnit(axis, object?.controlType)}/s`}
-                    min={0}
-                    step={1}
-                    precision={1}
-                    disabled={!editable}
-                    onCommit={(value) => handlePassSpeedCommit(axis, value)}
-                    className="w-full border-border border"
-                  />
+              <div key={axis} role="group" aria-label={`${label} 经过速度设置`} className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="w-12 shrink-0 text-body-sm text-foreground">{label}</span>
+                  <div className="min-w-0 flex-1">
+                    <UnitAwareNumericInput
+                      aria-label={`${label} 经过速度`}
+                      value={roundProjectCoordinate(junction.speed)}
+                      unit={`${getVirtualAxisCanonicalUnit(axis, object?.controlType)}/s`}
+                      min={0}
+                      step={1}
+                      precision={1}
+                      disabled={!editable}
+                      onCommit={(value) => handlePassSpeedCommit(axis, value)}
+                      className="w-full border-border border"
+                    />
+                  </div>
+                  {status ? (
+                    <span className="w-12 shrink-0 text-body-sm text-muted-foreground">{status}</span>
+                  ) : null}
                 </div>
-                <span className="w-12 shrink-0 text-body-sm text-muted-foreground">{status}</span>
-                {junction.kind === "manual" ? (
-                  <button
-                    type="button"
-                    aria-label={`${label} 经过速度改回自动`}
-                    onClick={() => handlePassSpeedAuto(axis)}
-                    className="h-8 shrink-0 rounded-md border border-border px-2 text-body-sm text-foreground hover:bg-accent"
-                  >
-                    自动
-                  </button>
+                {editable ? (
+                  <div role="group" aria-label={`${label} 经过速度怎么定`} className="ml-14 flex gap-1">
+                    {PASS_SPEED_CHOICES.map((choice) => {
+                      const pressed = junction.kind === choice.kind;
+                      return (
+                        <button
+                          key={choice.kind}
+                          type="button"
+                          aria-pressed={pressed}
+                          aria-label={choice.mode === null ? `${label} 经过速度改回自动` : `${label} 经过速度${choice.text}`}
+                          title={choice.title}
+                          onClick={() => {
+                            if (!pressed) handlePassSpeedChoice(axis, choice.mode);
+                          }}
+                          className={cn(
+                            "h-7 flex-1 rounded-md px-1.5 text-body-sm",
+                            pressed
+                              ? "bg-accent font-semibold text-primary"
+                              : "border border-border text-foreground hover:bg-accent",
+                          )}
+                        >
+                          {choice.text}
+                        </button>
+                      );
+                    })}
+                  </div>
                 ) : null}
               </div>
             );
@@ -431,15 +487,19 @@ const PoseBlockFields = ({
         key={block.id}
         pose={block.pose}
         passSpeeds={block.passSpeeds ?? {}}
+        passSpeedModes={block.passSpeedModes ?? {}}
         passThrough={resolvedPoint?.pose}
         junctions={resolvedPoint?.junctions ?? {}}
         uncontrolledAxes={uncontrolledAxesOf(resolved, block.objectId)}
         objectId={block.objectId}
-        onChange={({ pose, passSpeeds }) => {
-          const { passSpeeds: _previous, ...rest } = block;
-          onReplaceBlock(
-            Object.keys(passSpeeds).length > 0 ? { ...rest, pose, passSpeeds } : { ...rest, pose },
-          );
+        onChange={({ pose, passSpeeds, passSpeedModes }) => {
+          const { passSpeeds: _previous, passSpeedModes: _previousModes, ...rest } = block;
+          onReplaceBlock({
+            ...rest,
+            pose,
+            ...(Object.keys(passSpeeds).length > 0 ? { passSpeeds } : {}),
+            ...(Object.keys(passSpeedModes).length > 0 ? { passSpeedModes } : {}),
+          });
         }}
       />
       <Field label="时刻">

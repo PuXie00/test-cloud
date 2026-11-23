@@ -56,6 +56,9 @@ export const trapezoidRatesOf = (
 
 const RATE_SLACK = 1 + 1e-9;
 
+/** 变化率小于这个当作不变速 */
+const FLAT_RATE_EPS = 1e-6;
+
 /** 阶段时间取整的两个候选：向下、向上到 0.1 s，至少 0.1 s */
 const roundingCandidates = (sec: number): number[] => {
   const steps = (sec * 1000) / TIME_STEP_MS;
@@ -209,6 +212,11 @@ export const stepRetimedSpeed = (input: {
   if (!current) return null;
   const nextMs = durationMs - steps * TIME_STEP_MS;
   if (nextMs < TIME_STEP_MS) return null;
+  // 一头不变速（进出速度就是匀速，变化率是 0）：两段变速时间不变，只改时长，那一头从原速度变到新匀速
+  if (!(current.acceleration > FLAT_RATE_EPS) || !(current.deceleration > FLAT_RATE_EPS)) {
+    if (profile.params.accelMs + profile.params.decelMs >= nextMs) return null;
+    return trapezoidRatesOf(profile, distance, nextMs, boundary) ? { profile, durationMs: nextMs } : null;
+  }
   const next = profileFromRates({
     distance,
     durationMs: nextMs,

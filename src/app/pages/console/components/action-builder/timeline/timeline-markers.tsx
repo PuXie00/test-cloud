@@ -4,6 +4,7 @@ import type { TimelineMarker } from "@/app/project/action-sequence/types";
 import { TIMELINE_PAD_LEFT, formatTime } from "./timeline-data";
 import { viewPxFromMs } from "./timeline-view-extent";
 import { DRAG_CLICK_THRESHOLD_PX, isAdditiveClick, useDragClickGuard } from "./suppress-click";
+import { useTimelineEdgeScroll } from "./timeline-edge-scroll";
 
 /** 标记行高度，时间轴最下面一行（和 Blender 一样） */
 export const MARKER_LANE_HEIGHT_PX = 20;
@@ -36,6 +37,7 @@ const MarkerFlag = ({
 }: MarkerFlagProps) => {
   const [dragging, setDragging] = useState(false);
   const dragClick = useDragClickGuard();
+  const beginEdgeScroll = useTimelineEdgeScroll();
 
   const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
@@ -56,16 +58,19 @@ const MarkerFlag = ({
     const startX = event.clientX;
     const initialAtMs = marker.atMs;
     let moved = false;
-    const handleMove = (moveEvent: globalThis.PointerEvent) => {
+    let lastClientX = startX;
+    const handleMove = (moveEvent: Pick<globalThis.PointerEvent, "clientX">) => {
+      lastClientX = moveEvent.clientX;
       const dx = moveEvent.clientX - startX;
       if (!moved && Math.abs(dx) < DRAG_CLICK_THRESHOLD_PX) return;
       moved = true;
       setDragging(true);
-      onMove(Math.max(0, initialAtMs + Math.round((dx / pxPerSecond) * 1000)));
+      onMove(Math.max(0, initialAtMs + Math.round((dx / pxPerSecond) * 1000) + edgeScroll.shiftMs()));
     };
     const handleUp = () => {
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
+      edgeScroll.end();
       if (!moved) return;
       setDragging(false);
       dragClick.dragEnded();
@@ -73,6 +78,7 @@ const MarkerFlag = ({
     };
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
+    const edgeScroll = beginEdgeScroll(() => handleMove({ clientX: lastClientX }));
   };
 
   return (

@@ -1,6 +1,8 @@
 import {
   TIMELINE_PAD_LEFT,
   TIMELINE_PX_PER_SECOND_DEFAULT,
+  TIMELINE_PX_PER_SECOND_MAX,
+  TIMELINE_PX_PER_SECOND_MIN,
   clampTimelinePxPerSecond,
   msToPx,
   pxToMs,
@@ -55,26 +57,54 @@ export const panViewStartMs = (
   pxPerSecond: number,
 ): number => clampViewStartMs(viewStartMs - pxToMs(deltaPx, pxPerSecond));
 
-/** 中键拖动先移过这么多像素才定方向 */
-export const PAN_AXIS_LOCK_PX = 6;
-
-export type PanAxis = "x" | "y";
-
-/**
- * 中键拖动的方向：从按下处移够 PAN_AXIS_LOCK_PX 后取位移大的那个方向，松手前一直锁定，
- * 上下拖时手稍微偏一点不会跟着左右滚。还没移够返回 null。
- */
-export const lockPanAxis = (totalDx: number, totalDy: number): PanAxis | null => {
-  if (Math.hypot(totalDx, totalDy) < PAN_AXIS_LOCK_PX) return null;
-  return Math.abs(totalDy) > Math.abs(totalDx) ? "y" : "x";
-};
-
 export const viewStartForZoomAnchor = (input: {
   anchorMs: number;
   pointerXFromPad: number;
   nextPxPerSecond: number;
 }): number =>
   clampViewStartMs(input.anchorMs - pxToMs(input.pointerXFromPad, input.nextPxPerSecond));
+
+/**
+ * 以游标为准缩放：游标在视野里时缩放前后它在屏幕上的位置不变；
+ * 不在视野里时缩放完把游标放到中间。
+ */
+export const viewStartForCursorZoom = (input: {
+  cursorMs: number;
+  viewStartMs: number;
+  viewportWidthPx: number;
+  previousPxPerSecond: number;
+  nextPxPerSecond: number;
+}): number => {
+  const { cursorMs, viewStartMs, viewportWidthPx, previousPxPerSecond, nextPxPerSecond } = input;
+  const previousSpanMs = viewportDurationMs(viewportWidthPx, previousPxPerSecond);
+  const visible = cursorMs >= viewStartMs && cursorMs <= viewWindowEndMs(viewStartMs, previousSpanMs);
+  if (visible) {
+    return viewStartForZoomAnchor({
+      anchorMs: cursorMs,
+      pointerXFromPad: msToPx(cursorMs - viewStartMs, previousPxPerSecond),
+      nextPxPerSecond,
+    });
+  }
+  return clampViewStartMs(cursorMs - viewportDurationMs(viewportWidthPx, nextPxPerSecond) / 2);
+};
+
+/** 缩放滑条按对数走：从最小到最大每一格放大的倍数一样 */
+export const ZOOM_SLIDER_STEPS = 100;
+
+export const zoomSliderValue = (pxPerSecond: number): number => {
+  const min = Math.log(TIMELINE_PX_PER_SECOND_MIN);
+  const max = Math.log(TIMELINE_PX_PER_SECOND_MAX);
+  const ratio = (Math.log(clampTimelinePxPerSecond(pxPerSecond)) - min) / (max - min);
+  return Math.round(ratio * ZOOM_SLIDER_STEPS);
+};
+
+export const pxPerSecondFromZoomSlider = (value: number): number => {
+  const min = Math.log(TIMELINE_PX_PER_SECOND_MIN);
+  const max = Math.log(TIMELINE_PX_PER_SECOND_MAX);
+  const ratio = Math.min(1, Math.max(0, value / ZOOM_SLIDER_STEPS));
+  // 取两位小数：滑到两头正好是最小、最大
+  return clampTimelinePxPerSecond(Math.round(Math.exp(min + ratio * (max - min)) * 100) / 100);
+};
 
 export const canvasWidthPx = (paneWidthPx: number): number =>
   Math.max(Math.round(paneWidthPx), TIMELINE_PAD_LEFT + 1);

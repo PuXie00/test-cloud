@@ -15,8 +15,6 @@ import {
   SkipForward,
   Trash2,
   Undo2,
-  ZoomIn,
-  ZoomOut,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -36,7 +34,14 @@ import type { TimelineMarker } from "@/app/project/action-sequence/types";
 import type { VirtualAxisId } from "@/app/project/project-document-types";
 import type { TrajectoryMode } from "@shared/action-sequence";
 import { CURVE_GRAPHS, type CurveGraph, type TimelineViewMode } from "./curve-data";
-import { formatTime } from "./timeline-data";
+import {
+  TIMELINE_PX_PER_SECOND_MAX,
+  TIMELINE_PX_PER_SECOND_MIN,
+  TIMELINE_ZOOM_FACTOR,
+  clampTimelinePxPerSecond,
+  formatTime,
+} from "./timeline-data";
+import { pxPerSecondFromZoomSlider, ZOOM_SLIDER_STEPS, zoomSliderValue } from "./timeline-view-extent";
 import { formatProjectHistoryShortcutHint } from "@/app/project/project-history-shortcuts";
 
 type TimelineToolbarProps = {
@@ -48,10 +53,9 @@ type TimelineToolbarProps = {
   canLoop?: boolean;
   loopDisabledHint?: string;
   onLoopChange?: (loop: boolean) => void;
-  /** 当前自适应主刻度间隔（秒），仅展示 */
-  majorStepSec: number;
-  canZoomIn: boolean;
-  canZoomOut: boolean;
+  /** 时间轴缩放（每秒多少像素）；滑条、− + 改它，时间轴以游标为准缩放 */
+  pxPerSecond: number;
+  onPxPerSecondChange?: (pxPerSecond: number) => void;
   canDelete: boolean;
   canPlay?: boolean;
   isPlaying?: boolean;
@@ -66,8 +70,6 @@ type TimelineToolbarProps = {
   canUndo?: boolean;
   canRedo?: boolean;
   onDelete?: () => void;
-  onZoomIn?: () => void;
-  onZoomOut?: () => void;
   /** 缩放到全部（\） */
   onZoomFit?: () => void;
   /** 上一个 / 下一个关键帧（Alt+← / Alt+→） */
@@ -99,12 +101,6 @@ type TimelineToolbarProps = {
   curveAxis?: VirtualAxisId;
   curveAxes?: readonly { axis: VirtualAxisId; available: boolean }[];
   onCurveAxisChange?: (axis: VirtualAxisId) => void;
-};
-
-const formatMajorStep = (sec: number): string => {
-  if (sec < 1) return `${sec}s`;
-  if (Number.isInteger(sec)) return `${sec}s`;
-  return `${sec}s`;
 };
 
 const toolIconClass =
@@ -141,9 +137,8 @@ export const TimelineToolbar = ({
   canLoop = false,
   loopDisabledHint,
   onLoopChange,
-  majorStepSec,
-  canZoomIn,
-  canZoomOut,
+  pxPerSecond,
+  onPxPerSecondChange,
   canDelete,
   canPlay = false,
   isPlaying = false,
@@ -156,8 +151,6 @@ export const TimelineToolbar = ({
   canUndo = false,
   canRedo = false,
   onDelete,
-  onZoomIn,
-  onZoomOut,
   onZoomFit,
   onPrevKeyframe,
   onNextKeyframe,
@@ -465,24 +458,32 @@ export const TimelineToolbar = ({
           className={cn(snapEnabled && "bg-accent text-primary hover:text-primary")}
         />
       ) : null}
-      <div className="ml-1 flex h-7 items-center rounded-sm bg-input-background">
+      <div className="ml-1 flex h-7 items-center gap-1 rounded-sm bg-input-background">
         <ToolbarIcon
-          icon={ZoomIn}
-          label="缩小间隔（块变宽）"
-          onClick={onZoomOut}
-          disabled={!canZoomOut}
+          icon={Minus}
+          label="缩小时间轴"
+          title="缩小（块变窄，以游标为准）"
+          onClick={() => onPxPerSecondChange?.(clampTimelinePxPerSecond(pxPerSecond / TIMELINE_ZOOM_FACTOR))}
+          disabled={!onPxPerSecondChange || pxPerSecond <= TIMELINE_PX_PER_SECOND_MIN}
         />
-        <span
-          className="w-6 text-center font-mono text-mono-sm tabular-nums text-muted-foreground"
-          title="自适应主刻度（秒）"
-        >
-          {formatMajorStep(majorStepSec)}
-        </span>
+        <input
+          type="range"
+          aria-label="时间轴缩放"
+          title="拖动缩放时间轴，以游标为准"
+          min={0}
+          max={ZOOM_SLIDER_STEPS}
+          step={1}
+          value={zoomSliderValue(pxPerSecond)}
+          disabled={!onPxPerSecondChange}
+          onChange={(event) => onPxPerSecondChange?.(pxPerSecondFromZoomSlider(Number(event.target.value)))}
+          className="h-1 w-24 cursor-pointer accent-primary disabled:cursor-default disabled:opacity-40"
+        />
         <ToolbarIcon
-          icon={ZoomOut}
-          label="放大间隔（块变窄）"
-          onClick={onZoomIn}
-          disabled={!canZoomIn}
+          icon={Plus}
+          label="放大时间轴"
+          title="放大（块变宽，以游标为准）"
+          onClick={() => onPxPerSecondChange?.(clampTimelinePxPerSecond(pxPerSecond * TIMELINE_ZOOM_FACTOR))}
+          disabled={!onPxPerSecondChange || pxPerSecond >= TIMELINE_PX_PER_SECOND_MAX}
         />
         {onZoomFit ? (
           <ToolbarIcon icon={Maximize2} label="适合窗口" title="适合窗口（\）" onClick={onZoomFit} />

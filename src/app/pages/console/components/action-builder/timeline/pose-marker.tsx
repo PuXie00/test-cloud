@@ -3,6 +3,7 @@ import { cn } from "@/app/components/ui/utils";
 import { formatTime } from "./timeline-data";
 import { viewPxFromMs } from "./timeline-view-extent";
 import { DRAG_CLICK_THRESHOLD_PX, isAdditiveClick, useDragClickGuard } from "./suppress-click";
+import { useTimelineEdgeScroll } from "./timeline-edge-scroll";
 
 export type PoseMarkerProps = {
   blockId: string;
@@ -20,6 +21,8 @@ export type PoseMarkerProps = {
   onSelect: (additive: boolean) => void;
   onMove: (atMs: number) => void;
   onMoveEnd?: () => void;
+  /** 双击：选中这一时刻所有物体的位姿（整列）；additive 为 Ctrl/⌘ 双击加选 */
+  onSelectColumn?: (additive: boolean) => void;
 };
 
 export const PoseMarker = ({
@@ -36,10 +39,12 @@ export const PoseMarker = ({
   onSelect,
   onMove,
   onMoveEnd,
+  onSelectColumn,
 }: PoseMarkerProps) => {
   // 拖动时标签显示块实际所在的时刻（吸附、被拒绝后都以它为准）
   const [dragging, setDragging] = useState(false);
   const dragClick = useDragClickGuard();
+  const beginEdgeScroll = useTimelineEdgeScroll();
 
   const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
@@ -61,12 +66,15 @@ export const PoseMarker = ({
     const startX = event.clientX;
     const initialAtMs = atMs;
     let moved = false;
+    let lastClientX = startX;
 
-    const handleMove = (moveEvent: globalThis.PointerEvent) => {
+    const handleMove = (moveEvent: Pick<globalThis.PointerEvent, "clientX">) => {
+      lastClientX = moveEvent.clientX;
       const dx = moveEvent.clientX - startX;
       if (!moved && Math.abs(dx) < DRAG_CLICK_THRESHOLD_PX) return;
       moved = true;
-      const deltaMs = Math.round((dx / pxPerSecond) * 1000);
+      // 拖到边上视图自己滚：滚过的时间也算进去，块跟着指针
+      const deltaMs = Math.round((dx / pxPerSecond) * 1000) + edgeScroll.shiftMs();
       const nextAtMs = Math.max(0, initialAtMs + deltaMs);
       setDragging(true);
       onMove(nextAtMs);
@@ -75,6 +83,7 @@ export const PoseMarker = ({
     const handleUp = () => {
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
+      edgeScroll.end();
       if (!moved) return;
       setDragging(false);
       dragClick.dragEnded();
@@ -83,6 +92,7 @@ export const PoseMarker = ({
 
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
+    const edgeScroll = beginEdgeScroll(() => handleMove({ clientX: lastClientX }));
   };
 
   return (
@@ -97,6 +107,10 @@ export const PoseMarker = ({
       title={invalid ? (invalidMessage ?? label) : label}
       tabIndex={0}
       onClick={handleClick}
+      onDoubleClick={(event) => {
+        event.stopPropagation();
+        onSelectColumn?.(isAdditiveClick(event));
+      }}
       onKeyDown={handleKeyDown}
       onPointerDown={handlePointerDown}
       className={cn(

@@ -40,6 +40,9 @@ vi.mock("../timeline/timeline-editor", () => ({
         <button type="button" data-block-id="pose-1">
           位姿 pose-1
         </button>
+        <button type="button" data-from-ref="a1" data-to-ref="b1">
+          区间 a1
+        </button>
       </div>
     );
   },
@@ -111,8 +114,6 @@ const mockBuilder = (overrides: Record<string, unknown> = {}) => {
     handleBlockCopy: vi.fn(),
     handleBlockPaste: vi.fn(),
     handleTimelinePxPerSecondChange: vi.fn(),
-    handleTimelineZoomIn: vi.fn(),
-    handleTimelineZoomOut: vi.fn(),
     handleSave: vi.fn(),
     handleTrajectoryModeChange: vi.fn(),
     handleLoopChange: vi.fn(),
@@ -868,6 +869,9 @@ describe("segment tools in the right-click menu", () => {
   const tools = () => ({
     handleRetimeSegmentCurves: vi.fn(() => true),
     handleStaggerSegments: vi.fn(),
+    handleScaleTimelineBlocks: vi.fn(() => true),
+    handleScaleTimelineBlocksEnd: vi.fn(),
+    handleInsertSpeedPoints: vi.fn(() => true),
     getTimelineObject: (id: number) => timelineObjects.find((object) => object.id === id),
   });
   const openMenu = async () => {
@@ -893,6 +897,67 @@ describe("segment tools in the right-click menu", () => {
     fireEvent.click(screen.getByRole("button", { name: "确定" }));
     const [writes] = handlers.handleRetimeSegmentCurves.mock.calls[0]! as unknown as [Array<{ durationMs: number }>];
     expect(writes.map((write) => write.durationMs)).toEqual([3000, 3000]);
+  });
+
+  it("scales the selection to a typed total or a quick factor", async () => {
+    const handlers = tools();
+    mockBuilder({
+      sequence: twoSpans,
+      sequences: [twoSpans],
+      selection: { kind: "multi-block", blockIds: ["a1", "b1", "a2", "b2"], focus: "segments" },
+      ...handlers,
+    });
+    await openMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "整体缩放…" }));
+    const total = (await screen.findByLabelText("总时长")) as HTMLInputElement;
+    expect(total.value).toBe("4");
+    fireEvent.click(screen.getByRole("button", { name: "×1.25" }));
+    expect(total.value).toBe("5");
+    fireEvent.click(screen.getByRole("checkbox", { name: "没选中的物体和标记也一起往后挪" }));
+    fireEvent.click(screen.getByRole("button", { name: "确定" }));
+    expect(handlers.handleScaleTimelineBlocks).toHaveBeenCalledWith({
+      blockIds: ["a1", "b1", "a2", "b2"],
+      durationMs: 5000,
+      shiftAll: true,
+    });
+  });
+
+  it("inserts speed points at the playhead in the selected segments it falls in", async () => {
+    const handlers = tools();
+    mockBuilder({
+      sequence: twoSpans,
+      sequences: [twoSpans],
+      cursorMs: 3000,
+      selection: { kind: "multi-block", blockIds: ["a1", "b1", "a2", "b2"], focus: "segments" },
+      ...handlers,
+    });
+    await openMenu();
+    // 游标 3 s 只在 模型 8 那段中间
+    fireEvent.click(screen.getByRole("menuitem", { name: "在游标处插入变速点" }));
+    expect(handlers.handleInsertSpeedPoints).toHaveBeenCalledWith([keys[1]]);
+  });
+
+  it("selects an unselected segment when right-clicking it", async () => {
+    const handlers = tools();
+    mockBuilder({ sequence: twoSpans, sequences: [twoSpans], ...handlers });
+    render(<EditorDock />);
+    fireEvent.contextMenu(screen.getByRole("button", { name: "区间 a1" }));
+    await screen.findByRole("menu");
+    expect(handleSelectionChange).toHaveBeenLastCalledWith({
+      kind: "multi-block",
+      blockIds: ["a1", "b1"],
+      focus: "segments",
+    });
+  });
+
+  it("passes the live scale drag to the context as one drag", () => {
+    const handlers = tools();
+    mockBuilder({ sequence: twoSpans, sequences: [twoSpans], ...handlers });
+    render(<EditorDock />);
+    capturedEditor.current?.onScaleSelection?.(["a1", "b1"], 3000);
+    capturedEditor.current?.onScaleSelectionEnd?.();
+    expect(handlers.handleScaleTimelineBlocks).toHaveBeenCalledWith({ blockIds: ["a1", "b1"], durationMs: 3000 }, true);
+    expect(handlers.handleScaleTimelineBlocksEnd).toHaveBeenCalled();
   });
 
   it("staggers with a typed gap and has no 汇合", async () => {

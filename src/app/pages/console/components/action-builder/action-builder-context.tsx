@@ -57,6 +57,7 @@ import type {
   KeyframePose,
   ModelPose,
   MotionSegmentSettings,
+  PassSpeedMode,
   TimelineBlock,
 } from "@/app/project/action-sequence/types";
 import {
@@ -112,9 +113,17 @@ import {
   type SegmentAlignEdge,
   type SegmentProfileWrite,
   type SegmentRetimeWrite,
+  scaleTimelineBlocks,
+  type ScaleBlocksRefusal,
+  type ScaleBlocksRequest,
+  type ScaleBlocksResult,
+  insertSpeedPoint,
+  setPassSpeedMode,
+  type SpeedPointResult,
 } from "./sequence-ops";
 import {
   pruneSequenceSelection,
+  segmentEndpointBlockIds,
   selectionBlockIds,
   selectionFromBlockIds,
   selectionMarkerIds,
@@ -134,7 +143,6 @@ import {
   renameSequenceInProgramTree,
   stripSequenceFromProgramTree,
   TIMELINE_PX_PER_SECOND_DEFAULT,
-  TIMELINE_ZOOM_FACTOR,
   formatTime,
   snapTimeMs,
   type ControlledObject as TimelineControlledObject,
@@ -175,6 +183,19 @@ const RETIME_ERROR_MESSAGE: Partial<Record<SequenceEditError, string>> = {
   "motion-overlap": "按这个速度挪动后会和已有的动作重叠，没有修改",
   "time-conflict": "按这个速度挪动后同一时刻会有两个动作块，没有修改",
   "invalid-time-range": "按这个速度时长太短，终点会越过中间的位姿，没有修改",
+};
+
+/** 整体缩放被拒时的原因（前面再带上是哪台、哪个时刻） */
+const SCALE_REFUSAL_TEXT: Record<ScaleBlocksRefusal, string> = {
+  "nothing-to-scale": "选中的块不到两个时刻，没有可以缩放的时长",
+  "phase-too-short": "这一段缩短后放不下加减速",
+  "crosses-previous": "会碰到它前一个动作",
+  "shared-block": "几个物体共用的预设要挪的时间不一样",
+  "time-conflict": "同一时刻会有两个动作块",
+  "motion-overlap": "会和已有的动作重叠",
+  "invalid-time-range": "时长不合法",
+  "missing-block": "找不到选中的块",
+  "invalid-preset": "预设无法解析",
 };
 
 /** 位姿对齐被拒时的提示（往前碰到前一个动作块的单独带物体名） */
@@ -900,6 +921,119 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     },
     [applySequenceEdit, sequenceEditOptions],
   );
+
+  /** 位姿某轴的经过速度：跟前段 / 跟后段，null 改回自动；带 profileWrite 时同一步改那段曲线 */
+  const handleSetPassSpeedMode = useCallback(
+    (
+      blockId: string,
+      axis: VirtualAxisId,
+      mode: PassSpeedMode | null,
+      profileWrite?: SegmentProfileWrite,
+    ): boolean => applySequenceEdit((current) => setPassSpeedMode(current, blockId, axis, mode, profileWrite)),
+    [applySequenceEdit],
+  );
+
+  /**
+   * 在游标处插入变速点：给的区间里游标在中间的都切开（曲线不变），切完选中后半段，
+   * 接着改它的匀速或时长就是加速、减速
+   */
+  const handleInsertSpeedPoints = useCallback(
+    (segmentKeys: readonly string[]): boolean => {
+      const atMs = cursorMs;
+      const inserted: string[] = [];
+      const refusals: Array<Extract<SpeedPointResult, { ok: false }> & { objectId?: number }> = [];
+      let current: ActionSequenceConfig | null = null;
+      const ok = updateSelectedSequence((sequenceNow) => {
+        let next = sequenceNow;
+        for (const key of segmentKeys) {
+          const objectId = resolveActionSequence(next).segments.find((item) => item.key === key)?.objectId;
+          const result = insertSpeedPoint(next, key, atMs, sequenceEditOptions);
+          if (!result.ok) {
+            refusals.push({ ...result, objectId });
+            continue;
+          }
+          next = result.sequence;
+          inserted.push(result.blockId);
+        }
+        current = next;
+        return inserted.length > 0 ? next : null;
+      });
+      const nameOf = (objectId?: number) =>
+        objectId === undefined ? "" : `「${getTimelineObject(objectId)?.name ?? `模型 ${objectId}`}」`;
+      const refusalText = (refusal: (typeof refusals)[number]) =>
+        refusal.reason === "not-in-cruise"
+          ? `${nameOf(refusal.objectId)}游标在${refusal.axis ? ` ${refusal.axis.toUpperCase()} ` : ""}的加减速里，挪到匀速段再插入变速点`
+          : refusal.reason === "outside-segment"
+            ? "游标不在选中的区间中间"
+            : `${nameOf(refusal.objectId)}插入变速点会和已有的动作冲突`;
+      if (!ok || inserted.length === 0) {
+        toast.warning(refusals[0] ? refusalText(refusals[0]) : "没有插入变速点");
+        return false;
+      }
+      if (refusals.length > 0) toast.warning(`${refusals.length} 段没有插入：${refusalText(refusals[0]!)}`);
+      // 选中后半段（新位姿到原来的终点），属性里直接改它
+      const resolvedNext = current ? resolveActionSequence(current) : null;
+      const secondHalves = inserted.flatMap((blockId) => {
+        const segment = resolvedNext?.segments.find((item) => item.fromRef === blockId);
+        return segment && resolvedNext ? segmentEndpointBlockIds(resolvedNext, segment) : [blockId];
+      });
+      handleSelectionChange(selectionFromBlockIds(secondHalves, "segments"));
+      return true;
+    },
+    [cursorMs, updateSelectedSequence, sequenceEditOptions, getTimelineObject, handleSelectionChange],
+  );
+
+  /** 整体缩放没缩成的提示：哪台、哪个时刻、什么原因 */
+  const scaleRefusalMessage = useCallback(
+    (refusal: Extract<ScaleBlocksResult, { ok: false }>): string => {
+      const name =
+        refusal.objectId === undefined
+          ? ""
+          : `「${getTimelineObject(refusal.objectId)?.name ?? `模型 ${refusal.objectId}`}」`;
+      const at = refusal.atMs === undefined ? "" : `${formatTime(refusal.atMs)} s 处`;
+      return `${name}${at}${SCALE_REFUSAL_TEXT[refusal.reason]}，没有缩放`;
+    },
+    [getTimelineObject],
+  );
+
+  const scaleOriginRef = useRef<ActionSequenceConfig | null>(null);
+  const scaleFailureRef = useRef<string | null>(null);
+  /**
+   * 整体缩放：live 是在时间轴上拖选区右边，每次都从拖动开始时的序列算，松手 handleScaleTimelineBlocksEnd
+   * 记成一步，最后一下没缩成时那时再提示；右键菜单里一次改完，改不了直接提示
+   */
+  const handleScaleTimelineBlocks = useCallback(
+    (request: ScaleBlocksRequest, live = false): boolean => {
+      if (live) {
+        setIsDraggingTimeline(true);
+        beginDragStep();
+      }
+      let refusal: Extract<ScaleBlocksResult, { ok: false }> | null = null;
+      const ok = updateSelectedSequence((current) => {
+        if (live && scaleOriginRef.current === null) scaleOriginRef.current = current;
+        const origin = live ? (scaleOriginRef.current ?? current) : current;
+        const result = scaleTimelineBlocks(origin, request, sequenceEditOptions);
+        if (!result.ok) {
+          refusal = result;
+          return null;
+        }
+        return result.sequence;
+      });
+      const message = refusal ? scaleRefusalMessage(refusal) : null;
+      if (live) scaleFailureRef.current = message;
+      else if (message) toast.warning(message);
+      return ok;
+    },
+    [updateSelectedSequence, sequenceEditOptions, beginDragStep, scaleRefusalMessage],
+  );
+
+  const handleScaleTimelineBlocksEnd = useCallback(() => {
+    scaleOriginRef.current = null;
+    setIsDraggingTimeline(false);
+    endDragStep();
+    if (scaleFailureRef.current) toast.warning(scaleFailureRef.current);
+    scaleFailureRef.current = null;
+  }, [endDragStep]);
 
   /** 跑一次对齐编辑：改不了时提示原因，没东西要挪时提示 alreadyText */
   const runAlignEdit = useCallback(
@@ -1734,18 +1868,6 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     setTimelinePxPerSecond(clampTimelinePxPerSecond(pxPerSecond));
   }, []);
 
-  const handleTimelineZoomIn = useCallback(() => {
-    setTimelinePxPerSecond((current) =>
-      clampTimelinePxPerSecond(current / TIMELINE_ZOOM_FACTOR),
-    );
-  }, []);
-
-  const handleTimelineZoomOut = useCallback(() => {
-    setTimelinePxPerSecond((current) =>
-      clampTimelinePxPerSecond(current * TIMELINE_ZOOM_FACTOR),
-    );
-  }, []);
-
   const handleChapterAdd = useCallback(() => {
     updatePrograms((current) => {
       const chapter: ProgramNode = {
@@ -2007,6 +2129,10 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleMoveTimelineBlock,
       handleShiftTimelineBlocks,
       handleShiftTimelineBlocksEnd,
+      handleScaleTimelineBlocks,
+      handleScaleTimelineBlocksEnd,
+      handleSetPassSpeedMode,
+      handleInsertSpeedPoints,
       handleDragPoseAxis,
       handleDragPoseAxisEnd,
       handleResizeDynamicPreset,
@@ -2031,8 +2157,6 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleSequenceCopy,
       handleSequencePaste,
       handleTimelinePxPerSecondChange,
-      handleTimelineZoomIn,
-      handleTimelineZoomOut,
       handleCreatePose,
       handleCreateSetEnabled,
       handleCreateSequence,
@@ -2101,6 +2225,10 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleMoveTimelineBlock,
       handleShiftTimelineBlocks,
       handleShiftTimelineBlocksEnd,
+      handleScaleTimelineBlocks,
+      handleScaleTimelineBlocksEnd,
+      handleSetPassSpeedMode,
+      handleInsertSpeedPoints,
       handleDragPoseAxis,
       handleDragPoseAxisEnd,
       handleResizeDynamicPreset,
@@ -2125,8 +2253,6 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleSequenceCopy,
       handleSequencePaste,
       handleTimelinePxPerSecondChange,
-      handleTimelineZoomIn,
-      handleTimelineZoomOut,
       handleCreatePose,
       handleCreateSetEnabled,
       handleCreateSequence,

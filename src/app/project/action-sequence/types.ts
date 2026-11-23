@@ -25,6 +25,13 @@ export type AxisMotionProfiles = {
   v3: MotionProfile;
 };
 
+/**
+ * 经过速度跟着哪一段走：prev 跟前段（等于进来那段的匀速，那段末尾不变速，常用于加加速），
+ * next 跟后段（等于出去那段的匀速，那段开头不变速，常用于减减速）。
+ * 存的是规则不是数值：前后段改了时长、行程，经过速度跟着重算；下发 PLC 的仍是算好的数值。
+ */
+export type PassSpeedMode = "prev" | "next";
+
 export type PoseBlock = {
   id: string;
   kind: "pose";
@@ -35,6 +42,8 @@ export type PoseBlock = {
    * 手填的经过速度（单位/秒，绝对值）：缺省时自动取前后两段平均速度的调和平均，0 表示停在这一帧。
    */
   passSpeeds?: Partial<Record<"v1" | "v2" | "v3", number>>;
+  /** 按规则算的经过速度（跟前段 / 跟后段）；和 passSpeeds 同一轴都有时以它为准 */
+  passSpeedModes?: Partial<Record<"v1" | "v2" | "v3", PassSpeedMode>>;
   label?: string;
 };
 

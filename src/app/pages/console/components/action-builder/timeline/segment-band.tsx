@@ -3,6 +3,7 @@ import { cn } from "@/app/components/ui/utils";
 import { formatTime, msToPx } from "./timeline-data";
 import { viewPxFromMs } from "./timeline-view-extent";
 import { DRAG_CLICK_THRESHOLD_PX, isAdditiveClick, useDragClickGuard } from "./suppress-click";
+import { useTimelineEdgeScroll } from "./timeline-edge-scroll";
 
 export type SegmentBandProps = {
   objectId: number;
@@ -41,6 +42,7 @@ export const SegmentBand = ({
   // 拖动时标签显示区间起点实际所在的时刻
   const [dragging, setDragging] = useState(false);
   const dragClick = useDragClickGuard();
+  const beginEdgeScroll = useTimelineEdgeScroll();
 
   const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
@@ -56,18 +58,23 @@ export const SegmentBand = ({
     const startX = event.clientX;
     const initialStartMs = startMs;
     let moved = false;
+    let lastClientX = startX;
 
-    const handleMove = (moveEvent: globalThis.PointerEvent) => {
+    const handleMove = (moveEvent: Pick<globalThis.PointerEvent, "clientX">) => {
+      lastClientX = moveEvent.clientX;
       const dx = moveEvent.clientX - startX;
       if (!moved && Math.abs(dx) < DRAG_CLICK_THRESHOLD_PX) return;
       moved = true;
       setDragging(true);
-      onMove(Math.max(0, initialStartMs + Math.round((dx / pxPerSecond) * 1000)));
+      onMove(
+        Math.max(0, initialStartMs + Math.round((dx / pxPerSecond) * 1000) + edgeScroll.shiftMs()),
+      );
     };
 
     const handleUp = () => {
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
+      edgeScroll.end();
       if (!moved) return;
       setDragging(false);
       dragClick.dragEnded();
@@ -76,6 +83,7 @@ export const SegmentBand = ({
 
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
+    const edgeScroll = beginEdgeScroll(() => handleMove({ clientX: lastClientX }));
   };
 
   return (

@@ -23,6 +23,7 @@ import { INSTRUCTION_PRESET_IDS } from "./action-sequence/instruction-registry";
 const CURRENT_WIZARD_STEPS = ["objects", "hardware", "binding", "review"] as const;
 const SHAPE_PRESETS = Object.keys(SHAPE_DIMENSION_KEYS) as ShapePresetId[];
 const VIRTUAL_AXES = ["v1", "v2", "v3"] as const;
+const PASS_SPEED_MODES = ["prev", "next"] as const;
 const MOTION_PARAM_KEYS = [
   "minAngle",
   "maxAngle",
@@ -657,6 +658,13 @@ const validateTimelineBlock = (value: unknown, path: string, a: StructuralAssert
         for (const [axis, speed] of Object.entries(speeds)) {
           a.enum(axis, VIRTUAL_AXES, `${path}.passSpeeds`);
           a.nonNegativeFinite(speed, keyedPath(`${path}.passSpeeds`, axis));
+        }
+      }
+      if (block.passSpeedModes !== undefined) {
+        const modes = a.record(block.passSpeedModes, `${path}.passSpeedModes`);
+        for (const [axis, mode] of Object.entries(modes)) {
+          a.enum(axis, VIRTUAL_AXES, `${path}.passSpeedModes`);
+          a.enum(mode, PASS_SPEED_MODES, keyedPath(`${path}.passSpeedModes`, axis));
         }
       }
       break;

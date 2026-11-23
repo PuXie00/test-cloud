@@ -53,6 +53,8 @@ export type TimelineTrackProps = {
     edge?: "start" | "end",
   ) => void;
   onBlockMoveEnd?: () => void;
+  /** 双击位姿：选中这一时刻的整列位姿 */
+  onPoseColumnSelect?: (atMs: number, additive: boolean) => void;
   invalidTargets?: InvalidTimelineTargets;
 };
 
@@ -86,6 +88,7 @@ export const TimelineTrack = ({
   onPresetMove,
   onDynamicPresetResize,
   onBlockMoveEnd,
+  onPoseColumnSelect,
   invalidTargets,
 }: TimelineTrackProps) => (
     <div
@@ -169,6 +172,9 @@ export const TimelineTrack = ({
           onSelect={(additive) => onBlockSelect(pose.id, additive)}
           onMove={(nextAtMs) => onPoseMove(pose.id, nextAtMs)}
           onMoveEnd={onBlockMoveEnd}
+          onSelectColumn={
+            onPoseColumnSelect ? (additive) => onPoseColumnSelect(pose.atMs, additive) : undefined
+          }
         />
       ))}
       {commands.map((command) => (

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { clampNumeric } from "@/app/components/ics/numeric-input-utils";
 import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-input";
 import { isAxisSet } from "@/app/project/action-sequence/keyframe-pose";
@@ -12,6 +13,7 @@ import { formatRepairItems } from "@/app/project/action-sequence/preset-repair";
 import {
   isPassThroughMotion,
   uncontrolledAxesOf,
+  type PoseJunctionKind,
   type ResolvedActionSequence,
   type ResolvedMotionSegment,
   type ResolvedPosePoint,
@@ -40,7 +42,7 @@ import {
 import { profileKindMeta } from "../motion-profile/profile-kind";
 import { formatQuantity, formatQuantityValue } from "../motion-profile/quantity-format";
 import { referencePlan, type ReferenceKind } from "../motion-profile/segment-presets";
-import { TrapezoidProfileEditor } from "../motion-profile/trapezoid-profile-editor";
+import { TrapezoidProfileEditor, type FlatEnd } from "../motion-profile/trapezoid-profile-editor";
 import { VelocityChart } from "../motion-profile/velocity-chart";
 import type { SegmentRetimeWrite } from "../sequence-ops";
 import {
@@ -61,6 +63,13 @@ const axisName = (axis: VirtualAxisId): string => axis.toUpperCase();
 
 type SegmentEnd = "start" | "end";
 const END_LABEL: Record<SegmentEnd, string> = { start: "起点", end: "终点" };
+
+/** 这一帧必须停的原因：段首、段尾变速不能填 0 */
+const STOP_REASON: Partial<Record<PoseJunctionKind, string>> = {
+  edge: "是序列的起止",
+  reverse: "处折返",
+  hold: "前后有一段不动",
+};
 
 const REFERENCES: ReadonlyArray<{ kind: ReferenceKind; label: string }> = [
   { kind: "fastest", label: "最快" },
@@ -120,6 +129,7 @@ export const SegmentPanel = ({
     phaseInputMode,
     handlePhaseInputModeChange,
     handleRetimeSegmentCurves,
+    handleSetPassSpeedMode,
   } = useActionBuilder();
   const display = useSessionDisplayLengthUnit();
   const object = getTimelineObject(segment.objectId);
@@ -230,6 +240,46 @@ export const SegmentPanel = ({
       : []),
   ];
   const currentMotion = motions[currentAxis];
+
+  // 段首 / 段尾不变速：起点跟后段、终点跟前段（经过速度等于这段的匀速）。跨端点的轴按整段曲线的两头算
+  const motionEnds: Record<FlatEnd, ResolvedPosePoint | undefined> = {
+    start: pointOf(currentMotion.fromRef),
+    end: pointOf(currentMotion.toRef),
+  };
+  const flatEnds = {
+    start: motionEnds.start?.junctions?.[currentAxis]?.kind === "follow-next",
+    end: motionEnds.end?.junctions?.[currentAxis]?.kind === "follow-prev",
+  };
+  const handleFlatEndChange = (end: FlatEnd, flat: boolean, nextProfile?: MotionProfile) => {
+    const point = motionEnds[end];
+    const where = end === "start" ? "起点" : "终点";
+    const phase = end === "start" ? "段首变速" : "段尾变速";
+    const blockId = point?.sourceKind === "pose" ? point.sourceBlockId : null;
+    if (!blockId) {
+      if (flat) toast.warning(`${where}是预设生成的，${phase}不能为 0，拆解预设后再改`);
+      return;
+    }
+    const reason = STOP_REASON[point?.junctions?.[currentAxis]?.kind ?? "edge"];
+    if (flat && reason) {
+      toast.warning(`${where}${reason}，必须停在这一帧，${phase}不能为 0`);
+      return;
+    }
+    handleSetPassSpeedMode(
+      blockId,
+      currentAxis,
+      flat ? (end === "start" ? "next" : "prev") : null,
+      nextProfile
+        ? {
+            fromRef: currentMotion.fromRef,
+            toRef: currentMotion.toRef,
+            axis: currentAxis,
+            profile: nextProfile,
+            durationMs: currentMotion.durationMs,
+          }
+        : undefined,
+    );
+  };
+
   const passNote = isPassThroughMotion(segment, currentMotion)
     ? `${axisName(currentAxis)} 在区间端点经过，曲线是 ${formatTime(currentMotion.startMs)}–${formatDurationSeconds(currentMotion.endMs)} 整段的，改动作用于整段`
     : null;
@@ -450,6 +500,8 @@ export const SegmentPanel = ({
               inputMode={phaseInputMode}
               rateContext={{ distance: travelDistance, boundary: currentBoundary, unit }}
               onRetime={(profile, nextDurationMs) => retimeAxis(currentAxis, profile, nextDurationMs)}
+              flatEnds={flatEnds}
+              onFlatEndChange={readOnly || displayProfile.kind === "idle" ? undefined : handleFlatEndChange}
             />
           ) : (
             <p className="text-body-sm text-muted-foreground">未知曲线</p>
