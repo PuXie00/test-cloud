@@ -3,6 +3,7 @@ import type {
   DynamicPresetBlock,
   InstructionBlock,
   KeyframePose,
+  SequenceRefBlock,
   StaticPresetBlock,
 } from "@/app/project/action-sequence/types";
 import type { ResolvedMotionSegment, ResolvedPosePoint } from "@/app/project/action-sequence/resolve-sequence";
@@ -12,6 +13,7 @@ import { CommandEventMarker } from "./command-event-marker";
 import { PoseMarker } from "./pose-marker";
 import { PresetProjection } from "./preset-projection";
 import { SegmentBand } from "./segment-band";
+import { SequenceRefBar } from "./sequence-ref-bar";
 
 export type TimelineTrackPose = {
   id: string;
@@ -30,6 +32,12 @@ export type TimelineTrackProps = {
   commands: InstructionBlock[];
   staticPresets: StaticPresetBlock[];
   dynamicPresets: DynamicPresetBlock[];
+  /** 这一行用到的引用（引用的另一条序列） */
+  sequenceRefs?: SequenceRefBlock[];
+  /** 被引用序列现在的名字；删了的为 undefined */
+  sequenceNameOf?: (sequenceId: number) => string | undefined;
+  /** 双击引用：打开被引用的序列 */
+  onOpenSequence?: (sequenceId: number) => void;
   resolvedInitialPose?: ResolvedPosePoint;
   generatedTicksByPreset: Record<string, number[]>;
   segments: ResolvedMotionSegment[];
@@ -73,6 +81,9 @@ export const TimelineTrack = ({
   commands,
   staticPresets,
   dynamicPresets,
+  sequenceRefs = [],
+  sequenceNameOf,
+  onOpenSequence,
   resolvedInitialPose,
   generatedTicksByPreset,
   segments,
@@ -138,6 +149,28 @@ export const TimelineTrack = ({
           }
         />
       ))}
+      {sequenceRefs.map((block) => {
+        const current = sequenceNameOf?.(block.sequenceId);
+        return (
+          <SequenceRefBar
+            key={block.id}
+            blockId={block.id}
+            name={block.label ?? current ?? block.content.name}
+            detached={sequenceNameOf !== undefined && current === undefined}
+            atMs={block.atMs}
+            durationMs={block.durationMs}
+            selected={isBlockSelected(selection, block.id)}
+            invalid={invalidTargets?.blockIds.has(block.id) ?? false}
+            invalidMessage={invalidTargets?.blockMessage.get(block.id)}
+            viewStartMs={viewStartMs}
+            pxPerSecond={pxPerSecond}
+            onSelect={(additive) => onBlockSelect(block.id, additive)}
+            onMove={(nextAtMs) => onPresetMove(block.id, nextAtMs)}
+            onMoveEnd={onBlockMoveEnd}
+            onOpen={onOpenSequence && current !== undefined ? () => onOpenSequence(block.sequenceId) : undefined}
+          />
+        );
+      })}
       {staticPresets.map((block) => (
         <PresetProjection
           key={block.id}

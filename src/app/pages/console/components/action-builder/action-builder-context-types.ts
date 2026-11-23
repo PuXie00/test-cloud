@@ -11,6 +11,7 @@ import type { VirtualAxisId, VirtualAxisValues } from "@/app/project/project-doc
 import type { CapturedPoseRequest } from "@/app/project/capture-pose-sequence";
 import type { ContextSelection } from "./context-bar/selection-context-bar";
 import type { PhaseInputMode } from "./motion-profile/phase-rates";
+import type { TransitionTiming } from "./shape-transition";
 import type { CurveGraph, TimelineViewMode } from "./timeline/curve-data";
 import type { ActionRightTab } from "./right-panel/action-right-panel";
 import type {
@@ -117,6 +118,10 @@ export type ActionBuilderContextValue = {
   ) => boolean;
   /** 在游标处插入变速点：给的区间里游标在中间的切开（曲线不变），切完选中后半段 */
   handleInsertSpeedPoints: (segmentKeys: readonly string[]) => boolean;
+  /** 在游标处（或 atMs）引用另一条序列：位置不一样时前面自动加过渡，后面的块和标记往后让 */
+  handleInsertSequenceRef: (sourceId: number, atMs?: number) => boolean;
+  /** 展开引用：换成里面的块（和源序列不再关联）；不传时展开选中的引用 */
+  handleExplodeSequenceRefs: (blockIds?: readonly string[]) => void;
   /** 曲线上拖位姿的值：这些位姿的这根轴都加 deltaValue（相对拖动开始） */
   handleDragPoseAxis: (blockIds: readonly string[], axis: VirtualAxisId, deltaValue: number) => void;
   handleDragPoseAxisEnd: () => void;
@@ -165,6 +170,8 @@ export type ActionBuilderContextValue = {
   handleSaveShape: (request: CapturedPoseRequest) => void;
   /** 游标处存为造型：序列在游标那一刻的值存成新的单帧动作序列 */
   handleSaveShapeAtCursor: () => void;
+  /** 两个造型之间生成过渡（新建「过渡 N」并打开）：起点取 fromId 结束时的样子，终点取 toId 开始时的样子 */
+  handleCreateTransition: (fromId: number, toId: number, timing: TransitionTiming) => boolean;
   /** 在游标处（或给定时刻）给这些物体加位姿 */
   handleCreatePose: (objectIds: number[], atMs?: number) => void;
   handleCreateSetEnabled: (objectIds: number[], enabled: boolean) => void;

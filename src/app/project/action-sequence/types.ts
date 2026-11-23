@@ -95,11 +95,39 @@ export type DynamicPresetBlock = PresetBlockBase & {
   profiles: AxisMotionProfiles;
 };
 
+/** 引用块里存的被引用序列内容：保存时的名字和块、区间设置（不含 id、标记） */
+export type SequenceRefContent = {
+  name: string;
+  trajectoryMode: TrajectoryMode;
+  blocks: TimelineBlock[];
+  segments: MotionSegmentConfig[];
+};
+
+/**
+ * 引用另一条动作序列：从 atMs 起按它走，解析时像预设一样展开成关键点，里面的块不能单独改。
+ * content 是被引用序列已保存的内容：源序列保存后各处引用跟着更新；源序列删了引用照样能用，也能展开成普通块。
+ * 首尾的位姿在这里停住（和单独播放这条序列一样从静止开始、到静止结束）。
+ */
+export type SequenceRefBlock = {
+  id: string;
+  kind: "sequence-ref";
+  /** 被引用的动作序列 id */
+  sequenceId: number;
+  atMs: number;
+  /** content 的总时长：时间轴上画多长，和后面的块会不会重叠 */
+  durationMs: number;
+  /** content 里动到的物体：时间轴上在哪几行 */
+  orderedObjectIds: number[];
+  content: SequenceRefContent;
+  label?: string;
+};
+
 export type TimelineBlock =
   | PoseBlock
   | InstructionBlock
   | StaticPresetBlock
-  | DynamicPresetBlock;
+  | DynamicPresetBlock
+  | SequenceRefBlock;
 
 export type MotionSegmentSettings = {
   profiles: AxisMotionProfiles;

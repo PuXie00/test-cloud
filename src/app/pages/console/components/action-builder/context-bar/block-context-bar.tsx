@@ -74,6 +74,7 @@ const BLOCK_TITLES: Record<Exclude<TimelineBlock["kind"], "instruction">, string
   pose: "位姿",
   "static-preset": "静态预设",
   "dynamic-preset": "动态预设",
+  "sequence-ref": "引用序列",
 };
 
 const blockTitle = (block: TimelineBlock): string =>
@@ -179,6 +180,19 @@ export const BlockContextBar = ({
             onChange={(seconds) => onReplaceBlock({ ...block, atMs: secondsToMs(seconds) })}
           />
         </>
+      ) : null}
+
+      {block?.kind === "sequence-ref" && onReplaceBlock ? (
+        <ContextNumericCell
+          label="开始"
+          value={msToSeconds(block.atMs)}
+          unit="s"
+          highlighted
+          step={0.1}
+          precision={1}
+          min={0}
+          onChange={(seconds) => onReplaceBlock({ ...block, atMs: secondsToMs(seconds) })}
+        />
       ) : null}
 
       {block?.kind === "static-preset" && onReplaceBlock ? (

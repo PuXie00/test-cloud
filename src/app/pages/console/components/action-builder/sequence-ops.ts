@@ -6,6 +6,10 @@ import {
 } from "@/app/project/action-sequence/motion-profile";
 import { getPresetDefinition } from "@/app/project/action-sequence/preset-registry";
 import { axisMotionShape, axisMotionValueAt } from "@/app/project/action-sequence/axis-motion";
+import { evaluateResolvedSequence } from "@/app/project/action-sequence/evaluate-sequence";
+import { expandSequenceRefs } from "@/app/project/action-sequence/sequence-ref-expand";
+import { buildSequenceRefBlock, refContentAsSequence } from "@/app/project/action-sequence/sequence-ref";
+import { sequenceShape } from "@/app/project/action-sequence/sequence-shape";
 import {
   isPassThroughMotion,
   reconcileSegmentConfigs,
@@ -28,7 +32,8 @@ import type {
 } from "@/app/project/action-sequence/types";
 import type { VirtualAxisId, VirtualAxisValues } from "@/app/project/project-document-types";
 import { roundProjectCoordinate } from "@/app/project/project-quantity";
-import { TIME_STEP_MS, snapTimeMs } from "./timeline/timeline-data";
+import { planShapeTransition } from "./shape-transition";
+import { TIME_STEP_MS, snapTimeMs, type ControlledObject } from "./timeline/timeline-data";
 
 export type SequenceEditError =
   | "motion-overlap"
@@ -147,14 +152,11 @@ const motionSpans = (sequence: ActionSequenceConfig): MotionSpan[] => {
       }
       continue;
     }
-    if (block.kind === "dynamic-preset") {
+    if (block.kind === "dynamic-preset" || block.kind === "sequence-ref") {
+      const startMs = blockTimeMs(block);
+      const endMs = blockEndMs(block);
       for (const objectId of uniqueIds(block.orderedObjectIds)) {
-        spans.push({
-          kind: "range",
-          objectId,
-          startMs: block.startMs,
-          endMs: block.endMs,
-        });
+        spans.push({ kind: "range", objectId, startMs, endMs });
       }
     }
   }
@@ -611,6 +613,10 @@ export const remapTimelineClipboard = (
   for (const source of clipboard.blocks) {
     const objectIds = blockObjectIds(source).map((objectId) => objectMap.get(objectId));
     if (objectIds.some((objectId) => objectId === undefined)) continue;
+    // 引用的序列只能贴回原来的物体（里面的内容换不了物体）
+    if (source.kind === "sequence-ref" && objectIds.some((objectId, index) => objectId !== source.orderedObjectIds[index])) {
+      continue;
+    }
     const id = blockIdFor(source.id);
     blockIds.set(source.id, id);
     const block = cloneBlock(source);
@@ -856,8 +862,11 @@ export type AlignSegmentsResult =
       objectId?: number;
     };
 
-const blockEndMs = (block: TimelineBlock): number =>
-  block.kind === "dynamic-preset" ? block.endMs : block.atMs;
+function blockEndMs(block: TimelineBlock): number {
+  if (block.kind === "dynamic-preset") return block.endMs;
+  if (block.kind === "sequence-ref") return block.atMs + block.durationMs;
+  return block.atMs;
+}
 
 type ObjectShift = { fromMs: number; deltaMs: number };
 
@@ -1506,4 +1515,175 @@ export const insertSpeedPoint = (
   const committed = commitBlocks(sequence, next, options);
   if (!committed.ok) return committed;
   return { ok: true, sequence: committed.sequence, blockId };
+};
+
+/**
+ * 展开引用：引用块换成被引用序列里的块（id 带着引用块的前缀，区间设置照搬），动作和展开前一样，
+ * 之后就是普通块，和源序列不再关联。首尾那两帧的「停」留着（经过速度手填 0），要接着走就改成自动。
+ */
+export const explodeSequenceRefs = (
+  sequence: ActionSequenceConfig,
+  blockIds: readonly string[],
+  options?: SequenceEditOptions,
+): EditResult => {
+  const ids = new Set(blockIds);
+  const refs = sequence.blocks.filter((block) => ids.has(block.id) && block.kind === "sequence-ref");
+  if (refs.length === 0) return { ok: false, reason: "missing-block" };
+  const next = cloneSequence(sequence);
+  next.blocks = next.blocks.filter((block) => !refs.some((ref) => ref.id === block.id));
+  for (const ref of refs) {
+    let expanded: ActionSequenceConfig;
+    try {
+      expanded = expandSequenceRefs({ ...sequence, blocks: [ref], segments: [] }).sequence;
+    } catch {
+      return { ok: false, reason: "invalid-preset" };
+    }
+    next.blocks.push(...expanded.blocks);
+    next.segments.push(...expanded.segments);
+  }
+  return commitBlocks(sequence, next, options);
+};
+
+export type SequenceRefInsertRefusal =
+  /** 游标正好在某个动态预设或引用中间，不能从中间插 */
+  | "straddles-block"
+  /** 被引用的序列是空的 */
+  | "empty-source"
+  | SequenceEditError;
+
+export type SequenceRefInsertResult =
+  | {
+      ok: true;
+      sequence: ActionSequenceConfig;
+      blockId: string;
+      /** 引用前面加的过渡有多长（不用过渡时为 0） */
+      transitionMs: number;
+      /** 游标后面的块和标记往后挪了多少（后面没东西时为 0） */
+      shiftedMs: number;
+    }
+  | { ok: false; reason: SequenceRefInsertRefusal; atMs?: number };
+
+/**
+ * 在 atMs 引用另一条序列：
+ * - 引用里的物体在 atMs 的位置和它开头不一样时，先加一段过渡（同时到达、最慢那台走最快），
+ *   过渡从 atMs 开始（那一刻没有位姿的加一帧当前位置），引用接在过渡后面；
+ * - atMs 后面（不含 atMs）所有物体的块和标记往后挪「过渡 + 引用时长」，给它让出位置。
+ * 游标在某个动态预设或引用中间时不插。
+ */
+export const insertSequenceRef = (
+  sequence: ActionSequenceConfig,
+  request: {
+    source: ActionSequenceConfig;
+    atMs: number;
+    objectOf: (objectId: number) => ControlledObject | undefined;
+  },
+  options?: SequenceEditOptions,
+): SequenceRefInsertResult => {
+  const atMs = snapTimeMs(request.atMs);
+  const existingIds = new Set(sequence.blocks.map((block) => block.id));
+  let ref: Extract<TimelineBlock, { kind: "sequence-ref" }>;
+  let contentStart: Map<number, KeyframePose>;
+  try {
+    ref = buildSequenceRefBlock(request.source, { id: nextBlockId(existingIds), atMs });
+    contentStart = sequenceShape(resolveActionSequence(refContentAsSequence(ref.content)), "start");
+  } catch {
+    return { ok: false, reason: "invalid-preset" };
+  }
+  if (ref.orderedObjectIds.length === 0 || ref.content.blocks.length === 0) {
+    return { ok: false, reason: "empty-source" };
+  }
+  const straddling = sequence.blocks.find((block) => blockTimeMs(block) < atMs && atMs < blockEndMs(block));
+  if (straddling) return { ok: false, reason: "straddles-block", atMs: blockTimeMs(straddling) };
+
+  let resolved: ReturnType<typeof resolveActionSequence>;
+  try {
+    resolved = resolveActionSequence(sequence);
+  } catch {
+    return { ok: false, reason: "invalid-preset" };
+  }
+  // 引用里的物体在 atMs 的位置（atMs 前已经在序列里出现过的才算；没出现过的直接从引用开头起步）
+  const here = evaluateResolvedSequence(resolved, atMs);
+  const from = new Map<number, KeyframePose>();
+  for (const objectId of ref.orderedObjectIds) {
+    const points = resolved.posesByObject.get(objectId);
+    const pose = here.get(objectId);
+    if (!points || !pose || (points[0]?.atMs ?? Infinity) > atMs) continue;
+    const uncontrolled = uncontrolledAxesOf(resolved, objectId);
+    const controlled: KeyframePose = {};
+    for (const axis of ALL_VIRTUAL_AXES) {
+      if (!uncontrolled.includes(axis)) controlled[axis] = roundProjectCoordinate(pose[axis]);
+    }
+    from.set(objectId, controlled);
+  }
+  const plan = planShapeTransition({ from, to: contentStart, objectOf: request.objectOf, timing: "sync" });
+  const moving = plan.objects.filter((object) => object.durationMs > 0);
+  const pointAt = (objectId: number) =>
+    resolved.posesByObject.get(objectId)?.some((point) => point.atMs === atMs) ?? false;
+  // 不用动、但 atMs 那一刻已有关键点的物体：引用往后挪一档，免得同一时刻两个关键点
+  const transitionMs =
+    moving.length > 0 ? plan.totalMs : ref.orderedObjectIds.some(pointAt) ? TIME_STEP_MS : 0;
+  const shiftMs = transitionMs + ref.durationMs;
+
+  const next = cloneSequence(sequence);
+  const later = next.blocks.some((block) => blockTimeMs(block) > atMs) ||
+    (next.markers ?? []).some((marker) => marker.atMs > atMs);
+  if (later) {
+    next.blocks = next.blocks.map((block) =>
+      blockTimeMs(block) > atMs ? snapBlockTimes(shiftBlock(block, shiftMs)) : block,
+    );
+    if (next.markers) {
+      next.markers = next.markers.map((marker) =>
+        marker.atMs > atMs ? { ...marker, atMs: marker.atMs + shiftMs } : marker,
+      );
+    }
+  }
+  // 过渡从 atMs 开始：那一刻没有关键点的物体加一帧当前位置
+  for (const object of moving) {
+    if (pointAt(object.objectId)) continue;
+    const id = nextBlockId(existingIds);
+    existingIds.add(id);
+    next.blocks.push({ id, kind: "pose", objectId: object.objectId, atMs, pose: { ...from.get(object.objectId) } });
+  }
+  ref = { ...ref, atMs: atMs + transitionMs };
+  next.blocks.push(ref);
+  const committed = commitBlocks(sequence, next, options);
+  if (!committed.ok) return committed;
+
+  // 过渡那一段用算好的曲线
+  let withProfiles = committed.sequence;
+  if (moving.length > 0) {
+    try {
+      const after = resolveActionSequence(committed.sequence);
+      const writes: SegmentProfileWrite[] = [];
+      for (const object of moving) {
+        const segment = after.segments.find(
+          (item) =>
+            item.objectId === object.objectId &&
+            item.configurable &&
+            item.startMs === atMs &&
+            item.endMs === atMs + transitionMs,
+        );
+        if (!segment) continue;
+        for (const [axis, profile] of Object.entries(object.profiles)) {
+          writes.push({
+            fromRef: segment.fromRef,
+            toRef: segment.toRef,
+            axis: axis as VirtualAxisId,
+            profile,
+            durationMs: segment.durationMs,
+          });
+        }
+      }
+      withProfiles = writeSegmentProfiles(committed.sequence, writes);
+    } catch {
+      withProfiles = committed.sequence;
+    }
+  }
+  return {
+    ok: true,
+    sequence: withProfiles,
+    blockId: ref.id,
+    transitionMs,
+    shiftedMs: later ? shiftMs : 0,
+  };
 };

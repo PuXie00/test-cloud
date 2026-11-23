@@ -993,6 +993,62 @@ describe("segment tools in the right-click menu", () => {
   });
 });
 
+describe("sequence references in the dock", () => {
+  const lifted: ActionSequenceConfig = {
+    ...sequence,
+    id: 2,
+    name: "抬起",
+    blocks: [{ id: "s0", kind: "pose", objectId: 7, atMs: 0, pose: { v1: 100 } }],
+  };
+  const withRef: ActionSequenceConfig = {
+    ...sequence,
+    blocks: [
+      {
+        id: "ref",
+        kind: "sequence-ref",
+        sequenceId: 2,
+        atMs: 1000,
+        durationMs: 0,
+        orderedObjectIds: [7],
+        content: { name: "抬起", trajectoryMode: false, blocks: lifted.blocks, segments: [] },
+      },
+    ],
+  };
+
+  it("expands or opens a selected reference from the right-click menu", async () => {
+    const handleExplodeSequenceRefs = vi.fn();
+    const handleSequenceSelect = vi.fn();
+    mockBuilder({
+      sequence: withRef,
+      sequences: [withRef, lifted],
+      selection: { kind: "block", blockId: "ref" },
+      handleExplodeSequenceRefs,
+      handleSequenceSelect,
+    });
+    render(<EditorDock />);
+    fireEvent.contextMenu(screen.getByTestId("timeline-editor"));
+    await screen.findByRole("menu");
+    fireEvent.click(screen.getByRole("menuitem", { name: "展开引用（变成普通块）" }));
+    expect(handleExplodeSequenceRefs).toHaveBeenCalledWith(["ref"]);
+
+    cleanup();
+    render(<EditorDock />);
+    fireEvent.contextMenu(screen.getByTestId("timeline-editor"));
+    await screen.findByRole("menu");
+    fireEvent.click(screen.getByRole("menuitem", { name: "打开「抬起」" }));
+    expect(handleSequenceSelect).toHaveBeenCalledWith(2);
+  });
+
+  it("passes the library names and a dropped sequence to the timeline", () => {
+    const handleInsertSequenceRef = vi.fn(() => true);
+    mockBuilder({ sequence: withRef, sequences: [withRef, lifted], handleInsertSequenceRef });
+    render(<EditorDock />);
+    expect(capturedEditor.current?.sequenceNames?.get(2)).toBe("抬起");
+    capturedEditor.current?.onDropSequence?.(2, 3000);
+    expect(handleInsertSequenceRef).toHaveBeenCalledWith(2, 3000);
+  });
+});
+
 describe("timeline markers in the dock", () => {
   const withMarkers: ActionSequenceConfig = {
     ...sequence,

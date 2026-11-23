@@ -5,6 +5,7 @@ import type {
   DynamicPresetBlock,
   PoseBlock,
   InstructionBlock,
+  SequenceRefBlock,
   StaticPresetBlock,
   TimelineBlock,
   TimelineMarker,
@@ -45,7 +46,8 @@ import {
 } from "./timeline-data";
 import { TimelineEdgeScrollContext, useEdgeScrollController } from "./timeline-edge-scroll";
 import { TimelineHScroll } from "./timeline-h-scroll";
-import { blockObjectIds, snapSpanStart, snapTargetTimes, snapToTargets } from "./timeline-snap";
+import { blockObjectIds, blockSpanMs, snapSpanStart, snapTargetTimes, snapToTargets } from "./timeline-snap";
+import { isSequenceRefDrag, readSequenceRefDrag } from "../content-library/library-dnd";
 import {
   collectMarqueeBlockIds,
   collectTimeRangeBlockIds,
@@ -147,6 +149,12 @@ export type TimelineEditorProps = {
    */
   onScaleSelection?: (blockIds: string[], durationMs: number) => void;
   onScaleSelectionEnd?: () => void;
+  /** 动作序列库里序列现在的名字（引用的横条上显示）；引用的序列删了时查不到 */
+  sequenceNames?: ReadonlyMap<number, string>;
+  /** 双击引用的横条：打开被引用的序列 */
+  onOpenSequence?: (sequenceId: number) => void;
+  /** 从动作序列库拖一条序列到轨道上：在落点引用它（吸附开着时对齐） */
+  onDropSequence?: (sequenceId: number, atMs: number) => void;
 };
 
 const NO_OBJECT_IDS: readonly number[] = [];
@@ -184,6 +192,12 @@ const dynamicPresetsFor = (sequence: ActionSequenceConfig, objectId: number): Dy
   sequence.blocks.filter(
     (block): block is DynamicPresetBlock =>
       block.kind === "dynamic-preset" && block.orderedObjectIds.includes(objectId),
+  );
+
+const sequenceRefsFor = (sequence: ActionSequenceConfig, objectId: number): SequenceRefBlock[] =>
+  sequence.blocks.filter(
+    (block): block is SequenceRefBlock =>
+      block.kind === "sequence-ref" && block.orderedObjectIds.includes(objectId),
   );
 
 const blockOriginMs = (block: TimelineBlock): number =>
@@ -237,6 +251,9 @@ export const TimelineEditor = ({
   onCreatePoseAt,
   onScaleSelection,
   onScaleSelectionEnd,
+  sequenceNames,
+  onOpenSequence,
+  onDropSequence,
 }: TimelineEditorProps) => {
   const viewportRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -266,6 +283,8 @@ export const TimelineEditor = ({
   const pxPerSecondRef = useRef(timelinePxPerSecond);
   pxPerSecondRef.current = timelinePxPerSecond;
   const [rangeSelectMs, setRangeSelectMs] = useState<{ startMs: number; endMs: number } | null>(null);
+  // 从动作序列库拖序列过来时落点的时刻
+  const [dropAtMs, setDropAtMs] = useState<number | null>(null);
   const [marquee, setMarquee] = useState<MarqueeDrag | null>(null);
   const [snapIndicatorMs, setSnapIndicatorMs] = useState<number | null>(null);
   // 拖动时按住 Alt 不吸附：捕获阶段先记下，块自己的拖动处理再读到
@@ -467,6 +486,7 @@ export const TimelineEditor = ({
           commands: commandsFor(sequence, objectId),
           staticPresets: staticPresetsFor(sequence, objectId),
           dynamicPresets,
+          sequenceRefs: sequenceRefsFor(sequence, objectId),
           resolvedInitialPose: initial,
           generatedTicksByPreset,
           segments: resolved.segments.filter(
@@ -489,7 +509,7 @@ export const TimelineEditor = ({
     const blocks = sequence.blocks.filter((block) => ids.has(block.id));
     if (blocks.length === 0) return null;
     const startMs = Math.min(...blocks.map(blockOriginMs));
-    const endMs = Math.max(...blocks.map((block) => (block.kind === "dynamic-preset" ? block.endMs : block.atMs)));
+    const endMs = Math.max(...blocks.map((block) => blockSpanMs(block).endMs));
     const rowIndices = blocks
       .flatMap(blockObjectIds)
       .map((objectId) => objectIdsInRowOrder.indexOf(objectId))
@@ -949,9 +969,11 @@ export const TimelineEditor = ({
     if (!groupDrag) selectForDrag(blockId);
     const targets = blockSnapTargets(new Set(groupDrag ? ids : [blockId]));
     const current = sequence.blocks.find((block) => block.id === blockId);
+    // 一段时间的块（动态预设、引用）起止两端谁近吸谁
+    const span = current ? blockSpanMs(current) : null;
     const atMs =
-      current?.kind === "dynamic-preset"
-        ? snapSpan(proposedMs, current.endMs - current.startMs, targets)
+      span && span.endMs > span.startMs
+        ? snapSpan(proposedMs, span.endMs - span.startMs, targets)
         : applySnap(proposedMs, targets);
     if (groupDrag) {
       const origin = groupDragOriginRef.current ?? sequence;
@@ -1264,6 +1286,24 @@ export const TimelineEditor = ({
                 style={{ width: canvasWidth }}
                 onPointerDown={handleTracksPointerDown}
                 onDoubleClick={handleTracksDoubleClick}
+                onDragOver={(event) => {
+                  if (!onDropSequence || !isSequenceRefDrag(event.dataTransfer)) return;
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "copy";
+                  setDropAtMs(snapCursor(clientToMs(event.clientX), false));
+                }}
+                onDragLeave={(event) => {
+                  if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+                  setDropAtMs(null);
+                }}
+                onDrop={(event) => {
+                  setDropAtMs(null);
+                  if (!onDropSequence) return;
+                  const sequenceId = readSequenceRefDrag(event.dataTransfer);
+                  if (sequenceId === null) return;
+                  event.preventDefault();
+                  onDropSequence(sequenceId, snapCursor(clientToMs(event.clientX), false));
+                }}
               >
                 <div className="pointer-events-none absolute inset-0 z-0 w-full" aria-hidden>
                   {used ? (
@@ -1332,6 +1372,9 @@ export const TimelineEditor = ({
                       commands={row.commands}
                       staticPresets={row.staticPresets}
                       dynamicPresets={row.dynamicPresets}
+                      sequenceRefs={row.sequenceRefs}
+                      sequenceNameOf={sequenceNames ? (id) => sequenceNames.get(id) : undefined}
+                      onOpenSequence={onOpenSequence}
                       resolvedInitialPose={row.resolvedInitialPose}
                       generatedTicksByPreset={row.generatedTicksByPreset}
                       segments={row.segments}
@@ -1409,6 +1452,15 @@ export const TimelineEditor = ({
                 onMove={handleMarkerMove}
                 onMoveEnd={handleMarkerMoveEnd}
                 onRename={(marker) => onMarkerRename?.(marker)}
+              />
+            ) : null}
+
+            {dropAtMs !== null ? (
+              <div
+                data-testid="timeline-drop-line"
+                className="pointer-events-none absolute top-0 bottom-0 z-20 w-0.5 -translate-x-1/2 bg-primary/70"
+                style={{ left: TIMELINE_PAD_LEFT + viewPxFromMs(dropAtMs, viewStartMs, pxPerSecond) }}
+                aria-hidden
               />
             ) : null}
 

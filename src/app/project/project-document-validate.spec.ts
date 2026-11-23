@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MOTION_DEFAULTS } from "./configuration-rules";
-import type { ActionSequenceConfig } from "./action-sequence/types";
+import type { ActionSequenceConfig, TimelineBlock } from "./action-sequence/types";
 import { GZ_2025_DOCUMENT } from "./mock-documents/gz-2025.document";
 import { SH_BALLET_DOCUMENT } from "./mock-documents/sh-ballet.document";
 import { createEmptyDocument } from "./project-document-empty";
@@ -223,6 +223,28 @@ describe("pose blocks with axes left unset", () => {
     expect(() => assertProjectDocumentStructure(document)).toThrow(/passSpeeds/);
     sequence.blocks[0] = { ...sequence.blocks[0]!, passSpeeds: { v4: 1 } } as never;
     expect(() => assertProjectDocumentStructure(document)).toThrow(/passSpeeds/);
+  });
+
+  it("accepts a reference to another sequence and checks what it stores", () => {
+    const stored: TimelineBlock = { id: "inner", kind: "pose", objectId: OBJECT_A, atMs: 0, pose: { v1: 80 } };
+    const ref: TimelineBlock = {
+      id: "ref-1",
+      kind: "sequence-ref",
+      sequenceId: 2,
+      atMs: 1000,
+      durationMs: 0,
+      orderedObjectIds: [OBJECT_A],
+      content: { name: "抬起", trajectoryMode: false, blocks: [stored], segments: [] },
+    };
+    const sequence: ActionSequenceConfig = { ...validSequence(), blocks: [ref] };
+    const document = documentOf();
+    document.motion.actionSequences = [sequence];
+    expect(() => assertProjectDocumentStructure(document)).not.toThrow();
+
+    sequence.blocks[0] = { ...ref, content: { ...ref.content, blocks: [{ ...stored, atMs: -1 }] } } as never;
+    expect(() => assertProjectDocumentStructure(document)).toThrow(/content\.blocks/);
+    sequence.blocks[0] = { ...ref, content: { ...ref.content, name: 3 } } as never;
+    expect(() => assertProjectDocumentStructure(document)).toThrow(/content\.name/);
   });
 
   it("accepts pass speeds that follow a segment and rejects unknown rules", () => {

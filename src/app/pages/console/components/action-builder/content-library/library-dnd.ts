@@ -66,3 +66,25 @@ export const readProgramItemDrag = (
   }
   return null;
 };
+
+/** 动作序列库条目拖到时间轴上：在落点引用这条序列（要「编辑动作序列」） */
+export const SEQUENCE_REF_MIME = "application/x-sequence-ref";
+
+export const writeSequenceRefDrag = (dataTransfer: DataTransfer, sequenceId: number): void => {
+  dataTransfer.setData(SEQUENCE_REF_MIME, JSON.stringify({ id: sequenceId }));
+  dataTransfer.effectAllowed = "copy";
+};
+
+export const isSequenceRefDrag = (dataTransfer: DataTransfer): boolean =>
+  dataTransfer.types.includes(SEQUENCE_REF_MIME);
+
+export const readSequenceRefDrag = (dataTransfer: DataTransfer): number | null => {
+  const raw = dataTransfer.getData(SEQUENCE_REF_MIME);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { id?: unknown };
+    return typeof parsed.id === "number" && Number.isInteger(parsed.id) ? parsed.id : null;
+  } catch {
+    return null;
+  }
+};

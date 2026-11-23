@@ -4,6 +4,7 @@ import {
   reconcileSegmentConfigs,
   resolveActionSequence,
 } from "@/app/project/action-sequence/resolve-sequence";
+import { refContentAsSequence } from "@/app/project/action-sequence/sequence-ref";
 import type {
   ActionSequenceConfig,
   KeyframePose,
@@ -198,8 +199,16 @@ const rewriteSequenceRemovedAxes = (
   let changed = false;
   let rewrittenBlocks = 0;
 
-  const blocks = sequence.blocks.map((block) => {
+  const blocks = sequence.blocks.map((block): TimelineBlock => {
     if (block.kind === "instruction") return block;
+    // 引用的序列：里面的内容一样改（源序列自己也在这一批里改）
+    if (block.kind === "sequence-ref") {
+      const inner = rewriteSequenceRemovedAxes(refContentAsSequence(block.content), removedByObject);
+      if (!inner.changed) return block;
+      rewrittenBlocks += inner.rewrittenBlocks;
+      changed = true;
+      return { ...block, content: { ...block.content, blocks: inner.sequence.blocks, segments: inner.sequence.segments } };
+    }
     if (block.kind === "pose") {
       const removed = removedByObject.get(block.objectId);
       if (!removed || removed.size === 0) return block;

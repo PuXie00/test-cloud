@@ -1,5 +1,6 @@
 import type { ActionSequenceConfig, TimelineBlock } from "@/app/project/action-sequence/types";
 import { pxToMs } from "./timeline-data";
+import { blockSpanMs } from "./timeline-snap";
 import { POINT_BLOCK_HIT_MIN_PX } from "./timeline-view-extent";
 
 export type MarqueeRange = {
@@ -25,9 +26,7 @@ const blockTimeRange = (
   block: TimelineBlock,
   pxPerSecond: number,
 ): { startMs: number; endMs: number } => {
-  if (block.kind === "dynamic-preset") {
-    return { startMs: block.startMs, endMs: block.endMs };
-  }
+  if (block.kind === "dynamic-preset" || block.kind === "sequence-ref") return blockSpanMs(block);
   const padMs = pxToMs(POINT_BLOCK_HIT_MIN_PX / 2, pxPerSecond);
   const atMs = block.atMs;
   return { startMs: atMs - padMs, endMs: atMs + padMs };
@@ -75,10 +74,9 @@ export const collectTimeRangeBlockIds = (
   const startMs = Math.min(range.startMs, range.endMs);
   const endMs = Math.max(range.startMs, range.endMs);
   return sequence.blocks
-    .filter((block) =>
-      block.kind === "dynamic-preset"
-        ? rangesOverlap(block.startMs, block.endMs, startMs, endMs)
-        : block.atMs >= startMs && block.atMs <= endMs,
-    )
+    .filter((block) => {
+      const span = blockSpanMs(block);
+      return rangesOverlap(span.startMs, span.endMs, startMs, endMs);
+    })
     .map((block) => block.id);
 };

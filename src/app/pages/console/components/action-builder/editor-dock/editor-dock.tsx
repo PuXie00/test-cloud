@@ -86,6 +86,10 @@ const SequenceEditor = () => {
     handleScaleTimelineBlocks,
     handleScaleTimelineBlocksEnd,
     handleInsertSpeedPoints,
+    handleInsertSequenceRef,
+    handleExplodeSequenceRefs,
+    handleSequenceSelect,
+    sequences,
     handleDragPoseAxis,
     handleDragPoseAxisEnd,
     timelineViewMode: viewMode,
@@ -172,6 +176,12 @@ const SequenceEditor = () => {
   const invalidTargets = useMemo(
     () => invalidTimelineTargets(sequenceIssues),
     [sequenceIssues],
+  );
+
+  // 引用的横条显示被引用序列现在的名字
+  const sequenceNames = useMemo(
+    () => new Map((sequences ?? []).map((item) => [item.id, item.name])),
+    [sequences],
   );
 
   const resolved = useMemo(() => {
@@ -330,6 +340,25 @@ const SequenceEditor = () => {
   ]);
 
   if (!sequence) return null;
+
+  // 选中里有引用时右键可以展开成普通块；只选了一个引用时可以打开它引用的序列
+  const selectedRefs = sequence.blocks.filter(
+    (block): block is Extract<typeof block, { kind: "sequence-ref" }> =>
+      block.kind === "sequence-ref" && selectedBlockIds.includes(block.id),
+  );
+  const openableRef =
+    selectedRefs.length === 1 ? sequences.find((item) => item.id === selectedRefs[0]!.sequenceId) : undefined;
+  const refActions: ContextMenuAction[] = [
+    ...(canEdit && selectedRefs.length > 0
+      ? [
+          {
+            label: selectedRefs.length > 1 ? `展开 ${selectedRefs.length} 个引用` : "展开引用（变成普通块）",
+            onSelect: () => handleExplodeSequenceRefs(selectedRefs.map((block) => block.id)),
+          },
+        ]
+      : []),
+    ...(openableRef ? [{ label: `打开「${openableRef.name}」`, onSelect: () => handleSequenceSelect(openableRef.id) }] : []),
+  ];
 
   // 选中里有预设时右键可以拆解成位姿
   const selectedPresetIds = sequence.blocks
@@ -531,7 +560,7 @@ const SequenceEditor = () => {
         onCopy={handleBlockCopy}
         onPaste={handleBlockPaste}
         onContextMenu={handleTimelineContextMenu}
-        actions={[...speedPointActions, ...segmentActions, ...presetActions]}
+        actions={[...speedPointActions, ...segmentActions, ...refActions, ...presetActions]}
       >
         <div data-guide="console-action-timeline" className="flex min-h-0 flex-1">
           <TimelineEditor
@@ -574,6 +603,9 @@ const SequenceEditor = () => {
                 : undefined
             }
             onScaleSelectionEnd={handleScaleTimelineBlocksEnd}
+            sequenceNames={sequenceNames}
+            onOpenSequence={handleSequenceSelect}
+            onDropSequence={canEdit ? (sequenceId, atMs) => handleInsertSequenceRef(sequenceId, atMs) : undefined}
           />
         </div>
       </ClipboardContextMenu>

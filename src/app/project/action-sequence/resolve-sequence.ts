@@ -11,6 +11,7 @@ import {
   syncAxisProfileToTravel,
 } from "./motion-profile";
 import { getPresetDefinition, resolvePreset } from "./preset-registry";
+import { expandSequenceRefs } from "./sequence-ref-expand";
 import type {
   ActionSequenceConfig,
   DynamicPresetBlock,
@@ -25,7 +26,8 @@ import type {
 export type ResolvedPosePoint = {
   sourceRef: string;
   sourceBlockId: string | null;
-  sourceKind: "pose" | "static-preset" | "dynamic-preset";
+  /** sequence-ref：引用的另一条序列里的关键点，sourceBlockId 是引用块 */
+  sourceKind: "pose" | "static-preset" | "dynamic-preset" | "sequence-ref";
   objectId: number;
   atMs: number;
   pose: ModelPose;
@@ -87,6 +89,7 @@ export type ResolvedMotionSegment = {
   toPose: ModelPose;
   settings: MotionSegmentSettings;
   configurable: boolean;
+  /** 区间在动态预设或引用的序列里面：那个块的 id（不能单独改，点了选中那个块） */
   ownerPresetBlockId?: string;
   /** 各轴在本区间跟随的曲线；缺省时就是本区间自己的曲线 */
   axes?: Record<VirtualAxisId, ResolvedAxisMotion>;
@@ -713,7 +716,43 @@ const refillBoundarySpans = (
   }
 };
 
-export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedActionSequence => {
+/**
+ * 引用展开出来的关键点归到引用块：sourceBlockId 换成引用块、不能单独改；
+ * 两头都在同一个引用里的区间、曲线不能单独设置（设置跟着被引用的序列走）
+ */
+const markReferencedPoints = (
+  points: readonly ResolvedPosePoint[],
+  segments: readonly ResolvedMotionSegment[],
+  ownerOf: ReadonlyMap<string, string>,
+): void => {
+  if (ownerOf.size === 0) return;
+  const ownerByRef = new Map<string, string>();
+  for (const point of points) {
+    const owner = point.sourceBlockId === null ? undefined : ownerOf.get(point.sourceBlockId);
+    if (owner === undefined) continue;
+    ownerByRef.set(point.sourceRef, owner);
+    point.sourceBlockId = owner;
+    point.sourceKind = "sequence-ref";
+    point.editable = false;
+  }
+  const insideOne = (fromRef: string, toRef: string): string | undefined => {
+    const owner = ownerByRef.get(fromRef);
+    return owner !== undefined && owner === ownerByRef.get(toRef) ? owner : undefined;
+  };
+  for (const segment of segments) {
+    const owner = insideOne(segment.fromRef, segment.toRef);
+    if (owner === undefined) continue;
+    segment.configurable = false;
+    segment.ownerPresetBlockId = owner;
+    for (const motion of Object.values(segment.axes ?? {})) {
+      if (insideOne(motion.fromRef, motion.toRef) !== undefined) motion.configurable = false;
+    }
+  }
+};
+
+export const resolveActionSequence = (authored: ActionSequenceConfig): ResolvedActionSequence => {
+  // 引用另一条序列的块先展开成里面的块，照常解析，最后再归到引用块
+  const { sequence, ownerOf } = expandSequenceRefs(authored);
   const timed: ResolvedPosePoint[] = [];
   const commands: InstructionBlock[] = [];
   let totalMs = 0;
@@ -753,6 +792,9 @@ export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedA
       totalMs = Math.max(totalMs, block.atMs);
       continue;
     }
+
+    // 引用已在上面展开成里面的块
+    if (block.kind === "sequence-ref") continue;
 
     if (block.kind === "dynamic-preset") {
       totalMs = Math.max(totalMs, block.endMs);
@@ -895,6 +937,7 @@ export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedA
     refillBoundarySpans(series, objectSegments);
     segments.push(...objectSegments);
   }
+  markReferencedPoints(timed, segments, ownerOf);
 
   return {
     id: sequence.id,

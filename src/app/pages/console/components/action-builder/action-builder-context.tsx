@@ -45,10 +45,17 @@ import {
   sequenceValidationContextFromSetup,
 } from "@/app/project/project-motion-readiness";
 import { allocateSequenceIdsInProject } from "@/app/project/action-sequence/sequence-id";
+import { sequenceShape } from "@/app/project/action-sequence/sequence-shape";
+import {
+  refreshSequenceRefs,
+  sequencesReferencing,
+  wouldCreateRefCycle,
+} from "@/app/project/action-sequence/sequence-ref";
 import { sequenceObjectIds } from "@/app/project/action-sequence/sequence-object-ids";
 import {
   nextNewSequenceName,
   nextShapeName,
+  nextTransitionName,
   normalizeSequenceName,
   sequenceNameError,
 } from "@/app/project/action-sequence/sequence-name";
@@ -113,6 +120,7 @@ import {
   type SegmentAlignEdge,
   type SegmentProfileWrite,
   type SegmentRetimeWrite,
+  finalizeSequenceSegments,
   scaleTimelineBlocks,
   type ScaleBlocksRefusal,
   type ScaleBlocksRequest,
@@ -120,6 +128,9 @@ import {
   insertSpeedPoint,
   setPassSpeedMode,
   type SpeedPointResult,
+  explodeSequenceRefs,
+  insertSequenceRef,
+  type SequenceRefInsertResult,
 } from "./sequence-ops";
 import {
   pruneSequenceSelection,
@@ -159,6 +170,7 @@ import type { ContextSelection } from "./context-bar/selection-context-bar";
 import { LivePoseBridge, type LivePoseLookup } from "./live-pose-bridge";
 import type { PhaseInputMode } from "./motion-profile/phase-rates";
 import { staggerSegments } from "./right-panel/segment-rhythm";
+import { buildTransitionSequence, planShapeTransition, type TransitionTiming } from "./shape-transition";
 import type { CurveGraph, TimelineViewMode } from "./timeline/curve-data";
 import type { ActionRightTab } from "./right-panel/action-right-panel";
 
@@ -1220,6 +1232,79 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     [applySequenceEdit, selectedBlockIds, sequenceEditOptions],
   );
 
+  /** 展开引用：换成里面的块（和源序列不再关联）；不传时展开选中的引用 */
+  const handleExplodeSequenceRefs = useCallback(
+    (blockIds?: readonly string[]) => {
+      const ids = blockIds ?? selectedBlockIds;
+      let before: ActionSequenceConfig | null = null;
+      let after: ActionSequenceConfig | null = null;
+      const committed = applySequenceEdit((current) => {
+        const result = explodeSequenceRefs(current, ids, sequenceEditOptions);
+        before = current;
+        if (result.ok) after = result.sequence;
+        return result;
+      });
+      if (!committed || !before || !after) {
+        toast.warning("引用无法展开");
+        return;
+      }
+      const kept = new Set((before as ActionSequenceConfig).blocks.map((block) => block.id));
+      const created = (after as ActionSequenceConfig).blocks.filter((block) => !kept.has(block.id)).map((block) => block.id);
+      setSelection(selectionFromBlockIds(created));
+      toast.success(`已展开成 ${created.length} 个块，和原序列不再关联`);
+    },
+    [applySequenceEdit, selectedBlockIds, sequenceEditOptions],
+  );
+
+  /**
+   * 在游标处（或 atMs）引用另一条序列：用它已保存的版本；位置不一样时前面自动加过渡，
+   * 后面的块和标记往后让。绕回自己的不让引用
+   */
+  const handleInsertSequenceRef = useCallback(
+    (sourceId: number, atMs: number = cursorMs): boolean => {
+      if (selectedSequenceId === null) return false;
+      const library = new Map(motionRef.current.sequences.map((item) => [item.id, item]));
+      const source = library.get(sourceId);
+      const current = draftsRef.current.get(selectedSequenceId) ?? library.get(selectedSequenceId);
+      if (!source || !current) return false;
+      if (wouldCreateRefCycle(selectedSequenceId, source, library)) {
+        toast.warning(
+          sourceId === selectedSequenceId
+            ? "不能引用自己"
+            : `「${source.name}」里已经用到了「${current.name}」，不能再引用回去`,
+        );
+        return false;
+      }
+      let outcome: SequenceRefInsertResult | null = null;
+      const committed = updateSelectedSequence((sequenceNow) => {
+        const result = insertSequenceRef(sequenceNow, { source, atMs, objectOf: getTimelineObject }, sequenceEditOptions);
+        outcome = result;
+        return result.ok ? result.sequence : null;
+      });
+      const result = outcome as SequenceRefInsertResult | null;
+      if (!committed || !result?.ok) {
+        const reason = result && !result.ok ? result.reason : null;
+        toast.warning(
+          reason === "straddles-block"
+            ? `游标在 ${formatTime(result && !result.ok ? (result.atMs ?? atMs) : atMs)} s 开始的预设或引用中间，挪开再插`
+            : reason === "empty-source"
+              ? `「${source.name}」是空的，没有可引用的动作`
+              : `插入「${source.name}」会和已有的动作冲突，没有插入`,
+        );
+        return false;
+      }
+      handleSelectionChange({ kind: "block", blockId: result.blockId });
+      const parts = [
+        result.transitionMs > 0 ? `前面加了 ${formatTime(result.transitionMs)} s 过渡` : null,
+        result.shiftedMs > 0 ? `后面的动作往后挪了 ${formatTime(result.shiftedMs)} s` : null,
+        draftsRef.current.has(sourceId) ? "它有未保存的修改，引用的是已保存的版本" : null,
+      ].filter(Boolean);
+      toast.success(`已引用「${source.name}」${parts.length > 0 ? `：${parts.join("，")}` : ""}`);
+      return true;
+    },
+    [cursorMs, selectedSequenceId, updateSelectedSequence, getTimelineObject, sequenceEditOptions, handleSelectionChange],
+  );
+
   /** 逐个物体在播放头位置新建或更新动作块，一次提交 */
   const upsertForObjects = useCallback(
     (
@@ -1488,6 +1573,55 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     });
   }, [sequence, cursorMs, selectedObjectIds, addShapeSequence]);
 
+  /**
+   * 两个造型之间生成过渡：起点取 fromId 结束时的样子，终点取 toId 开始时的样子（按编辑器里看到的，有草稿用草稿），
+   * 新建「过渡 N」并打开
+   */
+  const handleCreateTransition = useCallback(
+    (fromId: number, toId: number, timing: TransitionTiming): boolean => {
+      const shown = (id: number) =>
+        draftsRef.current.get(id) ?? motionRef.current.sequences.find((item) => item.id === id);
+      const fromSequence = shown(fromId);
+      const toSequence = shown(toId);
+      if (!fromSequence || !toSequence) return false;
+      let plan: ReturnType<typeof planShapeTransition>;
+      try {
+        plan = planShapeTransition({
+          from: sequenceShape(resolveActionSequence(fromSequence), "end"),
+          to: sequenceShape(resolveActionSequence(toSequence), "start"),
+          objectOf: getTimelineObject,
+          timing,
+        });
+      } catch {
+        toast.warning("有序列待修复，算不了过渡");
+        return false;
+      }
+      if (plan.objects.length === 0) {
+        toast.warning(`「${fromSequence.name}」和「${toSequence.name}」没有共同的物体，没有可过渡的`);
+        return false;
+      }
+      let id: number;
+      try {
+        [id] = allocateSequenceIdsInProject(motionRef.current.sequences, 1);
+      } catch (error) {
+        setLastPersistError(error instanceof Error ? error.message : "动作序列 id 已满（1~65535）");
+        return false;
+      }
+      const name = nextTransitionName(motionRef.current.sequences.map((item) => item.name));
+      const created = buildTransitionSequence(plan, { id, name });
+      if (!created) return false;
+      const finalized = finalizeSequenceSegments(created, sequenceEditOptions);
+      const nextSequences = [...motionRef.current.sequences, finalized];
+      if (!recordEditorStep(() => commitMotionProjection({ ...motionRef.current, sequences: nextSequences }))) {
+        return false;
+      }
+      handleSequenceSelect(finalized.id);
+      toast.success(`已生成「${name}」：${formatTime(plan.totalMs)} s`);
+      return true;
+    },
+    [getTimelineObject, sequenceEditOptions, recordEditorStep, commitMotionProjection, handleSequenceSelect],
+  );
+
   /** 错峰：选中的区间（每台一段）到达不动，起点按先后依次晚 gapMs 出发 */
   const handleStaggerSegments = useCallback(
     (keys: readonly string[], gapMs: number) => {
@@ -1554,6 +1688,13 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     if (!deleted) return;
     setSelectedProgramNodeId((prev) => (prev === String(id) ? null : prev));
     handleSequenceSelect(remaining[0]?.id ?? null);
+    // 引用它的序列照常播放（引用里存着内容），只是不再跟着它更新
+    const users = sequencesReferencing(remaining, id);
+    if (users.length > 0) {
+      toast.info(
+        `${users.map((item) => `「${item.name}」`).join("")}里还引用着「${target.name}」：照常播放，不再跟着更新，可以展开成普通块`,
+      );
+    }
   }, [selectedSequenceId, commitMotionProjection, handleSequenceSelect, setDraft, recordEditorStep]);
 
   /** 物体不符合预设条件时按该条件提示，返回 true 表示不能添加 */
@@ -1947,6 +2088,28 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     [updatePrograms],
   );
 
+  /**
+   * 保存后引用跟着走：引用了刚保存的序列（一层层往上）的已保存版本和草稿里的引用内容都换成新的。
+   * 返回换好的已保存列表和跟着更新了几个序列（不算刚保存的这些）
+   */
+  const followSavedSequences = useCallback(
+    (saved: ActionSequenceConfig[], savedIds: ReadonlySet<number>) => {
+      const library = new Map(saved.map((item) => [item.id, item]));
+      const applied = refreshSequenceRefs(saved, library);
+      const followers = applied.filter((item, index) => item !== saved[index] && !savedIds.has(item.id)).length;
+      const refreshedLibrary = new Map(applied.map((item) => [item.id, item]));
+      const drafted = [...draftsRef.current.values()].filter((item) => !savedIds.has(item.id));
+      const refreshedDrafts = refreshSequenceRefs(drafted, refreshedLibrary);
+      if (refreshedDrafts.some((item, index) => item !== drafted[index])) {
+        const map = new Map(draftsRef.current);
+        for (const item of refreshedDrafts) map.set(item.id, item);
+        replaceDrafts(map);
+      }
+      return { applied, followers };
+    },
+    [replaceDrafts],
+  );
+
   /** 把选中序列的草稿写进工程，节目列表、执行才用新内容；待修复时不保存（不是保存工程文件） */
   const handleSave = useCallback(() => {
     const id = selectedSequenceId;
@@ -1965,14 +2128,17 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       toast.warning(draft.blocks.length === 0 ? EMPTY_SAVE_MESSAGE : UNREPAIRED_SAVE_MESSAGE);
       return;
     }
-    const nextSequences = motionRef.current.sequences.map((item) => (item.id === id ? draft : item));
+    const saved = motionRef.current.sequences.map((item) => (item.id === id ? draft : item));
+    const { applied: nextSequences, followers } = followSavedSequences(saved, new Set([id]));
     if (!commitSequences(nextSequences)) {
       toast.error("保存失败");
       return;
     }
     setDraft(id, null);
-    toast.success(`已保存「${draft.name}」，节目列表已更新`);
-  }, [selectedSequenceId, currentProject?.document, commitSequences, setDraft]);
+    toast.success(
+      `已保存「${draft.name}」，节目列表已更新${followers > 0 ? `，引用它的 ${followers} 个序列跟着更新` : ""}`,
+    );
+  }, [selectedSequenceId, currentProject?.document, commitSequences, setDraft, followSavedSequences]);
 
   /**
    * 保存所有能保存的草稿（离开动作页时用）；待修复的、对应动作正在运行的留着草稿，
@@ -1991,7 +2157,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       else savable.set(id, draft);
     }
     if (savable.size > 0) {
-      const nextSequences = motionRef.current.sequences.map((item) => savable.get(item.id) ?? item);
+      const saved = motionRef.current.sequences.map((item) => savable.get(item.id) ?? item);
+      const { applied: nextSequences } = followSavedSequences(saved, new Set(savable.keys()));
       if (!commitSequences(nextSequences)) {
         toast.error("保存失败");
         return { saved: 0, blocked, running };
@@ -2004,7 +2171,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     }
     if (running.length > 0) toast.warning(runningSequenceMessage(running, "保存"));
     return { saved: savable.size, blocked, running };
-  }, [currentProject?.document, commitSequences, replaceDrafts]);
+  }, [currentProject?.document, commitSequences, replaceDrafts, followSavedSequences]);
 
   /**
    * 退回到某一步：序列的增删、顺序、名字和节目列表写回工程；
@@ -2133,6 +2300,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleScaleTimelineBlocksEnd,
       handleSetPassSpeedMode,
       handleInsertSpeedPoints,
+      handleInsertSequenceRef,
+      handleExplodeSequenceRefs,
       handleDragPoseAxis,
       handleDragPoseAxisEnd,
       handleResizeDynamicPreset,
@@ -2163,6 +2332,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleSaveCurrentPose,
       handleSaveShape,
       handleSaveShapeAtCursor,
+      handleCreateTransition,
       handleStaggerSegments,
       getLivePose,
       handleRenameSequence,
@@ -2229,6 +2399,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleScaleTimelineBlocksEnd,
       handleSetPassSpeedMode,
       handleInsertSpeedPoints,
+      handleInsertSequenceRef,
+      handleExplodeSequenceRefs,
       handleDragPoseAxis,
       handleDragPoseAxisEnd,
       handleResizeDynamicPreset,
@@ -2259,6 +2431,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleSaveCurrentPose,
       handleSaveShape,
       handleSaveShapeAtCursor,
+      handleCreateTransition,
       handleStaggerSegments,
       getLivePose,
       handleRenameSequence,

@@ -636,6 +636,7 @@ const OTHER_KIND_LABEL: Record<Exclude<TimelineBlock["kind"], "pose">, string> =
   instruction: "指令",
   "static-preset": "静态预设",
   "dynamic-preset": "动态预设",
+  "sequence-ref": "引用序列",
 };
 
 /** 多选里不能批量改的块：只报数量 */
@@ -900,6 +901,61 @@ const EmptyProperties = () => (
   </div>
 );
 
+/**
+ * 引用的另一条序列：引用的是哪条、从几秒开始、多长，原序列还在不在、有没有没保存的修改；
+ * 能打开原序列，或展开成普通块（之后和原序列不再关联）
+ */
+const SequenceRefFields = ({
+  block,
+  onReplaceBlock,
+}: {
+  block: Extract<TimelineBlock, { kind: "sequence-ref" }>;
+  onReplaceBlock: (block: TimelineBlock) => void;
+}) => {
+  const { sequences, draftSequenceIds, getTimelineObject, handleSequenceSelect } = useActionBuilder();
+  const source = sequences?.find((item) => item.id === block.sequenceId);
+  const names = block.orderedObjectIds.map((id) => getTimelineObject(id)?.name ?? `模型 ${id}`);
+  return (
+    <>
+      <p className="mb-3 text-body-sm text-muted-foreground">
+        {source
+          ? draftSequenceIds?.has(source.id)
+            ? `「${source.name}」有未保存的修改，保存后这里跟着变`
+            : `跟着「${source.name}」走：它保存后这里跟着变`
+          : `原序列「${block.content.name}」已删除：照常播放，不再跟着更新`}
+      </p>
+      <Field label="开始时刻">
+        <UnitAwareNumericInput
+          aria-label="开始时刻"
+          value={msToSeconds(block.atMs)}
+          unit="s"
+          step={0.1}
+          precision={1}
+          min={0}
+          onChange={(seconds) => onReplaceBlock({ ...block, atMs: secondsToMs(seconds) })}
+        />
+      </Field>
+      <Field label="时长">
+        <p aria-label="引用时长" className="font-mono text-mono-sm tabular-nums text-foreground">
+          {formatTime(block.durationMs)} s（到 {formatTime(block.atMs + block.durationMs)} s）
+        </p>
+      </Field>
+      <Field label={`物体（${names.length}）`}>
+        <p className="text-body-sm text-foreground">{names.join("、")}</p>
+      </Field>
+      {source ? (
+        <button
+          type="button"
+          onClick={() => handleSequenceSelect(source.id)}
+          className="mb-2 inline-flex h-9 w-full items-center justify-center rounded-md border border-border text-body-sm text-foreground hover:bg-accent"
+        >
+          打开「{source.name}」
+        </button>
+      ) : null}
+    </>
+  );
+};
+
 export const SequencePropertiesPanel = ({
   sequence,
   resolved,
@@ -908,7 +964,7 @@ export const SequencePropertiesPanel = ({
   onUpdateSegment,
   onDeleteBlock,
 }: SequencePropertiesPanelProps) => {
-  const { handleExplodePresets } = useActionBuilder();
+  const { handleExplodePresets, handleExplodeSequenceRefs } = useActionBuilder();
   if (selection === null) {
     return <EmptyProperties />;
   }
@@ -978,6 +1034,23 @@ export const SequencePropertiesPanel = ({
             onChange={(seconds) => onReplaceBlock({ ...command, atMs: secondsToMs(seconds) })}
           />
         </Field>
+      </PropertiesShell>
+    );
+  }
+
+  if (block.kind === "sequence-ref") {
+    return (
+      <PropertiesShell
+        title={`引用「${block.label ?? block.content.name}」`}
+        onDelete={() => onDeleteBlock(block.id)}
+        actions={
+          <ExplodePresetsButton
+            label="展开成普通块"
+            onClick={() => handleExplodeSequenceRefs?.([block.id])}
+          />
+        }
+      >
+        <SequenceRefFields block={block} onReplaceBlock={onReplaceBlock} />
       </PropertiesShell>
     );
   }
