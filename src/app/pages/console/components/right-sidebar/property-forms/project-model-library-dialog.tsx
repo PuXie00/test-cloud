@@ -23,6 +23,7 @@ import {
 import { cn } from "@/app/components/ui/utils";
 import { getProjectAPI, ProjectIpcError, unwrapResult } from "@/app/project/project-ipc";
 import type { ProjectModelEntry } from "@/types/electron";
+import { MODEL_BUNDLE_MAX_BYTES, MODEL_MAX_BYTES } from "@shared/project/model-files";
 
 export type ProjectModelLibraryDialogProps = {
   open: boolean;
@@ -37,11 +38,22 @@ const formatSize = (bytes: number): string => {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
 
+const toMb = (bytes: number): number => bytes / (1024 * 1024);
+
+const FILE_LIMIT_MB = toMb(MODEL_MAX_BYTES);
+const BUNDLE_LIMIT_MB = toMb(MODEL_BUNDLE_MAX_BYTES);
+const MISSING_ASSETS_PREVIEW = 5;
+
+const formatMissingAssets = (names: readonly string[]): string => {
+  const shown = names.slice(0, MISSING_ASSETS_PREVIEW).join("、");
+  return names.length > MISSING_ASSETS_PREVIEW ? `${shown} 等 ${names.length} 个` : shown;
+};
+
 const toastIpcError = (err: unknown, fallback: string) => {
   if (err instanceof ProjectIpcError) {
     if (err.code === "CANCELLED") return;
     if (err.code === "TOO_LARGE") {
-      toast.error("文件不能超过 10MB");
+      toast.error(err.message || `单个文件不能超过 ${FILE_LIMIT_MB}MB`);
       return;
     }
     if (err.code === "INVALID_FORMAT") {
@@ -98,9 +110,13 @@ export const ProjectModelLibraryDialog = ({
   const handleImport = async () => {
     setBusy(true);
     try {
-      unwrapResult(await getProjectAPI().models.import());
+      const { missingAssets = [] } = unwrapResult(await getProjectAPI().models.import());
       await refreshList();
-      toast.success("模型已导入");
+      if (missingAssets.length > 0) {
+        toast.warning(`模型已导入，以下材质或贴图未找到或格式不支持：${formatMissingAssets(missingAssets)}`);
+      } else {
+        toast.success("模型已导入");
+      }
     } catch (err) {
       toastIpcError(err, "导入模型失败");
     } finally {
@@ -165,7 +181,8 @@ export const ProjectModelLibraryDialog = ({
             <div className="flex min-h-0 flex-1 flex-col gap-3 bg-background p-4">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-body-sm text-muted-foreground">
-                  支持 GLB / OBJ，单文件不超过 10MB
+                  支持 GLB / OBJ（.mtl、贴图与 OBJ 放同一文件夹会一并导入），单个文件不超过{" "}
+                  {FILE_LIMIT_MB}MB，含贴图合计不超过 {BUNDLE_LIMIT_MB}MB
                 </p>
                 <Button
                   type="button"

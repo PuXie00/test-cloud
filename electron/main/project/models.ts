@@ -2,6 +2,7 @@ import { BrowserWindow, dialog } from 'electron'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import {
+  MODEL_BUNDLE_MAX_BYTES,
   MODEL_MAX_BYTES,
   MODELS_PREFIX,
   allocateUniqueFileName,
@@ -9,6 +10,14 @@ import {
   normalizeModelId,
 } from '../../../shared/project/model-files'
 import { emitProjectFileEvent } from './file-events'
+import {
+  getModelAssetsSize,
+  readModelAssets,
+  removeModelAssets,
+  writeModelAssets,
+  type ModelAssetFile,
+} from './model-assets'
+import { collectObjBundle } from './obj-bundle'
 import { getModelsDir, pathExists } from './paths'
 import { getCurrentProjectName, readProjectDocument } from './service'
 import type { ProjectResult } from './types'
@@ -25,6 +34,11 @@ export type ImportModelParams = {
   sourcePath?: string
 }
 
+export type ImportModelData = ProjectModelEntry & {
+  /** OBJ 引用了、但没找到或格式不支持的材质文件和贴图 */
+  missingAssets: string[]
+}
+
 export type DeleteModelParams = {
   modelId: string
 }
@@ -37,7 +51,19 @@ export type ReadModelData = {
   data: ArrayBuffer
   fileName: string
   ext: string
+  /** OBJ 的 .mtl 和贴图 */
+  assets: { name: string; data: ArrayBuffer }[]
 }
+
+type PreparedModel = {
+  data: Buffer
+  assets: ModelAssetFile[]
+  missingAssets: string[]
+}
+
+const toMb = (bytes: number): number => bytes / (1024 * 1024)
+
+const FILE_TOO_LARGE_MESSAGE = `单个文件不能超过 ${toMb(MODEL_MAX_BYTES)}MB`
 
 const getParentWindow = (): BrowserWindow | null =>
   BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null
@@ -117,6 +143,30 @@ const pickSourcePath = async (sourcePath?: string): Promise<ProjectResult<string
   return ok(result.filePaths[0])
 }
 
+/** OBJ 连同找到的 .mtl、贴图一起导入：每个文件、整包分别限大小 */
+const prepareObjModel = async (sourcePath: string): Promise<ProjectResult<PreparedModel>> => {
+  const bundle = await collectObjBundle(sourcePath)
+  const mtlData = bundle.mtl ? Buffer.from(bundle.mtl.text, 'utf8') : null
+  const files = [
+    { name: path.basename(sourcePath), size: bundle.obj.byteLength },
+    ...(bundle.mtl && mtlData ? [{ name: bundle.mtl.name, size: mtlData.byteLength }] : []),
+    ...bundle.textures,
+  ]
+  const oversized = files.find((file) => file.size > MODEL_MAX_BYTES)
+  if (oversized) {
+    return fail('TOO_LARGE', `${oversized.name} 超过单个文件上限 ${toMb(MODEL_MAX_BYTES)}MB`)
+  }
+  if (files.reduce((sum, file) => sum + file.size, 0) > MODEL_BUNDLE_MAX_BYTES) {
+    return fail('TOO_LARGE', `模型和贴图合计不能超过 ${toMb(MODEL_BUNDLE_MAX_BYTES)}MB`)
+  }
+
+  const assets: ModelAssetFile[] = bundle.mtl && mtlData ? [{ name: bundle.mtl.name, data: mtlData }] : []
+  for (const texture of bundle.textures) {
+    assets.push({ name: texture.name, data: await fs.readFile(texture.sourcePath) })
+  }
+  return ok({ data: bundle.obj, assets, missingAssets: bundle.missing })
+}
+
 export const listModels = async (): Promise<ProjectResult<ProjectModelEntry[]>> => {
   try {
     const project = requireOpenProject()
@@ -132,7 +182,8 @@ export const listModels = async (): Promise<ProjectResult<ProjectModelEntry[]>> 
       if (!isAllowedModelFileName(entry.name)) continue
       const full = path.join(modelsDir, entry.name)
       const stat = await fs.stat(full)
-      models.push(toEntry(entry.name, stat.size))
+      const assetsSize = await getModelAssetsSize(modelsDir, entry.name)
+      models.push(toEntry(entry.name, stat.size + assetsSize))
     }
     models.sort((a, b) => a.fileName.localeCompare(b.fileName, 'zh-CN'))
     return ok(models)
@@ -143,7 +194,7 @@ export const listModels = async (): Promise<ProjectResult<ProjectModelEntry[]>> 
 
 export const importModel = async (
   params: ImportModelParams = {},
-): Promise<ProjectResult<ProjectModelEntry>> => {
+): Promise<ProjectResult<ImportModelData>> => {
   try {
     const project = requireOpenProject()
     if (!project.ok) return project
@@ -160,17 +211,28 @@ export const importModel = async (
     const stat = await fs.stat(sourcePath)
     if (!stat.isFile()) return fail('INVALID_FORMAT', '仅支持 GLB、OBJ')
     if (stat.size > MODEL_MAX_BYTES) {
-      return fail('TOO_LARGE', '文件不能超过 10MB')
+      return fail('TOO_LARGE', FILE_TOO_LARGE_MESSAGE)
     }
+
+    const prepared = extWithoutDot(baseName) === 'obj' ? await prepareObjModel(sourcePath) : null
+    if (prepared && !prepared.ok) return prepared
 
     const modelsDir = await ensureModelsDir(project.data)
     const existing = (await fs.readdir(modelsDir)).filter((name) => isAllowedModelFileName(name))
     const fileName = allocateUniqueFileName(baseName, existing)
     const destPath = path.join(modelsDir, fileName)
-    await fs.copyFile(sourcePath, destPath)
+    let sizeBytes = stat.size
+    if (prepared) {
+      // 附件先写：模型文件出现时附件已经齐了（热备、界面都按模型文件认）
+      await writeModelAssets(modelsDir, fileName, prepared.data.assets)
+      await fs.writeFile(destPath, prepared.data.data)
+      sizeBytes = prepared.data.assets.reduce((sum, asset) => sum + asset.data.byteLength, prepared.data.data.byteLength)
+    } else {
+      await fs.copyFile(sourcePath, destPath)
+    }
     emitProjectFileEvent({ kind: 'model-import', projectName: project.data, fileName })
 
-    return ok(toEntry(fileName, stat.size))
+    return ok({ ...toEntry(fileName, sizeBytes), missingAssets: prepared?.data.missingAssets ?? [] })
   } catch (err) {
     return fail('MODELS_IMPORT_FAILED', err instanceof Error ? err.message : String(err))
   }
@@ -192,11 +254,13 @@ export const deleteModel = async (
     }
 
     const fileName = modelId.slice(MODELS_PREFIX.length)
-    const fullPath = path.join(getModelsDir(project.data), fileName)
+    const modelsDir = getModelsDir(project.data)
+    const fullPath = path.join(modelsDir, fileName)
     if (!(await pathExists(fullPath))) {
       return fail('NOT_FOUND', `模型不存在: ${fileName}`)
     }
     await fs.unlink(fullPath)
+    await removeModelAssets(modelsDir, fileName)
     emitProjectFileEvent({ kind: 'model-delete', projectName: project.data, fileName })
     return ok(null)
   } catch (err) {
@@ -215,16 +279,19 @@ export const readModel = async (
     if (!modelId) return fail('INVALID_MODEL_ID', '模型路径非法')
 
     const fileName = modelId.slice(MODELS_PREFIX.length)
-    const fullPath = path.join(getModelsDir(project.data), fileName)
+    const modelsDir = getModelsDir(project.data)
+    const fullPath = path.join(modelsDir, fileName)
     if (!(await pathExists(fullPath))) {
       return fail('NOT_FOUND', `模型不存在: ${fileName}`)
     }
 
     const buf = await fs.readFile(fullPath)
+    const assets = await readModelAssets(modelsDir, fileName)
     return ok({
       data: bufferToArrayBuffer(buf),
       fileName,
       ext: extWithoutDot(fileName),
+      assets: assets.map((asset) => ({ name: asset.name, data: bufferToArrayBuffer(asset.data) })),
     })
   } catch (err) {
     return fail('MODELS_READ_FAILED', err instanceof Error ? err.message : String(err))

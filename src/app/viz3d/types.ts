@@ -51,6 +51,8 @@ export type LoadModelOptions = {
   targetSize?: number;
   format?: ModelFormat;
   name?: string;
+  /** OBJ 的 .mtl 和贴图，File.name 与 mtllib、MTL 贴图项里的文件名一致 */
+  assets?: readonly File[];
 };
 
 export type ModelLoadedPayload =

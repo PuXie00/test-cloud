@@ -21,7 +21,6 @@ import { HoistPointVisual } from "./HoistPointVisual";
 import { computeHoistPointScale, resolveHoistPointLocalPosition } from "./hoist-point-layout";
 import {
   cloneHierarchy,
-  disposeNodeHierarchy,
   getNodeMetadata,
   getWorldBounds,
   getWorldPosition,
@@ -356,7 +355,8 @@ export class SceneObject implements Disposable {
 
   private detachVisual(): void {
     if (this.usesModelVisual) {
-      disposeNodeHierarchy(this.visual);
+      // 材质、贴图与模型模板共用，由 ModelLoader 清理模板时销毁
+      this.visual.dispose(false, false);
     } else {
       // 预设：销毁几何与朝向标记；material 单独 dispose（mesh.dispose 勿带材质）
       this.bodyMesh?.dispose(false, false);
@@ -379,25 +379,10 @@ export class SceneObject implements Disposable {
     resetRuntimePivot(this.runtimePivot);
   }
 
-  private forEachStandardMaterial(fn: (material: StandardMaterial) => void): void {
-    if (this.presetMaterial) {
-      fn(this.presetMaterial);
-      return;
-    }
-    this.visual.getChildMeshes(false).forEach((mesh) => {
-      const material = mesh.material;
-      if (material && material.getClassName() === "StandardMaterial") {
-        fn(material as StandardMaterial);
-      }
-    });
-  }
-
   private refreshColor(): void {
-    // 模型保持自己的颜色；运行状态由驱动单元标签的颜色表达（见 DriveUnitLabels.setStatus）
-    const base = hexStringToColor3(this.config.color);
-    this.forEachStandardMaterial((material) => {
-      applyMaterialBaseColor(material, base);
-    });
+    // 模型保持自己的颜色和贴图（材质与模型模板、其它物体共用）；运行状态由驱动单元标签的颜色表达（见 DriveUnitLabels.setStatus）
+    if (!this.presetMaterial) return;
+    applyMaterialBaseColor(this.presetMaterial, hexStringToColor3(this.config.color));
   }
 
   private clearHoistPoints(): void {

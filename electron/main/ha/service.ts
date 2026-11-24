@@ -28,7 +28,7 @@ import {
   type HaSyncScope,
 } from '../../../shared/ha/types'
 import type { ProjectFileEvent } from '../project/file-events'
-import { sha256Of, type HaFilesPort } from './files'
+import { modelBundleSha256, type HaFilesPort } from './files'
 import { HaTransport, type HaTransportOptions } from './transport'
 
 export type HaStartParams =
@@ -349,14 +349,17 @@ export class HaService {
     if (!project || !files) return
     for (const name of names) {
       try {
-        const data = await files.readModel(name)
-        if (!data || this.localProject?.id !== project.id) continue
+        const bundle = await files.readModel(name)
+        if (!bundle || this.localProject?.id !== project.id) continue
         const message: HaFileMessage = {
           type: 'model-file',
           projectId: project.id,
           name,
-          sha256: sha256Of(data),
-          data: data.toString('base64'),
+          sha256: modelBundleSha256(bundle),
+          data: bundle.data.toString('base64'),
+          ...(bundle.assets.length > 0
+            ? { assets: bundle.assets.map((asset) => ({ name: asset.name, data: asset.data.toString('base64') })) }
+            : {}),
         }
         const sent = await this.transport.send(targets, message)
         if (!sent) this.log(`模型 ${name} 没发出去`)
@@ -389,7 +392,11 @@ export class HaService {
       switch (message.type) {
         case 'model-file': {
           if (!this.scopeIncludes('models')) return
-          const written = await files.writeModel(message.name, Buffer.from(message.data, 'base64'), message.sha256)
+          const bundle = {
+            data: Buffer.from(message.data, 'base64'),
+            assets: (message.assets ?? []).map((asset) => ({ name: asset.name, data: Buffer.from(asset.data, 'base64') })),
+          }
+          const written = await files.writeModel(message.name, bundle, message.sha256)
           if (!written) {
             this.log(`模型 ${message.name} 校验没通过，没写入`)
             return

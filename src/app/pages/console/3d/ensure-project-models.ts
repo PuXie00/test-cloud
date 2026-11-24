@@ -10,7 +10,7 @@ export const loadProjectModel = async (
   modelId: string,
   engine: EngineLike,
 ): Promise<void> => {
-  const { data, fileName, ext } = unwrapResult(
+  const { data, fileName, ext, assets = [] } = unwrapResult(
     await getProjectAPI().models.read({ modelId }),
   );
   const file = new File([data], fileName, {
@@ -20,6 +20,7 @@ export const loadProjectModel = async (
     id: modelId,
     name: fileName,
     format: ext === "glb" ? "glb" : "obj",
+    assets: assets.map((asset) => new File([asset.data], asset.name)),
   });
 };
 

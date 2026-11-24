@@ -14,6 +14,7 @@ import {
   type ModelNativeSizeMm,
 } from "./model-native-size";
 import { disposeNodeHierarchy, getWorldBounds } from "../babylon/utils";
+import { importObjWithAssets } from "./obj-assets";
 
 type CacheEntry = {
   template: TransformNode;
@@ -158,7 +159,7 @@ export class ModelLoader {
     const name = opts.name ?? (typeof input === "string" ? input : input.name);
     const format = detectFormat(name, opts.format);
     void opts.targetSize;
-    const content = await this.parseInput(input, format, name);
+    const content = await this.parseInput(input, format, name, opts.assets ?? []);
     const template = buildCenteredTemplate(content, this.scene);
     return { template, format };
   }
@@ -167,11 +168,12 @@ export class ModelLoader {
     input: File | string,
     format: ModelFormat,
     name: string,
+    assets: readonly File[],
   ): Promise<TransformNode> {
     if (typeof input === "string") {
       return this.loadFromUrl(input);
     }
-    return this.loadFromFile(input, format, name);
+    return this.loadFromFile(input, format, name, assets);
   }
 
   private async loadFromUrl(url: string): Promise<TransformNode> {
@@ -184,11 +186,17 @@ export class ModelLoader {
    * Babylon picks loader plugins from the filename extension.
    * Named File + pluginExtension avoids "Unable to find a plugin to load blob:".
    */
-  private async loadFromFile(file: File, format: ModelFormat, name: string): Promise<TransformNode> {
+  private async loadFromFile(
+    file: File,
+    format: ModelFormat,
+    name: string,
+    assets: readonly File[],
+  ): Promise<TransformNode> {
     const named = await toNamedModelFile(file, format, name);
-    const result = await ImportMeshAsync(named, this.scene, {
-      pluginExtension: `.${format}`,
-    });
+    const result =
+      format === "obj" && assets.length > 0
+        ? await importObjWithAssets(this.scene, named, assets)
+        : await ImportMeshAsync(named, this.scene, { pluginExtension: `.${format}` });
     stripImportedAnimations(result);
     return wrapImportedContent(result, this.scene, name);
   }

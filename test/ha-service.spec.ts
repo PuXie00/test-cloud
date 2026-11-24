@@ -1,9 +1,9 @@
-import { createHash } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CppAckResult } from '../shared/csocket/types'
 import { classifyHaCommand, isHaSyncedCommand } from '../shared/ha/command-class'
 import { HA_MESSAGE_VERSION, parseHaMessage, type HaForwardEnvelope } from '../shared/ha/protocol'
 import { normalizeHaSettings, validateHaSettings, type HaSettings, type HaState } from '../shared/ha/types'
+import { modelBundleSha256, modelBundleSize, type HaModelBundle } from '../electron/main/ha/files'
 import { HaService, type HaStartParams } from '../electron/main/ha/service'
 import { HaTransport } from '../electron/main/ha/transport'
 import { listLocalIpv4 } from '../electron/main/ha/storage'
@@ -555,22 +555,35 @@ describe('HaService busy devices and action reports', () => {
 describe('HaService model and cover files', () => {
   type Files = Map<string, Buffer>
   const filesPort = (files: Files, cover: { fileName: string; data: Buffer } | null = null) => {
-    const sha = (data: Buffer) => createHash('sha256').update(data).digest('hex')
     const state = { cover, writes: [] as string[], deletes: [] as string[] }
+    const assets = new Map<string, HaModelBundle['assets']>()
+    const bundleOf = (name: string): HaModelBundle | null => {
+      const data = files.get(name)
+      return data ? { data, assets: assets.get(name) ?? [] } : null
+    }
     return {
       state,
+      assets,
       port: {
         listModels: async () =>
-          [...files].map(([name, data]) => ({ name, sha256: sha(data), size: data.byteLength })).sort((a, b) => a.name.localeCompare(b.name)),
-        readModel: async (name: string) => files.get(name) ?? null,
-        writeModel: async (name: string, data: Buffer, sha256: string) => {
-          if (sha(data) !== sha256) return false
-          files.set(name, data)
+          [...files.keys()]
+            .map((name) => {
+              const bundle = bundleOf(name)!
+              return { name, sha256: modelBundleSha256(bundle), size: modelBundleSize(bundle) }
+            })
+            .sort((a, b) => a.name.localeCompare(b.name)),
+        readModel: async (name: string) => bundleOf(name),
+        writeModel: async (name: string, bundle: HaModelBundle, sha256: string) => {
+          if (modelBundleSha256(bundle) !== sha256) return false
+          files.set(name, bundle.data)
+          if (bundle.assets.length > 0) assets.set(name, bundle.assets)
+          else assets.delete(name)
           state.writes.push(name)
           return true
         },
         deleteModel: async (name: string) => {
           files.delete(name)
+          assets.delete(name)
           state.deletes.push(name)
         },
         readCover: async () => state.cover,
@@ -658,6 +671,46 @@ describe('HaService model and cover files', () => {
     await vi.waitFor(() => expect(standbyFiles.has('new.glb')).toBe(false))
     primary.onProjectFileEvent({ kind: 'saved', projectName: PROJECT.name, coverWritten: true })
     await vi.waitFor(() => expect(sf.state.cover?.data.toString()).toBe('png'))
+  })
+
+  it('sends an OBJ with its material and textures as one bundle', async () => {
+    const primaryFiles: Files = new Map()
+    const standbyFiles: Files = new Map()
+    const { primary, standby, pf, sf } = await pair(primaryFiles, standbyFiles)
+    const textured = [
+      { name: 'box.mtl', data: Buffer.from('newmtl m\nmap_kd wood.png') },
+      { name: 'wood.png', data: Buffer.from('png') },
+    ]
+    standbyFiles.set('box.obj', Buffer.from('mtllib box.mtl'))
+    sf.assets.set('box.obj', textured)
+    standby.onProjectFileEvent({ kind: 'model-import', projectName: PROJECT.name, fileName: 'box.obj' })
+    await vi.waitFor(() => expect(primaryFiles.get('box.obj')?.toString()).toBe('mtllib box.mtl'))
+    expect(pf.assets.get('box.obj')?.map((asset) => [asset.name, asset.data.toString()])).toEqual([
+      ['box.mtl', 'newmtl m\nmap_kd wood.png'],
+      ['wood.png', 'png'],
+    ])
+
+    // 只换了贴图也算不同：核对时按整包摘要比
+    pf.assets.set('box.obj', [textured[0], { name: 'wood.png', data: Buffer.from('png-2') }])
+    await standby.syncModels('primary')
+    await vi.waitFor(() => expect(sf.assets.get('box.obj')?.[1]?.data.toString()).toBe('png-2'))
+
+    primary.onProjectFileEvent({ kind: 'model-delete', projectName: PROJECT.name, fileName: 'box.obj' })
+    await vi.waitFor(() => expect(sf.assets.has('box.obj')).toBe(false))
+    expect(standbyFiles.has('box.obj')).toBe(false)
+  })
+
+  it('drops a model bundle with an unsafe asset name', () => {
+    const message = {
+      type: 'model-file',
+      projectId: PROJECT.id,
+      name: 'box.obj',
+      sha256: 'x',
+      data: '',
+      assets: [{ name: '../evil.png', data: '' }],
+    }
+    expect(parseHaMessage(message)).toBeNull()
+    expect(parseHaMessage({ ...message, assets: [{ name: 'wood.png', data: '' }] })).not.toBeNull()
   })
 
   it('does not sync files when models are out of scope', async () => {

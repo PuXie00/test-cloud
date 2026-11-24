@@ -3,6 +3,7 @@
  * 版本由前端管，放在 hello 里；两边不一致就只连着、不同步（方案 7.1）。
  */
 import type { CsocketParamHeardItem } from '../csocket/types'
+import { isSafeAssetFileName } from '../project/model-files'
 import type { HaProjectInfo, HaRole, HaSyncScope } from './types'
 
 /** 热备消息的版本；消息格式改了就加一 */
@@ -106,9 +107,19 @@ const APP_MESSAGE_TYPES = new Set<string>(['sync-hello', 'pull', 'full', 'change
 /** 主进程不解析内容，只认出类型和工程 id，转给界面 */
 export type HaRelayMessage = { type: 'app'; message: HaAppMessage }
 
-/** 模型、封面文件（方案 5.6）：主进程之间直接传，大的由传输层切块；data 是 base64 */
+/**
+ * 模型、封面文件（方案 5.6）：主进程之间直接传，大的由传输层切块；data 是 base64。
+ * model-file 按模型包传：assets 是 OBJ 的 .mtl、贴图，sha256 是整包的摘要（没有附件时就是主文件的）。
+ */
 export type HaFileMessage =
-  | { type: 'model-file'; projectId: string; name: string; sha256: string; data: string }
+  | {
+      type: 'model-file'
+      projectId: string
+      name: string
+      sha256: string
+      data: string
+      assets?: { name: string; data: string }[]
+    }
   | { type: 'model-delete'; projectId: string; name: string }
   /** 备机核对完发给主机：本机的模型清单；prefer 是同名不同内容时用哪边的 */
   | {
@@ -132,7 +143,20 @@ const isFileMessage = (payload: Record<string, unknown>): boolean => {
   if (typeof payload.projectId !== 'string' || !payload.projectId) return false
   switch (payload.type) {
     case 'model-file':
-      return typeof payload.name === 'string' && typeof payload.sha256 === 'string' && typeof payload.data === 'string'
+      return (
+        typeof payload.name === 'string' &&
+        typeof payload.sha256 === 'string' &&
+        typeof payload.data === 'string' &&
+        (payload.assets === undefined ||
+          (Array.isArray(payload.assets) &&
+            payload.assets.every(
+              (asset) =>
+                isRecord(asset) &&
+                typeof asset.name === 'string' &&
+                isSafeAssetFileName(asset.name) &&
+                typeof asset.data === 'string',
+            )))
+      )
     case 'model-delete':
       return typeof payload.name === 'string'
     case 'model-manifest':

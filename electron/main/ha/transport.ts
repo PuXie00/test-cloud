@@ -18,7 +18,7 @@ export type HaTransportOptions = {
   ackTimeoutMs: number
   /** 收的一方：一个传输这么久没有新块就丢掉 */
   idleTimeoutMs: number
-  /** 还原后的最大字节数，防止坏数据撑爆内存 */
+  /** 还原后的最大字节数，防止坏数据撑爆内存；要装得下 100MB 的模型包（base64 后约 134MB） */
   maxMessageBytes: number
 }
 
@@ -27,7 +27,7 @@ export const DEFAULT_HA_TRANSPORT_OPTIONS: HaTransportOptions = {
   chunkChars: 768 * 1024,
   ackTimeoutMs: 15_000,
   idleTimeoutMs: 60_000,
-  maxMessageBytes: 64 * 1024 * 1024,
+  maxMessageBytes: 160 * 1024 * 1024,
 }
 
 type PendingAck = {
