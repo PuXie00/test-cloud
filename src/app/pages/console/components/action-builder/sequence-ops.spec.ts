@@ -25,6 +25,7 @@ import {
   writeSegmentProfiles,
   upsertPoseBlock,
   upsertSetEnabledBlock,
+  writePoseValues,
 } from "./sequence-ops";
 
 const origin: ModelPose = { v1: 0, v2: 0, v3: 0 };
@@ -558,6 +559,45 @@ describe("applyPoseAxisWrite", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(poseOf(result.sequence, "pose-b").pose.v3).toBe(9);
+  });
+});
+
+describe("writePoseValues", () => {
+  it("writes each pose its own values, several axes at once, clamped and rounded", () => {
+    const result = writePoseValues(
+      multiPoseSequence,
+      [
+        { blockId: "pose-a", values: { v1: 99, v2: 3.14159 } },
+        { blockId: "pose-b", values: { v1: 42.26 } },
+      ],
+      { objectInfo: multiPoseObjectInfo },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(poseOf(result.sequence, "pose-a").pose).toEqual({ v1: 15, v2: 3.1, v3: 0 });
+    expect(poseOf(result.sequence, "pose-b").pose).toEqual({ v1: 42.3, v2: 5, v3: 2 });
+  });
+
+  it("turns a pass-through axis into a set one", () => {
+    const passing: ActionSequenceConfig = {
+      ...multiPoseSequence,
+      blocks: [{ id: "pose-a", kind: "pose", objectId: 1, atMs: 100, pose: { v2: 1 } }],
+    };
+    const result = writePoseValues(passing, [{ blockId: "pose-a", values: { v1: 7 } }], {
+      objectInfo: multiPoseObjectInfo,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(poseOf(result.sequence, "pose-a").pose).toEqual({ v1: 7, v2: 1 });
+  });
+
+  it("skips axes the object doesn't have and returns the same sequence when nothing changes", () => {
+    const result = writePoseValues(
+      multiPoseSequence,
+      [{ blockId: "pose-b", values: { v2: 9, v1: 20 } }],
+      { objectInfo: multiPoseObjectInfo },
+    );
+    expect(result).toEqual({ ok: true, sequence: multiPoseSequence });
   });
 });
 

@@ -58,6 +58,8 @@ type DragState = {
   startOffsetY: number;
   pointerId: number;
   additive: boolean;
+  /** Ctrl / ⌘ 点：动作页加选 / 减选 */
+  toggle: boolean;
   /** 框选只在起点所在格里进行 */
   cellId: ViewportCellId | null;
 };
@@ -100,12 +102,16 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
   const { addObjectFromShape, bindMotorsFromAxis } = useProjectStore();
   const { replaceSelection, setTreeFocus, clearSelection } = useSelection();
   const buildMode = activeNav === "devices";
+  // 动作页：Ctrl 点加选，双击物体跳到它最近的位姿
+  const sequencesNav = activeNav === "sequences";
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<DragState | null>(null);
   /** 测量模式下正在画 / 拖标尺的指针 */
   const measurePointerRef = useRef<number | null>(null);
+  /** 按在动作页位姿手柄上的指针 */
+  const poseHandlePointerRef = useRef<number | null>(null);
   /** 光标在画布上的位置（画布坐标）；离开画布为 null，快捷键作用于光标所在格 */
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
   const lastContextMenuPickMmRef = useRef<{ x: number; z: number } | null>(null);
@@ -169,6 +175,7 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
     };
     const handlePointerLeave = () => {
       pointerRef.current = null;
+      engine.clearPoseHandleHover();
     };
     canvas.addEventListener("pointermove", handlePointerMove);
     canvas.addEventListener("pointerleave", handlePointerLeave);
@@ -366,6 +373,13 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
       return;
     }
 
+    // 动作页位姿手柄：按在手柄上就归手柄（拖位姿），不框选、不点选
+    if (engine.poseHandlePointerDown(event.nativeEvent.offsetX, event.nativeEvent.offsetY, event.pointerId)) {
+      poseHandlePointerRef.current = event.pointerId;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      return;
+    }
+
     if (engine.hitsTransformHandle(event.nativeEvent.offsetX, event.nativeEvent.offsetY)) {
       return;
     }
@@ -377,12 +391,27 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
       startOffsetY: event.nativeEvent.offsetY,
       pointerId: event.pointerId,
       additive: event.shiftKey,
+      toggle: event.ctrlKey || event.metaKey,
       cellId: engine.getCellIdAt(event.nativeEvent.offsetX, event.nativeEvent.offsetY),
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (poseHandlePointerRef.current === event.pointerId) {
+      // Shift 细调
+      engine.poseHandlePointerMove(
+        event.nativeEvent.offsetX,
+        event.nativeEvent.offsetY,
+        event.pointerId,
+        event.shiftKey,
+      );
+      return;
+    }
+    if (!dragRef.current && measurePointerRef.current === null) {
+      // 没按着：只更新手柄悬停
+      engine.poseHandlePointerMove(event.nativeEvent.offsetX, event.nativeEvent.offsetY, event.pointerId, false);
+    }
     if (measurePointerRef.current === event.pointerId) {
       engine.measurePointerMove(event.nativeEvent.offsetX, event.nativeEvent.offsetY, {
         pointerId: event.pointerId,
@@ -426,7 +455,9 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
       dy: event.clientY - drag.startY,
     });
 
-    if (action.kind === "boxSelect") {
+    if (action.kind === "pick" && drag.toggle && sequencesNav) {
+      engine.pickAt(event.nativeEvent.offsetX, event.nativeEvent.offsetY, "toggle", false);
+    } else if (action.kind === "boxSelect") {
       engine.pickInRect(
         toCanvasRelativeRect(
           drag.startOffsetX,
@@ -444,10 +475,23 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
     clearDrag();
   };
 
+  /** 手柄的指针抬起或被打断：拖完（或取消）并放开捕获 */
+  const releasePoseHandlePointer = (event: ReactPointerEvent<HTMLCanvasElement>, cancelled: boolean): boolean => {
+    if (poseHandlePointerRef.current !== event.pointerId) return false;
+    poseHandlePointerRef.current = null;
+    if (cancelled) engine.cancelPoseHandleDrag();
+    else engine.poseHandlePointerUp(event.pointerId);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    return true;
+  };
+
   const handlePointerUp = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     if (!shouldFinishViewportDrag(event.button)) {
       return;
     }
+    if (releasePoseHandlePointer(event, false)) return;
     if (measurePointerRef.current === event.pointerId) {
       measurePointerRef.current = null;
       engine.measurePointerUp(event.nativeEvent.offsetX, event.nativeEvent.offsetY, {
@@ -471,6 +515,7 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
   };
 
   const handlePointerCancel = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (releasePoseHandlePointer(event, true)) return;
     if (abortMeasurePointer(event.pointerId)) return;
     const drag = dragRef.current;
     if (!drag || event.pointerId !== drag.pointerId) {
@@ -483,6 +528,7 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
   };
 
   const handleLostPointerCapture = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (releasePoseHandlePointer(event, true)) return;
     if (abortMeasurePointer(event.pointerId)) return;
     const drag = dragRef.current;
     if (!drag || event.pointerId !== drag.pointerId) {
@@ -562,6 +608,11 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
     ],
   );
 
+  const handleCanvasDoubleClick = (event: ReactMouseEvent<HTMLCanvasElement>) => {
+    if (!sequencesNav || event.button !== 0) return;
+    engine.doubleClickAt(event.nativeEvent.offsetX, event.nativeEvent.offsetY);
+  };
+
   const handleCanvasContextMenu = (event: ReactMouseEvent<HTMLCanvasElement>) => {
     event.preventDefault();
     event.stopPropagation();
@@ -602,6 +653,7 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
         onLostPointerCapture={handleLostPointerCapture}
+        onDoubleClick={handleCanvasDoubleClick}
         onContextMenu={handleCanvasContextMenu}
         onDragOver={handleDragOver}
         onDrop={handleDrop}

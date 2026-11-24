@@ -32,6 +32,12 @@ export type EditorDockMode = "sequence" | "empty";
 
 export type ProgramItemInput = { kind: "sequence"; refId: number };
 
+/** 3D 手柄开始拖时每台物体改哪个位姿；blockId 为 null 时在 atMs 给它加一个 */
+export type PoseHandleDragTarget = { objectId: number; blockId: string | null; atMs: number };
+
+/** 3D 手柄拖到的值（绝对值，写入时按行程截断） */
+export type PoseHandleDragUpdate = { objectId: number; values: Partial<Record<VirtualAxisId, number>> };
+
 /** 全部保存的结果：blocked = 待修复、running = 对应动作正在运行，这些都留着草稿 */
 export type SaveAllResult = { saved: number; blocked: string[]; running: string[] };
 
@@ -128,6 +134,18 @@ export type ActionBuilderContextValue = {
   /** 曲线上拖位姿的值：这些位姿的这根轴都加 deltaValue（相对拖动开始） */
   handleDragPoseAxis: (blockIds: readonly string[], axis: VirtualAxisId, deltaValue: number) => void;
   handleDragPoseAxisEnd: () => void;
+  /**
+   * 3D 里点选 / 框选物体：游标处有它们的位姿就选中这些位姿，没有就只选物体。
+   * selectionChanged 为这次点选改了全局选中（随后同步回来时不清位姿）
+   */
+  handleViewportObjectsPick: (objectIds: number[], selectionChanged: boolean) => void;
+  /** 3D 里双击物体：游标跳到它最近的位姿并选中 */
+  handleViewportObjectDoubleClick: (objectId: number) => void;
+  /** 3D 位姿手柄开始拖：这一刻没有位姿的先加；返回 false 表示这次拖不了 */
+  handlePoseHandleDragStart: (targets: readonly PoseHandleDragTarget[]) => boolean;
+  handlePoseHandleDrag: (updates: readonly PoseHandleDragUpdate[]) => void;
+  /** 松手（commit）或取消（回到拖动前），整次拖动一步撤销 */
+  handlePoseHandleDragEnd: (commit: boolean) => void;
   handleResizeDynamicPreset: (blockId: string, startMs: number, endMs: number) => boolean;
   handleUpdateSegmentSettings: (
     fromRef: string,

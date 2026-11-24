@@ -412,6 +412,47 @@ export const applyPoseAxisWrite = (
   return tryFinalize(next, options);
 };
 
+/** 给一个位姿块写几根轴的值（绝对值） */
+export type PoseValueWrite = {
+  blockId: string;
+  values: Partial<Record<VirtualAxisId, number>>;
+};
+
+/**
+ * 3D 里拖位姿：每个位姿块写各自的值，一次可写几根轴（摇杆同时改虚轴 2、3）。
+ * 不设定（经过）的轴写了就变成设定；没启用的轴不写；按行程截断，取到工程精度。
+ */
+export const writePoseValues = (
+  sequence: ActionSequenceConfig,
+  writes: readonly PoseValueWrite[],
+  options?: PoseAxisWriteOptions,
+): EditResult => {
+  const byBlock = new Map(writes.map((write) => [write.blockId, write.values]));
+  if (byBlock.size === 0) return { ok: true, sequence };
+
+  let changed = false;
+  const next = cloneSequence(sequence);
+  for (const block of next.blocks) {
+    const values = byBlock.get(block.id);
+    if (!values || block.kind !== "pose") continue;
+    const info = options?.objectInfo?.(block.objectId);
+    const writable = resolveWriteAxes(info?.enabledAxes);
+    const pose = { ...block.pose };
+    for (const axis of ALL_VIRTUAL_AXES) {
+      const value = values[axis];
+      if (value === undefined || !Number.isFinite(value) || !writable.includes(axis)) continue;
+      const range = info?.rangeByAxis?.[axis];
+      const nextValue = roundProjectCoordinate(clampNumeric(value, range?.min, range?.max));
+      if (pose[axis] === nextValue) continue;
+      pose[axis] = nextValue;
+      changed = true;
+    }
+    block.pose = pose;
+  }
+  if (!changed) return { ok: true, sequence };
+  return tryFinalize(next, options);
+};
+
 /**
  * 取当前：把物体的实时位置写进位姿里设定了值的轴。
  * 经过（不设定）的轴不写，按行程截断，取到工程精度。

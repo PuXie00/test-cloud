@@ -14,7 +14,7 @@ import { resolveVirtualAxisTransform } from "../telemetry/virtual-axis-mapper";
 import { createPbrStandardMaterial } from "../materials/pbr-material";
 import { applyRuntimePivot } from "../objects/runtime-pivot";
 import type { SceneObjectHandle } from "../objects/SceneObjectRegistry";
-import type { VirtualAxisValues, Viz3DColorMap } from "../types";
+import type { SceneObjectConfig, VirtualAxisValues, Viz3DColorMap } from "../types";
 
 const centerOf = (bounds: WorldBounds): Vector3 =>
   new Vector3(
@@ -30,6 +30,8 @@ export class GoShadow {
   private line: LinesMesh;
   private disposed = false;
 
+  private readonly config: SceneObjectConfig;
+
   constructor(
     private readonly handle: SceneObjectHandle,
     target: VirtualAxisValues,
@@ -38,6 +40,7 @@ export class GoShadow {
     color?: number,
   ) {
     const config = handle.getConfig();
+    this.config = config;
     const transform = resolveVirtualAxisTransform(config, target);
     const ghostColor = color ?? colors.secondary;
 
@@ -79,6 +82,17 @@ export class GoShadow {
   /** 挂载子物体的残影挂在父物体残影（或父物体本身）的运动枢轴下 */
   get attachmentPivot(): TransformNode {
     return this.pivot;
+  }
+
+  /** 换个目标：只挪根节点和运动枢轴；物体已被换掉（配置不同）时返回 false，要重建 */
+  setTarget(target: VirtualAxisValues): boolean {
+    if (this.disposed) return false;
+    const config = this.handle.getConfig();
+    if (config !== this.config) return false;
+    const transform = resolveVirtualAxisTransform(config, target);
+    this.root.position.set(transform.position.x, transform.position.y, transform.position.z);
+    applyRuntimePivot(this.pivot, transform);
+    return true;
   }
 
   setParentNode(parent: TransformNode | null): void {

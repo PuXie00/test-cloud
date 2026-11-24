@@ -31,6 +31,7 @@ import { ProjectLeaveGuardProvider } from "./hooks/project-leave-guard-provider"
 import { RightSidebar, isRightPanelTabAllowed, type RightPanelTab } from "./components/RightSidebar";
 import { TopBar } from "./components/TopBar";
 import { Viz3DActionPreviewSync } from "./3d/Viz3DActionPreviewSync";
+import { Viz3DPoseHandleSync } from "./3d/Viz3DPoseHandleSync";
 import { Viz3DProvider } from "./3d/Viz3DProvider";
 import { Viz3DObjectSync } from "./3d/Viz3DObjectSync";
 import { Viz3DProjectModelsSync } from "./3d/Viz3DProjectModelsSync";
@@ -271,6 +272,7 @@ const ConsoleInner = () => {
               <Viz3DHoistTravelSync />
               <Viz3DSequencePreviewSync />
               <Viz3DActionPreviewSync />
+              <Viz3DPoseHandleSync />
               <Viz3DVirtualAxisLabelSync />
               <Viz3DGoShadowSync />
               <Viz3DMembershipDimSync />

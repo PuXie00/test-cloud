@@ -106,6 +106,8 @@ import {
   upsertPoseBlock,
   upsertSetEnabledBlock,
   type UpsertResult,
+  writePoseValues,
+  type PoseValueWrite,
   replaceTimelineBlock,
   resizeDynamicPreset,
   shiftTimelineBlocks,
@@ -149,6 +151,7 @@ import {
   shiftMarkers,
 } from "./marker-ops";
 import { clampCursorMs } from "./timeline/timeline-view-extent";
+import { nearestPoseBlock, poseBlocksAtCursor } from "./pose-handle-targets";
 import {
   clampTimelinePxPerSecond,
   renameSequenceInProgramTree,
@@ -162,6 +165,8 @@ import {
 import type {
   ActionBuilderContextValue,
   EditorDockMode,
+  PoseHandleDragTarget,
+  PoseHandleDragUpdate,
   ProgramItemInput,
   SaveAllResult,
 } from "./action-builder-context-types";
@@ -268,6 +273,10 @@ const changedSequenceIds = (from: EditorSnapshot, to: EditorSnapshot): number[] 
     (id) => before.get(id) !== after.get(id),
   );
 };
+
+/** 物体跟随的比对键：和顺序无关（全局选中同步回来时顺序可能变） */
+const objectFollowKey = (objectIds: readonly number[]): string =>
+  [...objectIds].sort((left, right) => left - right).join(",");
 
 const UNREPAIRED_SAVE_MESSAGE = "动作序列有待修复的问题，请先修复再保存";
 const EMPTY_SAVE_MESSAGE = "动作序列为空，请先编排再保存";
@@ -730,12 +739,12 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
    */
   const followedObjectsKeyRef = useRef<string | null>(null);
   const handleObjectsFollow = useCallback((objectIds: number[]) => {
-    followedObjectsKeyRef.current = objectIds.join(",");
+    followedObjectsKeyRef.current = objectFollowKey(objectIds);
     setSelectedObjectIds(objectIds);
   }, []);
 
   const handleObjectsSelect = useCallback((objectIds: number[]) => {
-    const followed = followedObjectsKeyRef.current === objectIds.join(",");
+    const followed = followedObjectsKeyRef.current === objectFollowKey(objectIds);
     followedObjectsKeyRef.current = null;
     if (followed) return;
     setSelectedObjectIds((prev) => {
@@ -1415,6 +1424,136 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       reportUpsert(outcome, "位姿", at);
     },
     [selectedSequenceId, sequence, cursorMs, defaultPosesAtCursor, sequenceEditOptions],
+  );
+
+  /**
+   * 3D 里点选 / 框选物体：游标处有这些物体的位姿就选中这些位姿（右侧显示位姿属性），没有就只选物体。
+   * selectionChanged：这次点选改了全局选中，随后同步回 handleObjectsSelect 时要认出是这一次、不清位姿。
+   */
+  const handleViewportObjectsPick = useCallback(
+    (objectIds: number[], selectionChanged: boolean) => {
+      if (!sequence) return;
+      const poses = poseBlocksAtCursor(sequence, objectIds, cursorMs);
+      if (poses.length === 0) return;
+      if (selectionChanged) handleObjectsFollow(objectIds);
+      setSelection(selectionFromBlockIds(poses.map((block) => block.id)));
+      setActiveRightTab((tab) => (tab === "manual" ? tab : "selection"));
+      setSequenceMissingHint(false);
+    },
+    [sequence, cursorMs, handleObjectsFollow],
+  );
+
+  /** 3D 里双击物体：游标跳到它最近的位姿并选中 */
+  const handleViewportObjectDoubleClick = useCallback(
+    (objectId: number) => {
+      if (!sequence) return;
+      const block = nearestPoseBlock(sequence, objectId, cursorMs);
+      if (!block) {
+        toast.info(`${getTimelineObject(objectId)?.name ?? `物体 ${objectId}`} 在这条序列里还没有位姿`);
+        return;
+      }
+      setCursorMs(clampCursorMs(block.atMs));
+      setSelection({ kind: "block", blockId: block.id });
+      setActiveRightTab((tab) => (tab === "manual" ? tab : "selection"));
+      setSequenceMissingHint(false);
+    },
+    [sequence, cursorMs, getTimelineObject],
+  );
+
+  /** 3D 拖位姿：拖动前的序列（取消时回到这里）、补上位姿之后的序列、每台物体改哪个位姿块 */
+  const poseHandleDragRef = useRef<{
+    origin: ActionSequenceConfig;
+    base: ActionSequenceConfig;
+    blockIds: Map<number, string>;
+  } | null>(null);
+
+  /**
+   * 3D 里开始拖位姿手柄：这一刻还没有位姿的物体先加一个（值取这一刻序列的样子，像自动关键帧），
+   * 加位姿和整个拖动记成一步撤销。一台都改不了时返回 false（引擎取消这次拖动）。
+   */
+  const handlePoseHandleDragStart = useCallback(
+    (targets: readonly PoseHandleDragTarget[]): boolean => {
+      if (selectedSequenceId === null || !canEditRef.current) return false;
+      const applied = motionRef.current.sequences.find((item) => item.id === selectedSequenceId);
+      if (!applied) return false;
+      const origin = draftsRef.current.get(selectedSequenceId) ?? applied;
+      let base = origin;
+      const blockIds = new Map<number, string>();
+      const refused: string[] = [];
+      for (const target of targets) {
+        if (target.blockId !== null) {
+          if (base.blocks.some((block) => block.id === target.blockId && block.kind === "pose")) {
+            blockIds.set(target.objectId, target.blockId);
+          }
+          continue;
+        }
+        const atMs = snapTimeMs(target.atMs);
+        const pose = defaultPosesAtCursor(base, [target.objectId], atMs).get(target.objectId) ?? {};
+        const result = upsertPoseBlock(
+          base,
+          { id: nextId("blk"), kind: "pose", objectId: target.objectId, atMs, pose },
+          sequenceEditOptions,
+        );
+        if (!result.ok) {
+          refused.push(getTimelineObject(target.objectId)?.name ?? `物体 ${target.objectId}`);
+          continue;
+        }
+        base = result.sequence;
+        blockIds.set(target.objectId, result.blockId);
+      }
+      if (refused.length > 0) {
+        toast.warning(`${refused.join("、")} 在这一刻已有其他动作，加不了位姿`);
+      }
+      if (blockIds.size === 0) return false;
+      poseHandleDragRef.current = { origin, base, blockIds };
+      setIsDraggingTimeline(true);
+      beginDragStep();
+      if (base !== origin) updateSelectedSequence(() => base);
+      // 播放停下时游标可能不在整格上：对到这一格，3D 显示的就是正在改的这一刻
+      setCursorMs((ms) => clampCursorMs(ms));
+      return true;
+    },
+    [
+      selectedSequenceId,
+      defaultPosesAtCursor,
+      sequenceEditOptions,
+      getTimelineObject,
+      beginDragStep,
+      updateSelectedSequence,
+    ],
+  );
+
+  /** 3D 里拖位姿手柄中：每台物体写拖到的值（相对拖动开始；松手前不跑校验） */
+  const handlePoseHandleDrag = useCallback(
+    (updates: readonly PoseHandleDragUpdate[]) => {
+      const drag = poseHandleDragRef.current;
+      if (!drag) return;
+      const writes = updates.flatMap((update): PoseValueWrite[] => {
+        const blockId = drag.blockIds.get(update.objectId);
+        return blockId ? [{ blockId, values: update.values }] : [];
+      });
+      updateSelectedSequence(() => {
+        const result = writePoseValues(drag.base, writes, { ...sequenceEditOptions, objectInfo: poseObjectInfo });
+        return result.ok ? result.sequence : null;
+      });
+    },
+    [updateSelectedSequence, sequenceEditOptions, poseObjectInfo],
+  );
+
+  /** 松手：这次拖动记成一步、跑校验，并选中改过的位姿（时间轴、属性和 3D 对上）；取消时回到拖动前 */
+  const handlePoseHandleDragEnd = useCallback(
+    (commit: boolean) => {
+      const drag = poseHandleDragRef.current;
+      poseHandleDragRef.current = null;
+      if (drag && !commit) updateSelectedSequence(() => drag.origin);
+      setIsDraggingTimeline(false);
+      endDragStep();
+      if (!drag || !commit) return;
+      setSelection(selectionFromBlockIds([...drag.blockIds.values()]));
+      setActiveRightTab((tab) => (tab === "manual" ? tab : "selection"));
+      setSequenceMissingHint(false);
+    },
+    [updateSelectedSequence, endDragStep],
   );
 
   const handleCreateSetEnabled = useCallback(
@@ -2309,6 +2448,11 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleExplodeSequenceRefs,
       handleDragPoseAxis,
       handleDragPoseAxisEnd,
+      handleViewportObjectsPick,
+      handleViewportObjectDoubleClick,
+      handlePoseHandleDragStart,
+      handlePoseHandleDrag,
+      handlePoseHandleDragEnd,
       handleResizeDynamicPreset,
       handleUpdateSegmentSettings,
       handleWriteSegmentProfiles,
@@ -2409,6 +2553,11 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleExplodeSequenceRefs,
       handleDragPoseAxis,
       handleDragPoseAxisEnd,
+      handleViewportObjectsPick,
+      handleViewportObjectDoubleClick,
+      handlePoseHandleDragStart,
+      handlePoseHandleDrag,
+      handlePoseHandleDragEnd,
       handleResizeDynamicPreset,
       handleUpdateSegmentSettings,
       handleWriteSegmentProfiles,
