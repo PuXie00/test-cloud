@@ -273,7 +273,7 @@ export const ViewportOverlay = () => {
           backgroundColor: "rgba(167, 164, 163, 0.14)",
         }}
       >
-        <ViewMenu onPointerGuard={stopPointer} />
+        <ViewMenu onPointerGuard={stopPointer} showMotionPaths={isSequences} />
         {isControl ? (
           <div className="ml-auto flex items-center gap-2">
             <ViewportGoControls />

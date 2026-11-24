@@ -3,8 +3,17 @@ import { viz3dAxisCssColor } from "../helpers/axes-config";
 import type { HandleLayout } from "./pose-handle-layout";
 import type { Pt } from "./pose-handle-math";
 import type { PoseHandleKind } from "./pose-handle-types";
-
-const SVG_NS = "http://www.w3.org/2000/svg";
+import {
+  circlePath,
+  LABEL_STYLE,
+  num,
+  polylinePath,
+  px,
+  setAttr,
+  setStyle,
+  SVG_NS,
+  svgPath,
+} from "./overlay-svg";
 
 export type HandleVisualState = "idle" | "hover" | "active" | "blocked";
 
@@ -53,53 +62,11 @@ type CellLayer = {
   snapLabel: HTMLDivElement;
 };
 
-const setAttr = (element: Element, name: string, value: string): void => {
-  if (element.getAttribute(name) !== value) element.setAttribute(name, value);
-};
-
-const setStyle = (
-  element: HTMLElement | SVGElement,
-  name: "left" | "top" | "width" | "height" | "display" | "color" | "background",
-  value: string,
-): void => {
-  if (element.style[name] !== value) element.style[name] = value;
-};
-
-const px = (value: number): string => `${Math.round(value * 10) / 10}px`;
-const num = (value: number): string => String(Math.round(value * 10) / 10);
-
-const polylinePath = (points: readonly Pt[], offset: Pt, closed = false): string => {
-  if (points.length === 0) return "";
-  const body = points
-    .map((point, index) => `${index === 0 ? "M" : "L"}${num(point.x - offset.x)} ${num(point.y - offset.y)}`)
-    .join(" ");
-  return closed ? `${body} Z` : body;
-};
-
-const circlePath = (center: Pt, radius: number, offset: Pt): string => {
-  const x = center.x - offset.x;
-  const y = center.y - offset.y;
-  return `M${num(x - radius)} ${num(y)} a${num(radius)} ${num(radius)} 0 1 0 ${num(radius * 2)} 0 a${num(radius)} ${num(radius)} 0 1 0 ${num(-radius * 2)} 0 Z`;
-};
-
 /** 手柄颜色：倾斜弧按它摆动的世界轴着色（和坐标轴一致），其余用主题主色 */
 const handleColor = (kind: PoseHandleKind): string => {
   if (kind === "tiltX") return viz3dAxisCssColor("x");
   if (kind === "tiltY") return viz3dAxisCssColor("z");
   return "var(--primary)";
-};
-
-const LABEL_STYLE: Partial<CSSStyleDeclaration> = {
-  position: "absolute",
-  transform: "translate(0, -50%)",
-  padding: "1px 6px",
-  borderRadius: "4px",
-  fontFamily: "'JetBrains Mono', monospace",
-  fontSize: "12px",
-  lineHeight: "18px",
-  fontVariantNumeric: "tabular-nums",
-  whiteSpace: "nowrap",
-  pointerEvents: "none",
 };
 
 /**
@@ -270,11 +237,7 @@ export class PoseHandleOverlay implements Disposable {
     if (existing) return existing;
     const group = document.createElementNS(SVG_NS, "g");
     group.dataset.handle = key;
-    const path = (attributes: Record<string, string>) => {
-      const element = document.createElementNS(SVG_NS, "path");
-      for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
-      return element;
-    };
+    const path = svgPath;
     const guide = path({ fill: "none", "stroke-width": "1.2", "stroke-dasharray": "3 4", "stroke-opacity": "0.7" });
     // 深色描边：浅色模型、网格上都看得清
     const outline = path({

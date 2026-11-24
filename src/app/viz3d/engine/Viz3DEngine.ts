@@ -129,6 +129,13 @@ import {
 } from "../hoist-label-mode";
 import { PoseHandleController, type PoseHandleHost } from "../pose-handles/PoseHandleController";
 import { PoseHandleOverlay } from "../pose-handles/PoseHandleOverlay";
+import { MotionPathOverlay } from "../pose-handles/MotionPathOverlay";
+import {
+  DEFAULT_MOTION_PATH_MODE,
+  type MotionPathEntry,
+  type MotionPathMode,
+  type MotionPathPickEvent,
+} from "../pose-handles/motion-path-types";
 import type { SnapCandidate } from "../pose-handles/pose-handle-drag";
 import type { CellProjector } from "../pose-handles/pose-handle-layout";
 import { normalizeVec, subVec, type Pt, type Ray as PoseRay } from "../pose-handles/pose-handle-math";
@@ -178,6 +185,9 @@ export type Viz3DEventMap = {
   poseHandleDrag: PoseHandleDragEvent;
   poseHandleDragEnd: PoseHandleDragEndEvent;
   poseHandleBlocked: PoseHandleBlockedEvent;
+  /** 动作页 3D 轨迹：点了位姿点或轨迹线 */
+  motionPathPick: MotionPathPickEvent;
+  motionPathModeChange: MotionPathMode;
 };
 
 export class Viz3DEngine implements Disposable {
@@ -206,6 +216,9 @@ export class Viz3DEngine implements Disposable {
   private poseHandles: PoseHandleController | null = null;
   private poseHandleOverlay: PoseHandleOverlay | null = null;
   private poseHandleTargets: PoseHandleTarget[] = [];
+  private motionPathOverlay: MotionPathOverlay | null = null;
+  private motionPaths: MotionPathEntry[] = [];
+  private motionPathMode: MotionPathMode = DEFAULT_MOTION_PATH_MODE;
   /** 按虚轴摆的姿态（吸附同角度用） */
   private readonly appliedAxisValues = new Map<string, VirtualAxisValues>();
   /** 动作页成员标识：非成员 visibility 0.7；跨 unmount 保留，dispose 时清空 */
@@ -342,6 +355,8 @@ export class Viz3DEngine implements Disposable {
     this.poseHandles = null;
     this.poseHandleOverlay?.dispose();
     this.poseHandleOverlay = null;
+    this.motionPathOverlay?.dispose();
+    this.motionPathOverlay = null;
 
     this.viewportManager?.dispose();
     this.viewportManager = null;
@@ -1220,6 +1235,23 @@ export class Viz3DEngine implements Disposable {
     this.sequencePreviewController?.clear();
   }
 
+  /** 动作页 3D 轨迹：要画哪些物体的整条动作（空数组收起） */
+  setMotionPaths(entries: readonly MotionPathEntry[]): void {
+    this.motionPaths = [...entries];
+    this.poseHandles?.setMotionPaths(this.motionPaths);
+  }
+
+  getMotionPathMode(): MotionPathMode {
+    return this.motionPathMode;
+  }
+
+  /** 视图菜单「轨迹」：选中的 / 全部 / 关 */
+  setMotionPathMode(mode: MotionPathMode): void {
+    if (this.motionPathMode === mode) return;
+    this.motionPathMode = mode;
+    this.events.emit("motionPathModeChange", mode);
+  }
+
   /** 动作页位姿手柄：给哪些物体出手柄（空数组收起） */
   setPoseHandles(targets: readonly PoseHandleTarget[]): void {
     this.poseHandleTargets = [...targets];
@@ -1437,6 +1469,8 @@ export class Viz3DEngine implements Disposable {
       onDrag: (event) => this.events.emit("poseHandleDrag", event),
       onDragEnd: (event) => this.events.emit("poseHandleDragEnd", event),
       onBlocked: (event) => this.events.emit("poseHandleBlocked", event),
+      getMountParentId: (id) => this.objectRegistry?.getMountParent(id)?.id ?? null,
+      onPathPick: (event) => this.events.emit("motionPathPick", event),
     };
   }
 
@@ -1931,10 +1965,17 @@ export class Viz3DEngine implements Disposable {
 
     if (this.slotElement) {
       this.measureOverlay = new MeasureOverlay(this.slotElement);
+      // 轨迹画在手柄下面：先挂轨迹层
+      this.motionPathOverlay = new MotionPathOverlay(this.slotElement);
       this.poseHandleOverlay = new PoseHandleOverlay(this.slotElement);
     }
-    this.poseHandles = new PoseHandleController(this.createPoseHandleHost(), this.poseHandleOverlay);
+    this.poseHandles = new PoseHandleController(
+      this.createPoseHandleHost(),
+      this.poseHandleOverlay,
+      this.motionPathOverlay,
+    );
     this.poseHandles.setTargets(this.poseHandleTargets);
+    this.poseHandles.setMotionPaths(this.motionPaths);
     this.applyModeCursor();
 
     this.resize();

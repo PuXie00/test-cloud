@@ -17,6 +17,12 @@ export {
   resolveHoistLabelText,
 } from "./hoist-label-mode";
 export type { HoistLabelMode } from "./hoist-label-mode";
+export {
+  parseMotionPathMode,
+  readStoredMotionPathMode,
+  writeStoredMotionPathMode,
+} from "./pose-handles/motion-path-types";
+export type { MotionPathMode } from "./pose-handles/motion-path-types";
 export { hoistAxesEqual } from "./hoist-axis-config";
 export type { TransformCenterPreset } from "./tools/transform-center";
 export type { AxisScreenDirections } from "./tools/axis-screen-direction";

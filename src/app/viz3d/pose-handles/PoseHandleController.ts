@@ -1,5 +1,10 @@
 import type { Matrix } from "@babylonjs/core/Maths/math.vector";
+import { attachmentFrameMatrix } from "../state/preview-path-points";
 import type { SceneObjectConfig, SlotRect, ViewportCellId, VirtualAxisId } from "../types";
+import { motionPathWorld, type MotionPathWorld, type ParentFrameAt } from "./motion-path-geometry";
+import { hitTestMotionPaths, layoutMotionPath, type MotionPathHit, type MotionPathLayout } from "./motion-path-layout";
+import type { MotionPathEntry, MotionPathPickEvent } from "./motion-path-types";
+import type { MotionPathOverlay } from "./MotionPathOverlay";
 import {
   createPoseHandleDragSession,
   type DragFrame,
@@ -50,10 +55,20 @@ export type PoseHandleHost = {
   onDrag: (event: PoseHandleDragEvent) => void;
   onDragEnd: (event: PoseHandleDragEndEvent) => void;
   onBlocked: (event: PoseHandleBlockedEvent) => void;
+  /** 挂载的父物体 id（画挂载子物体的轨迹时叠加父物体那一刻的姿态） */
+  getMountParentId?: (objectId: string) => string | null;
+  /** 点了轨迹上的位姿点或轨迹线 */
+  onPathPick?: (event: MotionPathPickEvent) => void;
 };
 
 /** 按住手柄后移动这么多像素才算开始拖：只点一下不改位姿 */
 export const POSE_HANDLE_DRAG_START_PX = 3;
+/** 点轨迹时按下到抬起移动超过这么多就不算点 */
+const PATH_PICK_SLOP_PX = 4;
+
+const formatSeconds = (ms: number): string => `${(ms / 1000).toFixed(1)} s`;
+
+type PendingPick = { pointerId: number; start: Pt; hit: MotionPathHit };
 
 type Pending = { pointerId: number; start: Pt; cellId: ViewportCellId; objectId: string; kind: PoseHandleKind };
 
@@ -92,6 +107,13 @@ export class PoseHandleController {
   private pending: Pending | null = null;
   private drag: ActiveDrag | null = null;
   private shown = false;
+  private paths: MotionPathEntry[] = [];
+  /** 轨迹的世界形状：轨迹变了才重算（挂载的物体还没加载时下一帧再算） */
+  private pathWorlds: MotionPathWorld[] | null = null;
+  private readonly pathLayouts = new Map<ViewportCellId, MotionPathLayout[]>();
+  private pendingPick: PendingPick | null = null;
+  private pathHover: { cellId: ViewportCellId; hit: MotionPathHit } | null = null;
+  private cursor: string | null = null;
   private readonly handleKeyDown = (event: KeyboardEvent) => {
     if (event.key !== "Escape" || !this.drag) return;
     event.preventDefault();
@@ -102,7 +124,19 @@ export class PoseHandleController {
   constructor(
     private readonly host: PoseHandleHost,
     private readonly overlay: PoseHandleOverlay | null,
+    private readonly pathOverlay: MotionPathOverlay | null = null,
   ) {}
+
+  /** 动作页 3D 轨迹：选中物体（或全部）的整条动作 */
+  setMotionPaths(entries: readonly MotionPathEntry[]): void {
+    this.paths = [...entries];
+    this.pathWorlds = null;
+    if (this.paths.length === 0) {
+      this.pendingPick = null;
+      this.pathHover = null;
+      this.syncCursor();
+    }
+  }
 
   setTargets(targets: readonly PoseHandleTarget[]): void {
     this.targets = [...targets];
@@ -119,16 +153,20 @@ export class PoseHandleController {
   /** 每帧调用 */
   render(): void {
     this.layouts.clear();
-    if (this.targets.length === 0 && !this.drag) {
+    this.pathLayouts.clear();
+    const hasHandles = this.targets.length > 0 || this.drag !== null;
+    if (!hasHandles && this.paths.length === 0) {
       // 别的页面每帧都走这里：没画过就什么都不做
       if (this.shown) {
         const cells = this.host.getCells();
         this.overlay?.render(cells.map((cell) => ({ id: cell.id, rect: cell.rect, handles: [], drag: null })));
+        this.pathOverlay?.render(cells.map((cell) => ({ id: cell.id, rect: cell.rect, paths: [], hover: null })));
       }
       this.shown = false;
       return;
     }
     const cells = this.host.getCells();
+    this.renderPaths(cells);
     const models = this.models();
     const overlayCells: OverlayCell[] = cells.map((cell) => {
       const layouts = models.flatMap(({ target, model }) => {
@@ -150,19 +188,27 @@ export class PoseHandleController {
     this.shown = true;
   }
 
-  /** 按在手柄上时返回 true（这次按下归手柄，不框选）；拖不了的手柄也返回 true 并提示原因 */
+  /**
+   * 按在手柄上时返回 true（这次按下归手柄，不框选）；拖不了的手柄也返回 true 并提示原因。
+   * 没按在手柄上、按在轨迹的位姿点或选中物体的轨迹线上，也返回 true，抬起时算点了轨迹。
+   */
   pointerDown(point: Pt, pointerId: number): boolean {
-    if (this.drag || this.targets.length === 0) return false;
+    if (this.drag) return false;
     const cell = this.host.getCells().find((entry) => rectContains(entry.rect, point));
     if (!cell) return false;
     const hit = hitTestHandles(this.layouts.get(cell.id) ?? [], point);
     const target = hit ? this.targetOf(hit.layout.objectId) : undefined;
-    if (!hit || !target) return false;
-    if (target.blockedReason) {
-      this.host.onBlocked({ objectId: target.objectId, reason: target.blockedReason });
+    if (hit && target) {
+      if (target.blockedReason) {
+        this.host.onBlocked({ objectId: target.objectId, reason: target.blockedReason });
+        return true;
+      }
+      this.pending = { pointerId, start: point, cellId: cell.id, objectId: target.objectId, kind: hit.layout.kind };
       return true;
     }
-    this.pending = { pointerId, start: point, cellId: cell.id, objectId: target.objectId, kind: hit.layout.kind };
+    const pathHit = hitTestMotionPaths(this.pathLayouts.get(cell.id) ?? [], point);
+    if (!pathHit) return false;
+    this.pendingPick = { pointerId, start: point, hit: pathHit };
     return true;
   }
 
@@ -180,6 +226,12 @@ export class PoseHandleController {
       if (this.begin(pending)) this.apply(point, fine);
       return true;
     }
+    if (this.pendingPick) {
+      if (this.pendingPick.pointerId === pointerId && distancePt(point, this.pendingPick.start) > PATH_PICK_SLOP_PX) {
+        this.pendingPick = null;
+      }
+      return true;
+    }
     this.hover(point);
     return false;
   }
@@ -193,12 +245,24 @@ export class PoseHandleController {
       if (this.pending.pointerId === pointerId) this.pending = null;
       return true;
     }
+    if (this.pendingPick) {
+      const { hit, pointerId: pickPointer } = this.pendingPick;
+      if (pickPointer !== pointerId) return true;
+      this.pendingPick = null;
+      this.host.onPathPick?.(
+        hit.kind === "keyframe"
+          ? { kind: "keyframe", objectId: hit.objectId, blockId: hit.blockId, atMs: hit.atMs }
+          : { kind: "time", objectId: hit.objectId, atMs: hit.atMs, segmentKey: hit.segmentKey },
+      );
+      return true;
+    }
     return false;
   }
 
   /** 放弃拖动：位姿回到按下前 */
   cancel(): boolean {
     this.pending = null;
+    this.pendingPick = null;
     if (!this.drag) return false;
     this.finish(true);
     return true;
@@ -206,20 +270,99 @@ export class PoseHandleController {
 
   hover(point: Pt | null): void {
     if (this.drag) return;
-    if (!point || this.targets.length === 0) {
-      this.setHovered(null);
-      return;
-    }
-    const cell = this.host.getCells().find((entry) => rectContains(entry.rect, point));
-    const hit = cell ? hitTestHandles(this.layouts.get(cell.id) ?? [], point) : null;
+    const cell = point ? this.host.getCells().find((entry) => rectContains(entry.rect, point)) : undefined;
+    const hit = cell && point ? hitTestHandles(this.layouts.get(cell.id) ?? [], point) : null;
     const target = hit ? this.targetOf(hit.layout.objectId) : undefined;
     this.setHovered(hit && target ? { key: hit.layout.key, blocked: Boolean(target.blockedReason) } : null);
+    // 手柄优先；不在手柄上时看轨迹
+    const pathHit = !this.hovered && cell && point ? hitTestMotionPaths(this.pathLayouts.get(cell.id) ?? [], point) : null;
+    this.pathHover = pathHit && cell ? { cellId: cell.id, hit: pathHit } : null;
+    this.syncCursor();
   }
 
   dispose(): void {
     if (this.drag) this.finish(true);
     this.pending = null;
+    this.pendingPick = null;
     window.removeEventListener("keydown", this.handleKeyDown, true);
+  }
+
+  private renderPaths(cells: readonly PoseHandleHostCell[]): void {
+    const worlds = this.paths.length > 0 ? this.resolvePathWorlds() : [];
+    this.pathOverlay?.render(
+      cells.map((cell) => {
+        const layouts = worlds.map((world) => layoutMotionPath(world, cell.projector));
+        this.pathLayouts.set(cell.id, layouts);
+        const hover = this.pathHover?.cellId === cell.id ? this.pathHover.hit : null;
+        return {
+          id: cell.id,
+          rect: cell.rect,
+          paths: layouts,
+          hover: hover
+            ? {
+                at: hover.at,
+                text:
+                  hover.kind === "time" && hover.segmentKey
+                    ? `${formatSeconds(hover.atMs)} · 这段有问题`
+                    : formatSeconds(hover.atMs),
+                warning: hover.kind === "time" && hover.segmentKey !== null,
+              }
+            : null,
+        };
+      }),
+    );
+  }
+
+  /** 挂载子物体的轨迹叠加父物体：父物体也有轨迹时按它那一刻的姿态，否则按它现在的样子 */
+  private resolvePathWorlds(): MotionPathWorld[] {
+    if (this.pathWorlds) return this.pathWorlds;
+    const byId = new Map(this.paths.map((entry) => [entry.objectId, entry]));
+    const parentFrames = (objectId: string, depth: number): ParentFrameAt => {
+      const parentId = this.host.getMountParentId?.(objectId) ?? null;
+      if (!parentId) return () => null;
+      const parentConfig = this.host.getConfig(parentId);
+      const parentSamples = new Map((byId.get(parentId)?.samples ?? []).map((sample) => [sample.atMs, sample.values]));
+      const above = depth < 8 ? parentFrames(parentId, depth + 1) : () => null;
+      let current: Matrix | null | undefined;
+      return (atMs) => {
+        const values = atMs === null ? undefined : parentSamples.get(atMs);
+        if (!values || !parentConfig) {
+          if (current === undefined) current = this.host.getParentWorld(objectId, false);
+          return current;
+        }
+        const frame = attachmentFrameMatrix(parentConfig, values);
+        const grand = above(atMs);
+        return grand ? frame.multiply(grand) : frame;
+      };
+    };
+    let complete = true;
+    const worlds = this.paths.flatMap((entry) => {
+      const config = this.host.getConfig(entry.objectId);
+      if (!config) {
+        complete = false;
+        return [];
+      }
+      const world = motionPathWorld(entry, config, parentFrames(entry.objectId, 0));
+      return world ? [world] : [];
+    });
+    if (complete) this.pathWorlds = worlds;
+    return worlds;
+  }
+
+  /** 光标：拖动中、手柄上、轨迹上各不相同 */
+  private syncCursor(): void {
+    const next = this.drag
+      ? "grabbing"
+      : this.hovered
+        ? this.hovered.blocked
+          ? "not-allowed"
+          : "grab"
+        : this.pathHover
+          ? "pointer"
+          : null;
+    if (next === this.cursor) return;
+    this.cursor = next;
+    this.host.setCursor(next);
   }
 
   private targetOf(objectId: string): PoseHandleTarget | undefined {
@@ -250,7 +393,7 @@ export class PoseHandleController {
   private setHovered(next: { key: string; blocked: boolean } | null): void {
     if (this.hovered?.key === next?.key && this.hovered?.blocked === next?.blocked) return;
     this.hovered = next;
-    this.host.setCursor(next ? (next.blocked ? "not-allowed" : "grab") : null);
+    this.syncCursor();
   }
 
   private begin(pending: Pending): boolean {
@@ -286,7 +429,7 @@ export class PoseHandleController {
       frame: null,
     };
     this.host.setOrbitEnabled(false);
-    this.host.setCursor("grabbing");
+    this.syncCursor();
     window.addEventListener("keydown", this.handleKeyDown, true);
     this.host.onDragStart({
       kind: pending.kind,
@@ -312,7 +455,7 @@ export class PoseHandleController {
     this.drag = null;
     window.removeEventListener("keydown", this.handleKeyDown, true);
     this.host.setOrbitEnabled(true);
-    this.host.setCursor(this.hovered ? (this.hovered.blocked ? "not-allowed" : "grab") : null);
+    this.syncCursor();
     this.host.onDragEnd({ cancelled });
   }
 
