@@ -2,6 +2,7 @@
 import "@babylonjs/loaders/glTF/2.0";
 import "@babylonjs/loaders/OBJ/objFileLoader";
 import { ImportMeshAsync, type ISceneLoaderAsyncResult } from "@babylonjs/core/Loading/sceneLoader";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Node } from "@babylonjs/core/node";
 import type { Scene } from "@babylonjs/core/scene";
@@ -197,10 +198,27 @@ export class ModelLoader {
       format === "obj" && assets.length > 0
         ? await importObjWithAssets(this.scene, named, assets)
         : await ImportMeshAsync(named, this.scene, { pluginExtension: `.${format}` });
+    if (format === "obj") {
+      keepObjMaterialsSolid(result);
+    }
     stripImportedAnimations(result);
     return wrapImportedContent(result, this.scene, name);
   }
 }
+
+/**
+ * 3ds Max 同时写 o 和 g，o 是没有面的空网格，却和真正的网格共用材质。
+ * Babylon 看到没有索引就把这份材质改成点云，整个模型只剩散点。
+ */
+const keepObjMaterialsSolid = (result: ISceneLoaderAsyncResult): void => {
+  for (const mesh of result.meshes) {
+    if (mesh.getTotalIndices() === 0) continue;
+    const material = mesh.material;
+    if (material instanceof StandardMaterial) {
+      material.pointsCloud = false;
+    }
+  }
+};
 
 const stripImportedAnimations = (result: {
   animationGroups: Array<{ stop: () => void; dispose: () => void }>;

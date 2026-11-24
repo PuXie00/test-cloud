@@ -70,4 +70,39 @@ describe("ModelLoader OBJ with assets", () => {
     expect(firstUrl).not.toBe(secondUrl);
     await vi.waitFor(() => expect(Object.keys(FilesInputStore.FilesToLoad)).toEqual([]));
   });
+
+  it("keeps 3ds Max o/g meshes solid when an empty object shares the material", async () => {
+    const loader = createLoader();
+    const obj = [
+      "mtllib box.mtl",
+      "v 0 0 0",
+      "v 1 0 0",
+      "v 0 1 0",
+      "v 0 0 1",
+      "vn 0 0 1",
+      "o A",
+      "g A",
+      "usemtl wood",
+      "f 1//1 2//1 3//1",
+      "o B",
+      "g B",
+      "usemtl wood",
+      "f 1//1 2//1 4//1",
+    ].join("\n");
+
+    await loader.load(new File([obj], "stage.obj"), {
+      id: "Models/stage.obj",
+      format: "obj",
+      assets: [new File(["newmtl wood\nkd 0.8 0.8 0.8\n"], "box.mtl")],
+    });
+
+    const solid = loader
+      .get("Models/stage.obj")!
+      .getChildMeshes(false)
+      .filter((mesh) => mesh.getTotalIndices() > 0);
+    expect(solid.length).toBeGreaterThan(0);
+    for (const mesh of solid) {
+      expect((mesh.material as StandardMaterial).pointsCloud).toBe(false);
+    }
+  });
 });
