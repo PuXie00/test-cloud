@@ -8,11 +8,14 @@ import {
   DropdownMenuTrigger,
 } from "@/app/components/ui/dropdown-menu";
 import { cn } from "@/app/components/ui/utils";
-import type { GridSizeM, HoistLabelMode, ViewportLayout } from "@/app/viz3d";
+import type { GridSizeM, HoistLabelMode, MotionPathMode, ViewportLayout } from "@/app/viz3d";
 import {
   parseHoistLabelMode,
+  parseMotionPathMode,
   readStoredHoistLabelMode,
+  readStoredMotionPathMode,
   writeStoredHoistLabelMode,
+  writeStoredMotionPathMode,
 } from "@/app/viz3d";
 import { GRID_SIZE_PRESETS, isGridSizeM } from "@/app/viz3d/helpers/grid-config";
 import { useViz3DContext } from "../Viz3DProvider";
@@ -39,7 +42,13 @@ const LABEL_MODE_OPTIONS: { label: string; mode: HoistLabelMode }[] = [
   { label: "电机序号", mode: "motor" },
 ];
 
-type FlyoutId = "region" | "grid" | "label";
+const MOTION_PATH_OPTIONS: { label: string; mode: MotionPathMode }[] = [
+  { label: "选中的", mode: "selected" },
+  { label: "全部", mode: "all" },
+  { label: "关", mode: "off" },
+];
+
+type FlyoutId = "region" | "grid" | "label" | "path";
 
 type ViewMenuFlyoutProps = {
   label: string;
@@ -111,14 +120,17 @@ const ViewMenuFlyout = ({
 
 type ViewMenuProps = {
   onPointerGuard?: (event: { stopPropagation(): void }) => void;
+  /** 动作页：多一项「轨迹」（选中的 / 全部 / 关） */
+  showMotionPaths?: boolean;
 };
 
 /**
- * 顶栏「视图」：只放整块区域的设置（分区布局、网格、标签）。
+ * 顶栏「视图」：只放整块区域的设置（分区布局、网格、标签；动作页多一项轨迹）。
  * 视角、透视 / 正交、聚焦、跟随是每格自己的，在各格左上角的格名菜单里。
  */
-export const ViewMenu = ({ onPointerGuard }: ViewMenuProps) => {
+export const ViewMenu = ({ onPointerGuard, showMotionPaths = false }: ViewMenuProps) => {
   const engine = useViz3DContext();
+  const [pathMode, setPathMode] = useState<MotionPathMode>(() => engine.getMotionPathMode());
   const [layout, setLayout] = useState<ViewportLayout>(() => engine.getLayout());
   const [gridSize, setGridSize] = useState<GridSizeM>(() => engine.getGridSize());
   const [labelMode, setLabelMode] = useState<HoistLabelMode>(() => engine.getHoistLabelMode());
@@ -128,21 +140,26 @@ export const ViewMenu = ({ onPointerGuard }: ViewMenuProps) => {
     const handleLayout = (next: ViewportLayout) => setLayout(next);
     const handleGridSize = (next: GridSizeM) => setGridSize(next);
     const handleLabelMode = (next: HoistLabelMode) => setLabelMode(next);
+    const handlePathMode = (next: MotionPathMode) => setPathMode(next);
 
     engine.events.on("layoutChange", handleLayout);
     engine.events.on("gridSizeChange", handleGridSize);
     engine.events.on("hoistLabelModeChange", handleLabelMode);
+    engine.events.on("motionPathModeChange", handlePathMode);
     setLayout(engine.getLayout());
     setGridSize(engine.getGridSize());
 
     const stored = readStoredHoistLabelMode();
     engine.setHoistLabelMode(stored);
     setLabelMode(engine.getHoistLabelMode());
+    engine.setMotionPathMode(readStoredMotionPathMode());
+    setPathMode(engine.getMotionPathMode());
 
     return () => {
       engine.events.off("layoutChange", handleLayout);
       engine.events.off("gridSizeChange", handleGridSize);
       engine.events.off("hoistLabelModeChange", handleLabelMode);
+      engine.events.off("motionPathModeChange", handlePathMode);
     };
   }, [engine]);
 
@@ -167,6 +184,13 @@ export const ViewMenu = ({ onPointerGuard }: ViewMenuProps) => {
     engine.setHoistLabelMode(next);
     writeStoredHoistLabelMode(next);
     setLabelMode(next);
+  };
+
+  const handlePathModeChange = (value: string) => {
+    const next = parseMotionPathMode(value);
+    engine.setMotionPathMode(next);
+    writeStoredMotionPathMode(next);
+    setPathMode(next);
   };
 
   const openFlyoutId = (id: FlyoutId) => () => setOpenFlyout(id);
@@ -242,6 +266,24 @@ export const ViewMenu = ({ onPointerGuard }: ViewMenuProps) => {
             ))}
           </DropdownMenuRadioGroup>
         </ViewMenuFlyout>
+
+        {showMotionPaths ? (
+          <ViewMenuFlyout
+            label="轨迹"
+            open={openFlyout === "path"}
+            onOpen={openFlyoutId("path")}
+            onClose={() => setOpenFlyout((current) => (current === "path" ? null : current))}
+            onPointerGuard={onPointerGuard}
+          >
+            <DropdownMenuRadioGroup value={pathMode} onValueChange={handlePathModeChange}>
+              {MOTION_PATH_OPTIONS.map(({ label, mode }) => (
+                <DropdownMenuRadioItem key={mode} value={mode} className={MENU_ITEM_CLASS}>
+                  {label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </ViewMenuFlyout>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

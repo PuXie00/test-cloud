@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   NEW_SEQUENCE_BASE_NAME,
   nextNewSequenceName,
+  nextShapeName,
   sequenceNameError,
 } from "./sequence-name";
 
@@ -42,5 +43,12 @@ describe("sequenceNameError", () => {
   it("accepts a unique name within 8 characters", () => {
     expect(sequenceNameError("开场", ["新动作"])).toBeNull();
     expect(sequenceNameError("一二三四五六七八", [])).toBeNull();
+  });
+});
+
+describe("nextShapeName", () => {
+  it("numbers 造型 from 1 and fills gaps", () => {
+    expect(nextShapeName([])).toBe("造型 1");
+    expect(nextShapeName(["造型 1", "造型 3"])).toBe("造型 2");
   });
 });

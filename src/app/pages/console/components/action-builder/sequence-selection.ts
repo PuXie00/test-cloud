@@ -78,6 +78,20 @@ export const selectionBlockIds = (selection: SequenceSelection): string[] => {
   return [...selection.blockIds];
 };
 
+/** 选中的全是位姿而且在同一时刻：那个时刻（游标跟着跳）；否则 null */
+export const selectedPosesTimeMs = (
+  sequence: Pick<ActionSequenceConfig, "blocks"> | null,
+  selection: SequenceSelection,
+): number | null => {
+  if (!sequence) return null;
+  const ids = new Set(selectionBlockIds(selection));
+  if (ids.size === 0) return null;
+  const blocks = sequence.blocks.filter((block) => ids.has(block.id));
+  const first = blocks[0];
+  if (first?.kind !== "pose") return null;
+  return blocks.every((block) => block.kind === "pose" && block.atMs === first.atMs) ? first.atMs : null;
+};
+
 export const isBlockSelected = (selection: SequenceSelection, blockId: string): boolean => {
   if (selection === null || selection.kind === "markers") return false;
   if (selection.kind === "block") return selection.blockId === blockId;

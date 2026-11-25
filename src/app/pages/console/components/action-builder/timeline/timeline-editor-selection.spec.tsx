@@ -61,6 +61,30 @@ describe("timeline object list", () => {
     fireEvent.click(row7, { ctrlKey: true });
     expect(onObjectClick).toHaveBeenCalledWith(7, expect.objectContaining({ ctrlKey: true }), [7, 8]);
   });
+
+  it("adds a pose for the row's object where an empty spot is double-clicked", () => {
+    const onCreatePoseAt = vi.fn();
+    render(<TimelineEditor {...createTimelineProps(sequence)} onCreatePoseAt={onCreatePoseAt} />);
+    const tracks = document.querySelector("[data-testid='timeline-tracks']") as HTMLElement;
+    const scroll = document.querySelector("[data-testid='timeline-scroll']") as HTMLElement;
+    mockRect(scroll, { left: 0, top: 0, width: 800, height: 120 });
+    mockRect(tracks, { left: TIMELINE_PAD_LEFT, top: 32, width: 800, height: 200 });
+    // 第二行（模型 8），离开左边 100 px
+    fireEvent.doubleClick(tracks, { clientX: TIMELINE_PAD_LEFT + 100, clientY: 32 + 36 + 10 });
+    expect(onCreatePoseAt).toHaveBeenCalledWith(8, expect.any(Number));
+    // 双击在块上不加
+    onCreatePoseAt.mockClear();
+    fireEvent.doubleClick(screen.getAllByRole("button", { name: /位姿/ })[0]!);
+    expect(onCreatePoseAt).not.toHaveBeenCalled();
+  });
+
+  it("tints the whole track row of each selected object", () => {
+    render(<TimelineEditor {...createTimelineProps(sequence)} selectedObjectIds={[8]} />);
+    const stripes = document.querySelectorAll<HTMLElement>("[data-testid='timeline-row-selected']");
+    expect(stripes).toHaveLength(1);
+    // 模型 8 是第二行
+    expect(stripes[0]!.style.top).toBe("36px");
+  });
 });
 
 describe("pointer on a motion segment", () => {

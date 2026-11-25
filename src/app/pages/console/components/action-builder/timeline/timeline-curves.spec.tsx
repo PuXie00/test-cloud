@@ -382,9 +382,7 @@ describe("timeline toolbar view menu", () => {
     const onCurveAxisChange = vi.fn();
     render(
       <TimelineToolbar
-        majorStepSec={1}
-        canZoomIn
-        canZoomOut
+        pxPerSecond={16}
         canDelete
         viewMode="curves"
         onViewModeChange={onViewModeChange}

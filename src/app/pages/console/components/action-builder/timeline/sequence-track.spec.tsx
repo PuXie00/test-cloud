@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
 import { TIMELINE_PAD_LEFT, msToPx } from "./timeline-data";
 import { TimelineEditor } from "./timeline-editor";
-import { lockPanAxis } from "./timeline-view-extent";
 import { createTimelineProps, installTimelinePaneWidth, TIMELINE_TEST_PANE_PX } from "./timeline-test-helpers";
 
 const sequence: ActionSequenceConfig = {
@@ -95,6 +94,7 @@ describe("sequence track", () => {
     expect(glyph.className.split(/\s+/)).toContain("-translate-x-1/2");
   });
 
+  // 选中 / 问题的区分靠整块填充色（不再用左边框）
   it("renders a shorter motion band with quiet fill and primary selection", () => {
     const { rerender } = render(<TimelineEditor {...createTimelineProps(sequence)} />);
     const idle = screen.getByRole("button", { name: /运动区间.*7/ });
@@ -107,9 +107,10 @@ describe("sequence track", () => {
       />,
     );
     const selected = screen.getByRole("button", { name: /运动区间.*7/ });
+    expect(selected.getAttribute("aria-pressed")).toBe("true");
     expect(selected.className.split(/\s+/)).toContain("h-5");
-    expect(selected.className.split(/\s+/)).toContain("bg-primary/20");
-    expect(selected.className.split(/\s+/)).toContain("border-l-primary");
+    expect(selected.className.split(/\s+/)).toContain("bg-primary/75");
+    expect(selected.className.split(/\s+/)).not.toContain("bg-secondary/15");
   });
 
   it("paints an invalid motion segment with warning fill, not destructive", () => {
@@ -126,11 +127,11 @@ describe("sequence track", () => {
     );
     const band = screen.getByRole("button", { name: /运动区间.*7/ });
     expect(band.getAttribute("data-invalid")).toBe("true");
-    expect(band.className.split(/\s+/)).toContain("bg-warning/20");
-    expect(band.className.split(/\s+/)).not.toContain("bg-destructive/20");
+    expect(band.className.split(/\s+/)).toContain("bg-warning/75");
+    expect(band.className).not.toMatch(/destructive/);
   });
 
-  it("keeps primary left border when an invalid segment is selected", () => {
+  it("keeps the warning fill on a selected invalid segment and shows selection on its end poses", () => {
     render(
       <TimelineEditor
         {...createTimelineProps(sequence)}
@@ -144,11 +145,16 @@ describe("sequence track", () => {
       />,
     );
     const selected = screen.getByRole("button", { name: /运动区间.*7/ });
-    expect(selected.className.split(/\s+/)).toContain("bg-warning/20");
-    expect(selected.className.split(/\s+/)).toContain("border-l-primary");
+    expect(selected.getAttribute("aria-pressed")).toBe("true");
+    expect(selected.className.split(/\s+/)).toContain("bg-warning/75");
+    expect(selected.className.split(/\s+/)).not.toContain("bg-primary/75");
+    for (const name of [/位姿 first/, /位姿 later/]) {
+      const glyph = screen.getByRole("button", { name }).querySelector("[aria-hidden]") as HTMLElement;
+      expect(glyph.className.split(/\s+/)).toContain("bg-primary");
+    }
   });
 
-  it("paints an invalid pose with warning background", () => {
+  it("paints an invalid pose glyph in warning, not destructive", () => {
     render(
       <TimelineEditor
         {...createTimelineProps(sequence)}
@@ -162,7 +168,9 @@ describe("sequence track", () => {
     );
     const pose = screen.getByRole("button", { name: /位姿 first/ });
     expect(pose.getAttribute("data-invalid")).toBe("true");
-    expect(pose.className.split(/\s+/)).toContain("bg-warning/20");
+    const glyph = pose.querySelector("[aria-hidden]") as HTMLElement;
+    expect(glyph.className.split(/\s+/)).toContain("bg-warning");
+    expect(glyph.className).not.toMatch(/destructive/);
   });
 
   it("selects a pose keyframe as a block", () => {
@@ -440,7 +448,7 @@ describe("timeline interaction", () => {
     expect(onPoseMove).not.toHaveBeenCalled();
   });
 
-  it("zooms with the wheel without Ctrl, anchored at the pointer", () => {
+  it("scrolls rows with the wheel instead of zooming; Shift+wheel pans time", () => {
     const onTimelinePxPerSecondChange = vi.fn();
     render(
       <TimelineEditor
@@ -449,14 +457,32 @@ describe("timeline interaction", () => {
       />,
     );
     const scroll = document.querySelector("[data-testid='timeline-scroll']") as HTMLElement;
-    mockRect(scroll, { left: 0, top: 0, width: 800, height: 120 });
-    fireEvent.wheel(scroll, { deltaY: -100, clientX: 300, ctrlKey: false });
-    expect(onTimelinePxPerSecondChange).toHaveBeenCalledWith(125);
-    fireEvent.wheel(scroll, { deltaY: 100, clientX: 300, ctrlKey: false });
-    expect(onTimelinePxPerSecondChange).toHaveBeenLastCalledWith(80);
+    const pose = screen.getByRole("button", { name: /位姿 first/ });
+    const leftBefore = pose.style.left;
+    // 上下滚交给浏览器滚轨道，不缩放、不左右移
+    const vertical = fireEvent.wheel(scroll, { deltaY: 100, clientX: 300 });
+    expect(vertical).toBe(true);
+    expect(onTimelinePxPerSecondChange).not.toHaveBeenCalled();
+    expect(pose.style.left).toBe(leftBefore);
+    // Shift+滚轮往右滚 100 px：视图右移 1 s
+    const horizontal = fireEvent.wheel(scroll, { deltaY: 100, shiftKey: true });
+    expect(horizontal).toBe(false);
+    expect(pose.style.left).toBe(`${msToPx(1000, 100)}px`);
+    // 触控板横滑
+    fireEvent.wheel(scroll, { deltaX: -50, deltaY: 5 });
+    expect(pose.style.left).toBe(`${msToPx(1500, 100)}px`);
+    expect(onTimelinePxPerSecondChange).not.toHaveBeenCalled();
   });
 
-  it("binds wheel zoom as a non-passive listener so preventDefault can run", () => {
+  it("scrolls the rows from the object names too", () => {
+    render(<TimelineEditor {...createTimelineProps(sequence)} />);
+    const scroll = document.querySelector("[data-testid='timeline-scroll']") as HTMLElement;
+    const labels = document.querySelector("[data-testid='timeline-labels'] .flex-1") as HTMLElement;
+    fireEvent.wheel(labels, { deltaY: 40 });
+    expect(scroll.scrollTop).toBe(40);
+  });
+
+  it("binds the wheel as a non-passive listener so horizontal panning can preventDefault", () => {
     const add = vi.spyOn(HTMLElement.prototype, "addEventListener");
     render(<TimelineEditor {...createTimelineProps(sequence)} />);
     const nonPassiveWheel = add.mock.calls.some(
@@ -485,38 +511,16 @@ describe("timeline interaction", () => {
     expect(scroll.className.split(/\s+/)).toContain("overflow-x-clip");
   });
 
-  it("locks a middle-mouse drag to the axis it started on", () => {
+  it("pans only left and right with a middle-mouse drag", () => {
     render(<TimelineEditor {...createTimelineProps(sequence)} />);
     const scroll = document.querySelector("[data-testid='timeline-scroll']") as HTMLElement;
     const pose = screen.getByRole("button", { name: /位姿 first/ });
-    const leftBefore = pose.style.left;
-    // 上下拖，手往左偏了几像素：不左右滚
     fireEvent.pointerDown(scroll, { button: 1, clientX: 200, clientY: 40 });
-    fireEvent.pointerMove(window, { clientX: 197, clientY: 60 });
-    fireEvent.pointerMove(window, { clientX: 192, clientY: 90 });
-    fireEvent.pointerMove(window, { clientX: 188, clientY: 120 });
-    fireEvent.pointerUp(window, { button: 1 });
-    expect(pose.style.left).toBe(leftBefore);
-
-    // 移动还没到阈值时不滚
-    fireEvent.pointerDown(scroll, { button: 1, clientX: 200, clientY: 40 });
-    fireEvent.pointerMove(window, { clientX: 197, clientY: 41 });
-    fireEvent.pointerUp(window, { button: 1 });
-    expect(pose.style.left).toBe(leftBefore);
-
-    // 左右拖锁定横向，起步那几像素也算上
-    fireEvent.pointerDown(scroll, { button: 1, clientX: 200, clientY: 40 });
-    fireEvent.pointerMove(window, { clientX: 190, clientY: 42 });
-    fireEvent.pointerMove(window, { clientX: 160, clientY: 70 });
+    fireEvent.pointerMove(window, { clientX: 190, clientY: 90 });
+    fireEvent.pointerMove(window, { clientX: 160, clientY: 140 });
     fireEvent.pointerUp(window, { button: 1 });
     expect(pose.style.left).toBe(`${msToPx(1600, 100)}px`);
-  });
-
-  it("decides the pan axis only after a few pixels, by the larger move", () => {
-    expect(lockPanAxis(3, 3)).toBeNull();
-    expect(lockPanAxis(-4, 20)).toBe("y");
-    expect(lockPanAxis(20, -4)).toBe("x");
-    expect(lockPanAxis(6, 0)).toBe("x");
+    expect(scroll.scrollTop).toBe(0);
   });
 
   it("drags the H-bar to move the view", () => {

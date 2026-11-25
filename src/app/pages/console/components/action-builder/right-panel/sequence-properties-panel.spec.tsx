@@ -397,7 +397,10 @@ describe("SequencePropertiesPanel edits", () => {
 
     expect(screen.getByRole("heading", { name: /运动区间/ })).not.toBeNull();
 
-    expect(screen.getByLabelText("时长").getAttribute("aria-readonly")).toBe("true");
+    expect(screen.getByLabelText("时长").textContent).toContain("1.5");
+
+    // 变速时间直接摆出来，不用展开
+    expect(screen.queryByRole("button", { name: "精确设置" })).toBeNull();
 
     expect(screen.getByRole("spinbutton", { name: "加速时间" })).not.toBeNull();
 
@@ -463,7 +466,8 @@ describe("SequencePropertiesPanel edits", () => {
 
     });
 
-    expect(screen.getByRole("combobox", { name: "曲线类型" })).not.toBeNull();
+    // 只有梯形一种，区间里不再给曲线类型
+    expect(screen.queryByRole("combobox", { name: "曲线类型" })).toBeNull();
 
     const accel = screen.getByRole("spinbutton", { name: "加速时间" });
 

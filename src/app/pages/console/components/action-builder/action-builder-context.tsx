@@ -46,9 +46,17 @@ import {
   sequenceValidationContextFromSetup,
 } from "@/app/project/project-motion-readiness";
 import { allocateSequenceIdsInProject } from "@/app/project/action-sequence/sequence-id";
+import { sequenceShape } from "@/app/project/action-sequence/sequence-shape";
+import {
+  refreshSequenceRefs,
+  sequencesReferencing,
+  wouldCreateRefCycle,
+} from "@/app/project/action-sequence/sequence-ref";
 import { sequenceObjectIds } from "@/app/project/action-sequence/sequence-object-ids";
 import {
   nextNewSequenceName,
+  nextShapeName,
+  nextTransitionName,
   normalizeSequenceName,
   sequenceNameError,
 } from "@/app/project/action-sequence/sequence-name";
@@ -57,6 +65,7 @@ import type {
   KeyframePose,
   ModelPose,
   MotionSegmentSettings,
+  PassSpeedMode,
   TimelineBlock,
 } from "@/app/project/action-sequence/types";
 import {
@@ -98,6 +107,8 @@ import {
   upsertPoseBlock,
   upsertSetEnabledBlock,
   type UpsertResult,
+  writePoseValues,
+  type PoseValueWrite,
   replaceTimelineBlock,
   resizeDynamicPreset,
   shiftTimelineBlocks,
@@ -112,9 +123,21 @@ import {
   type SegmentAlignEdge,
   type SegmentProfileWrite,
   type SegmentRetimeWrite,
+  finalizeSequenceSegments,
+  scaleTimelineBlocks,
+  type ScaleBlocksRefusal,
+  type ScaleBlocksRequest,
+  type ScaleBlocksResult,
+  insertSpeedPoint,
+  setPassSpeedMode,
+  type SpeedPointResult,
+  explodeSequenceRefs,
+  insertSequenceRef,
+  type SequenceRefInsertResult,
 } from "./sequence-ops";
 import {
   pruneSequenceSelection,
+  segmentEndpointBlockIds,
   selectionBlockIds,
   selectionFromBlockIds,
   selectionMarkerIds,
@@ -129,12 +152,12 @@ import {
   shiftMarkers,
 } from "./marker-ops";
 import { clampCursorMs } from "./timeline/timeline-view-extent";
+import { nearestPoseBlock, poseBlocksAtCursor } from "./pose-handle-targets";
 import {
   clampTimelinePxPerSecond,
   renameSequenceInProgramTree,
   stripSequenceFromProgramTree,
   TIMELINE_PX_PER_SECOND_DEFAULT,
-  TIMELINE_ZOOM_FACTOR,
   formatTime,
   snapTimeMs,
   type ControlledObject as TimelineControlledObject,
@@ -143,6 +166,8 @@ import {
 import type {
   ActionBuilderContextValue,
   EditorDockMode,
+  PoseHandleDragTarget,
+  PoseHandleDragUpdate,
   ProgramItemInput,
   SaveAllResult,
 } from "./action-builder-context-types";
@@ -150,6 +175,8 @@ import { ActionBuilderContext } from "./action-builder-react-context";
 import type { ContextSelection } from "./context-bar/selection-context-bar";
 import { LivePoseBridge, type LivePoseLookup } from "./live-pose-bridge";
 import type { PhaseInputMode } from "./motion-profile/phase-rates";
+import { staggerSegments } from "./right-panel/segment-rhythm";
+import { buildTransitionSequence, planShapeTransition, type TransitionTiming } from "./shape-transition";
 import type { CurveGraph, TimelineViewMode } from "./timeline/curve-data";
 import type { ActionRightTab } from "./right-panel/action-right-panel";
 
@@ -174,6 +201,19 @@ const RETIME_ERROR_MESSAGE: Partial<Record<SequenceEditError, string>> = {
   "motion-overlap": "按这个速度挪动后会和已有的动作重叠，没有修改",
   "time-conflict": "按这个速度挪动后同一时刻会有两个动作块，没有修改",
   "invalid-time-range": "按这个速度时长太短，终点会越过中间的位姿，没有修改",
+};
+
+/** 整体缩放被拒时的原因（前面再带上是哪台、哪个时刻） */
+const SCALE_REFUSAL_TEXT: Record<ScaleBlocksRefusal, string> = {
+  "nothing-to-scale": "选中的块不到两个时刻，没有可以缩放的时长",
+  "phase-too-short": "这一段缩短后放不下加减速",
+  "crosses-previous": "会碰到它前一个动作",
+  "shared-block": "几个物体共用的预设要挪的时间不一样",
+  "time-conflict": "同一时刻会有两个动作块",
+  "motion-overlap": "会和已有的动作重叠",
+  "invalid-time-range": "时长不合法",
+  "missing-block": "找不到选中的块",
+  "invalid-preset": "预设无法解析",
 };
 
 /** 位姿对齐被拒时的提示（往前碰到前一个动作块的单独带物体名） */
@@ -235,6 +275,10 @@ const changedSequenceIds = (from: EditorSnapshot, to: EditorSnapshot): number[] 
   );
 };
 
+/** 物体跟随的比对键：和顺序无关（全局选中同步回来时顺序可能变） */
+const objectFollowKey = (objectIds: readonly number[]): string =>
+  [...objectIds].sort((left, right) => left - right).join(",");
+
 const UNREPAIRED_SAVE_MESSAGE = "动作序列有待修复的问题，请先修复再保存";
 const EMPTY_SAVE_MESSAGE = "动作序列为空，请先编排再保存";
 
@@ -265,6 +309,11 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   const [selectedObjectIds, setSelectedObjectIds] = useState<number[]>([]);
   const [cursorMs, setCursorMs] = useState(0);
   const [activeRightTab, setActiveRightTab] = useState<ActionRightTab>("selection");
+  // 「当前位置」和「手动控制」页签同步：在「手动控制」页就显示当前位置，切走就关
+  const liveMode = activeRightTab === "manual";
+  const setLiveMode = useCallback((on: boolean) => {
+    setActiveRightTab((tab) => (on ? "manual" : tab === "manual" ? "selection" : tab));
+  }, []);
   const [selectedProgramNodeId, setSelectedProgramNodeId] = useState<string | null>(null);
   const [programs, setPrograms] = useState<ProgramNode[]>([]);
   const [timelineObjects, setTimelineObjects] = useState<TimelineControlledObject[]>([]);
@@ -709,12 +758,12 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
    */
   const followedObjectsKeyRef = useRef<string | null>(null);
   const handleObjectsFollow = useCallback((objectIds: number[]) => {
-    followedObjectsKeyRef.current = objectIds.join(",");
+    followedObjectsKeyRef.current = objectFollowKey(objectIds);
     setSelectedObjectIds(objectIds);
   }, []);
 
   const handleObjectsSelect = useCallback((objectIds: number[]) => {
-    const followed = followedObjectsKeyRef.current === objectIds.join(",");
+    const followed = followedObjectsKeyRef.current === objectFollowKey(objectIds);
     followedObjectsKeyRef.current = null;
     if (followed) return;
     setSelectedObjectIds((prev) => {
@@ -728,13 +777,19 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     setSequenceMissingHint(false);
   }, []);
 
-  const handleCursorChange = useCallback((ms: number) => {
+  // 从时间轴以外跳游标（3D 里）时让时间轴把游标移进视野：每次要求加一
+  const [cursorRevealRequestId, setCursorRevealRequestId] = useState(0);
+  const handleCursorChange = useCallback((ms: number, options?: { reveal?: boolean }) => {
     setCursorMs(clampCursorMs(ms));
+    if (options?.reveal) setCursorRevealRequestId((id) => id + 1);
   }, []);
 
   const handlePlaybackCursorChange = useCallback((ms: number) => {
     setCursorMs(Math.max(0, ms));
   }, []);
+
+  // 时间轴在播放：联机时影子不跟着游标走（停下再跟）
+  const [timelinePlaying, setTimelinePlaying] = useState(false);
 
   const sequenceEditOptions = useMemo<SequenceEditOptions>(
     () => ({
@@ -913,6 +968,119 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     [applySequenceEdit, sequenceEditOptions],
   );
 
+  /** 位姿某轴的经过速度：跟前段 / 跟后段，null 改回自动；带 profileWrite 时同一步改那段曲线 */
+  const handleSetPassSpeedMode = useCallback(
+    (
+      blockId: string,
+      axis: VirtualAxisId,
+      mode: PassSpeedMode | null,
+      profileWrite?: SegmentProfileWrite,
+    ): boolean => applySequenceEdit((current) => setPassSpeedMode(current, blockId, axis, mode, profileWrite)),
+    [applySequenceEdit],
+  );
+
+  /**
+   * 在游标处插入变速点：给的区间里游标在中间的都切开（曲线不变），切完选中后半段，
+   * 接着改它的匀速或时长就是加速、减速
+   */
+  const handleInsertSpeedPoints = useCallback(
+    (segmentKeys: readonly string[]): boolean => {
+      const atMs = cursorMs;
+      const inserted: string[] = [];
+      const refusals: Array<Extract<SpeedPointResult, { ok: false }> & { objectId?: number }> = [];
+      let current: ActionSequenceConfig | null = null;
+      const ok = updateSelectedSequence((sequenceNow) => {
+        let next = sequenceNow;
+        for (const key of segmentKeys) {
+          const objectId = resolveActionSequence(next).segments.find((item) => item.key === key)?.objectId;
+          const result = insertSpeedPoint(next, key, atMs, sequenceEditOptions);
+          if (!result.ok) {
+            refusals.push({ ...result, objectId });
+            continue;
+          }
+          next = result.sequence;
+          inserted.push(result.blockId);
+        }
+        current = next;
+        return inserted.length > 0 ? next : null;
+      });
+      const nameOf = (objectId?: number) =>
+        objectId === undefined ? "" : `「${getTimelineObject(objectId)?.name ?? `模型 ${objectId}`}」`;
+      const refusalText = (refusal: (typeof refusals)[number]) =>
+        refusal.reason === "not-in-cruise"
+          ? `${nameOf(refusal.objectId)}游标在${refusal.axis ? ` ${refusal.axis.toUpperCase()} ` : ""}的加减速里，挪到匀速段再插入变速点`
+          : refusal.reason === "outside-segment"
+            ? "游标不在选中的区间中间"
+            : `${nameOf(refusal.objectId)}插入变速点会和已有的动作冲突`;
+      if (!ok || inserted.length === 0) {
+        toast.warning(refusals[0] ? refusalText(refusals[0]) : "没有插入变速点");
+        return false;
+      }
+      if (refusals.length > 0) toast.warning(`${refusals.length} 段没有插入：${refusalText(refusals[0]!)}`);
+      // 选中后半段（新位姿到原来的终点），属性里直接改它
+      const resolvedNext = current ? resolveActionSequence(current) : null;
+      const secondHalves = inserted.flatMap((blockId) => {
+        const segment = resolvedNext?.segments.find((item) => item.fromRef === blockId);
+        return segment && resolvedNext ? segmentEndpointBlockIds(resolvedNext, segment) : [blockId];
+      });
+      handleSelectionChange(selectionFromBlockIds(secondHalves, "segments"));
+      return true;
+    },
+    [cursorMs, updateSelectedSequence, sequenceEditOptions, getTimelineObject, handleSelectionChange],
+  );
+
+  /** 整体缩放没缩成的提示：哪台、哪个时刻、什么原因 */
+  const scaleRefusalMessage = useCallback(
+    (refusal: Extract<ScaleBlocksResult, { ok: false }>): string => {
+      const name =
+        refusal.objectId === undefined
+          ? ""
+          : `「${getTimelineObject(refusal.objectId)?.name ?? `模型 ${refusal.objectId}`}」`;
+      const at = refusal.atMs === undefined ? "" : `${formatTime(refusal.atMs)} s 处`;
+      return `${name}${at}${SCALE_REFUSAL_TEXT[refusal.reason]}，没有缩放`;
+    },
+    [getTimelineObject],
+  );
+
+  const scaleOriginRef = useRef<ActionSequenceConfig | null>(null);
+  const scaleFailureRef = useRef<string | null>(null);
+  /**
+   * 整体缩放：live 是在时间轴上拖选区右边，每次都从拖动开始时的序列算，松手 handleScaleTimelineBlocksEnd
+   * 记成一步，最后一下没缩成时那时再提示；右键菜单里一次改完，改不了直接提示
+   */
+  const handleScaleTimelineBlocks = useCallback(
+    (request: ScaleBlocksRequest, live = false): boolean => {
+      if (live) {
+        setIsDraggingTimeline(true);
+        beginDragStep();
+      }
+      let refusal: Extract<ScaleBlocksResult, { ok: false }> | null = null;
+      const ok = updateSelectedSequence((current) => {
+        if (live && scaleOriginRef.current === null) scaleOriginRef.current = current;
+        const origin = live ? (scaleOriginRef.current ?? current) : current;
+        const result = scaleTimelineBlocks(origin, request, sequenceEditOptions);
+        if (!result.ok) {
+          refusal = result;
+          return null;
+        }
+        return result.sequence;
+      });
+      const message = refusal ? scaleRefusalMessage(refusal) : null;
+      if (live) scaleFailureRef.current = message;
+      else if (message) toast.warning(message);
+      return ok;
+    },
+    [updateSelectedSequence, sequenceEditOptions, beginDragStep, scaleRefusalMessage],
+  );
+
+  const handleScaleTimelineBlocksEnd = useCallback(() => {
+    scaleOriginRef.current = null;
+    setIsDraggingTimeline(false);
+    endDragStep();
+    if (scaleFailureRef.current) toast.warning(scaleFailureRef.current);
+    scaleFailureRef.current = null;
+  }, [endDragStep]);
+
   /** 跑一次对齐编辑：改不了时提示原因，没东西要挪时提示 alreadyText */
   const runAlignEdit = useCallback(
     (align: (current: ActionSequenceConfig) => AlignSegmentsResult, alreadyText: string): boolean => {
@@ -979,6 +1147,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   const [curveGraph, setCurveGraph] = useState<CurveGraph>("position");
   // 轨道视图只选一个物体时铺它的曲线做底图，默认开
   const [curveUnderlay, setCurveUnderlay] = useState(true);
+  const [poseCursorFollow, setPoseCursorFollow] = useState(true);
 
   const handleTrajectoryModeChange = useCallback(
     (trajectoryMode: TrajectoryMode) => {
@@ -1097,6 +1266,79 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     [applySequenceEdit, selectedBlockIds, sequenceEditOptions],
   );
 
+  /** 展开引用：换成里面的块（和源序列不再关联）；不传时展开选中的引用 */
+  const handleExplodeSequenceRefs = useCallback(
+    (blockIds?: readonly string[]) => {
+      const ids = blockIds ?? selectedBlockIds;
+      let before: ActionSequenceConfig | null = null;
+      let after: ActionSequenceConfig | null = null;
+      const committed = applySequenceEdit((current) => {
+        const result = explodeSequenceRefs(current, ids, sequenceEditOptions);
+        before = current;
+        if (result.ok) after = result.sequence;
+        return result;
+      });
+      if (!committed || !before || !after) {
+        toast.warning("引用无法展开");
+        return;
+      }
+      const kept = new Set((before as ActionSequenceConfig).blocks.map((block) => block.id));
+      const created = (after as ActionSequenceConfig).blocks.filter((block) => !kept.has(block.id)).map((block) => block.id);
+      setSelection(selectionFromBlockIds(created));
+      toast.success(`已展开成 ${created.length} 个块，和原序列不再关联`);
+    },
+    [applySequenceEdit, selectedBlockIds, sequenceEditOptions],
+  );
+
+  /**
+   * 在游标处（或 atMs）引用另一条序列：用它已保存的版本；位置不一样时前面自动加过渡，
+   * 后面的块和标记往后让。绕回自己的不让引用
+   */
+  const handleInsertSequenceRef = useCallback(
+    (sourceId: number, atMs: number = cursorMs): boolean => {
+      if (selectedSequenceId === null) return false;
+      const library = new Map(motionRef.current.sequences.map((item) => [item.id, item]));
+      const source = library.get(sourceId);
+      const current = draftsRef.current.get(selectedSequenceId) ?? library.get(selectedSequenceId);
+      if (!source || !current) return false;
+      if (wouldCreateRefCycle(selectedSequenceId, source, library)) {
+        toast.warning(
+          sourceId === selectedSequenceId
+            ? "不能引用自己"
+            : `「${source.name}」里已经用到了「${current.name}」，不能再引用回去`,
+        );
+        return false;
+      }
+      let outcome: SequenceRefInsertResult | null = null;
+      const committed = updateSelectedSequence((sequenceNow) => {
+        const result = insertSequenceRef(sequenceNow, { source, atMs, objectOf: getTimelineObject }, sequenceEditOptions);
+        outcome = result;
+        return result.ok ? result.sequence : null;
+      });
+      const result = outcome as SequenceRefInsertResult | null;
+      if (!committed || !result?.ok) {
+        const reason = result && !result.ok ? result.reason : null;
+        toast.warning(
+          reason === "straddles-block"
+            ? `游标在 ${formatTime(result && !result.ok ? (result.atMs ?? atMs) : atMs)} s 开始的预设或引用中间，挪开再插`
+            : reason === "empty-source"
+              ? `「${source.name}」是空的，没有可引用的动作`
+              : `插入「${source.name}」会和已有的动作冲突，没有插入`,
+        );
+        return false;
+      }
+      handleSelectionChange({ kind: "block", blockId: result.blockId });
+      const parts = [
+        result.transitionMs > 0 ? `前面加了 ${formatTime(result.transitionMs)} s 过渡` : null,
+        result.shiftedMs > 0 ? `后面的动作往后挪了 ${formatTime(result.shiftedMs)} s` : null,
+        draftsRef.current.has(sourceId) ? "它有未保存的修改，引用的是已保存的版本" : null,
+      ].filter(Boolean);
+      toast.success(`已引用「${source.name}」${parts.length > 0 ? `：${parts.join("，")}` : ""}`);
+      return true;
+    },
+    [cursorMs, selectedSequenceId, updateSelectedSequence, getTimelineObject, sequenceEditOptions, handleSelectionChange],
+  );
+
   /** 逐个物体在播放头位置新建或更新动作块，一次提交 */
   const upsertForObjects = useCallback(
     (
@@ -1124,8 +1366,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   );
 
   const reportUpsert = useCallback(
-    (outcome: UpsertOutcome, label: string) => {
-      const at = `${formatTime(snapTimeMs(cursorMs))}s`;
+    (outcome: UpsertOutcome, label: string, atMs: number = cursorMs) => {
+      const at = `${formatTime(snapTimeMs(atMs))}s`;
       if (outcome.refusedNames.length > 0) {
         toast.warning(`${outcome.refusedNames.join("、")} 在 ${at} 已有其他动作，未插入${label}`);
       }
@@ -1148,19 +1390,23 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
    * 没有时取实时位置。指针处已有位姿就原样保留（包括不设定的轴）。
    */
   const defaultPosesAtCursor = useCallback(
-    (target: ActionSequenceConfig, objectIds: readonly number[]): Map<number, KeyframePose> => {
+    (
+      target: ActionSequenceConfig,
+      objectIds: readonly number[],
+      atMs: number = cursorMs,
+    ): Map<number, KeyframePose> => {
       let resolved: ResolvedActionSequence | null = null;
       let evaluated = new Map<number, ModelPose>();
       try {
         resolved = resolveActionSequence(target);
-        evaluated = evaluateResolvedSequence(resolved, cursorMs);
+        evaluated = evaluateResolvedSequence(resolved, atMs);
       } catch {
         // 序列解析失败时全部退回实时位置
       }
       return new Map(
         objectIds.map((objectId): [number, KeyframePose] => {
           const existing = target.blocks.find(
-            (block) => block.kind === "pose" && block.objectId === objectId && block.atMs === cursorMs,
+            (block) => block.kind === "pose" && block.objectId === objectId && block.atMs === atMs,
           );
           if (existing?.kind === "pose") return [objectId, { ...existing.pose }];
           const pose = evaluated.get(objectId);
@@ -1177,23 +1423,160 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     [cursorMs, getLivePose],
   );
 
+  /** 在游标处（或给定时刻，如双击轨道的地方）给这些物体加位姿；那一刻已有位姿就选中它 */
   const handleCreatePose = useCallback(
-    (objectIds: number[]) => {
+    (objectIds: number[], atMs?: number) => {
       if (!selectedSequenceId || !sequence) {
         setSequenceMissingHint(true);
         return;
       }
-      const poses = defaultPosesAtCursor(sequence, objectIds);
+      if (objectIds.length === 0) {
+        toast.info("先在 3D 或时间轴里选物体");
+        return;
+      }
+      const at = snapTimeMs(atMs ?? cursorMs);
+      const poses = defaultPosesAtCursor(sequence, objectIds, at);
       const outcome = upsertForObjects(objectIds, (current, objectId) =>
         upsertPoseBlock(
           current,
-          { id: nextId("blk"), kind: "pose", objectId, atMs: cursorMs, pose: poses.get(objectId)! },
+          { id: nextId("blk"), kind: "pose", objectId, atMs: at, pose: poses.get(objectId)! },
           sequenceEditOptions,
         ),
       );
-      reportUpsert(outcome, "位姿");
+      reportUpsert(outcome, "位姿", at);
     },
     [selectedSequenceId, sequence, cursorMs, defaultPosesAtCursor, sequenceEditOptions],
+  );
+
+  /**
+   * 3D 里点选 / 框选物体：游标处有这些物体的位姿就选中这些位姿（右侧显示位姿属性），没有就只选物体。
+   * selectionChanged：这次点选改了全局选中，随后同步回 handleObjectsSelect 时要认出是这一次、不清位姿。
+   */
+  const handleViewportObjectsPick = useCallback(
+    (objectIds: number[], selectionChanged: boolean) => {
+      if (!sequence) return;
+      const poses = poseBlocksAtCursor(sequence, objectIds, cursorMs);
+      if (poses.length === 0) return;
+      if (selectionChanged) handleObjectsFollow(objectIds);
+      setSelection(selectionFromBlockIds(poses.map((block) => block.id)));
+      setActiveRightTab((tab) => (tab === "manual" ? tab : "selection"));
+      setSequenceMissingHint(false);
+    },
+    [sequence, cursorMs, handleObjectsFollow],
+  );
+
+  /** 3D 里双击物体：游标跳到它最近的位姿并选中 */
+  const handleViewportObjectDoubleClick = useCallback(
+    (objectId: number) => {
+      if (!sequence) return;
+      const block = nearestPoseBlock(sequence, objectId, cursorMs);
+      if (!block) {
+        toast.info(`${getTimelineObject(objectId)?.name ?? `物体 ${objectId}`} 在这条序列里还没有位姿`);
+        return;
+      }
+      setCursorMs(clampCursorMs(block.atMs));
+      setCursorRevealRequestId((id) => id + 1);
+      setSelection({ kind: "block", blockId: block.id });
+      setActiveRightTab((tab) => (tab === "manual" ? tab : "selection"));
+      setSequenceMissingHint(false);
+    },
+    [sequence, cursorMs, getTimelineObject],
+  );
+
+  /** 3D 拖位姿：拖动前的序列（取消时回到这里）、补上位姿之后的序列、每台物体改哪个位姿块 */
+  const poseHandleDragRef = useRef<{
+    origin: ActionSequenceConfig;
+    base: ActionSequenceConfig;
+    blockIds: Map<number, string>;
+  } | null>(null);
+
+  /**
+   * 3D 里开始拖位姿手柄：这一刻还没有位姿的物体先加一个（值取这一刻序列的样子，像自动关键帧），
+   * 加位姿和整个拖动记成一步撤销。一台都改不了时返回 false（引擎取消这次拖动）。
+   */
+  const handlePoseHandleDragStart = useCallback(
+    (targets: readonly PoseHandleDragTarget[]): boolean => {
+      if (selectedSequenceId === null || !canEditRef.current) return false;
+      const applied = motionRef.current.sequences.find((item) => item.id === selectedSequenceId);
+      if (!applied) return false;
+      const origin = draftsRef.current.get(selectedSequenceId) ?? applied;
+      let base = origin;
+      const blockIds = new Map<number, string>();
+      const refused: string[] = [];
+      for (const target of targets) {
+        if (target.blockId !== null) {
+          if (base.blocks.some((block) => block.id === target.blockId && block.kind === "pose")) {
+            blockIds.set(target.objectId, target.blockId);
+          }
+          continue;
+        }
+        const atMs = snapTimeMs(target.atMs);
+        const pose = defaultPosesAtCursor(base, [target.objectId], atMs).get(target.objectId) ?? {};
+        const result = upsertPoseBlock(
+          base,
+          { id: nextId("blk"), kind: "pose", objectId: target.objectId, atMs, pose },
+          sequenceEditOptions,
+        );
+        if (!result.ok) {
+          refused.push(getTimelineObject(target.objectId)?.name ?? `物体 ${target.objectId}`);
+          continue;
+        }
+        base = result.sequence;
+        blockIds.set(target.objectId, result.blockId);
+      }
+      if (refused.length > 0) {
+        toast.warning(`${refused.join("、")} 在这一刻已有其他动作，加不了位姿`);
+      }
+      if (blockIds.size === 0) return false;
+      poseHandleDragRef.current = { origin, base, blockIds };
+      setIsDraggingTimeline(true);
+      beginDragStep();
+      if (base !== origin) updateSelectedSequence(() => base);
+      // 播放停下时游标可能不在整格上：对到这一格，3D 显示的就是正在改的这一刻
+      setCursorMs((ms) => clampCursorMs(ms));
+      return true;
+    },
+    [
+      selectedSequenceId,
+      defaultPosesAtCursor,
+      sequenceEditOptions,
+      getTimelineObject,
+      beginDragStep,
+      updateSelectedSequence,
+    ],
+  );
+
+  /** 3D 里拖位姿手柄中：每台物体写拖到的值（相对拖动开始；松手前不跑校验） */
+  const handlePoseHandleDrag = useCallback(
+    (updates: readonly PoseHandleDragUpdate[]) => {
+      const drag = poseHandleDragRef.current;
+      if (!drag) return;
+      const writes = updates.flatMap((update): PoseValueWrite[] => {
+        const blockId = drag.blockIds.get(update.objectId);
+        return blockId ? [{ blockId, values: update.values }] : [];
+      });
+      updateSelectedSequence(() => {
+        const result = writePoseValues(drag.base, writes, { ...sequenceEditOptions, objectInfo: poseObjectInfo });
+        return result.ok ? result.sequence : null;
+      });
+    },
+    [updateSelectedSequence, sequenceEditOptions, poseObjectInfo],
+  );
+
+  /** 松手：这次拖动记成一步、跑校验，并选中改过的位姿（时间轴、属性和 3D 对上）；取消时回到拖动前 */
+  const handlePoseHandleDragEnd = useCallback(
+    (commit: boolean) => {
+      const drag = poseHandleDragRef.current;
+      poseHandleDragRef.current = null;
+      if (drag && !commit) updateSelectedSequence(() => drag.origin);
+      setIsDraggingTimeline(false);
+      endDragStep();
+      if (!drag || !commit) return;
+      setSelection(selectionFromBlockIds([...drag.blockIds.values()]));
+      setActiveRightTab((tab) => (tab === "manual" ? tab : "selection"));
+      setSequenceMissingHint(false);
+    },
+    [updateSelectedSequence, endDragStep],
   );
 
   const handleCreateSetEnabled = useCallback(
@@ -1292,6 +1675,135 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     ],
   );
 
+  /**
+   * 新建一条单帧动作序列当造型（名字「造型 N」），不切换正在编的序列。
+   * 存了返回名字；没有能存的位置或 id 用完时返回 null。
+   */
+  const addShapeSequence = useCallback(
+    (objectIds: readonly number[], poseForObject: (objectId: number) => KeyframePose | null) => {
+      let id: number;
+      try {
+        [id] = allocateSequenceIdsInProject(motionRef.current.sequences, 1);
+      } catch (error) {
+        setLastPersistError(error instanceof Error ? error.message : "动作序列 id 已满（1~65535）");
+        return null;
+      }
+      const name = nextShapeName(motionRef.current.sequences.map((item) => item.name));
+      const created = buildCapturedPoseSequence({ id, name, objectIds, poseForObject });
+      if (!created) {
+        toast.warning("没有可存的位置");
+        return null;
+      }
+      const nextSequences = [...motionRef.current.sequences, created];
+      if (!recordEditorStep(() => commitMotionProjection({ ...motionRef.current, sequences: nextSequences }))) {
+        return null;
+      }
+      toast.success(`已存为「${name}」`);
+      return name;
+    },
+    [commitMotionProjection, recordEditorStep],
+  );
+
+  /** 存为造型：当前位置存成新的单帧动作序列 */
+  const handleSaveShape = useCallback(
+    ({ objectIds, poseForObject }: CapturedPoseRequest) => {
+      addShapeSequence(objectIds, poseForObject);
+    },
+    [addShapeSequence],
+  );
+
+  /** 游标处存为造型：序列在游标那一刻的值，选中的物体（没选就是序列里的全部物体） */
+  const handleSaveShapeAtCursor = useCallback(() => {
+    if (!sequence) return;
+    let resolved: ResolvedActionSequence;
+    try {
+      resolved = resolveActionSequence(sequence);
+    } catch {
+      toast.warning("这条序列有待修复的内容，存不了造型");
+      return;
+    }
+    const evaluated = evaluateResolvedSequence(resolved, cursorMs);
+    const inSequence = [...resolved.posesByObject.keys()];
+    const picked = selectedObjectIds.filter((objectId) => inSequence.includes(objectId));
+    const objectIds = picked.length > 0 ? picked : inSequence;
+    addShapeSequence(objectIds, (objectId) => {
+      const pose = evaluated.get(objectId);
+      if (!pose) return null;
+      const uncontrolled = uncontrolledAxesOf(resolved, objectId);
+      const next: KeyframePose = {};
+      for (const axis of ["v1", "v2", "v3"] as const) {
+        if (!uncontrolled.includes(axis)) next[axis] = roundProjectCoordinate(pose[axis]);
+      }
+      return Object.keys(next).length > 0 ? next : null;
+    });
+  }, [sequence, cursorMs, selectedObjectIds, addShapeSequence]);
+
+  /**
+   * 两个造型之间生成过渡：起点取 fromId 结束时的样子，终点取 toId 开始时的样子（按编辑器里看到的，有草稿用草稿），
+   * 新建「过渡 N」并打开
+   */
+  const handleCreateTransition = useCallback(
+    (fromId: number, toId: number, timing: TransitionTiming): boolean => {
+      const shown = (id: number) =>
+        draftsRef.current.get(id) ?? motionRef.current.sequences.find((item) => item.id === id);
+      const fromSequence = shown(fromId);
+      const toSequence = shown(toId);
+      if (!fromSequence || !toSequence) return false;
+      let plan: ReturnType<typeof planShapeTransition>;
+      try {
+        plan = planShapeTransition({
+          from: sequenceShape(resolveActionSequence(fromSequence), "end"),
+          to: sequenceShape(resolveActionSequence(toSequence), "start"),
+          objectOf: getTimelineObject,
+          timing,
+        });
+      } catch {
+        toast.warning("有序列待修复，算不了过渡");
+        return false;
+      }
+      if (plan.objects.length === 0) {
+        toast.warning(`「${fromSequence.name}」和「${toSequence.name}」没有共同的物体，没有可过渡的`);
+        return false;
+      }
+      let id: number;
+      try {
+        [id] = allocateSequenceIdsInProject(motionRef.current.sequences, 1);
+      } catch (error) {
+        setLastPersistError(error instanceof Error ? error.message : "动作序列 id 已满（1~65535）");
+        return false;
+      }
+      const name = nextTransitionName(motionRef.current.sequences.map((item) => item.name));
+      const created = buildTransitionSequence(plan, { id, name });
+      if (!created) return false;
+      const finalized = finalizeSequenceSegments(created, sequenceEditOptions);
+      const nextSequences = [...motionRef.current.sequences, finalized];
+      if (!recordEditorStep(() => commitMotionProjection({ ...motionRef.current, sequences: nextSequences }))) {
+        return false;
+      }
+      handleSequenceSelect(finalized.id);
+      toast.success(`已生成「${name}」：${formatTime(plan.totalMs)} s`);
+      return true;
+    },
+    [getTimelineObject, sequenceEditOptions, recordEditorStep, commitMotionProjection, handleSequenceSelect],
+  );
+
+  /** 错峰：选中的区间（每台一段）到达不动，起点按先后依次晚 gapMs 出发 */
+  const handleStaggerSegments = useCallback(
+    (keys: readonly string[], gapMs: number) => {
+      let message: string | null = null;
+      updateSelectedSequence((current) => {
+        const result = staggerSegments(current, keys, gapMs, getTimelineObject, sequenceEditOptions);
+        if (!result.ok) {
+          message = result.message;
+          return null;
+        }
+        return result.sequence;
+      });
+      if (message) toast.warning(message);
+    },
+    [updateSelectedSequence, getTimelineObject, sequenceEditOptions],
+  );
+
   const handleRenameSequence = useCallback(
     (raw: string, sequenceId: number | null = selectedSequenceId): string | null => {
       if (sequenceId === null) return "未选择序列";
@@ -1341,6 +1853,13 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     if (!deleted) return;
     setSelectedProgramNodeId((prev) => (prev === String(id) ? null : prev));
     handleSequenceSelect(remaining[0]?.id ?? null);
+    // 引用它的序列照常播放（引用里存着内容），只是不再跟着它更新
+    const users = sequencesReferencing(remaining, id);
+    if (users.length > 0) {
+      toast.info(
+        `${users.map((item) => `「${item.name}」`).join("")}里还引用着「${target.name}」：照常播放，不再跟着更新，可以展开成普通块`,
+      );
+    }
   }, [selectedSequenceId, commitMotionProjection, handleSequenceSelect, setDraft, recordEditorStep]);
 
   /** 物体不符合预设条件时按该条件提示，返回 true 表示不能添加 */
@@ -1655,18 +2174,6 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     setTimelinePxPerSecond(clampTimelinePxPerSecond(pxPerSecond));
   }, []);
 
-  const handleTimelineZoomIn = useCallback(() => {
-    setTimelinePxPerSecond((current) =>
-      clampTimelinePxPerSecond(current / TIMELINE_ZOOM_FACTOR),
-    );
-  }, []);
-
-  const handleTimelineZoomOut = useCallback(() => {
-    setTimelinePxPerSecond((current) =>
-      clampTimelinePxPerSecond(current * TIMELINE_ZOOM_FACTOR),
-    );
-  }, []);
-
   const handleChapterAdd = useCallback(() => {
     updatePrograms((current) => {
       const chapter: ProgramNode = {
@@ -1746,6 +2253,28 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     [updatePrograms],
   );
 
+  /**
+   * 保存后引用跟着走：引用了刚保存的序列（一层层往上）的已保存版本和草稿里的引用内容都换成新的。
+   * 返回换好的已保存列表和跟着更新了几个序列（不算刚保存的这些）
+   */
+  const followSavedSequences = useCallback(
+    (saved: ActionSequenceConfig[], savedIds: ReadonlySet<number>) => {
+      const library = new Map(saved.map((item) => [item.id, item]));
+      const applied = refreshSequenceRefs(saved, library);
+      const followers = applied.filter((item, index) => item !== saved[index] && !savedIds.has(item.id)).length;
+      const refreshedLibrary = new Map(applied.map((item) => [item.id, item]));
+      const drafted = [...draftsRef.current.values()].filter((item) => !savedIds.has(item.id));
+      const refreshedDrafts = refreshSequenceRefs(drafted, refreshedLibrary);
+      if (refreshedDrafts.some((item, index) => item !== drafted[index])) {
+        const map = new Map(draftsRef.current);
+        for (const item of refreshedDrafts) map.set(item.id, item);
+        replaceDrafts(map);
+      }
+      return { applied, followers };
+    },
+    [replaceDrafts],
+  );
+
   /** 把选中序列的草稿写进工程，节目列表、执行才用新内容；待修复时不保存（不是保存工程文件） */
   const handleSave = useCallback(() => {
     const id = selectedSequenceId;
@@ -1764,14 +2293,17 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       toast.warning(draft.blocks.length === 0 ? EMPTY_SAVE_MESSAGE : UNREPAIRED_SAVE_MESSAGE);
       return;
     }
-    const nextSequences = motionRef.current.sequences.map((item) => (item.id === id ? draft : item));
+    const saved = motionRef.current.sequences.map((item) => (item.id === id ? draft : item));
+    const { applied: nextSequences, followers } = followSavedSequences(saved, new Set([id]));
     if (!commitSequences(nextSequences)) {
       toast.error("保存失败");
       return;
     }
     setDraft(id, null);
-    toast.success(`已保存「${draft.name}」，节目列表已更新`);
-  }, [selectedSequenceId, currentProject?.document, commitSequences, setDraft]);
+    toast.success(
+      `已保存「${draft.name}」，节目列表已更新${followers > 0 ? `，引用它的 ${followers} 个序列跟着更新` : ""}`,
+    );
+  }, [selectedSequenceId, currentProject?.document, commitSequences, setDraft, followSavedSequences]);
 
   /**
    * 保存所有能保存的草稿（离开动作页时用）；待修复的、对应动作正在运行的留着草稿，
@@ -1790,7 +2322,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       else savable.set(id, draft);
     }
     if (savable.size > 0) {
-      const nextSequences = motionRef.current.sequences.map((item) => savable.get(item.id) ?? item);
+      const saved = motionRef.current.sequences.map((item) => savable.get(item.id) ?? item);
+      const { applied: nextSequences } = followSavedSequences(saved, new Set(savable.keys()));
       if (!commitSequences(nextSequences)) {
         toast.error("保存失败");
         return { saved: 0, blocked, running };
@@ -1803,7 +2336,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     }
     if (running.length > 0) toast.warning(runningSequenceMessage(running, "保存"));
     return { saved: savable.size, blocked, running };
-  }, [currentProject?.document, commitSequences, replaceDrafts]);
+  }, [currentProject?.document, commitSequences, replaceDrafts, followSavedSequences]);
 
   /**
    * 退回到某一步：序列的增删、顺序、名字和节目列表写回工程；
@@ -1888,6 +2421,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       selectedBlockId,
       selectedObjectIds,
       cursorMs,
+      cursorRevealRequestId,
       activeRightTab,
       selectedProgramNodeId,
       contextSelection,
@@ -1909,7 +2443,11 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleCurveGraphChange: setCurveGraph,
       curveUnderlay,
       handleCurveUnderlayChange: setCurveUnderlay,
+      poseCursorFollow,
+      handlePoseCursorFollowChange: setPoseCursorFollow,
       setActiveRightTab,
+      liveMode,
+      setLiveMode,
       handleSequenceSelect,
       handleSelectionChange,
       handleObjectSelect,
@@ -1917,6 +2455,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleObjectsFollow,
       handleCursorChange,
       handlePlaybackCursorChange,
+      timelinePlaying,
+      handleTimelinePlayingChange: setTimelinePlaying,
       handleInsertTimelineBlock,
       handleReplaceTimelineBlock,
       handleApplyPoseAxisWrite,
@@ -1924,8 +2464,19 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleMoveTimelineBlock,
       handleShiftTimelineBlocks,
       handleShiftTimelineBlocksEnd,
+      handleScaleTimelineBlocks,
+      handleScaleTimelineBlocksEnd,
+      handleSetPassSpeedMode,
+      handleInsertSpeedPoints,
+      handleInsertSequenceRef,
+      handleExplodeSequenceRefs,
       handleDragPoseAxis,
       handleDragPoseAxisEnd,
+      handleViewportObjectsPick,
+      handleViewportObjectDoubleClick,
+      handlePoseHandleDragStart,
+      handlePoseHandleDrag,
+      handlePoseHandleDragEnd,
       handleResizeDynamicPreset,
       handleUpdateSegmentSettings,
       handleWriteSegmentProfiles,
@@ -1948,12 +2499,14 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleSequenceCopy,
       handleSequencePaste,
       handleTimelinePxPerSecondChange,
-      handleTimelineZoomIn,
-      handleTimelineZoomOut,
       handleCreatePose,
       handleCreateSetEnabled,
       handleCreateSequence,
       handleSaveCurrentPose,
+      handleSaveShape,
+      handleSaveShapeAtCursor,
+      handleCreateTransition,
+      handleStaggerSegments,
       getLivePose,
       handleRenameSequence,
       handleDeleteSequence,
@@ -1982,7 +2535,9 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       selectedBlockId,
       selectedObjectIds,
       cursorMs,
+      cursorRevealRequestId,
       activeRightTab,
+      liveMode,
       selectedProgramNodeId,
       contextSelection,
       programs,
@@ -1996,6 +2551,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       curveAxis,
       curveGraph,
       curveUnderlay,
+      poseCursorFollow,
       lastPersistError,
       sequenceIssues,
       getTimelineObject,
@@ -2006,6 +2562,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleObjectsFollow,
       handleCursorChange,
       handlePlaybackCursorChange,
+      timelinePlaying,
       handleInsertTimelineBlock,
       handleReplaceTimelineBlock,
       handleApplyPoseAxisWrite,
@@ -2013,8 +2570,19 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleMoveTimelineBlock,
       handleShiftTimelineBlocks,
       handleShiftTimelineBlocksEnd,
+      handleScaleTimelineBlocks,
+      handleScaleTimelineBlocksEnd,
+      handleSetPassSpeedMode,
+      handleInsertSpeedPoints,
+      handleInsertSequenceRef,
+      handleExplodeSequenceRefs,
       handleDragPoseAxis,
       handleDragPoseAxisEnd,
+      handleViewportObjectsPick,
+      handleViewportObjectDoubleClick,
+      handlePoseHandleDragStart,
+      handlePoseHandleDrag,
+      handlePoseHandleDragEnd,
       handleResizeDynamicPreset,
       handleUpdateSegmentSettings,
       handleWriteSegmentProfiles,
@@ -2037,12 +2605,14 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handleSequenceCopy,
       handleSequencePaste,
       handleTimelinePxPerSecondChange,
-      handleTimelineZoomIn,
-      handleTimelineZoomOut,
       handleCreatePose,
       handleCreateSetEnabled,
       handleCreateSequence,
       handleSaveCurrentPose,
+      handleSaveShape,
+      handleSaveShapeAtCursor,
+      handleCreateTransition,
+      handleStaggerSegments,
       getLivePose,
       handleRenameSequence,
       handleDeleteSequence,

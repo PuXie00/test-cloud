@@ -390,6 +390,8 @@ const JUNCTION_KIND_TEXT: Record<PoseJunctionKind, string> = {
   edge: "序列起止",
   reverse: "折返",
   hold: "前后有一段不动",
+  "follow-prev": "跟前段",
+  "follow-next": "跟后段",
 };
 
 export const junctionKindText = (kind: PoseJunctionKind): string => JUNCTION_KIND_TEXT[kind];

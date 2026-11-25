@@ -35,11 +35,19 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
 // Disable GPU Acceleration for Windows 7
 if (os.release().startsWith('6.1')) app.disableHardwareAcceleration()
 
-// Linux: 禁用 GPU 合成防止长时间运行纹理内存泄漏；增大 V8 堆上限
+// Linux: 禁用 GPU 合成防止长时间运行纹理内存泄漏；增大 V8 堆上限。
+// 没有 /dev/dri 时不能关 GL，否则 WebGL 直接不可用。改用 SwiftShader 软件渲染。
 if (process.platform === 'linux') {
-  app.disableHardwareAcceleration()
   app.commandLine.appendSwitch('disable-gpu-compositing')
   app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096')
+  if (fs.existsSync('/dev/dri')) {
+    app.disableHardwareAcceleration()
+  } else {
+    app.commandLine.appendSwitch('use-gl', 'angle')
+    app.commandLine.appendSwitch('use-angle', 'swiftshader')
+    app.commandLine.appendSwitch('enable-unsafe-swiftshader')
+    app.commandLine.appendSwitch('ignore-gpu-blocklist')
+  }
 }
 
 // Set application name for Windows 10+ notifications

@@ -372,6 +372,7 @@ vi.mock("../../hooks/use-sequence-preview", () => ({
 }));
 
 vi.mock("../../hooks/use-controlled-objects", () => ({
+  useOptionalControlledObjects: () => null,
   useControlledObjects: () => ({
     snapshots: snapshotsRef.current,
     getById: () => undefined,

@@ -5,9 +5,19 @@ export const SNAP_THRESHOLD_PX = 8;
 /** 整秒吸得弱一些，免得默认缩放下处处都吸到整秒 */
 export const WHOLE_SECOND_SNAP_THRESHOLD_PX = 4;
 
-/** 块占用的时刻：动态预设是起止两端，其余块是 atMs */
+/** 块占用的时刻：动态预设、引用的序列是起止两端，其余块是 atMs */
 export const blockTimesMs = (block: TimelineBlock): number[] =>
-  block.kind === "dynamic-preset" ? [block.startMs, block.endMs] : [block.atMs];
+  block.kind === "dynamic-preset"
+    ? [block.startMs, block.endMs]
+    : block.kind === "sequence-ref"
+      ? [block.atMs, block.atMs + block.durationMs]
+      : [block.atMs];
+
+/** 块的起止：点块起止相同 */
+export const blockSpanMs = (block: TimelineBlock): { startMs: number; endMs: number } => {
+  const times = blockTimesMs(block);
+  return { startMs: times[0]!, endMs: times[times.length - 1]! };
+};
 
 export const blockObjectIds = (block: TimelineBlock): number[] =>
   block.kind === "pose" || block.kind === "instruction" ? [block.objectId] : block.orderedObjectIds;

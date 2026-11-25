@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft } from "lucide-react";
-import { CollapsePanel } from "@/app/components/ics/collapse-panel";
 import { clampNumeric } from "@/app/components/ics/numeric-input-utils";
 import { TabBar } from "@/app/components/ics/tab-bar";
 import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-input";
@@ -20,6 +19,7 @@ import type {
   KeyframePose,
   ModelPose,
   MotionSegmentSettings,
+  PassSpeedMode,
   PoseBlock,
   TimelineBlock,
   TimelineMarker,
@@ -31,7 +31,8 @@ import { MultiSegmentEditor } from "./multi-segment-editor";
 import { PoseAlignTools, SegmentAlignTools } from "./segment-align-tools";
 import { PresetBlockFields, presetBlockTitle } from "./preset-block-panel";
 import { RepairBand } from "./repair-band";
-import { SegmentEditor, SegmentStatusBadge, segmentStatusOf } from "./segment-editor";
+import { SegmentStatusBadge, segmentStatusOf } from "./segment-editor";
+import { SegmentPanel } from "./segment-panel";
 import {
   lookupSequenceSelection,
   segmentEndpointBlockIds,
@@ -199,8 +200,9 @@ const AxisToggle = ({
 );
 
 type PassSpeeds = Partial<Record<VirtualAxisId, number>>;
+type PassSpeedModes = Partial<Record<VirtualAxisId, PassSpeedMode>>;
 
-type PoseAxesChange = { pose: KeyframePose; passSpeeds: PassSpeeds };
+type PoseAxesChange = { pose: KeyframePose; passSpeeds: PassSpeeds; passSpeedModes: PassSpeedModes };
 
 const JUNCTION_LABEL: Record<PoseJunctionKind, string> = {
   auto: "自动",
@@ -208,11 +210,26 @@ const JUNCTION_LABEL: Record<PoseJunctionKind, string> = {
   edge: "起止停",
   reverse: "折返停",
   hold: "停留",
+  "follow-prev": "跟前段",
+  "follow-next": "跟后段",
 };
+
+/** 经过速度怎么定：自动、跟前段（前段末尾不变速，加加速用）、跟后段（后段开头不变速，减减速用） */
+const PASS_SPEED_CHOICES: ReadonlyArray<{
+  kind: PoseJunctionKind;
+  mode: PassSpeedMode | null;
+  text: string;
+  title: string;
+}> = [
+  { kind: "auto", mode: null, text: "自动", title: "前后两段平均速度的调和平均" },
+  { kind: "follow-prev", mode: "prev", text: "跟前段", title: "等于前一段的匀速：前段末尾不变速，后段从这个速度接着加速（加加速）" },
+  { kind: "follow-next", mode: "next", text: "跟后段", title: "等于后一段的匀速：后段开头不变速，前段末尾减到这个速度（减减速）" },
+];
 
 const PoseAxesEditor = ({
   pose,
   passSpeeds,
+  passSpeedModes,
   passThrough,
   junctions,
   uncontrolledAxes,
@@ -221,6 +238,7 @@ const PoseAxesEditor = ({
 }: {
   pose: KeyframePose;
   passSpeeds: PassSpeeds;
+  passSpeedModes: PassSpeedModes;
   /** 解析后的位姿：不设定的轴取这一帧的经过值 */
   passThrough: ModelPose | undefined;
   /** 各设定轴在这一帧的经过速度及原因 */
@@ -250,13 +268,21 @@ const PoseAxesEditor = ({
 
   const enabledAxes = resolveEnabledAxes(object?.enabledAxes ?? []);
   const setCount = enabledAxes.filter((axis) => isAxisSet(pose, axis)).length;
-  const emit = (nextPose: KeyframePose, nextSpeeds: PassSpeeds = passSpeeds) => {
+  const emit = (
+    nextPose: KeyframePose,
+    nextSpeeds: PassSpeeds = passSpeeds,
+    nextModes: PassSpeedModes = passSpeedModes,
+  ) => {
     const kept: PassSpeeds = {};
+    const keptModes: PassSpeedModes = {};
     for (const axis of VIRTUAL_AXIS_IDS) {
+      if (!isAxisSet(nextPose, axis)) continue;
       const speed = nextSpeeds[axis];
-      if (speed !== undefined && isAxisSet(nextPose, axis)) kept[axis] = speed;
+      const mode = nextModes[axis];
+      if (mode !== undefined) keptModes[axis] = mode;
+      else if (speed !== undefined) kept[axis] = speed;
     }
-    onChange({ pose: nextPose, passSpeeds: kept });
+    onChange({ pose: nextPose, passSpeeds: kept, passSpeedModes: keptModes });
   };
 
   const handleDraftChange = (axis: VirtualAxisId, value: number) => {
@@ -290,14 +316,21 @@ const PoseAxesEditor = ({
     emit({ ...pose, [axis]: roundProjectCoordinate(value) });
   };
 
+  /** 填了数值就是手填（跟前段 / 跟后段去掉） */
   const handlePassSpeedCommit = (axis: VirtualAxisId, value: number) => {
-    emit(pose, { ...passSpeeds, [axis]: roundProjectCoordinate(Math.max(0, value)) });
+    const modes = { ...passSpeedModes };
+    delete modes[axis];
+    emit(pose, { ...passSpeeds, [axis]: roundProjectCoordinate(Math.max(0, value)) }, modes);
   };
 
-  const handlePassSpeedAuto = (axis: VirtualAxisId) => {
-    const next = { ...passSpeeds };
-    delete next[axis];
-    emit(pose, next);
+  /** 自动（mode 为 null）、跟前段、跟后段：手填的数值去掉 */
+  const handlePassSpeedChoice = (axis: VirtualAxisId, mode: PassSpeedMode | null) => {
+    const speeds = { ...passSpeeds };
+    delete speeds[axis];
+    const modes = { ...passSpeedModes };
+    if (mode === null) delete modes[axis];
+    else modes[axis] = mode;
+    emit(pose, speeds, modes);
   };
 
   const passingAxes = enabledAxes.filter(
@@ -364,40 +397,63 @@ const PoseAxesEditor = ({
           {speedAxes.map((axis) => {
             const junction = junctions[axis]!;
             const label = virtualAxisLabel(axis);
-            const editable = junction.kind === "auto" || junction.kind === "manual";
+            // 必须停的（起止、折返、前后不动）不能改；其余可手填，或选自动、跟前段、跟后段
+            const editable = !["edge", "reverse", "hold"].includes(junction.kind);
             const status =
-              junction.kind === "manual" && junction.speed === 0 ? "停" : JUNCTION_LABEL[junction.kind];
+              junction.kind === "manual"
+                ? junction.speed === 0
+                  ? "停"
+                  : "手填"
+                : editable
+                  ? null
+                  : JUNCTION_LABEL[junction.kind];
             return (
-              <div
-                key={axis}
-                role="group"
-                aria-label={`${label} 经过速度设置`}
-                className="flex items-center gap-2"
-              >
-                <span className="w-12 shrink-0 text-body-sm text-foreground">{label}</span>
-                <div className="min-w-0 flex-1">
-                  <UnitAwareNumericInput
-                    aria-label={`${label} 经过速度`}
-                    value={roundProjectCoordinate(junction.speed)}
-                    unit={`${getVirtualAxisCanonicalUnit(axis, object?.controlType)}/s`}
-                    min={0}
-                    step={1}
-                    precision={1}
-                    disabled={!editable}
-                    onCommit={(value) => handlePassSpeedCommit(axis, value)}
-                    className="w-full border-border border"
-                  />
+              <div key={axis} role="group" aria-label={`${label} 经过速度设置`} className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="w-12 shrink-0 text-body-sm text-foreground">{label}</span>
+                  <div className="min-w-0 flex-1">
+                    <UnitAwareNumericInput
+                      aria-label={`${label} 经过速度`}
+                      value={roundProjectCoordinate(junction.speed)}
+                      unit={`${getVirtualAxisCanonicalUnit(axis, object?.controlType)}/s`}
+                      min={0}
+                      step={1}
+                      precision={1}
+                      disabled={!editable}
+                      onCommit={(value) => handlePassSpeedCommit(axis, value)}
+                      className="w-full border-border border"
+                    />
+                  </div>
+                  {status ? (
+                    <span className="w-12 shrink-0 text-body-sm text-muted-foreground">{status}</span>
+                  ) : null}
                 </div>
-                <span className="w-12 shrink-0 text-body-sm text-muted-foreground">{status}</span>
-                {junction.kind === "manual" ? (
-                  <button
-                    type="button"
-                    aria-label={`${label} 经过速度改回自动`}
-                    onClick={() => handlePassSpeedAuto(axis)}
-                    className="h-8 shrink-0 rounded-md border border-border px-2 text-body-sm text-foreground hover:bg-accent"
-                  >
-                    自动
-                  </button>
+                {editable ? (
+                  <div role="group" aria-label={`${label} 经过速度怎么定`} className="ml-14 flex gap-1">
+                    {PASS_SPEED_CHOICES.map((choice) => {
+                      const pressed = junction.kind === choice.kind;
+                      return (
+                        <button
+                          key={choice.kind}
+                          type="button"
+                          aria-pressed={pressed}
+                          aria-label={choice.mode === null ? `${label} 经过速度改回自动` : `${label} 经过速度${choice.text}`}
+                          title={choice.title}
+                          onClick={() => {
+                            if (!pressed) handlePassSpeedChoice(axis, choice.mode);
+                          }}
+                          className={cn(
+                            "h-7 flex-1 rounded-md px-1.5 text-body-sm",
+                            pressed
+                              ? "bg-accent font-semibold text-primary"
+                              : "border border-border text-foreground hover:bg-accent",
+                          )}
+                        >
+                          {choice.text}
+                        </button>
+                      );
+                    })}
+                  </div>
                 ) : null}
               </div>
             );
@@ -431,18 +487,22 @@ const PoseBlockFields = ({
         key={block.id}
         pose={block.pose}
         passSpeeds={block.passSpeeds ?? {}}
+        passSpeedModes={block.passSpeedModes ?? {}}
         passThrough={resolvedPoint?.pose}
         junctions={resolvedPoint?.junctions ?? {}}
         uncontrolledAxes={uncontrolledAxesOf(resolved, block.objectId)}
         objectId={block.objectId}
-        onChange={({ pose, passSpeeds }) => {
-          const { passSpeeds: _previous, ...rest } = block;
-          onReplaceBlock(
-            Object.keys(passSpeeds).length > 0 ? { ...rest, pose, passSpeeds } : { ...rest, pose },
-          );
+        onChange={({ pose, passSpeeds, passSpeedModes }) => {
+          const { passSpeeds: _previous, passSpeedModes: _previousModes, ...rest } = block;
+          onReplaceBlock({
+            ...rest,
+            pose,
+            ...(Object.keys(passSpeeds).length > 0 ? { passSpeeds } : {}),
+            ...(Object.keys(passSpeedModes).length > 0 ? { passSpeedModes } : {}),
+          });
         }}
       />
-      <Field label="时间">
+      <Field label="时刻">
         <UnitAwareNumericInput
           aria-label="到达时间"
           value={msToSeconds(block.atMs)}
@@ -456,43 +516,6 @@ const PoseBlockFields = ({
     </>
   );
 };
-
-/** 运动区间的一端：是位姿就直接改；是预设的关键点时提示去点预设改 */
-const SegmentEndpointSection = ({
-  label,
-  atMs,
-  block,
-  resolved,
-  onReplaceBlock,
-}: {
-  label: string;
-  atMs: number;
-  block: TimelineBlock | undefined;
-  resolved: ResolvedActionSequence;
-  onReplaceBlock: (block: TimelineBlock) => void;
-}) => (
-  // 默认折叠，先看下面的运动曲线；要改两端位姿再展开
-  <section className="mb-2" aria-label={label}>
-    <CollapsePanel
-      title={label}
-      defaultOpen={false}
-      extra={
-        <span className="font-mono text-mono-sm tabular-nums text-muted-foreground">
-          {formatTime(atMs)} s
-        </span>
-      }
-      contentClassName="bg-muted pt-0"
-    >
-      {block?.kind === "pose" ? (
-        <PoseBlockFields block={block} resolved={resolved} onReplaceBlock={onReplaceBlock} />
-      ) : block?.kind === "static-preset" || block?.kind === "dynamic-preset" ? (
-        <p className="text-body-sm text-muted-foreground">
-          是预设「{presetBlockTitle(block)}」的关键点，单独点选预设修改
-        </p>
-      ) : null}
-    </CollapsePanel>
-  </section>
-);
 
 const MultiPoseAxesEditor = ({ poses }: { poses: PoseBlock[] }) => {
   const { getTimelineObject, handleApplyPoseAxisWrite } = useActionBuilder();
@@ -613,6 +636,7 @@ const OTHER_KIND_LABEL: Record<Exclude<TimelineBlock["kind"], "pose">, string> =
   instruction: "指令",
   "static-preset": "静态预设",
   "dynamic-preset": "动态预设",
+  "sequence-ref": "引用序列",
 };
 
 /** 多选里不能批量改的块：只报数量 */
@@ -687,7 +711,7 @@ const MultiSelectionProperties = ({
   const handleDeleteSelected = () => onDeleteBlock(blocks.map((block) => block.id));
   const others = otherKindsSummary(blocks);
 
-  // 只选了一个运动区间（选中的正好是它两端的块）：两端的位姿和曲线放在一起改，不分页签
+  // 只选了一个运动区间（选中的正好是它两端的块）：两端的值和曲线放在一起改，不分页签
   const lone = segments.length === 1 ? segments[0] : undefined;
   const loneEnds = lone ? segmentEndpointBlockIds(resolved, lone) : [];
   if (
@@ -695,10 +719,6 @@ const MultiSelectionProperties = ({
     loneEnds.length === blocks.length &&
     blocks.every((block) => loneEnds.includes(block.id))
   ) {
-    const blockAt = (ref: string) => {
-      const blockId = resolved.poses.find((point) => point.sourceRef === ref)?.sourceBlockId;
-      return blocks.find((block) => block.id === blockId);
-    };
     return (
       <PropertiesShell
         title="运动区间"
@@ -709,21 +729,14 @@ const MultiSelectionProperties = ({
         onDelete={handleDeleteSelected}
         actions={explodeAction}
       >
-        <SegmentEndpointSection
-          label="起点位姿"
-          atMs={lone.startMs}
-          block={blockAt(lone.fromRef)}
+        <SegmentPanel
+          key={lone.key}
+          sequence={sequence}
           resolved={resolved}
+          segment={lone}
           onReplaceBlock={onReplaceBlock}
+          onUpdateSegment={onUpdateSegment}
         />
-        <SegmentEndpointSection
-          label="终点位姿"
-          atMs={lone.endMs}
-          block={blockAt(lone.toRef)}
-          resolved={resolved}
-          onReplaceBlock={onReplaceBlock}
-        />
-        <SegmentEditor sequence={sequence} segment={lone} onUpdateSegment={onUpdateSegment} />
       </PropertiesShell>
     );
   }
@@ -770,7 +783,14 @@ const MultiSelectionProperties = ({
         {tabBar}
         <SegmentAlignTools segments={segments} />
         {single ? (
-          <SegmentEditor sequence={sequence} segment={single} onUpdateSegment={onUpdateSegment} />
+          <SegmentPanel
+            key={single.key}
+            sequence={sequence}
+            resolved={resolved}
+            segment={single}
+            onReplaceBlock={onReplaceBlock}
+            onUpdateSegment={onUpdateSegment}
+          />
         ) : (
           <MultiSegmentEditor segments={segments} />
         )}
@@ -881,6 +901,61 @@ const EmptyProperties = () => (
   </div>
 );
 
+/**
+ * 引用的另一条序列：引用的是哪条、从几秒开始、多长，原序列还在不在、有没有没保存的修改；
+ * 能打开原序列，或展开成普通块（之后和原序列不再关联）
+ */
+const SequenceRefFields = ({
+  block,
+  onReplaceBlock,
+}: {
+  block: Extract<TimelineBlock, { kind: "sequence-ref" }>;
+  onReplaceBlock: (block: TimelineBlock) => void;
+}) => {
+  const { sequences, draftSequenceIds, getTimelineObject, handleSequenceSelect } = useActionBuilder();
+  const source = sequences?.find((item) => item.id === block.sequenceId);
+  const names = block.orderedObjectIds.map((id) => getTimelineObject(id)?.name ?? `模型 ${id}`);
+  return (
+    <>
+      <p className="mb-3 text-body-sm text-muted-foreground">
+        {source
+          ? draftSequenceIds?.has(source.id)
+            ? `「${source.name}」有未保存的修改，保存后这里跟着变`
+            : `跟着「${source.name}」走：它保存后这里跟着变`
+          : `原序列「${block.content.name}」已删除：照常播放，不再跟着更新`}
+      </p>
+      <Field label="开始时刻">
+        <UnitAwareNumericInput
+          aria-label="开始时刻"
+          value={msToSeconds(block.atMs)}
+          unit="s"
+          step={0.1}
+          precision={1}
+          min={0}
+          onChange={(seconds) => onReplaceBlock({ ...block, atMs: secondsToMs(seconds) })}
+        />
+      </Field>
+      <Field label="时长">
+        <p aria-label="引用时长" className="font-mono text-mono-sm tabular-nums text-foreground">
+          {formatTime(block.durationMs)} s（到 {formatTime(block.atMs + block.durationMs)} s）
+        </p>
+      </Field>
+      <Field label={`物体（${names.length}）`}>
+        <p className="text-body-sm text-foreground">{names.join("、")}</p>
+      </Field>
+      {source ? (
+        <button
+          type="button"
+          onClick={() => handleSequenceSelect(source.id)}
+          className="mb-2 inline-flex h-9 w-full items-center justify-center rounded-md border border-border text-body-sm text-foreground hover:bg-accent"
+        >
+          打开「{source.name}」
+        </button>
+      ) : null}
+    </>
+  );
+};
+
 export const SequencePropertiesPanel = ({
   sequence,
   resolved,
@@ -889,7 +964,7 @@ export const SequencePropertiesPanel = ({
   onUpdateSegment,
   onDeleteBlock,
 }: SequencePropertiesPanelProps) => {
-  const { handleExplodePresets } = useActionBuilder();
+  const { handleExplodePresets, handleExplodeSequenceRefs } = useActionBuilder();
   if (selection === null) {
     return <EmptyProperties />;
   }
@@ -959,6 +1034,23 @@ export const SequencePropertiesPanel = ({
             onChange={(seconds) => onReplaceBlock({ ...command, atMs: secondsToMs(seconds) })}
           />
         </Field>
+      </PropertiesShell>
+    );
+  }
+
+  if (block.kind === "sequence-ref") {
+    return (
+      <PropertiesShell
+        title={`引用「${block.label ?? block.content.name}」`}
+        onDelete={() => onDeleteBlock(block.id)}
+        actions={
+          <ExplodePresetsButton
+            label="展开成普通块"
+            onClick={() => handleExplodeSequenceRefs?.([block.id])}
+          />
+        }
+      >
+        <SequenceRefFields block={block} onReplaceBlock={onReplaceBlock} />
       </PropertiesShell>
     );
   }

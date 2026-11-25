@@ -144,8 +144,8 @@ const ControlPanelToggles = () => {
 
 /** 动作页：开关显示设备实时位置，与右侧「手动控制」tab 同步 */
 const CurrentPoseToggle = () => {
-  const { activeRightTab, setActiveRightTab } = useActionBuilder();
-  const showing = activeRightTab === "manual";
+  const { liveMode, setLiveMode } = useActionBuilder();
+  const showing = liveMode;
 
   return (
     <button
@@ -153,7 +153,7 @@ const CurrentPoseToggle = () => {
       aria-label="显示当前位置"
       title={showing ? "关闭当前位置" : "显示当前位置"}
       aria-pressed={showing}
-      onClick={() => setActiveRightTab(showing ? "selection" : "manual")}
+      onClick={() => setLiveMode(!showing)}
       className={cn(PANEL_TOGGLE_BTN, showing ? "text-primary" : "text-muted-foreground")}
     >
       <Locate aria-hidden />
@@ -273,7 +273,7 @@ export const ViewportOverlay = () => {
           backgroundColor: "rgba(167, 164, 163, 0.14)",
         }}
       >
-        <ViewMenu onPointerGuard={stopPointer} />
+        <ViewMenu onPointerGuard={stopPointer} showMotionPaths={isSequences} />
         {isControl ? (
           <div className="ml-auto flex items-center gap-2">
             <ViewportGoControls />

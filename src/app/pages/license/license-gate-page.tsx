@@ -165,17 +165,10 @@ export const LicenseGatePage = () => {
         description="软件需要通过控制服务（YzRuntime）确认授权后才能使用。"
         notice={notice}
         actions={
-          <>
-            <ActionButton onClick={() => void runCheck()}>
-              <RefreshCw className="h-4 w-4" aria-hidden />
-              重试
-            </ActionButton>
-            {state.devSkipAllowed && (
-              <ActionButton variant="secondary" onClick={() => void handleSkip()}>
-                跳过（开发模式）
-              </ActionButton>
-            )}
-          </>
+          <ActionButton onClick={() => void runCheck()}>
+            <RefreshCw className="h-4 w-4" aria-hidden />
+            重试
+          </ActionButton>
         }
       />
     );
@@ -245,6 +238,18 @@ export const LicenseGatePage = () => {
         <div className="my-6 h-px bg-border" role="separator" />
         <p className="mb-4 text-label-caps uppercase text-muted-foreground">软件授权</p>
         <div className="min-h-[220px]">{body}</div>
+        {/* 开发态（未打包）任何一步都能跳过：本机有 Runtime/YzRuntime 时 C++ 会回「未激活」，不能只在连不上时给 */}
+        {state.devSkipAllowed && (
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              onClick={() => void handleSkip()}
+              className="h-10 rounded-md px-4 text-body-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              跳过（开发模式）
+            </button>
+          </div>
+        )}
       </main>
     </div>
   );

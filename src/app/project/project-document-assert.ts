@@ -23,6 +23,7 @@ import { INSTRUCTION_PRESET_IDS } from "./action-sequence/instruction-registry";
 const CURRENT_WIZARD_STEPS = ["objects", "hardware", "binding", "review"] as const;
 const SHAPE_PRESETS = Object.keys(SHAPE_DIMENSION_KEYS) as ShapePresetId[];
 const VIRTUAL_AXES = ["v1", "v2", "v3"] as const;
+const PASS_SPEED_MODES = ["prev", "next"] as const;
 const MOTION_PARAM_KEYS = [
   "minAngle",
   "maxAngle",
@@ -574,7 +575,7 @@ const validateSetup = (value: unknown, path: string, a: StructuralAssertions): v
   validateScene(setup.scene, `${path}.scene`, a);
 };
 
-const TIMELINE_BLOCK_KINDS = ["pose", "instruction", "static-preset", "dynamic-preset"] as const;
+const TIMELINE_BLOCK_KINDS = ["pose", "instruction", "static-preset", "dynamic-preset", "sequence-ref"] as const;
 const MOTION_PROFILE_KINDS = ["trapezoid", "idle"] as const;
 
 const validateMotionProfile = (value: unknown, path: string, a: StructuralAssertions): void => {
@@ -659,6 +660,13 @@ const validateTimelineBlock = (value: unknown, path: string, a: StructuralAssert
           a.nonNegativeFinite(speed, keyedPath(`${path}.passSpeeds`, axis));
         }
       }
+      if (block.passSpeedModes !== undefined) {
+        const modes = a.record(block.passSpeedModes, `${path}.passSpeedModes`);
+        for (const [axis, mode] of Object.entries(modes)) {
+          a.enum(axis, VIRTUAL_AXES, `${path}.passSpeedModes`);
+          a.enum(mode, PASS_SPEED_MODES, keyedPath(`${path}.passSpeedModes`, axis));
+        }
+      }
       break;
     case "instruction":
       validateSetupEntityId(block.objectId, `${path}.objectId`, a);
@@ -687,19 +695,26 @@ const validateTimelineBlock = (value: unknown, path: string, a: StructuralAssert
       a.nonNegativeFinite(block.endMs, `${path}.endMs`);
       validateAxisMotionProfiles(block.profiles, `${path}.profiles`, a);
       break;
+    case "sequence-ref": {
+      validateSetupEntityId(block.sequenceId, `${path}.sequenceId`, a);
+      a.nonNegativeFinite(block.atMs, `${path}.atMs`);
+      a.nonNegativeFinite(block.durationMs, `${path}.durationMs`);
+      validateSetupEntityIdArray(block.orderedObjectIds, `${path}.orderedObjectIds`, a);
+      const content = a.record(block.content, `${path}.content`);
+      a.string(content.name, `${path}.content.name`);
+      a.boolean(content.trajectoryMode, `${path}.content.trajectoryMode`);
+      validateSequenceContent(content, `${path}.content`, a);
+      break;
+    }
   }
 };
 
-const validateSequence = (value: unknown, path: string, a: StructuralAssertions): void => {
-  const sequence = a.record(value, path);
-  validateSetupEntityId(sequence.id, `${path}.id`, a);
-  a.string(sequence.name, `${path}.name`);
-  a.optionalString(sequence.note, `${path}.note`);
-  a.boolean(sequence.trajectoryMode, `${path}.trajectoryMode`);
-  a.optionalBoolean(sequence.loop, `${path}.loop`);
-  if (sequence.initialPoses !== undefined) {
-    a.fail(`${path}.initialPoses`, "legacy initialPoses are not accepted");
-  }
+/** 序列的块和区间设置（序列本身、引用块里存的内容都用） */
+function validateSequenceContent(
+  sequence: Record<string, unknown>,
+  path: string,
+  a: StructuralAssertions,
+): void {
   a.array(sequence.blocks, `${path}.blocks`).forEach((block, index) =>
     validateTimelineBlock(block, indexedPath(`${path}.blocks`, index), a),
   );
@@ -714,6 +729,19 @@ const validateSequence = (value: unknown, path: string, a: StructuralAssertions)
     }
     validateAxisMotionProfiles(settings.profiles, `${segmentPath}.settings.profiles`, a);
   });
+}
+
+const validateSequence = (value: unknown, path: string, a: StructuralAssertions): void => {
+  const sequence = a.record(value, path);
+  validateSetupEntityId(sequence.id, `${path}.id`, a);
+  a.string(sequence.name, `${path}.name`);
+  a.optionalString(sequence.note, `${path}.note`);
+  a.boolean(sequence.trajectoryMode, `${path}.trajectoryMode`);
+  a.optionalBoolean(sequence.loop, `${path}.loop`);
+  if (sequence.initialPoses !== undefined) {
+    a.fail(`${path}.initialPoses`, "legacy initialPoses are not accepted");
+  }
+  validateSequenceContent(sequence, path, a);
   if (sequence.markers !== undefined) {
     a.array(sequence.markers, `${path}.markers`).forEach((item, index) => {
       const markerPath = indexedPath(`${path}.markers`, index);

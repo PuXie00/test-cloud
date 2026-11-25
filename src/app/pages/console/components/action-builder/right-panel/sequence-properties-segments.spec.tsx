@@ -17,6 +17,7 @@ const { builderState, toastWarning } = vi.hoisted(() => ({
       handleRetimeSegmentCurves: vi.fn(),
       handleAlignSegments: vi.fn(),
       handleAlignPoses: vi.fn(),
+      handleStaggerSegments: vi.fn(),
       handlePhaseInputModeChange: vi.fn(),
       phaseInputMode: "time" as "time" | "speed",
       sequenceIssues: [] as unknown[],
@@ -77,6 +78,20 @@ const renderPanel = (sequence: ActionSequenceConfig, selection: SequenceSelectio
 
 const phases = () => within(screen.getByRole("region", { name: "阶段" }));
 
+const retimeWrites = () =>
+  builderState.current.handleRetimeSegmentCurves.mock.calls.map(([writes]) => writes[0]);
+
+const trap = (accelMs: number, decelMs: number) => ({
+  kind: "trapezoid" as const,
+  params: { accelMs, decelMs },
+});
+
+const segmentOf = (from: string, to: string): SequenceSelection => ({
+  kind: "multi-block",
+  blockIds: [from, to],
+  focus: "segments",
+});
+
 /** 在阶段的数字框里填值后回车 */
 const typeNumeric = (label: string, value: string) => {
   const input = phases().getByRole("spinbutton", { name: label });
@@ -108,31 +123,27 @@ afterEach(() => {
 });
 
 describe("one selected segment", () => {
-  it("edits both end poses above the curve, without tabs", () => {
-    const { onReplaceBlock } = renderPanel(oneSpan, {
-      kind: "multi-block",
-      blockIds: ["a", "b"],
-      focus: "segments",
-    });
+  it("edits each axis's start and end in one row, without tabs", () => {
+    const { onReplaceBlock } = renderPanel(oneSpan, segmentOf("a", "b"));
     expect(screen.getByRole("heading", { name: "运动区间" })).not.toBeNull();
     expect(screen.queryByRole("tab", { name: "位姿（2）" })).toBeNull();
     expect(screen.getByRole("slider", { name: "加速结束" })).not.toBeNull();
+    expect(screen.getByText("0.0 → 5.0 s")).not.toBeNull();
 
-    const start = within(screen.getByRole("region", { name: "起点位姿" }));
-    const end = within(screen.getByRole("region", { name: "终点位姿" }));
-    expect(start.getByText("0.0 s")).not.toBeNull();
-    expect(end.getByText("5.0 s")).not.toBeNull();
-    // 两端默认折叠，展开才能改
-    expect(start.queryByLabelText("虚轴1")).toBeNull();
-    expect(end.queryByLabelText("虚轴1")).toBeNull();
-    fireEvent.click(end.getByRole("button", { name: "终点位姿" }));
-    expect(start.queryByLabelText("虚轴1")).toBeNull();
-    // 终点的虚轴1 加一档
-    const endV1 = end.getByLabelText("虚轴1").closest("[data-history-interaction='numeric']");
+    const ends = within(screen.getByRole("region", { name: "各轴起点和终点" }));
+    expect(ends.getByLabelText("V1 起点").textContent).toContain("0.0");
+    expect(ends.getByLabelText("V1 终点").textContent).toContain("400.0");
+    // 终点的 V1 加一档
+    const endV1 = ends.getByLabelText("V1 终点").closest("[data-history-interaction='numeric']");
     fireEvent.mouseDown(within(endV1 as HTMLElement).getByRole("button", { name: "增加" }));
-    fireEvent.mouseUp(within(endV1 as HTMLElement).getByRole("button", { name: "增加" }));
-    expect(onReplaceBlock).toHaveBeenCalledWith(expect.objectContaining({ id: "b" }));
+    expect(onReplaceBlock).toHaveBeenCalledWith(expect.objectContaining({ id: "b", pose: { v1: 401 } }));
     expect(onReplaceBlock).not.toHaveBeenCalledWith(expect.objectContaining({ id: "a" }));
+    // 阶段和运动结果直接摆出来，不折叠，没有起步收尾、起点终点那两块
+    expect(screen.getByRole("region", { name: "阶段" })).not.toBeNull();
+    expect(screen.getByRole("region", { name: "V1 运动结果" })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "精确设置" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "起步收尾" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "起点和终点怎么走" })).toBeNull();
   });
 
   it("deletes both ends from the segment view", () => {
@@ -156,7 +167,7 @@ describe("one selected segment", () => {
   it("shows the same view for a box selection of exactly its two ends", () => {
     renderPanel(oneSpan, { kind: "multi-block", blockIds: ["a", "b"] });
     expect(screen.getByRole("heading", { name: "运动区间" })).not.toBeNull();
-    expect(screen.getByRole("region", { name: "终点位姿" })).not.toBeNull();
+    expect(screen.getByRole("region", { name: "各轴起点和终点" })).not.toBeNull();
   });
 
   it("keeps the tabs when more than the segment's ends are selected", () => {
@@ -164,7 +175,7 @@ describe("one selected segment", () => {
     expect(screen.getByRole("heading", { name: "多选位姿" })).not.toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: "运动区间（1）" }));
     expect(screen.getByRole("heading", { name: "运动区间" })).not.toBeNull();
-    expect(screen.queryByRole("region", { name: "终点位姿" })).toBeNull();
+    expect(screen.getByRole("region", { name: "各轴起点和终点" })).not.toBeNull();
   });
 
   it("switches the phase input mode from the segment editor", () => {
@@ -173,6 +184,83 @@ describe("one selected segment", () => {
     expect(builderState.current.handlePhaseInputModeChange).toHaveBeenCalledWith("speed");
   });
 });
+
+// 一路往上两段：0 → 400 → 800，在 b 不停接着走
+const twoLegs: ActionSequenceConfig = {
+  id: 3,
+  name: "legs",
+  trajectoryMode: false,
+  blocks: [
+    { id: "a", kind: "pose", objectId: 1, atMs: 0, pose: { v1: 0 } },
+    { id: "b", kind: "pose", objectId: 1, atMs: 5000, pose: { v1: 400 } },
+    { id: "c", kind: "pose", objectId: 1, atMs: 10000, pose: { v1: 800 } },
+  ],
+  segments: [],
+};
+
+// 搭建里设了默认 100 mm/s、100 mm/s²，上限 400 mm/s、最短加速 1 s（400 mm/s²）
+const configured = {
+  enabledAxes: ["v1"] as Array<"v1" | "v2" | "v3">,
+  defaultSpeedByAxis: { v1: 100 },
+  defaultAccelByAxis: { v1: 100 },
+  maxSpeedByAxis: { v1: 400 },
+  minAccelTimeByAxis: { v1: 1 },
+};
+
+const plainObject = { enabledAxes: ["v1"] as Array<"v1" | "v2" | "v3"> };
+
+describe("one segment in plain words", () => {
+  afterEach(() => {
+    builderState.current.getTimelineObject = () => plainObject;
+  });
+
+  it("types a new duration and moves the later blocks with it", () => {
+    renderPanel(oneSpan, segmentOf("a", "b"));
+    const readout = screen.getByLabelText("时长");
+    fireEvent.pointerDown(readout, { pointerId: 1, button: 0, clientX: 100 });
+    fireEvent.pointerUp(readout, { pointerId: 1, button: 0, clientX: 100 });
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "6" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(retimeWrites()).toEqual([
+      { objectId: 1, fromRef: "a", toRef: "b", axis: "v1", profile: trap(1000, 1000), durationMs: 6000 },
+    ]);
+  });
+
+  it("offers the default-speed and fastest times and applies one with its ramps", () => {
+    builderState.current.getTimelineObject = () => configured;
+    renderPanel(oneSpan, segmentOf("a", "b"));
+    const references = within(screen.getByRole("group", { name: "参考时长" }));
+    expect(references.getByRole("button", { name: "默认速度 5.0 s" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(references.getByRole("button", { name: "最快 2.9 s" }));
+    expect(retimeWrites()).toEqual([
+      { objectId: 1, fromRef: "a", toRef: "b", axis: "v1", profile: trap(1200, 1200), durationMs: 2900 },
+    ]);
+  });
+
+  it("offers no reference times when setup has no speed limits", () => {
+    renderPanel(oneSpan, segmentOf("a", "b"));
+    expect(screen.queryByRole("group", { name: "参考时长" })).toBeNull();
+  });
+
+  it("shows an axis passing through the end and sets it to the passing value on tap", () => {
+    builderState.current.getTimelineObject = () => ({ enabledAxes: ["v1", "v2"] as Array<"v1" | "v2" | "v3"> });
+    const passing: ActionSequenceConfig = {
+      ...twoLegs,
+      blocks: [
+        { id: "a", kind: "pose", objectId: 1, atMs: 0, pose: { v1: 0, v2: 0 } },
+        { id: "b", kind: "pose", objectId: 1, atMs: 5000, pose: { v1: 400 } },
+        { id: "c", kind: "pose", objectId: 1, atMs: 10000, pose: { v1: 800, v2: 10 } },
+      ],
+    };
+    const { onReplaceBlock } = renderPanel(passing, segmentOf("a", "b"));
+    fireEvent.click(screen.getByRole("button", { name: "V2 终点经过，点一下设定" }));
+    expect(onReplaceBlock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "b", pose: { v1: 400, v2: 5 } }),
+    );
+  });
+});
+
 
 describe("按时间 on one segment", () => {
   it("lays the phases out in rows with − + and steps a phase by 0.1 s", () => {
@@ -215,9 +303,6 @@ describe("按速度 on one segment", () => {
     expect(phases().getByText("mm/s")).not.toBeNull();
     expect(phases().queryByRole("spinbutton", { name: "加速时间" })).toBeNull();
   });
-
-  const retimeWrites = () =>
-    builderState.current.handleRetimeSegmentCurves.mock.calls.map(([writes]) => writes[0]);
 
   it("keeps the cruise speed and deceleration and changes the duration when the acceleration changes", () => {
     builderState.current.phaseInputMode = "speed";
@@ -306,6 +391,12 @@ describe("batch editing several segments", () => {
     const accel = phases().getByRole("spinbutton", { name: "加速时间" }) as HTMLInputElement;
     expect(accel.value).toBe("");
     expect(accel.placeholder).toBe("--");
+  });
+
+  it("leaves 统一时长 and 错峰 to the timeline's right-click menu", () => {
+    renderPanel(twoSpans, both);
+    expect(screen.queryByLabelText("统一时长")).toBeNull();
+    expect(screen.queryByRole("region", { name: "错峰" })).toBeNull();
   });
 
   it("aligns the selected segments to start or arrive together", () => {

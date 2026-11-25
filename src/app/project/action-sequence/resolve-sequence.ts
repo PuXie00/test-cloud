@@ -11,6 +11,7 @@ import {
   syncAxisProfileToTravel,
 } from "./motion-profile";
 import { getPresetDefinition, resolvePreset } from "./preset-registry";
+import { expandSequenceRefs } from "./sequence-ref-expand";
 import type {
   ActionSequenceConfig,
   DynamicPresetBlock,
@@ -19,12 +20,14 @@ import type {
   MotionProfile,
   MotionSegmentConfig,
   MotionSegmentSettings,
+  PassSpeedMode,
 } from "./types";
 
 export type ResolvedPosePoint = {
   sourceRef: string;
   sourceBlockId: string | null;
-  sourceKind: "pose" | "static-preset" | "dynamic-preset";
+  /** sequence-ref：引用的另一条序列里的关键点，sourceBlockId 是引用块 */
+  sourceKind: "pose" | "static-preset" | "dynamic-preset" | "sequence-ref";
   objectId: number;
   atMs: number;
   pose: ModelPose;
@@ -34,15 +37,25 @@ export type ResolvedPosePoint = {
   unsetAxes?: readonly VirtualAxisId[];
   /** 位姿块里手填的经过速度（只含设定了值的轴） */
   passSpeeds?: Partial<Record<VirtualAxisId, number>>;
+  /** 位姿块里按规则算的经过速度：跟前段 / 跟后段（只含设定了值的轴） */
+  passSpeedModes?: Partial<Record<VirtualAxisId, PassSpeedMode>>;
   /** 各设定轴在这一帧的衔接速度及原因 */
   junctions?: Partial<Record<VirtualAxisId, PoseJunction>>;
 };
 
 /**
  * 衔接速度的来由：auto 自动（调和平均）、manual 手填、edge 序列起止（循环序列也是）、
- * reverse 折返、hold 前后有一段不动。
+ * reverse 折返、hold 前后有一段不动；follow-prev 跟前段（等于进来那段的匀速）、
+ * follow-next 跟后段（等于出去那段的匀速）。
  */
-export type PoseJunctionKind = "auto" | "manual" | "edge" | "reverse" | "hold";
+export type PoseJunctionKind =
+  | "auto"
+  | "manual"
+  | "edge"
+  | "reverse"
+  | "hold"
+  | "follow-prev"
+  | "follow-next";
 
 export type PoseJunction = { speed: number; kind: PoseJunctionKind };
 
@@ -76,6 +89,7 @@ export type ResolvedMotionSegment = {
   toPose: ModelPose;
   settings: MotionSegmentSettings;
   configurable: boolean;
+  /** 区间在动态预设或引用的序列里面：那个块的 id（不能单独改，点了选中那个块） */
   ownerPresetBlockId?: string;
   /** 各轴在本区间跟随的曲线；缺省时就是本区间自己的曲线 */
   axes?: Record<VirtualAxisId, ResolvedAxisMotion>;
@@ -562,8 +576,73 @@ const junctionOf = (
   return { speed: (2 * inSpeed * outSpeed) / (inSpeed + outSpeed), kind: "auto" };
 };
 
+const motionSec = (motion: ResolvedAxisMotion, phase: "accelMs" | "decelMs"): number =>
+  motion.profile.kind === "trapezoid" ? motion.profile.params[phase] / 1000 : 0;
+
+/** 这段末尾不变速（出去的速度就是匀速）时的匀速：进来的速度是 startSpeed */
+const flatEndCruiseSpeed = (motion: ResolvedAxisMotion, startSpeed: number): number => {
+  const accelSec = motionSec(motion, "accelMs");
+  return (
+    (Math.abs(motion.to - motion.from) - (accelSec * startSpeed) / 2) /
+    (motion.durationMs / 1000 - accelSec / 2)
+  );
+};
+
+/** 这段开头不变速（进来的速度就是匀速）时的匀速：出去的速度是 endSpeed */
+const flatStartCruiseSpeed = (motion: ResolvedAxisMotion, endSpeed: number): number => {
+  const decelSec = motionSec(motion, "decelMs");
+  return (
+    (Math.abs(motion.to - motion.from) - (decelSec * endSpeed) / 2) /
+    (motion.durationMs / 1000 - decelSec / 2)
+  );
+};
+
+const usableSpeed = (speed: number): number | undefined =>
+  Number.isFinite(speed) && speed > 0 ? speed : undefined;
+
 /**
- * 衔接：每个设定点按前后两段平均速度的调和平均通过（可手填，0 即停）；
+ * 跟前段 / 跟后段：只在本来就连续经过（自动、手填）的点上起作用，必须停的点不管。
+ * 跟前段等于进来那段末尾不变速时的匀速（要用到它进来的速度，从前往后算），
+ * 跟后段等于出去那段开头不变速时的匀速（从后往前算）；一段两头都跟它时整段匀速。
+ * 算不出来（行程放不下变速）时按原来的自动或手填。
+ */
+const applyFollowJunctions = (
+  junctions: PoseJunction[],
+  modes: readonly (PassSpeedMode | undefined)[],
+  motions: readonly ResolvedAxisMotion[],
+): PoseJunction[] => {
+  const follows = modes.map((mode, index) => {
+    const kind = junctions[index]?.kind;
+    return mode !== undefined && (kind === "auto" || kind === "manual") ? mode : undefined;
+  });
+  if (follows.every((mode) => mode === undefined)) return junctions;
+  const speeds: (number | undefined)[] = junctions.map((junction, index) =>
+    follows[index] === undefined ? junction.speed : undefined,
+  );
+  motions.forEach((motion, index) => {
+    if (follows[index] !== "next" || follows[index + 1] !== "prev") return;
+    const even = usableSpeed(Math.abs(motion.to - motion.from) / (motion.durationMs / 1000));
+    speeds[index] = even;
+    speeds[index + 1] = even;
+  });
+  for (let index = 1; index < follows.length; index += 1) {
+    if (follows[index] !== "prev" || speeds[index] !== undefined) continue;
+    speeds[index] = usableSpeed(flatEndCruiseSpeed(motions[index - 1]!, speeds[index - 1] ?? 0));
+  }
+  for (let index = follows.length - 2; index >= 0; index -= 1) {
+    if (follows[index] !== "next" || speeds[index] !== undefined) continue;
+    speeds[index] = usableSpeed(flatStartCruiseSpeed(motions[index]!, speeds[index + 1] ?? 0));
+  }
+  return junctions.map((junction, index) => {
+    const mode = follows[index];
+    const speed = speeds[index];
+    if (mode === undefined || speed === undefined) return junction;
+    return { speed, kind: mode === "prev" ? "follow-prev" : "follow-next" };
+  });
+};
+
+/**
+ * 衔接：每个设定点按前后两段平均速度的调和平均通过（可手填，0 即停；也可跟前段、跟后段的匀速）；
  * 序列起止、折返、停留处为 0。循环序列每圈也在首尾停下：末帧减到 0，下一圈从 0 起步。
  */
 const assignJunctionSpeeds = (
@@ -585,10 +664,21 @@ const assignJunctionSpeeds = (
     }
     const refs = [first.fromRef, ...motions.map((motion) => motion.toRef)];
     const manualAt = (ref: string) => pointByRef.get(ref)?.passSpeeds?.[axis];
+    const junctions = applyFollowJunctions(
+      refs.map((ref, index) =>
+        junctionOf(
+          index === 0 ? undefined : motions[index - 1],
+          index === refs.length - 1 ? undefined : motions[index],
+          manualAt(ref),
+        ),
+      ),
+      refs.map((ref) => pointByRef.get(ref)?.passSpeedModes?.[axis]),
+      motions,
+    );
     refs.forEach((ref, index) => {
+      const junction = junctions[index]!;
       const incoming = index === 0 ? undefined : motions[index - 1];
       const outgoing = index === refs.length - 1 ? undefined : motions[index];
-      const junction = junctionOf(incoming, outgoing, manualAt(ref));
       if (incoming) incoming.endSpeed = junction.speed;
       if (outgoing) outgoing.startSpeed = junction.speed;
       setJunction(ref, junction);
@@ -626,7 +716,43 @@ const refillBoundarySpans = (
   }
 };
 
-export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedActionSequence => {
+/**
+ * 引用展开出来的关键点归到引用块：sourceBlockId 换成引用块、不能单独改；
+ * 两头都在同一个引用里的区间、曲线不能单独设置（设置跟着被引用的序列走）
+ */
+const markReferencedPoints = (
+  points: readonly ResolvedPosePoint[],
+  segments: readonly ResolvedMotionSegment[],
+  ownerOf: ReadonlyMap<string, string>,
+): void => {
+  if (ownerOf.size === 0) return;
+  const ownerByRef = new Map<string, string>();
+  for (const point of points) {
+    const owner = point.sourceBlockId === null ? undefined : ownerOf.get(point.sourceBlockId);
+    if (owner === undefined) continue;
+    ownerByRef.set(point.sourceRef, owner);
+    point.sourceBlockId = owner;
+    point.sourceKind = "sequence-ref";
+    point.editable = false;
+  }
+  const insideOne = (fromRef: string, toRef: string): string | undefined => {
+    const owner = ownerByRef.get(fromRef);
+    return owner !== undefined && owner === ownerByRef.get(toRef) ? owner : undefined;
+  };
+  for (const segment of segments) {
+    const owner = insideOne(segment.fromRef, segment.toRef);
+    if (owner === undefined) continue;
+    segment.configurable = false;
+    segment.ownerPresetBlockId = owner;
+    for (const motion of Object.values(segment.axes ?? {})) {
+      if (insideOne(motion.fromRef, motion.toRef) !== undefined) motion.configurable = false;
+    }
+  }
+};
+
+export const resolveActionSequence = (authored: ActionSequenceConfig): ResolvedActionSequence => {
+  // 引用另一条序列的块先展开成里面的块，照常解析，最后再归到引用块
+  const { sequence, ownerOf } = expandSequenceRefs(authored);
   const timed: ResolvedPosePoint[] = [];
   const commands: InstructionBlock[] = [];
   let totalMs = 0;
@@ -639,6 +765,11 @@ export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedA
           ([axis, speed]) => isAxisSet(block.pose, axis as VirtualAxisId) && typeof speed === "number",
         ),
       ) as Partial<Record<VirtualAxisId, number>>;
+      const passSpeedModes = Object.fromEntries(
+        Object.entries(block.passSpeedModes ?? {}).filter(
+          ([axis, mode]) => isAxisSet(block.pose, axis as VirtualAxisId) && (mode === "prev" || mode === "next"),
+        ),
+      ) as Partial<Record<VirtualAxisId, PassSpeedMode>>;
       timed.push({
         sourceRef: block.id,
         sourceBlockId: block.id,
@@ -650,6 +781,7 @@ export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedA
         visible: true,
         ...(unsetAxes.length > 0 ? { unsetAxes } : {}),
         ...(Object.keys(passSpeeds).length > 0 ? { passSpeeds } : {}),
+        ...(Object.keys(passSpeedModes).length > 0 ? { passSpeedModes } : {}),
       });
       totalMs = Math.max(totalMs, block.atMs);
       continue;
@@ -660,6 +792,9 @@ export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedA
       totalMs = Math.max(totalMs, block.atMs);
       continue;
     }
+
+    // 引用已在上面展开成里面的块
+    if (block.kind === "sequence-ref") continue;
 
     if (block.kind === "dynamic-preset") {
       totalMs = Math.max(totalMs, block.endMs);
@@ -802,6 +937,7 @@ export const resolveActionSequence = (sequence: ActionSequenceConfig): ResolvedA
     refillBoundarySpans(series, objectSegments);
     segments.push(...objectSegments);
   }
+  markReferencedPoints(timed, segments, ownerOf);
 
   return {
     id: sequence.id,

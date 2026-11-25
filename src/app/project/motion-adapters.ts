@@ -55,12 +55,18 @@ export const setupObjectToTimelineObject = (
 ): TimelineControlledObject => {
   const maxSpeedByAxis = resolveVirtualAxisMaxVelocity(object, motors);
   const minAccelTimeByAxis: Partial<Record<VirtualAxisId, number>> = {};
+  const defaultSpeedByAxis: Partial<Record<VirtualAxisId, number>> = {};
+  const defaultAccelByAxis: Partial<Record<VirtualAxisId, number>> = {};
   const rangeByAxis: Partial<Record<VirtualAxisId, { min: number; max: number }>> = {};
   for (const axis of object.enabledVirtualAxes) {
     const params = object.motionParams[motionAxisIdForVirtualAxis(axis)];
     if (!params) continue;
     minAccelTimeByAxis[axis] = params.minAccelTime;
     rangeByAxis[axis] = { min: params.minAngle, max: params.maxAngle };
+    if (Number.isFinite(params.speed) && params.speed > 0) defaultSpeedByAxis[axis] = params.speed;
+    if (Number.isFinite(params.acceleration) && params.acceleration > 0) {
+      defaultAccelByAxis[axis] = params.acceleration;
+    }
   }
   const primaryIsRotation = motionAxesFor(object.controlType).includes("rotation");
   return {
@@ -74,6 +80,8 @@ export const setupObjectToTimelineObject = (
     rangeByAxis,
     maxSpeedByAxis,
     minAccelTimeByAxis,
+    defaultSpeedByAxis,
+    defaultAccelByAxis,
     controlType: decodeControlType(object.controlType),
   };
 };

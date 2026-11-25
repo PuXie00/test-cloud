@@ -3,6 +3,7 @@ import type {
   ActionSequenceConfig,
   ModelPose,
   MotionSegmentSettings,
+  PassSpeedMode,
   TimelineBlock,
 } from "@/app/project/action-sequence/types";
 import type { SequenceIssue } from "@/app/project/action-sequence/validate-sequence";
@@ -10,10 +11,12 @@ import type { VirtualAxisId, VirtualAxisValues } from "@/app/project/project-doc
 import type { CapturedPoseRequest } from "@/app/project/capture-pose-sequence";
 import type { ContextSelection } from "./context-bar/selection-context-bar";
 import type { PhaseInputMode } from "./motion-profile/phase-rates";
+import type { TransitionTiming } from "./shape-transition";
 import type { CurveGraph, TimelineViewMode } from "./timeline/curve-data";
 import type { ActionRightTab } from "./right-panel/action-right-panel";
 import type {
   PoseAxisWrite,
+  ScaleBlocksRequest,
   SegmentAlignEdge,
   SegmentProfileWrite,
   SegmentRetimeWrite,
@@ -29,6 +32,12 @@ export type EditorDockMode = "sequence" | "empty";
 
 export type ProgramItemInput = { kind: "sequence"; refId: number };
 
+/** 3D 手柄开始拖时每台物体改哪个位姿；blockId 为 null 时在 atMs 给它加一个 */
+export type PoseHandleDragTarget = { objectId: number; blockId: string | null; atMs: number };
+
+/** 3D 手柄拖到的值（绝对值，写入时按行程截断） */
+export type PoseHandleDragUpdate = { objectId: number; values: Partial<Record<VirtualAxisId, number>> };
+
 /** 全部保存的结果：blocked = 待修复、running = 对应动作正在运行，这些都留着草稿 */
 export type SaveAllResult = { saved: number; blocked: string[]; running: string[] };
 
@@ -43,7 +52,15 @@ export type ActionBuilderContextValue = {
   selectedBlockId: string | null;
   selectedObjectIds: number[];
   cursorMs: number;
+  /** 从时间轴以外（3D 里）跳了游标：每次加一，时间轴把游标移进视野 */
+  cursorRevealRequestId: number;
   activeRightTab: ActionRightTab;
+  /**
+   * 「当前位置」开着（联机编辑）：3D 显示实时位置，选中的位姿就是 GO 目标。
+   * 和「手动控制」页签同步：在「手动控制」页就开着，切到别的页签就关。
+   */
+  liveMode: boolean;
+  setLiveMode: (on: boolean) => void;
   selectedProgramNodeId: string | null;
   contextSelection: ContextSelection | null;
   programs: ProgramNode[];
@@ -71,6 +88,9 @@ export type ActionBuilderContextValue = {
   /** 轨道视图的曲线底图：只选了一个物体时铺它的曲线（虚轴、位置 / 速度同曲线视图） */
   curveUnderlay: boolean;
   handleCurveUnderlayChange: (on: boolean) => void;
+  /** 选中位姿（同一时刻）时游标跳过去，默认开，本次运行期间记住 */
+  poseCursorFollow: boolean;
+  handlePoseCursorFollowChange: (on: boolean) => void;
   setActiveRightTab: (tab: ActionRightTab) => void;
   handleSequenceSelect: (sequenceId: number | null) => void;
   handleSelectionChange: (selection: SequenceSelection) => void;
@@ -78,8 +98,12 @@ export type ActionBuilderContextValue = {
   handleObjectsSelect: (objectIds: number[]) => void;
   /** 轨道上点块时物体跟着块：只改物体选中，不清块的选中（全局选中由调用方一起改） */
   handleObjectsFollow: (objectIds: number[]) => void;
-  handleCursorChange: (ms: number) => void;
+  /** reveal：从时间轴以外跳过去，时间轴把游标移进视野 */
+  handleCursorChange: (ms: number, options?: { reveal?: boolean }) => void;
   handlePlaybackCursorChange: (ms: number) => void;
+  /** 时间轴在播放（编辑坞报上来）：联机时影子不跟着游标走 */
+  timelinePlaying: boolean;
+  handleTimelinePlayingChange: (playing: boolean) => void;
   handleInsertTimelineBlock: (block: TimelineBlock) => boolean;
   handleReplaceTimelineBlock: (block: TimelineBlock) => boolean;
   handleApplyPoseAxisWrite: (blockIds: readonly string[], write: PoseAxisWrite) => boolean;
@@ -91,9 +115,40 @@ export type ActionBuilderContextValue = {
   handleMoveTimelineBlock: (blockId: string, atMs: number) => void;
   handleShiftTimelineBlocks: (blockIds: string[], deltaMs: number) => void;
   handleShiftTimelineBlocksEnd: () => void;
+  /**
+   * 整体缩放：选中的块从最早到最晚按新总时长等比伸缩，后面的块跟着挪；改不了时提示是哪台哪段。
+   * live 为时间轴上拖动中（相对拖动开始），松手调 handleScaleTimelineBlocksEnd
+   */
+  handleScaleTimelineBlocks: (request: ScaleBlocksRequest, live?: boolean) => boolean;
+  handleScaleTimelineBlocksEnd: () => void;
+  /** 位姿某轴的经过速度：跟前段 / 跟后段，null 改回自动；带 profileWrite 时同一步改那段曲线 */
+  handleSetPassSpeedMode: (
+    blockId: string,
+    axis: VirtualAxisId,
+    mode: PassSpeedMode | null,
+    profileWrite?: SegmentProfileWrite,
+  ) => boolean;
+  /** 在游标处插入变速点：给的区间里游标在中间的切开（曲线不变），切完选中后半段 */
+  handleInsertSpeedPoints: (segmentKeys: readonly string[]) => boolean;
+  /** 在游标处（或 atMs）引用另一条序列：位置不一样时前面自动加过渡，后面的块和标记往后让 */
+  handleInsertSequenceRef: (sourceId: number, atMs?: number) => boolean;
+  /** 展开引用：换成里面的块（和源序列不再关联）；不传时展开选中的引用 */
+  handleExplodeSequenceRefs: (blockIds?: readonly string[]) => void;
   /** 曲线上拖位姿的值：这些位姿的这根轴都加 deltaValue（相对拖动开始） */
   handleDragPoseAxis: (blockIds: readonly string[], axis: VirtualAxisId, deltaValue: number) => void;
   handleDragPoseAxisEnd: () => void;
+  /**
+   * 3D 里点选 / 框选物体：游标处有它们的位姿就选中这些位姿，没有就只选物体。
+   * selectionChanged 为这次点选改了全局选中（随后同步回来时不清位姿）
+   */
+  handleViewportObjectsPick: (objectIds: number[], selectionChanged: boolean) => void;
+  /** 3D 里双击物体：游标跳到它最近的位姿并选中 */
+  handleViewportObjectDoubleClick: (objectId: number) => void;
+  /** 3D 位姿手柄开始拖：这一刻没有位姿的先加；返回 false 表示这次拖不了 */
+  handlePoseHandleDragStart: (targets: readonly PoseHandleDragTarget[]) => boolean;
+  handlePoseHandleDrag: (updates: readonly PoseHandleDragUpdate[]) => void;
+  /** 松手（commit）或取消（回到拖动前），整次拖动一步撤销 */
+  handlePoseHandleDragEnd: (commit: boolean) => void;
   handleResizeDynamicPreset: (blockId: string, startMs: number, endMs: number) => boolean;
   handleUpdateSegmentSettings: (
     fromRef: string,
@@ -133,9 +188,16 @@ export type ActionBuilderContextValue = {
   handleSequenceCopy: (sequenceId: number) => void;
   handleSequencePaste: () => void;
   handleTimelinePxPerSecondChange: (pxPerSecond: number) => void;
-  handleTimelineZoomIn: () => void;
-  handleTimelineZoomOut: () => void;
-  handleCreatePose: (objectIds: number[]) => void;
+  /** 错峰：选中的区间（每台一段）到达不动，起点依次晚 gapMs 出发 */
+  handleStaggerSegments: (keys: readonly string[], gapMs: number) => void;
+  /** 存为造型：当前位置存成新的单帧动作序列「造型 N」，不切换正在编的序列 */
+  handleSaveShape: (request: CapturedPoseRequest) => void;
+  /** 游标处存为造型：序列在游标那一刻的值存成新的单帧动作序列 */
+  handleSaveShapeAtCursor: () => void;
+  /** 两个造型之间生成过渡（新建「过渡 N」并打开）：起点取 fromId 结束时的样子，终点取 toId 开始时的样子 */
+  handleCreateTransition: (fromId: number, toId: number, timing: TransitionTiming) => boolean;
+  /** 在游标处（或给定时刻）给这些物体加位姿 */
+  handleCreatePose: (objectIds: number[], atMs?: number) => void;
   handleCreateSetEnabled: (objectIds: number[], enabled: boolean) => void;
   handleCreateSequence: (objectIds: number[]) => void;
   /** 保存当前位姿：有选中序列则在播放头加位姿，否则新建序列（不加入节目） */

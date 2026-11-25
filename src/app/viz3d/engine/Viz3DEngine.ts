@@ -42,12 +42,13 @@ import type {
   ViewportLayout,
   ViewportSplit,
   ViewportState,
+  VirtualAxisId,
   VirtualAxisValues,
   Viz3DColorMap,
   Viz3DOptions,
 } from "../types";
 import { DEFAULT_GRID_SIZE_M, normalizeGridSizeM } from "../helpers/grid-config";
-import { mergeFocusBounds, resolveFocusFit } from "../cameras/camera-focus";
+import { mergeFocusBounds, resolveFocusFit, type FocusBounds } from "../cameras/camera-focus";
 import { VideoRecorder, isRecordingSupported } from "../output/VideoRecorder";
 import { canEditObjectFromStatus } from "../state/object-edit-lock";
 import { ModelLoader, resolveModelCacheId } from "../loaders/ModelLoader";
@@ -127,6 +128,32 @@ import {
   parseHoistLabelMode,
   type HoistLabelMode,
 } from "../hoist-label-mode";
+import { PoseHandleController, type PoseHandleHost } from "../pose-handles/PoseHandleController";
+import { PoseHandleOverlay } from "../pose-handles/PoseHandleOverlay";
+import { MotionPathOverlay } from "../pose-handles/MotionPathOverlay";
+import {
+  DEFAULT_MOTION_PATH_MODE,
+  type MotionPathEntry,
+  type MotionPathMode,
+  type MotionPathPickEvent,
+  type MotionPathSample,
+} from "../pose-handles/motion-path-types";
+import type {
+  PoseFormationEvent,
+  PoseFormationInfo,
+  PoseFormationRequest,
+} from "../pose-handles/pose-formation";
+import type { SnapCandidate } from "../pose-handles/pose-handle-drag";
+import type { CellProjector } from "../pose-handles/pose-handle-layout";
+import { normalizeVec, subVec, type Pt, type Ray as PoseRay } from "../pose-handles/pose-handle-math";
+import {
+  poseHandleKindsFor,
+  type PoseHandleBlockedEvent,
+  type PoseHandleDragEndEvent,
+  type PoseHandleDragEvent,
+  type PoseHandleDragStartEvent,
+  type PoseHandleTarget,
+} from "../pose-handles/pose-handle-types";
 
 export type { CaptureObjectTopViewOptions, ObjectTopViewCapture } from "./capture-object-top-view";
 
@@ -156,6 +183,22 @@ export type Viz3DEventMap = {
   recordingState: RecordingStatePayload;
   hoistLabelModeChange: HoistLabelMode;
   axisScreenChange: AxisScreenDirections;
+  /** 框选（物体模式）结束：选中了哪些 */
+  boxSelect: { ids: string[]; mode: "replace" | "additive" };
+  /** 双击物体（空白处为 null） */
+  objectDoubleClick: { id: string | null };
+  /** 动作页位姿手柄：开始拖、拖动中、松手 / 取消、按在拖不了的手柄上 */
+  poseHandleDragStart: PoseHandleDragStartEvent;
+  poseHandleDrag: PoseHandleDragEvent;
+  poseHandleDragEnd: PoseHandleDragEndEvent;
+  poseHandleBlocked: PoseHandleBlockedEvent;
+  /** 动作页 3D 轨迹：点了位姿点或轨迹线 */
+  motionPathPick: MotionPathPickEvent;
+  motionPathModeChange: MotionPathMode;
+  /** 动作页右键队形：算好的各台虚轴 1，交给动作编辑器写进位姿 */
+  poseFormation: PoseFormationEvent;
+  /** 动作页位姿手柄的目标换了（右键菜单据此刷新队形工具） */
+  poseHandlesChange: void;
 };
 
 export class Viz3DEngine implements Disposable {
@@ -181,6 +224,14 @@ export class Viz3DEngine implements Disposable {
   private telemetryController: TelemetryController | null = null;
   private goShadowController: GoShadowController | null = null;
   private sequencePreviewController: SequencePreviewController | null = null;
+  private poseHandles: PoseHandleController | null = null;
+  private poseHandleOverlay: PoseHandleOverlay | null = null;
+  private poseHandleTargets: PoseHandleTarget[] = [];
+  private motionPathOverlay: MotionPathOverlay | null = null;
+  private motionPaths: MotionPathEntry[] = [];
+  private motionPathMode: MotionPathMode = DEFAULT_MOTION_PATH_MODE;
+  /** 按虚轴摆的姿态（吸附同角度用） */
+  private readonly appliedAxisValues = new Map<string, VirtualAxisValues>();
   /** 动作页成员标识：非成员 visibility 0.7；跨 unmount 保留，dispose 时清空 */
   private readonly dimmedObjects = new DimmedObjects();
   /** 搭建调试吊点位置（key = motorId）；跨 setObjects 保留，新建的吊点也立即显示 */
@@ -310,6 +361,13 @@ export class Viz3DEngine implements Disposable {
     this.measureTool.cancelDrag();
     this.measureOverlay?.dispose();
     this.measureOverlay = null;
+
+    this.poseHandles?.dispose();
+    this.poseHandles = null;
+    this.poseHandleOverlay?.dispose();
+    this.poseHandleOverlay = null;
+    this.motionPathOverlay?.dispose();
+    this.motionPathOverlay = null;
 
     this.viewportManager?.dispose();
     this.viewportManager = null;
@@ -1168,6 +1226,7 @@ export class Viz3DEngine implements Disposable {
     if (!handle) return;
     const config = handle.getConfig();
     if (!config.kinematics) return;
+    this.appliedAxisValues.set(objectId, { ...values });
     handle.applyRuntimeTransform(resolveVirtualAxisTransform(config, values));
   }
 
@@ -1185,6 +1244,92 @@ export class Viz3DEngine implements Disposable {
 
   clearSequencePreview(): void {
     this.sequencePreviewController?.clear();
+  }
+
+  /** 动作页 3D 轨迹：要画哪些物体的整条动作（空数组收起） */
+  setMotionPaths(entries: readonly MotionPathEntry[]): void {
+    this.motionPaths = [...entries];
+    this.poseHandles?.setMotionPaths(this.motionPaths);
+  }
+
+  getMotionPathMode(): MotionPathMode {
+    return this.motionPathMode;
+  }
+
+  /** 视图菜单「轨迹」：选中的 / 全部 / 关 */
+  setMotionPathMode(mode: MotionPathMode): void {
+    if (this.motionPathMode === mode) return;
+    this.motionPathMode = mode;
+    this.events.emit("motionPathModeChange", mode);
+  }
+
+  /** 动作页位姿手柄：给哪些物体出手柄（空数组收起） */
+  setPoseHandles(targets: readonly PoseHandleTarget[]): void {
+    this.poseHandleTargets = [...targets];
+    this.poseHandles?.setTargets(this.poseHandleTargets);
+    this.events.emit("poseHandlesChange", undefined);
+  }
+
+  /** 左键按在位姿手柄上时由手柄接手（返回 true），不再框选 */
+  poseHandlePointerDown(canvasX: number, canvasY: number, pointerId: number): boolean {
+    return this.poseHandles?.pointerDown({ x: canvasX, y: canvasY }, pointerId) ?? false;
+  }
+
+  /** 手柄拖动中返回 true；否则只更新悬停（光标变手形） */
+  poseHandlePointerMove(canvasX: number, canvasY: number, pointerId: number, fine: boolean): boolean {
+    return this.poseHandles?.pointerMove({ x: canvasX, y: canvasY }, pointerId, fine) ?? false;
+  }
+
+  poseHandlePointerUp(pointerId: number): boolean {
+    return this.poseHandles?.pointerUp(pointerId) ?? false;
+  }
+
+  /** 放弃手柄拖动（位姿回到按下前）；没在拖时返回 false */
+  cancelPoseHandleDrag(): boolean {
+    return this.poseHandles?.cancel() ?? false;
+  }
+
+  /** 指针离开画布时收起悬停 */
+  clearPoseHandleHover(): void {
+    this.poseHandles?.hover(null);
+  }
+
+  isPoseHandleDragging(): boolean {
+    return this.poseHandles?.isDragging() ?? false;
+  }
+
+  /** 动作页 3D 手柄现在出哪根虚轴的（每台只出一个） */
+  getPoseHandleAxis(): VirtualAxisId {
+    return this.poseHandles?.getActiveAxis() ?? "v1";
+  }
+
+  /** 换成这根虚轴的手柄（数字键 1/2/3、手柄旁的切换）；手柄里都没有这根轴时不换，返回 false */
+  setPoseHandleAxis(axis: VirtualAxisId): boolean {
+    return this.poseHandles?.setActiveAxis(axis) ?? false;
+  }
+
+  /** 动作页右键「队形」能不能用；referenceId 为右键的那台（空白处右键为 null） */
+  getPoseFormationInfo(referenceId: string | null): PoseFormationInfo | null {
+    return this.poseHandles?.formationInfo(referenceId) ?? null;
+  }
+
+  /**
+   * 动作页右键队形（高度对齐到这台、按比例缩放高低差）：按手柄的值算好各台虚轴 1，
+   * 发 poseFormation 交给动作编辑器写进位姿；用不了时返回 null
+   */
+  applyPoseFormation(request: PoseFormationRequest): PoseFormationEvent | null {
+    const plan = this.poseHandles?.planFormation(request) ?? null;
+    if (plan) this.events.emit("poseFormation", plan);
+    return plan;
+  }
+
+  /** 双击：拾取物体（选不中的穿过去）并发 objectDoubleClick */
+  doubleClickAt(canvasX: number, canvasY: number): string | null {
+    const target = this.pickPickableAt(canvasX, canvasY);
+    const id =
+      target?.kind === "object" ? target.id : target?.kind === "hoist-axis" ? target.objectId : null;
+    this.events.emit("objectDoubleClick", { id });
+    return id;
   }
 
   setDimmedObjects(ids: string[]): void {
@@ -1310,9 +1455,11 @@ export class Viz3DEngine implements Disposable {
     if (selectionMode === "additive") {
       const merged = [...new Set([...this.getSelection(), ...ids])];
       this.selectionManager.set(merged);
+      this.events.emit("boxSelect", { ids: merged, mode: selectionMode });
       return merged;
     }
     this.selectionManager.set(ids);
+    this.events.emit("boxSelect", { ids, mode: selectionMode });
     return ids;
   }
 
@@ -1322,6 +1469,80 @@ export class Viz3DEngine implements Disposable {
     if (!scene) return;
     scene.defaultCursor = this.mode === "measure" ? "crosshair" : "default";
     if (this.canvas) this.canvas.style.cursor = scene.defaultCursor;
+  }
+
+  /** 位姿手柄悬停 / 拖动时的光标；null 回到工具的光标 */
+  private setPoseHandleCursor(cursor: string | null): void {
+    if (!cursor) {
+      this.applyModeCursor();
+      return;
+    }
+    const scene = this.sceneManager?.scene;
+    if (scene) scene.defaultCursor = cursor;
+    if (this.canvas) this.canvas.style.cursor = cursor;
+  }
+
+  private createPoseHandleHost(): PoseHandleHost {
+    return {
+      getCells: () => {
+        const manager = this.viewportManager;
+        if (!manager) return [];
+        return manager.getCellRects(this.getLocalSlotRect()).map(({ id, rect }) => {
+          const camera = manager.getCell(id).camera;
+          return { id, rect, projector: cellProjector(camera, rect), rayAt: (point: Pt) => cellRay(camera, point) };
+        });
+      },
+      getConfig: (id) => this.objectRegistry?.get(id)?.getConfig(),
+      getParentWorld: (id, onShadow) => {
+        const parent = this.objectRegistry?.getMountParent(id);
+        if (!parent) return null;
+        const node = (onShadow ? this.goShadowController?.attachmentPivotOf(parent.id) : undefined) ?? parent.attachmentPivot;
+        return node.computeWorldMatrix(true).clone();
+      },
+      getSnapCandidates: (moving) => this.poseSnapCandidates(moving),
+      setOrbitEnabled: (enabled) => this.setOrbitEnabled(enabled),
+      setCursor: (cursor) => this.setPoseHandleCursor(cursor),
+      onDragStart: (event) => this.events.emit("poseHandleDragStart", event),
+      onDrag: (event) => this.events.emit("poseHandleDrag", event),
+      onDragEnd: (event) => this.events.emit("poseHandleDragEnd", event),
+      onBlocked: (event) => this.events.emit("poseHandleBlocked", event),
+      getMountParentId: (id) => this.objectRegistry?.getMountParent(id)?.id ?? null,
+      onPathPick: (event) => this.events.emit("motionPathPick", event),
+    };
+  }
+
+  /** 吸附参照：不在这次拖动里的物体（被拖物体的挂载子物体跟着动，也不算） */
+  private poseSnapCandidates(moving: ReadonlySet<string>): SnapCandidate[] {
+    const registry = this.objectRegistry;
+    if (!registry) return [];
+    const movesWithDrag = (id: string): boolean => {
+      const seen = new Set<string>();
+      let current: string | undefined = id;
+      while (current && !seen.has(current)) {
+        if (moving.has(current)) return true;
+        seen.add(current);
+        current = registry.getMountParent(current)?.id;
+      }
+      return false;
+    };
+    return registry.list().flatMap((handle): SnapCandidate[] => {
+      if (movesWithDrag(handle.id)) return [];
+      const bounds = readObjectBounds(handle);
+      const config = handle.getConfig();
+      const front = Vector3.TransformNormal(new Vector3(0, 0, 1), handle.attachmentPivot.computeWorldMatrix(true));
+      const values = this.appliedAxisValues.get(handle.id);
+      return [
+        {
+          objectId: handle.id,
+          bottom: bounds.min.y,
+          top: bounds.max.y,
+          center: worldBoundsCenter(bounds),
+          front: normalizeVec({ x: front.x, y: front.y, z: front.z }),
+          values: values ? { v1: values.v1 ?? 0, v2: values.v2 ?? 0, v3: values.v3 ?? 0 } : null,
+          kinds: config.kinematics ? poseHandleKindsFor(config.kinematics.controlType) : [],
+        },
+      ];
+    });
   }
 
   getMeasureState(): MeasureState {
@@ -1454,28 +1675,53 @@ export class Viz3DEngine implements Disposable {
 
   /** 聚焦当前选中物体（支持多选），保留观察方向，平滑缩放居中；缺省作用于当前格 */
   focusSelection(cellId?: ViewportCellId): void {
-    const viewportManager = this.viewportManager;
     const objectRegistry = this.objectRegistry;
-    if (!viewportManager || !objectRegistry) {
+    if (!objectRegistry) {
       return;
     }
-    const cell = viewportManager.getCell(cellId ?? viewportManager.getActiveCellId());
-
-    const selectedIds = this.getSelection();
-    if (selectedIds.length === 0) {
-      return;
-    }
-
     const bounds = mergeFocusBounds(
-      selectedIds.flatMap((id) => {
+      this.getSelection().flatMap((id) => {
         const handle = objectRegistry.get(id);
         return handle ? [readObjectBounds(handle)] : [];
       }),
     );
+    if (bounds) {
+      this.focusBoundsInCell(bounds, cellId);
+    }
+  }
+
+  /**
+   * 看全这些物体的动作：这一格的相机框住它们整段扫过的范围（和现在的样子），保留观察方向；
+   * samples 为各台按时间取的虚轴值（挂载的父物体也可以给，子物体叠加父物体那一刻的姿态）
+   */
+  focusMotionRange(
+    objectIds: readonly string[],
+    samples: ReadonlyMap<string, readonly MotionPathSample[]>,
+    cellId?: ViewportCellId,
+  ): boolean {
+    const objectRegistry = this.objectRegistry;
+    if (!objectRegistry) {
+      return false;
+    }
+    const boxes = objectIds.flatMap((id) => {
+      const handle = objectRegistry.get(id);
+      return handle ? [readObjectBounds(handle)] : [];
+    });
+    const range = this.poseHandles?.motionRangeBounds(objectIds, samples) ?? null;
+    const bounds = mergeFocusBounds(range ? [...boxes, range] : boxes);
     if (!bounds) {
+      return false;
+    }
+    this.focusBoundsInCell(bounds, cellId);
+    return true;
+  }
+
+  private focusBoundsInCell(bounds: FocusBounds, cellId?: ViewportCellId): void {
+    const viewportManager = this.viewportManager;
+    if (!viewportManager) {
       return;
     }
-
+    const cell = viewportManager.getCell(cellId ?? viewportManager.getActiveCellId());
     const rect = viewportManager.getCellRect(cell.id, this.getLocalSlotRect());
     const aspect = rect && rect.height > 0 ? rect.width / rect.height : 1;
     const fit = resolveFocusFit(bounds, {
@@ -1503,11 +1749,7 @@ export class Viz3DEngine implements Disposable {
       return null;
     }
 
-    const targets = this.objectRegistry
-      .list()
-      .filter((handle) => this.isPickable(handle.id))
-      .map((handle) => asTransformNode(handle.object3d));
-    const pickTarget = this.pickController.pick(canvasX, canvasY, target.camera, targets);
+    const pickTarget = this.pickPickableAt(canvasX, canvasY);
 
     if (this.pickMode === "motor") {
       return this.pickMotorTarget(pickTarget, mode, clearOnMiss);
@@ -1563,6 +1805,22 @@ export class Viz3DEngine implements Disposable {
 
     this.events.emit("pickClick", { target: pickTarget, mode });
     return pickTarget;
+  }
+
+  /** 拾取能选中的物体（选不中的物体点击会穿过去），不改选择 */
+  private pickPickableAt(canvasX: number, canvasY: number): PickTarget | null {
+    if (!this.pickController || !this.objectRegistry || !this.viewportManager) {
+      return null;
+    }
+    const target = this.viewportManager.getPickTarget(canvasX, canvasY, this.getLocalSlotRect());
+    if (!target) {
+      return null;
+    }
+    const targets = this.objectRegistry
+      .list()
+      .filter((handle) => this.isPickable(handle.id))
+      .map((handle) => asTransformNode(handle.object3d));
+    return this.pickController.pick(canvasX, canvasY, target.camera, targets);
   }
 
   /** 仅拾取，不改选择（供拖放绑定） */
@@ -1769,7 +2027,17 @@ export class Viz3DEngine implements Disposable {
 
     if (this.slotElement) {
       this.measureOverlay = new MeasureOverlay(this.slotElement);
+      // 轨迹画在手柄下面：先挂轨迹层
+      this.motionPathOverlay = new MotionPathOverlay(this.slotElement);
+      this.poseHandleOverlay = new PoseHandleOverlay(this.slotElement);
     }
+    this.poseHandles = new PoseHandleController(
+      this.createPoseHandleHost(),
+      this.poseHandleOverlay,
+      this.motionPathOverlay,
+    );
+    this.poseHandles.setTargets(this.poseHandleTargets);
+    this.poseHandles.setMotionPaths(this.motionPaths);
     this.applyModeCursor();
 
     this.resize();
@@ -1796,6 +2064,7 @@ export class Viz3DEngine implements Disposable {
     this.syncAxisScreenDirections();
 
     this.renderMeasureOverlay(slotRect);
+    this.poseHandles?.render();
 
     // 屏幕标签固定画在主透视格（不随当前格跳；多格时 DOM 数量不翻倍）
     const labelCellId = this.viewportManager.getLabelCellId();
@@ -2279,6 +2548,45 @@ const boundsCorners = (bounds: WorldBounds): Vec3[] => [
   { x: bounds.min.x, y: bounds.max.y, z: bounds.max.z },
   { x: bounds.max.x, y: bounds.max.y, z: bounds.max.z },
 ];
+
+/** 一格视口的投影：在近裁剪面以内（相机背后）的点为 null */
+const cellProjector = (camera: Camera, rect: SlotRect): CellProjector => {
+  const view = camera.getViewMatrix();
+  const near = camera.minZ + 1e-4;
+  const right = camera.getDirection(Vector3.Right());
+  const forward = camera.getDirection(Vector3.Forward());
+  const orthographic = camera.mode === Camera.ORTHOGRAPHIC_CAMERA;
+  const scratch = new Vector3();
+  const project = (point: Vec3): Pt | null => {
+    scratch.set(point.x, point.y, point.z);
+    if (Vector3.TransformCoordinates(scratch, view).z < near) return null;
+    const projected = projectWorldToCell(point, camera, rect);
+    return { x: projected.x, y: projected.y };
+  };
+  return {
+    project,
+    pixelsPerMeter: (point) => {
+      const a = project(point);
+      const b = project({ x: point.x + right.x, y: point.y + right.y, z: point.z + right.z });
+      return a && b ? Math.hypot(b.x - a.x, b.y - a.y) : 1;
+    },
+    viewDirection: (point) => {
+      const fallback = { x: forward.x, y: forward.y, z: forward.z };
+      if (orthographic) return fallback;
+      const eye = camera.globalPosition;
+      return normalizeVec(subVec(point, { x: eye.x, y: eye.y, z: eye.z })) ?? fallback;
+    },
+  };
+};
+
+/** 画布坐标处这一格相机的视线 */
+const cellRay = (camera: Camera, point: Pt): PoseRay | null => {
+  const scene = camera.getScene();
+  if (!scene) return null;
+  const ray = scene.createPickingRay(point.x, point.y, null, camera);
+  const direction = normalizeVec({ x: ray.direction.x, y: ray.direction.y, z: ray.direction.z });
+  return direction ? { origin: { x: ray.origin.x, y: ray.origin.y, z: ray.origin.z }, direction } : null;
+};
 
 const sceneContainer = (scene: Scene) => ({
   add: (object: unknown) => {

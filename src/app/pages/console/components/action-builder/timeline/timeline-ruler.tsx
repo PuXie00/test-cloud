@@ -1,6 +1,10 @@
-import { TIME_STEP_MS, TIMELINE_PAD_LEFT, formatTime, pxToMs } from "./timeline-data";
+import { cn } from "@/app/components/ui/utils";
+import { TIME_STEP_MS, TIMELINE_PAD_LEFT, formatTime, msToPx, pxToMs } from "./timeline-data";
 import { computeNiceTimeTicks, type TimelineTick } from "./timeline-ticks";
 import { clampCursorMs, usedBandScreenRect, viewPxFromMs } from "./timeline-view-extent";
+
+/** 标尺上的一列：这一时刻有位姿（或静态预设）；selected 为这一列全都选中了 */
+export type RulerColumn = { atMs: number; selected: boolean };
 
 type TimelineRulerProps = {
   occupiedEndMs: number;
@@ -12,6 +16,13 @@ type TimelineRulerProps = {
   onCursorChange: (ms: number) => void;
   /** 鼠标拖动指针（可吸附）；不传时用 onCursorChange */
   onScrub?: (ms: number) => void;
+  /** 按下标尺交给时间轴处理（跳游标并拖、贴边自动滚、Shift 拖选时间段）；不传时标尺自己拖游标 */
+  onScrubStart?: (event: React.PointerEvent<HTMLDivElement>) => void;
+  /** 有位姿的时刻画成小菱形：点它选整列，拖它挪整列 */
+  columns?: readonly RulerColumn[];
+  onColumnPointerDown?: (column: RulerColumn, event: React.PointerEvent<HTMLButtonElement>) => void;
+  /** Shift 拖出来的时间段 */
+  rangeMs?: { startMs: number; endMs: number } | null;
 };
 
 const tickHeight = (kind: TimelineTick["kind"]): string => {
@@ -51,6 +62,10 @@ export const TimelineRuler = ({
   pxPerSecond,
   onCursorChange,
   onScrub = onCursorChange,
+  onScrubStart,
+  columns = [],
+  onColumnPointerDown,
+  rangeMs = null,
 }: TimelineRulerProps) => {
   const { ticks } = computeNiceTimeTicks(pxPerSecond, viewEndMs, viewStartMs);
   const used = usedBandScreenRect(occupiedEndMs, viewStartMs, pxPerSecond);
@@ -61,6 +76,10 @@ export const TimelineRuler = ({
   };
 
   const handleScrubStart = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (onScrubStart) {
+      onScrubStart(event);
+      return;
+    }
     if (event.button !== 0) return;
     event.preventDefault();
     const target = event.currentTarget;
@@ -131,6 +150,17 @@ export const TimelineRuler = ({
         }}
       >
         <div className="relative h-full w-full">
+          {rangeMs ? (
+            <div
+              data-testid="timeline-ruler-range"
+              className="pointer-events-none absolute inset-y-0 bg-primary/20"
+              style={{
+                left: viewPxFromMs(Math.min(rangeMs.startMs, rangeMs.endMs), viewStartMs, pxPerSecond),
+                width: msToPx(Math.abs(rangeMs.endMs - rangeMs.startMs), pxPerSecond),
+              }}
+              aria-hidden
+            />
+          ) : null}
           {ticks.map((tick) => (
             <div
               key={`${tick.kind}-${tick.ms}`}
@@ -156,6 +186,34 @@ export const TimelineRuler = ({
               />
             </div>
           ))}
+          {columns
+            .filter((column) => column.atMs >= viewStartMs && column.atMs <= viewEndMs)
+            .map((column) => (
+              <button
+                key={column.atMs}
+                type="button"
+                tabIndex={-1}
+                data-testid="timeline-ruler-column"
+                data-at-ms={String(column.atMs)}
+                aria-label={`整列 ${formatTime(column.atMs)} s`}
+                aria-pressed={column.selected}
+                title={`${formatTime(column.atMs)} s：点选这一列的全部位姿（Ctrl 加选），拖动整列一起挪`}
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                  onColumnPointerDown?.(column, event);
+                }}
+                className="absolute bottom-0 z-[1] flex h-3 w-3 -translate-x-1/2 cursor-grab items-center justify-center active:cursor-grabbing"
+                style={{ left: viewPxFromMs(column.atMs, viewStartMs, pxPerSecond) }}
+              >
+                <span
+                  className={cn(
+                    "size-[7px] rotate-45",
+                    column.selected ? "bg-primary" : "bg-muted-foreground/60 hover:bg-foreground",
+                  )}
+                  aria-hidden
+                />
+              </button>
+            ))}
         </div>
       </div>
     </div>

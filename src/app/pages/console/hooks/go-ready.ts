@@ -1,11 +1,22 @@
 import type { VirtualAxisId, VirtualAxisValues } from "@/app/project/project-document-types";
 import { DIMENSION_KEY_TO_VIRTUAL_AXIS } from "@/app/project/manual-jog";
+import { ZERO_GO_VAD, type GoObjectPlan } from "./go-motion";
 import type {
   ControlledObjectSnapshot,
   MonitorPositions,
 } from "../components/monitor-grid/monitor-data";
 
 export type GoPhase = "idle" | "armed" | "moving";
+
+/**
+ * GO 目标（影子）是怎么来的，GO 条上写明：pose 选中的位姿（同一时刻时带时刻），
+ * cursor 没选位姿时游标处序列的样子，manual 维度控制填的，sequence「去这里」某条序列的起点
+ */
+export type GoTargetSource =
+  | { kind: "pose"; atMs?: number }
+  | { kind: "cursor"; atMs: number }
+  | { kind: "manual" }
+  | { kind: "sequence"; name: string };
 
 export type GoReadyEntry = {
   objectId: string;
@@ -14,7 +25,32 @@ export type GoReadyEntry = {
   dispatched?: boolean;
   /** 下发时刻（Date.now()） */
   dispatchedAt?: number;
+  /** 没写时当作手动目标 */
+  source?: GoTargetSource;
 };
+
+const formatSeconds = (ms: number): string => (ms / 1000).toFixed(1);
+
+export const goTargetSourceLabel = (source: GoTargetSource | undefined): string => {
+  if (!source || source.kind === "manual") return "手动目标";
+  if (source.kind === "pose") return source.atMs === undefined ? "选中的位姿" : `${formatSeconds(source.atMs)} s 的位姿`;
+  if (source.kind === "cursor") return `游标 ${formatSeconds(source.atMs)} s`;
+  return `「${source.name}」的起点`;
+};
+
+/** GO 条上的一句话：按来源分组，「游标 12.0 s · 3 台，手动目标 · 1 台」 */
+export const goTargetSummary = (entries: readonly GoReadyEntry[]): string => {
+  const counts = new Map<string, number>();
+  for (const entry of entries) {
+    const label = goTargetSourceLabel(entry.source);
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  return [...counts].map(([label, count]) => `${label} · ${count} 台`).join("，");
+};
+
+/** 维度控制、去这里这些点名要去的目标（不是跟着位姿或游标绑上的） */
+export const isExplicitGoEntry = (entry: GoReadyEntry): boolean =>
+  entry.source?.kind !== "pose" && entry.source?.kind !== "cursor";
 
 export type GoReadyState = {
   phase: GoPhase;
@@ -120,22 +156,42 @@ export const isArrived = (
 };
 
 /** 目标里没写的轴按设目标时的当前位置下发（不动），连当前位置也没有才是 0 */
-export const buildMoveTargetItem = (entry: GoReadyEntry): MoveTargetItem => ({
-  deviceId: Number(entry.objectId),
-  hTargetPosition: entry.target.v1 ?? entry.current.v1 ?? 0,
-  hVelocity: 0,
-  hAcceleration: 0,
-  hDeceleration: 0,
-  pTargetPosition: entry.target.v2 ?? entry.current.v2 ?? 0,
-  pVelocity: 0,
-  pAcceleration: 0,
-  pDeceleration: 0,
-  yTargetPosition: entry.target.v3 ?? entry.current.v3 ?? 0,
-  yVelocity: 0,
-  yAcceleration: 0,
-  yDeceleration: 0,
-  moveDirection: 0,
-});
+/**
+ * 一条目标位置运动。plan 给出各轴下发的速度、加速度、减速度（没给的轴填 0，C++ 走搭建里的默认值）
+ * 和方向：无极旋转只有正转 1 / 反转 2，其它物体 0（自动）。
+ */
+/** 去掉浮点尾数（110.00000000000001 → 110）；按有效数字取，很小的加速度也不会变成 0（0 = 走默认） */
+const cleanRate = (value: number): number => (Number.isFinite(value) ? Number(value.toPrecision(6)) : value);
+
+export const buildMoveTargetItem = (
+  entry: GoReadyEntry,
+  plan?: Pick<GoObjectPlan, "direction" | "axes">,
+): MoveTargetItem => {
+  const vad = (axis: VirtualAxisId) => {
+    const rates = plan?.axes[axis] ?? ZERO_GO_VAD;
+    return {
+      velocity: cleanRate(rates.velocity),
+      acceleration: cleanRate(rates.acceleration),
+      deceleration: cleanRate(rates.deceleration),
+    };
+  };
+  return {
+    deviceId: Number(entry.objectId),
+    hTargetPosition: entry.target.v1 ?? entry.current.v1 ?? 0,
+    hVelocity: vad("v1").velocity,
+    hAcceleration: vad("v1").acceleration,
+    hDeceleration: vad("v1").deceleration,
+    pTargetPosition: entry.target.v2 ?? entry.current.v2 ?? 0,
+    pVelocity: vad("v2").velocity,
+    pAcceleration: vad("v2").acceleration,
+    pDeceleration: vad("v2").deceleration,
+    yTargetPosition: entry.target.v3 ?? entry.current.v3 ?? 0,
+    yVelocity: vad("v3").velocity,
+    yAcceleration: vad("v3").acceleration,
+    yDeceleration: vad("v3").deceleration,
+    moveDirection: plan?.direction ?? 0,
+  };
+};
 
 export const pendingGoEntries = (entries: readonly GoReadyEntry[]): GoReadyEntry[] =>
   entries.filter((entry) => !entry.dispatched);
@@ -237,7 +293,7 @@ export const goPhaseFromEntries = (entries: readonly GoReadyEntry[]): GoPhase =>
  * 动作页联机：选中位姿给出的 GO 目标（按物体 id）。
  * 绑定的物体到位或被清除后，GO 目标回到这里，影子一直停在位姿上。
  */
-export type GoBinding = Pick<GoReadyEntry, "target" | "current">;
+export type GoBinding = Pick<GoReadyEntry, "target" | "current" | "source">;
 export type GoBindings = ReadonlyMap<string, GoBinding>;
 
 const boundEntry = (objectId: string, binding: GoBinding): GoReadyEntry => ({
@@ -245,16 +301,19 @@ const boundEntry = (objectId: string, binding: GoBinding): GoReadyEntry => ({
   target: { ...binding.target },
   current: { ...binding.current },
   dispatched: false,
+  ...(binding.source ? { source: binding.source } : {}),
 });
 
 /**
  * 换绑定：不再绑定的物体去掉还没下发的目标；新绑定的物体目标设为位姿值。
  * 正在走的（已下发）条目保留，到位后再回到绑定的目标。
+ * exclusive（影子跟着游标）：别的还没下发的目标也去掉，影子只剩这一帧。
  */
 export const applyGoBindings = (
   entries: readonly GoReadyEntry[],
   previous: GoBindings,
   next: GoBindings,
+  exclusive = false,
 ): GoReadyEntry[] => {
   const result: GoReadyEntry[] = [];
   for (const entry of entries) {
@@ -262,7 +321,7 @@ export const applyGoBindings = (
       if (entry.dispatched) result.push(entry);
       continue;
     }
-    if (previous.has(entry.objectId) && !entry.dispatched) continue;
+    if ((previous.has(entry.objectId) || exclusive) && !entry.dispatched) continue;
     result.push(entry);
   }
   for (const [objectId, binding] of next) {

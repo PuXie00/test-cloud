@@ -122,6 +122,20 @@ const rotationStrokeFor = (object: ControlledObjectConfig, period: number): [num
     : [0, period];
 };
 
+/**
+ * 无极旋转物体（模型 4）的周期和 H 软行程，GO 选方向、算转角用；其它物体为 null。
+ * 绑定电机的工作行程不一致时抛错（和生成算法模型时一样）。
+ */
+export const rotationGeometryOf = (
+  object: ControlledObjectConfig,
+  motors: readonly MotorConfig[],
+): { period: number; min: number; max: number } | null => {
+  if (decodeControlType(object.controlType) !== "continuousRotation") return null;
+  const period = rotationPeriodFor(object, motors);
+  const [min, max] = rotationStrokeFor(object, period);
+  return { period, min, max };
+};
+
 const paramsFor = (object: ControlledObjectConfig, axis: VirtualAxisId) =>
   object.motionParams[motionAxisIdForVirtualAxis(axis)];
 

@@ -927,7 +927,9 @@ export const TimelineCurves = ({
           {graph === "velocity"
             ? curve.junctions.filter((junction) => visibleTime(junction.atMs)).map((junction) => {
                 const moving = junction.velocity !== 0;
-                const manual = junction.kind === "manual";
+                // 手填、跟前段 / 跟后段是人定的，空心点标出来
+                const manual =
+                  junction.kind === "manual" || junction.kind === "follow-prev" || junction.kind === "follow-next";
                 const key = curve.keys.find((item) => item.sourceRef === junction.sourceRef);
                 const selected = junction.blockId !== null && selectedBlockIds.includes(junction.blockId);
                 const cx = x(junction.atMs);

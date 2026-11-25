@@ -3,6 +3,7 @@ import { cn } from "@/app/components/ui/utils";
 import { formatTime, msToPx } from "./timeline-data";
 import { viewPxFromMs } from "./timeline-view-extent";
 import { DRAG_CLICK_THRESHOLD_PX, isAdditiveClick, useDragClickGuard } from "./suppress-click";
+import { useTimelineEdgeScroll, type EdgeScrollBegin } from "./timeline-edge-scroll";
 
 export type PresetProjectionProps = {
   blockId: string;
@@ -44,31 +45,40 @@ const useSelectHandlers = (
   return { handleClick, handleKeyDown };
 };
 
-/** 按下后横移过阈值才开始拖；拖过的话松手时调 onDragEnd */
+/**
+ * 按下后横移过阈值才开始拖；拖过的话松手时调 onDragEnd。
+ * 拖到时间区边上视图自己滚：shiftMs 是滚过的时间，加到位移上块才跟着指针
+ */
 const attachPointerDrag = (
   startX: number,
-  onDragMove: (dx: number) => void,
+  beginEdgeScroll: EdgeScrollBegin,
+  onDragMove: (dx: number, shiftMs: number) => void,
   onDragEnd: () => void,
 ) => {
   let moved = false;
-  const handleMove = (moveEvent: globalThis.PointerEvent) => {
+  let lastClientX = startX;
+  const handleMove = (moveEvent: Pick<globalThis.PointerEvent, "clientX">) => {
+    lastClientX = moveEvent.clientX;
     const dx = moveEvent.clientX - startX;
     if (!moved && Math.abs(dx) < DRAG_CLICK_THRESHOLD_PX) return;
     moved = true;
-    onDragMove(dx);
+    onDragMove(dx, edgeScroll.shiftMs());
   };
   const handleUp = () => {
     window.removeEventListener("pointermove", handleMove);
     window.removeEventListener("pointerup", handleUp);
+    edgeScroll.end();
     if (!moved) return;
     onDragEnd();
   };
   window.addEventListener("pointermove", handleMove);
   window.addEventListener("pointerup", handleUp);
+  const edgeScroll = beginEdgeScroll(() => handleMove({ clientX: lastClientX }));
 };
 
 const attachTimeDrag = (
   startX: number,
+  beginEdgeScroll: EdgeScrollBegin,
   initialAtMs: number,
   pxPerSecond: number,
   onMove: (atMs: number) => void,
@@ -77,8 +87,9 @@ const attachTimeDrag = (
 ) => {
   attachPointerDrag(
     startX,
-    (dx) => {
-      const deltaMs = Math.round((dx / pxPerSecond) * 1000);
+    beginEdgeScroll,
+    (dx, shiftMs) => {
+      const deltaMs = Math.round((dx / pxPerSecond) * 1000) + shiftMs;
       onDrag("move");
       onMove(Math.max(0, initialAtMs + deltaMs));
     },
@@ -123,6 +134,7 @@ export const PresetProjection = ({
   // 拖动时标签显示块实际所在的时刻（吸附、被拒绝后都以它为准）
   const [dragKind, setDragKind] = useState<DragKind | null>(null);
   const dragClick = useDragClickGuard();
+  const beginEdgeScroll = useTimelineEdgeScroll();
   const { handleClick, handleKeyDown } = useSelectHandlers(onSelect, dragClick.consumeDragClick);
   const handleDragKind = (kind: DragKind | null) => {
     if (kind === null) dragClick.dragEnded();
@@ -134,7 +146,7 @@ export const PresetProjection = ({
       if (event.button !== 0) return;
       event.stopPropagation();
       dragClick.pressStarted();
-      attachTimeDrag(event.clientX, atMs, pxPerSecond, onMove, handleDragKind, onMoveEnd);
+      attachTimeDrag(event.clientX, beginEdgeScroll, atMs, pxPerSecond, onMove, handleDragKind, onMoveEnd);
     };
 
     return (
@@ -188,7 +200,7 @@ export const PresetProjection = ({
     if (event.button !== 0) return;
     event.stopPropagation();
     dragClick.pressStarted();
-    attachTimeDrag(event.clientX, startMs, pxPerSecond, onMove, handleDragKind, onMoveEnd);
+    attachTimeDrag(event.clientX, beginEdgeScroll, startMs, pxPerSecond, onMove, handleDragKind, onMoveEnd);
   };
 
   const handleResizePointerDown =
@@ -202,8 +214,9 @@ export const PresetProjection = ({
       const initialEnd = endMs;
       attachPointerDrag(
         event.clientX,
-        (dx) => {
-          const deltaMs = Math.round((dx / pxPerSecond) * 1000);
+        beginEdgeScroll,
+        (dx, shiftMs) => {
+          const deltaMs = Math.round((dx / pxPerSecond) * 1000) + shiftMs;
           setDragKind(edge);
           if (edge === "start") {
             const nextStart = Math.max(0, Math.min(initialStart + deltaMs, initialEnd - 1));

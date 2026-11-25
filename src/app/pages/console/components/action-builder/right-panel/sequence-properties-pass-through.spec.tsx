@@ -81,9 +81,11 @@ describe("pose axes passing through", () => {
 
   it("edits the whole span of an axis that passes the band's end", () => {
     renderPanel({ kind: "multi-block", blockIds: ["p1", "p2"], focus: "segments" });
-    fireEvent.click(screen.getByRole("button", { name: /^V1 / }));
-    expect(screen.getByText(/虚轴1在区间端点经过，这里是 0\.0–4\.0 s 整段曲线/)).not.toBeNull();
-    expect(screen.getByLabelText("时长").textContent).toBe("4.0 s");
+    fireEvent.click(screen.getByRole("button", { name: "看 V1 的曲线" }));
+    expect(screen.getByText(/V1 在区间端点经过，曲线是 0\.0–4\.0 s 整段的/)).not.toBeNull();
+    // 上面的时长是这一段自己的；V1 在起点经过，点一下才设值
+    expect(screen.getByLabelText("时长").textContent).toContain("2.0");
+    expect(screen.getByRole("button", { name: "V1 起点经过，点一下设定" })).not.toBeNull();
   });
 
   it("marks an axis no pose sets as not controlled and sets it at the live position", () => {

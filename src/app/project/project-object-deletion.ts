@@ -5,6 +5,7 @@ import {
   reconcileSegmentConfigs,
   resolveActionSequence,
 } from "./action-sequence/resolve-sequence";
+import { refContentAsSequence } from "./action-sequence/sequence-ref";
 import { remountPose } from "./object-mount";
 import type {
   ActionSequenceConfig,
@@ -185,7 +186,7 @@ const sequenceIsEmpty = (sequence: ActionSequenceConfig): boolean =>
   sequence.blocks.length === 0;
 
 const stripPresetParticipants = (
-  block: Extract<TimelineBlock, { orderedObjectIds: number[] }>,
+  block: Extract<TimelineBlock, { kind: "static-preset" | "dynamic-preset" }>,
   deletedIds: Set<number>,
 ): TimelineBlock | null => {
   const definition = getPresetDefinition(block.presetId);
@@ -223,6 +224,17 @@ const stripSequenceObjects = (
   for (const block of sequence.blocks) {
     if (block.kind === "pose" || block.kind === "instruction") {
       if (!deletedIds.has(block.objectId)) blocks.push(block);
+      continue;
+    }
+    // 引用的序列：里面的内容一样去掉删掉的物体，什么都不剩就不要这个引用
+    if (block.kind === "sequence-ref") {
+      const content = stripSequenceObjects(refContentAsSequence(block.content), deletedIds);
+      if (content.blocks.length === 0) continue;
+      blocks.push({
+        ...block,
+        orderedObjectIds: block.orderedObjectIds.filter((objectId) => !deletedIds.has(objectId)),
+        content: { ...block.content, blocks: content.blocks, segments: content.segments },
+      });
       continue;
     }
     const nextBlock = stripPresetParticipants(block, deletedIds);

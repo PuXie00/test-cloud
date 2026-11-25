@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/app/components/ui/utils";
 import type {
   ActionSequenceConfig,
   DynamicPresetBlock,
   PoseBlock,
   InstructionBlock,
+  SequenceRefBlock,
   StaticPresetBlock,
   TimelineBlock,
   TimelineMarker,
@@ -32,20 +33,29 @@ import {
   type SequenceSelection,
 } from "../sequence-selection";
 import { MARKER_LANE_HEIGHT_PX, TimelineMarkerLane } from "./timeline-markers";
-import { suppressNextClick } from "./suppress-click";
+import { DRAG_CLICK_THRESHOLD_PX, isAdditiveClick, suppressNextClick } from "./suppress-click";
 import {
-  clampTimelinePxPerSecond,
+  formatTime,
+  msToPx,
   pxToMs,
+  snapTimeMs,
+  TIME_STEP_MS,
   TIMELINE_PAD_LEFT,
-  TIMELINE_ZOOM_FACTOR,
   TRACK_LABEL_WIDTH,
   type ControlledObject as TimelineControlledObject,
 } from "./timeline-data";
+import { TimelineEdgeScrollContext, useEdgeScrollController } from "./timeline-edge-scroll";
 import { TimelineHScroll } from "./timeline-h-scroll";
-import { blockObjectIds, snapSpanStart, snapTargetTimes, snapToTargets } from "./timeline-snap";
-import { collectMarqueeBlockIds } from "./timeline-marquee";
+import { blockObjectIds, blockSpanMs, snapSpanStart, snapTargetTimes, snapToTargets } from "./timeline-snap";
+import { isSequenceRefDrag, readSequenceRefDrag } from "../content-library/library-dnd";
+import {
+  collectMarqueeBlockIds,
+  collectTimeRangeBlockIds,
+  columnBlockIds,
+  columnTimesMs,
+} from "./timeline-marquee";
 import { computeNiceTimeTicks } from "./timeline-ticks";
-import { TimelineRuler, TimelineRulerReadout } from "./timeline-ruler";
+import { TimelineRuler, TimelineRulerReadout, type RulerColumn } from "./timeline-ruler";
 import { visibleGeneratedAtMs } from "./preset-ticks";
 import { TimelineTrack } from "./timeline-track";
 import {
@@ -68,16 +78,14 @@ import { TrackCurveUnderlay } from "./track-curve-underlay";
 import {
   canvasWidthPx,
   clampCursorMs,
-  lockPanAxis,
   MARQUEE_THRESHOLD_PX,
   panViewStartMs,
-  type PanAxis,
   PLAYHEAD_GRAB_HALF_PX,
   TIMELINE_H_SCROLL_HEIGHT_PX,
   totEndMs,
   usedBandScreenRect,
   viewPxFromMs,
-  viewStartForZoomAnchor,
+  viewStartForCursorZoom,
   fitAllPxPerSecond,
   followPlayheadViewStart,
   revealCursorViewStart,
@@ -133,6 +141,20 @@ export type TimelineEditorProps = {
   /** 曲线上拖位姿的值：这些位姿的这根轴加 deltaValue（相对拖动开始） */
   onPoseAxisDrag?: (blockIds: string[], axis: VirtualAxisId, deltaValue: number) => void;
   onPoseAxisDragEnd?: () => void;
+  /** 双击轨道空白处：在那个时刻给这一行的物体加位姿（吸附开着时对齐） */
+  onCreatePoseAt?: (objectId: number, atMs: number) => void;
+  /**
+   * 整体缩放：选中两段以上运动区间时选区有外框，拖右边改总时长（durationMs 相对拖动开始的选区）；
+   * 松手调 onScaleSelectionEnd。不传时没有拖柄
+   */
+  onScaleSelection?: (blockIds: string[], durationMs: number) => void;
+  onScaleSelectionEnd?: () => void;
+  /** 动作序列库里序列现在的名字（引用的横条上显示）；引用的序列删了时查不到 */
+  sequenceNames?: ReadonlyMap<number, string>;
+  /** 双击引用的横条：打开被引用的序列 */
+  onOpenSequence?: (sequenceId: number) => void;
+  /** 从动作序列库拖一条序列到轨道上：在落点引用它（吸附开着时对齐） */
+  onDropSequence?: (sequenceId: number, atMs: number) => void;
 };
 
 const NO_OBJECT_IDS: readonly number[] = [];
@@ -172,8 +194,20 @@ const dynamicPresetsFor = (sequence: ActionSequenceConfig, objectId: number): Dy
       block.kind === "dynamic-preset" && block.orderedObjectIds.includes(objectId),
   );
 
+const sequenceRefsFor = (sequence: ActionSequenceConfig, objectId: number): SequenceRefBlock[] =>
+  sequence.blocks.filter(
+    (block): block is SequenceRefBlock =>
+      block.kind === "sequence-ref" && block.orderedObjectIds.includes(objectId),
+  );
+
 const blockOriginMs = (block: TimelineBlock): number =>
   block.kind === "dynamic-preset" ? block.startMs : block.atMs;
+
+/** 按行滚动的滚轮（deltaMode 1）一行算这么多像素 */
+const WHEEL_LINE_PX = 16;
+
+/** 拖动时换算时刻用的横向范围：left 处是视图起点，right 是时间区右边 */
+type DragFrame = { left: number; right: number };
 
 type MarqueeDrag = {
   startClientX: number;
@@ -214,6 +248,12 @@ export const TimelineEditor = ({
   curveUnderlay = false,
   onPoseAxisDrag,
   onPoseAxisDragEnd,
+  onCreatePoseAt,
+  onScaleSelection,
+  onScaleSelectionEnd,
+  sequenceNames,
+  onOpenSequence,
+  onDropSequence,
 }: TimelineEditorProps) => {
   const viewportRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -233,6 +273,18 @@ export const TimelineEditor = ({
   const curveMode = viewMode === "curves";
   const [viewportWidth, setViewportWidth] = useState(0);
   const [viewStartMs, setViewStartMs] = useState(0);
+  // 拖动、贴边滚动在两次渲染之间也要读写视图起点：这份总是最新的
+  const viewStartRef = useRef(viewStartMs);
+  viewStartRef.current = viewStartMs;
+  const setViewStart = useCallback((ms: number) => {
+    viewStartRef.current = ms;
+    setViewStartMs(ms);
+  }, []);
+  const pxPerSecondRef = useRef(timelinePxPerSecond);
+  pxPerSecondRef.current = timelinePxPerSecond;
+  const [rangeSelectMs, setRangeSelectMs] = useState<{ startMs: number; endMs: number } | null>(null);
+  // 从动作序列库拖序列过来时落点的时刻
+  const [dropAtMs, setDropAtMs] = useState<number | null>(null);
   const [marquee, setMarquee] = useState<MarqueeDrag | null>(null);
   const [snapIndicatorMs, setSnapIndicatorMs] = useState<number | null>(null);
   // 拖动时按住 Alt 不吸附：捕获阶段先记下，块自己的拖动处理再读到
@@ -260,8 +312,8 @@ export const TimelineEditor = ({
   }, []);
 
   useEffect(() => {
-    setViewStartMs(0);
-  }, [sequence.id]);
+    setViewStart(0);
+  }, [sequence.id, setViewStart]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -295,14 +347,40 @@ export const TimelineEditor = ({
 
   // 缩放到全部：从 0 开始，整条序列和所有标记铺满时间区
   const fitEndMs = Math.max(occupiedEndMs, markers.at(-1)?.atMs ?? 0);
-  const fitStateRef = useRef({ totalMs: fitEndMs, viewportWidth, onTimelinePxPerSecondChange });
-  fitStateRef.current = { totalMs: fitEndMs, viewportWidth, onTimelinePxPerSecondChange };
+  const fitStateRef = useRef({ totalMs: fitEndMs, viewportWidth, onTimelinePxPerSecondChange, pxPerSecond });
+  fitStateRef.current = { totalMs: fitEndMs, viewportWidth, onTimelinePxPerSecondChange, pxPerSecond };
+  // 「适合窗口」改的缩放不按游标对齐（从 0 开始铺满）
+  const skipZoomAnchorRef = useRef(false);
   useEffect(() => {
     if (fitRequestId === 0) return;
-    const { totalMs, viewportWidth: width, onTimelinePxPerSecondChange: setPx } = fitStateRef.current;
-    setPx(fitAllPxPerSecond(totalMs, width));
-    setViewStartMs(0);
-  }, [fitRequestId]);
+    const { totalMs, viewportWidth: width, onTimelinePxPerSecondChange: setPx, pxPerSecond: currentPx } =
+      fitStateRef.current;
+    const nextPx = fitAllPxPerSecond(totalMs, width);
+    if (nextPx !== currentPx) skipZoomAnchorRef.current = true;
+    setPx(nextPx);
+    setViewStart(0);
+  }, [fitRequestId, setViewStart]);
+
+  // 缩放（工具栏滑条、− +）以游标为准：游标在视野里时它在屏幕上的位置不变，不在视野里时缩放完放到中间
+  const zoomStateRef = useRef({ pxPerSecond, cursorMs, viewportWidth });
+  useLayoutEffect(() => {
+    const previous = zoomStateRef.current;
+    zoomStateRef.current = { pxPerSecond, cursorMs, viewportWidth };
+    if (previous.pxPerSecond === pxPerSecond) return;
+    if (skipZoomAnchorRef.current) {
+      skipZoomAnchorRef.current = false;
+      return;
+    }
+    setViewStart(
+      viewStartForCursorZoom({
+        cursorMs,
+        viewStartMs: viewStartRef.current,
+        viewportWidthPx: viewportWidth,
+        previousPxPerSecond: previous.pxPerSecond,
+        nextPxPerSecond: pxPerSecond,
+      }),
+    );
+  }, [pxPerSecond, cursorMs, viewportWidth, setViewStart]);
 
   // 跳关键帧后指针在视野外时移回视野中间
   const revealStateRef = useRef({ cursorMs, viewportMs });
@@ -408,6 +486,7 @@ export const TimelineEditor = ({
           commands: commandsFor(sequence, objectId),
           staticPresets: staticPresetsFor(sequence, objectId),
           dynamicPresets,
+          sequenceRefs: sequenceRefsFor(sequence, objectId),
           resolvedInitialPose: initial,
           generatedTicksByPreset,
           segments: resolved.segments.filter(
@@ -422,6 +501,23 @@ export const TimelineEditor = ({
     const segments = selectedSegmentsOf(resolved, selectionBlockIds(selection));
     return new Set(segments.map((segment) => segment.key));
   }, [resolved, selection]);
+
+  // 选中两段以上运动区间：选区外框（最早到最晚、选中物体所在的行），右边拖柄整体缩放
+  const scaleFrame = useMemo(() => {
+    if (curveMode || !onScaleSelection || selectedSegmentKeys.size < 2) return null;
+    const ids = new Set(selectionBlockIds(selection));
+    const blocks = sequence.blocks.filter((block) => ids.has(block.id));
+    if (blocks.length === 0) return null;
+    const startMs = Math.min(...blocks.map(blockOriginMs));
+    const endMs = Math.max(...blocks.map((block) => blockSpanMs(block).endMs));
+    const rowIndices = blocks
+      .flatMap(blockObjectIds)
+      .map((objectId) => objectIdsInRowOrder.indexOf(objectId))
+      .filter((index) => index >= 0);
+    if (endMs <= startMs || rowIndices.length === 0) return null;
+    return { startMs, endMs, firstRow: Math.min(...rowIndices), lastRow: Math.max(...rowIndices) };
+  }, [curveMode, onScaleSelection, selectedSegmentKeys, selection, sequence, objectIdsInRowOrder]);
+  const [scaleDrag, setScaleDrag] = useState<{ originDurationMs: number } | null>(null);
 
   /** follow 为 null 时只改块的选中，物体不跟 */
   const selectAndFollow = (next: SequenceSelection, follow: ObjectFollow | null) => {
@@ -451,13 +547,33 @@ export const TimelineEditor = ({
     );
   };
 
-  const clientToMs = (clientX: number): number => {
-    const scrollEl = scrollRef.current;
-    if (!scrollEl) return 0;
-    const rect = scrollEl.getBoundingClientRect();
-    const x = clientX - rect.left - TIMELINE_PAD_LEFT;
-    return clampCursorMs(viewStartMs + pxToMs(x, pxPerSecond));
+  /** 时间区的横向范围（左边去掉内边距） */
+  const scrollFrame = (): DragFrame | null => {
+    const rect = scrollRef.current?.getBoundingClientRect();
+    return rect ? { left: rect.left + TIMELINE_PAD_LEFT, right: rect.right } : null;
   };
+
+  /** 指针所在的时刻；clampToFrame 时出了左右边按边上算（拖游标时游标停在边上，视图贴边滚） */
+  const frameMs = (frame: DragFrame, clientX: number, clampToFrame = false): number => {
+    const x =
+      clampToFrame && frame.right - frame.left > 1
+        ? Math.min(Math.max(clientX, frame.left), frame.right - 1)
+        : clientX;
+    return clampCursorMs(viewStartRef.current + pxToMs(x - frame.left, pxPerSecond));
+  };
+
+  const clientToMs = (clientX: number): number => {
+    const frame = scrollFrame();
+    return frame ? frameMs(frame, clientX) : 0;
+  };
+
+  // 拖到时间区左右边上时视图自己滚（拖游标、拖块、拖标记、Shift 拖选时间段）
+  const beginEdgeScroll = useEdgeScrollController({
+    getBounds: scrollFrame,
+    getViewStartMs: () => viewStartRef.current,
+    setViewStartMs: setViewStart,
+    pxPerSecond,
+  });
 
   const clientToRow = (clientY: number): number => {
     const tracksEl = tracksRef.current;
@@ -483,6 +599,15 @@ export const TimelineEditor = ({
   const snapCursor = (ms: number, indicate = true): number =>
     applySnap(ms, snapTargetTimes({ sequence, totalMs: occupiedEndMs }), indicate);
 
+  /** 双击轨道空白处加位姿；双击在块、区间上不管 */
+  const handleTracksDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!onCreatePoseAt) return;
+    if ((event.target as HTMLElement).closest("button, [role='button']")) return;
+    const row = rows[clientToRow(event.clientY)];
+    if (!row) return;
+    onCreatePoseAt(row.objectId, snapCursor(clientToMs(event.clientX), false));
+  };
+
   /** 拖块时不吸这些块所在行的块，吸指针 */
   const blockSnapTargets = (blockIds: ReadonlySet<string>): number[] =>
     snapTargetTimes({
@@ -494,55 +619,191 @@ export const TimelineEditor = ({
       ),
     });
 
-  const handlePlayheadDrag = (event: React.PointerEvent<Element>) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    event.stopPropagation();
+  /**
+   * 拖游标：指针出了左右边时游标停在边上，视图贴边滚、游标跟着走。
+   * frame 是按下处的横向范围（标尺用自己的，轨道里的游标用时间区的）
+   */
+  const startPlayheadDrag = (startClientX: number, frame: DragFrame | null) => {
+    let lastClientX = startClientX;
+    const update = () => {
+      const current = frame ?? scrollFrame();
+      if (current) onCursorChange(snapCursor(frameMs(current, lastClientX, true)));
+    };
     const handleMove = (moveEvent: PointerEvent) => {
-      onCursorChange(snapCursor(clientToMs(moveEvent.clientX)));
+      lastClientX = moveEvent.clientX;
+      update();
     };
     const handleUp = () => {
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
+      edgeScroll.end();
     };
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
+    const edgeScroll = beginEdgeScroll(update);
   };
 
+  const handlePlayheadDrag = (event: React.PointerEvent<Element>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    startPlayheadDrag(event.clientX, null);
+  };
+
+  /** 标尺内层的横向范围：left 处是视图起点 */
+  const rulerFrame = (target: HTMLElement): DragFrame => {
+    const rect = target.getBoundingClientRect();
+    return { left: rect.left, right: rect.right };
+  };
+
+  /** Shift 拖标尺：选中这段时间里所有物体的块；加 Ctrl/⌘ 加选。视图贴边滚 */
+  const startRangeSelect = (frame: DragFrame, startClientX: number, additive: boolean) => {
+    const startMs = frameMs(frame, startClientX);
+    let lastClientX = startClientX;
+    const currentMs = () => frameMs(frame, lastClientX, true);
+    setRangeSelectMs({ startMs, endMs: startMs });
+    const update = () => setRangeSelectMs({ startMs, endMs: currentMs() });
+    const handleMove = (moveEvent: PointerEvent) => {
+      lastClientX = moveEvent.clientX;
+      update();
+    };
+    const handleUp = () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+      edgeScroll.end();
+      setRangeSelectMs(null);
+      const endMs = currentMs();
+      if (endMs === startMs) return;
+      const hits = collectTimeRangeBlockIds(sequence, { startMs, endMs });
+      const ids = additive ? [...selectionBlockIds(selection), ...hits] : hits;
+      onSelectionChange(selectionFromBlockIds(ids), additive ? "add" : "replace");
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+    const edgeScroll = beginEdgeScroll(update);
+  };
+
+  /** 按下标尺：游标跳过去接着拖；Shift 拖选时间段 */
+  const handleRulerPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const frame = rulerFrame(event.currentTarget);
+    if (event.shiftKey) {
+      startRangeSelect(frame, event.clientX, isAdditiveClick(event));
+      return;
+    }
+    onCursorChange(snapCursor(frameMs(frame, event.clientX)));
+    startPlayheadDrag(event.clientX, frame);
+  };
+
+  // 有位姿的时刻：标尺上的小菱形，整列都选中了的高亮
+  const columns = useMemo((): RulerColumn[] => {
+    const selected = new Set(selectionBlockIds(selection));
+    return columnTimesMs(sequence).map((atMs) => ({
+      atMs,
+      selected: columnBlockIds(sequence, atMs).every((id) => selected.has(id)),
+    }));
+  }, [sequence, selection]);
+
+  /** 选中这一时刻所有物体的位姿（整列）；additive 时加选，已经整列选中的再点去掉 */
+  const handleColumnSelect = (atMs: number, additive: boolean) => {
+    const ids = columnBlockIds(sequence, atMs);
+    if (ids.length === 0) return;
+    if (!additive) {
+      onSelectionChange(selectionFromBlockIds(ids), "replace");
+      return;
+    }
+    const current = selectionBlockIds(selection);
+    const whole = ids.every((id) => current.includes(id));
+    onSelectionChange(
+      selectionFromBlockIds(whole ? current.filter((id) => !ids.includes(id)) : [...current, ...ids]),
+      "add",
+    );
+  };
+
+  /** 标尺上的菱形：单击选整列并把游标移过去，拖动整列一起挪（整列在选中里时选中的一起走） */
+  const handleColumnPointerDown = (column: RulerColumn, event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const additive = isAdditiveClick(event);
+    const startX = event.clientX;
+    const ids = columnBlockIds(sequence, column.atMs);
+    let lastClientX = startX;
+    let dragIds: string[] | null = null;
+    const handleMove = (moveEvent: Pick<PointerEvent, "clientX">) => {
+      lastClientX = moveEvent.clientX;
+      const dx = moveEvent.clientX - startX;
+      if (!onBlocksShift || (dragIds === null && Math.abs(dx) < DRAG_CLICK_THRESHOLD_PX)) return;
+      if (dragIds === null) {
+        const selected = selectionBlockIds(selection);
+        const grouped = ids.every((id) => selected.includes(id));
+        if (!grouped) onSelectionChange(selectionFromBlockIds(ids), "replace");
+        dragIds = grouped ? selected : ids;
+      }
+      const proposedMs = Math.max(0, column.atMs + pxToMs(dx, pxPerSecond) + edgeScroll.shiftMs());
+      const atMs = applySnap(proposedMs, blockSnapTargets(new Set(dragIds)));
+      onBlocksShift(dragIds, atMs - column.atMs);
+    };
+    const handleUp = () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+      edgeScroll.end();
+      if (dragIds === null) {
+        handleColumnSelect(column.atMs, additive);
+        if (!additive) onCursorChange(column.atMs);
+        return;
+      }
+      handleBlockMoveEnd();
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+    const edgeScroll = beginEdgeScroll(() => handleMove({ clientX: lastClientX }));
+  };
+
+  // 滚轮上下滚轨道（浏览器自己滚）；Shift+滚轮、触控板横滑左右平移时间；滚轮不缩放
   useEffect(() => {
     const scrollEl = scrollRef.current;
     if (!scrollEl) return;
-
     const onWheel = (event: WheelEvent) => {
+      const horizontal = event.shiftKey
+        ? event.deltaX || event.deltaY
+        : Math.abs(event.deltaX) > Math.abs(event.deltaY)
+          ? event.deltaX
+          : 0;
+      if (horizontal === 0) return;
       event.preventDefault();
-      const nextPx = clampTimelinePxPerSecond(
-        event.deltaY < 0
-          ? pxPerSecond * TIMELINE_ZOOM_FACTOR
-          : pxPerSecond / TIMELINE_ZOOM_FACTOR,
-      );
-      if (nextPx === pxPerSecond) return;
-
-      const rect = scrollEl.getBoundingClientRect();
-      const pointerXFromPad = event.clientX - rect.left - TIMELINE_PAD_LEFT;
-      const anchorMs = viewStartMs + pxToMs(pointerXFromPad, pxPerSecond);
-      onTimelinePxPerSecondChange(nextPx);
-      setViewStartMs(
-        viewStartForZoomAnchor({
-          anchorMs,
-          pointerXFromPad,
-          nextPxPerSecond: nextPx,
-        }),
-      );
+      const unitPx =
+        event.deltaMode === 1 ? WHEEL_LINE_PX : event.deltaMode === 2 ? scrollEl.clientWidth : 1;
+      setViewStart(panViewStartMs(viewStartRef.current, -horizontal * unitPx, pxPerSecondRef.current));
     };
-
     scrollEl.addEventListener("wheel", onWheel, { passive: false });
     return () => scrollEl.removeEventListener("wheel", onWheel);
-  }, [onTimelinePxPerSecondChange, pxPerSecond, viewStartMs]);
+  }, [setViewStart]);
 
   const syncLabelScroll = (scrollEl: HTMLDivElement) => {
     const labelsEl = labelNamesRef.current;
     if (labelsEl) labelsEl.scrollTop = scrollEl.scrollTop;
   };
+
+  // 在 3D 里选了物体：时间轴滚到第一个选中物体的那一行。
+  // 选中的行已经有一行看得到（比如就是在时间轴里点的）就不滚
+  const selectedObjectsKey = selectedObjectIds.join(",");
+  useEffect(() => {
+    if (curveMode) return;
+    const scrollEl = scrollRef.current;
+    const labelsEl = labelNamesRef.current;
+    if (!scrollEl || !labelsEl || labelsEl.clientHeight <= 0) return;
+    const indices = rows.flatMap((row, index) => (selectedObjectIds.includes(row.objectId) ? [index] : []));
+    if (indices.length === 0) return;
+    const top = scrollEl.scrollTop;
+    const bottom = top + labelsEl.clientHeight;
+    const visible = indices.some(
+      (index) => index * TRACK_ROW_HEIGHT >= top - 1 && (index + 1) * TRACK_ROW_HEIGHT <= bottom + 1,
+    );
+    if (visible) return;
+    scrollEl.scrollTop = Math.max(0, (indices[0]! - 1) * TRACK_ROW_HEIGHT);
+    syncLabelScroll(scrollEl);
+  }, [selectedObjectsKey, curveMode]);
 
   const handleScroll = () => {
     const scrollEl = scrollRef.current;
@@ -550,31 +811,24 @@ export const TimelineEditor = ({
     syncLabelScroll(scrollEl);
   };
 
+  /** 左边物体名上滚滚轮也滚轨道 */
+  const handleLabelsWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    const scrollEl = scrollRef.current;
+    if (!scrollEl || event.shiftKey || event.deltaY === 0) return;
+    scrollEl.scrollTop += event.deltaMode === 1 ? event.deltaY * WHEEL_LINE_PX : event.deltaY;
+    syncLabelScroll(scrollEl);
+  };
+
+  /** 中键拖动只左右平移时间（上下用滚轮） */
   const handleMiddlePanStart = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 1) return;
     event.preventDefault();
     event.stopPropagation();
-    const startX = event.clientX;
-    const startY = event.clientY;
-    let lastX = startX;
-    let lastY = startY;
-    // 方向定了就只沿这个方向滚，松手再按才能换方向
-    let axis: PanAxis | null = null;
+    let lastX = event.clientX;
     const handleMove = (moveEvent: PointerEvent) => {
-      const scrollEl = scrollRef.current;
-      if (!scrollEl) return;
-      axis ??= lockPanAxis(moveEvent.clientX - startX, moveEvent.clientY - startY);
-      if (axis === null) return;
       const dx = moveEvent.clientX - lastX;
-      const dy = moveEvent.clientY - lastY;
       lastX = moveEvent.clientX;
-      lastY = moveEvent.clientY;
-      if (axis === "x") {
-        setViewStartMs((current) => panViewStartMs(current, dx, pxPerSecond));
-        return;
-      }
-      scrollEl.scrollTop -= dy;
-      syncLabelScroll(scrollEl);
+      if (dx !== 0) setViewStart(panViewStartMs(viewStartRef.current, dx, pxPerSecond));
     };
     const handleUp = () => {
       window.removeEventListener("pointermove", handleMove);
@@ -646,6 +900,45 @@ export const TimelineEditor = ({
     window.addEventListener("pointerup", handleUp);
   };
 
+  /**
+   * 拖选区外框右边：选区起点不动，按新的总时长整体缩放（吸附到其它行的块、游标）。
+   * 视图贴边自己滚；每次都相对拖动开始的选区算
+   */
+  const handleScaleHandlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || !onScaleSelection || !scaleFrame) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const blockIds = selectionBlockIds(selection);
+    const { startMs, endMs } = scaleFrame;
+    const startX = event.clientX;
+    let lastClientX = startX;
+    let moved = false;
+    const handleMove = (moveEvent: Pick<PointerEvent, "clientX">) => {
+      lastClientX = moveEvent.clientX;
+      const dx = moveEvent.clientX - startX;
+      if (!moved && Math.abs(dx) < DRAG_CLICK_THRESHOLD_PX) return;
+      if (!moved) setScaleDrag({ originDurationMs: endMs - startMs });
+      moved = true;
+      const proposedEndMs = endMs + pxToMs(dx, pxPerSecond) + edgeScroll.shiftMs();
+      const snappedEndMs = applySnap(
+        Math.max(startMs + TIME_STEP_MS, proposedEndMs),
+        blockSnapTargets(new Set(blockIds)),
+      );
+      onScaleSelection(blockIds, Math.max(TIME_STEP_MS, snapTimeMs(snappedEndMs - startMs)));
+    };
+    const handleUp = () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+      edgeScroll.end();
+      setScaleDrag(null);
+      setSnapIndicatorMs(null);
+      if (moved) onScaleSelectionEnd?.();
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+    const edgeScroll = beginEdgeScroll(() => handleMove({ clientX: lastClientX }));
+  };
+
   /** 一段时间（动态预设、运动区间）整体拖动：起止两端谁近吸谁 */
   const snapSpan = (proposedStartMs: number, durationMs: number, targets: readonly number[]) => {
     if (!snapEnabled || altHeldRef.current) {
@@ -676,9 +969,11 @@ export const TimelineEditor = ({
     if (!groupDrag) selectForDrag(blockId);
     const targets = blockSnapTargets(new Set(groupDrag ? ids : [blockId]));
     const current = sequence.blocks.find((block) => block.id === blockId);
+    // 一段时间的块（动态预设、引用）起止两端谁近吸谁
+    const span = current ? blockSpanMs(current) : null;
     const atMs =
-      current?.kind === "dynamic-preset"
-        ? snapSpan(proposedMs, current.endMs - current.startMs, targets)
+      span && span.endMs > span.startMs
+        ? snapSpan(proposedMs, span.endMs - span.startMs, targets)
         : applySnap(proposedMs, targets);
     if (groupDrag) {
       const origin = groupDragOriginRef.current ?? sequence;
@@ -869,7 +1164,7 @@ export const TimelineEditor = ({
             />
           </div>
         ) : (
-          <div ref={labelNamesRef} className="min-h-0 flex-1 overflow-hidden bg-card">
+          <div ref={labelNamesRef} className="min-h-0 flex-1 overflow-hidden bg-card" onWheel={handleLabelsWheel}>
             {rows.map((row) => {
               const objectSelected = selectedObjectIds.includes(row.objectId);
               return (
@@ -907,6 +1202,7 @@ export const TimelineEditor = ({
         />
       </div>
 
+      <TimelineEdgeScrollContext.Provider value={beginEdgeScroll}>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div
           ref={scrollRef}
@@ -940,6 +1236,10 @@ export const TimelineEditor = ({
               pxPerSecond={pxPerSecond}
               onCursorChange={onCursorChange}
               onScrub={(ms) => onCursorChange(snapCursor(ms))}
+              onScrubStart={handleRulerPointerDown}
+              columns={columns}
+              onColumnPointerDown={handleColumnPointerDown}
+              rangeMs={rangeSelectMs}
             />
 
             {curveMode ? (
@@ -985,6 +1285,25 @@ export const TimelineEditor = ({
                 className="relative min-h-0 flex-1"
                 style={{ width: canvasWidth }}
                 onPointerDown={handleTracksPointerDown}
+                onDoubleClick={handleTracksDoubleClick}
+                onDragOver={(event) => {
+                  if (!onDropSequence || !isSequenceRefDrag(event.dataTransfer)) return;
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "copy";
+                  setDropAtMs(snapCursor(clientToMs(event.clientX), false));
+                }}
+                onDragLeave={(event) => {
+                  if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+                  setDropAtMs(null);
+                }}
+                onDrop={(event) => {
+                  setDropAtMs(null);
+                  if (!onDropSequence) return;
+                  const sequenceId = readSequenceRefDrag(event.dataTransfer);
+                  if (sequenceId === null) return;
+                  event.preventDefault();
+                  onDropSequence(sequenceId, snapCursor(clientToMs(event.clientX), false));
+                }}
               >
                 <div className="pointer-events-none absolute inset-0 z-0 w-full" aria-hidden>
                   {used ? (
@@ -997,6 +1316,17 @@ export const TimelineEditor = ({
                     className="absolute inset-y-0 bg-background"
                     style={{ left: used ? used.leftPx + used.widthPx : 0, right: 0 }}
                   />
+                  {/* 选中物体的整行（左边名字另有竖线和底色） */}
+                  {rows.map((row, index) =>
+                    selectedObjectIds.includes(row.objectId) ? (
+                      <div
+                        key={`selected-${row.objectId}`}
+                        data-testid="timeline-row-selected"
+                        className="absolute inset-x-0 bg-primary/10"
+                        style={{ top: index * TRACK_ROW_HEIGHT, height: TRACK_ROW_HEIGHT }}
+                      />
+                    ) : null,
+                  )}
                   {majorTicks.map((tick) => (
                     <div
                       key={tick.ms}
@@ -1042,6 +1372,9 @@ export const TimelineEditor = ({
                       commands={row.commands}
                       staticPresets={row.staticPresets}
                       dynamicPresets={row.dynamicPresets}
+                      sequenceRefs={row.sequenceRefs}
+                      sequenceNameOf={sequenceNames ? (id) => sequenceNames.get(id) : undefined}
+                      onOpenSequence={onOpenSequence}
                       resolvedInitialPose={row.resolvedInitialPose}
                       generatedTicksByPreset={row.generatedTicksByPreset}
                       segments={row.segments}
@@ -1057,10 +1390,45 @@ export const TimelineEditor = ({
                       onPresetMove={(blockId, atMs) => handleTimedBlockMove(blockId, atMs, onPresetMove)}
                       onDynamicPresetResize={handleDynamicPresetResize}
                       onBlockMoveEnd={handleBlockMoveEnd}
+                      onPoseColumnSelect={handleColumnSelect}
                       invalidTargets={invalidTargets}
                     />
                   ))}
                 </div>
+
+                {scaleFrame ? (
+                  <div
+                    data-testid="timeline-scale-frame"
+                    className="pointer-events-none absolute z-20 rounded-sm border border-dashed border-primary/80"
+                    style={{
+                      left: TIMELINE_PAD_LEFT + viewPxFromMs(scaleFrame.startMs, viewStartMs, pxPerSecond),
+                      width: msToPx(scaleFrame.endMs - scaleFrame.startMs, pxPerSecond),
+                      top: scaleFrame.firstRow * TRACK_ROW_HEIGHT + 2,
+                      height: (scaleFrame.lastRow - scaleFrame.firstRow + 1) * TRACK_ROW_HEIGHT - 4,
+                    }}
+                  >
+                    <div
+                      role="slider"
+                      aria-label="整体缩放选中的区间"
+                      aria-valuemin={TIME_STEP_MS}
+                      aria-valuenow={scaleFrame.endMs - scaleFrame.startMs}
+                      title="拖动整体缩放：起点不动，选中的区间按比例伸缩，后面的块跟着挪（右键「整体缩放…」可填时长）"
+                      onPointerDown={handleScaleHandlePointerDown}
+                      className="pointer-events-auto absolute -right-1.5 top-0 z-30 flex h-full w-3 cursor-ew-resize items-center justify-center"
+                    >
+                      <span className="h-full max-h-6 w-1 rounded-full bg-primary" aria-hidden />
+                    </div>
+                    {scaleDrag ? (
+                      <span
+                        data-testid="timeline-scale-readout"
+                        className="absolute -top-5 right-0 whitespace-nowrap rounded-sm bg-card px-1.5 py-0.5 font-mono text-mono-sm tabular-nums text-foreground"
+                      >
+                        {formatTime(scaleDrag.originDurationMs)} s → {formatTime(scaleFrame.endMs - scaleFrame.startMs)} s ×
+                        {((scaleFrame.endMs - scaleFrame.startMs) / scaleDrag.originDurationMs).toFixed(2)}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 {marqueeStyle ? (
                   <div
@@ -1084,6 +1452,15 @@ export const TimelineEditor = ({
                 onMove={handleMarkerMove}
                 onMoveEnd={handleMarkerMoveEnd}
                 onRename={(marker) => onMarkerRename?.(marker)}
+              />
+            ) : null}
+
+            {dropAtMs !== null ? (
+              <div
+                data-testid="timeline-drop-line"
+                className="pointer-events-none absolute top-0 bottom-0 z-20 w-0.5 -translate-x-1/2 bg-primary/70"
+                style={{ left: TIMELINE_PAD_LEFT + viewPxFromMs(dropAtMs, viewStartMs, pxPerSecond) }}
+                aria-hidden
               />
             ) : null}
 
@@ -1123,9 +1500,10 @@ export const TimelineEditor = ({
           viewStartMs={viewStartMs}
           viewportMs={viewportMs}
           totEndMs={tot}
-          onViewStartChange={setViewStartMs}
+          onViewStartChange={setViewStart}
         />
       </div>
+      </TimelineEdgeScrollContext.Provider>
     </div>
   );
 };

@@ -36,6 +36,9 @@ import { VIRTUAL_AXIS_IDS } from "../timeline/timeline-data";
 import { useActionBuilder } from "../use-action-builder";
 import { getVirtualAxisCanonicalUnit } from "../virtual-axis-display";
 import { segmentEditContext } from "./segment-editor";
+import { referencePlan } from "../motion-profile/segment-presets";
+import { segmentRampAxes } from "./segment-retime";
+import { formatTime } from "../timeline/timeline-data";
 
 /** 某个轴在选中区间里要改的一段曲线；轴在端点经过时几个区间共用一段 */
 type AxisCurve = {
@@ -239,8 +242,32 @@ export const MultiSegmentEditor = ({ segments }: { segments: ResolvedMotionSegme
     deceleration: sharedValue(allRates.map((rates) => rates?.deceleration)),
   };
 
+  // 每段按速度上限 95%、两头都停算最快要多久，取最慢的那段（选一列区间时就是最快一起到达）
+  let slowest: { durationMs: number; objectId: number } | null = null;
+  let unlimited = 0;
+  for (const segment of segments) {
+    const ramps = segmentRampAxes(segment, getTimelineObject(segment.objectId));
+    if (ramps.length === 0) continue;
+    const plan = referencePlan(ramps, "fastest");
+    if (!plan) {
+      unlimited += 1;
+      continue;
+    }
+    if (slowest === null || plan.durationMs > slowest.durationMs) {
+      slowest = { durationMs: plan.durationMs, objectId: segment.objectId };
+    }
+  }
+  const onePerObject = new Set(segments.map((segment) => segment.objectId)).size === segments.length;
+  const slowestName = slowest ? (getTimelineObject(slowest.objectId)?.name ?? `模型 ${slowest.objectId}`) : "";
+
   return (
     <div className="flex flex-col gap-2.5">
+      {slowest ? (
+        <p role="note" className="rounded-md bg-muted px-3 py-2 font-mono text-mono-sm tabular-nums text-foreground">
+          {onePerObject ? "最快一起到达" : "最慢那段最快"} {formatTime(slowest.durationMs)} s · 最慢：{slowestName}
+          {unlimited > 0 ? <span className="font-sans text-muted-foreground">（{unlimited} 段没配上限，没算）</span> : null}
+        </p>
+      ) : null}
       <div className="flex gap-1 rounded-md bg-input-background p-1" role="group" aria-label="虚拟轴">
         {axes.map((axis) => {
           const pressed = axis === currentAxis;

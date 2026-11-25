@@ -234,6 +234,18 @@ const motionSpans = (sequence: ActionSequenceConfig): MotionSpan[] => {
         });
       }
     }
+    // 引用的序列占住它那段时间：源序列改长了和后面的动作重叠时报出来
+    if (block.kind === "sequence-ref") {
+      for (const objectId of uniqueIds(block.orderedObjectIds)) {
+        spans.push({
+          kind: "range",
+          objectId,
+          startMs: block.atMs,
+          endMs: block.atMs + block.durationMs,
+          blockId: block.id,
+        });
+      }
+    }
   }
   return spans;
 };

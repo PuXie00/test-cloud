@@ -39,6 +39,11 @@ export class GoShadowController {
       const existing = this.shadows.get(entry.objectId);
       const existingTarget = this.targets.get(entry.objectId);
       if (existing && existingTarget && targetsEqual(existingTarget, entry.target)) continue;
+      // 目标变了（如在 3D 里拖位姿）只挪影子，不重新克隆模型
+      if (existing?.setTarget(entry.target)) {
+        this.targets.set(entry.objectId, entry.target);
+        continue;
+      }
       existing?.dispose();
       const handle = this.getHandle(entry.objectId);
       if (!handle) continue;
@@ -46,6 +51,11 @@ export class GoShadowController {
       this.targets.set(entry.objectId, entry.target);
     }
     this.linkMountParents();
+  }
+
+  /** 物体影子的运动枢轴（挂载子物体、位姿手柄按它算）；没有影子时 undefined */
+  attachmentPivotOf(objectId: string) {
+    return this.shadows.get(objectId)?.attachmentPivot;
   }
 
   /** 父物体也有残影时挂到父残影下（父子目标叠加），否则挂到父物体当前姿态下 */

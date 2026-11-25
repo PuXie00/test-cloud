@@ -11,6 +11,7 @@ import type { EditorDockMode } from "../action-builder-context-types";
 import type { SequenceSelection } from "../sequence-selection";
 import { ProgramPanel } from "../../program-panel/program-panel";
 import { ActionManualControlTab } from "./action-manual-control-tab";
+import { LivePoseGoBinding } from "./live-edit";
 import { SelectionTabContent } from "./selection-tab-content";
 
 /** "manual" 与视口「当前位置」同步：选中该 tab 即显示设备实时位置 */
@@ -24,6 +25,8 @@ const RIGHT_TABS: { id: ActionRightTab; label: string; guide?: string }[] = [
 
 type ActionRightPanelProps = {
   activeTab: ActionRightTab;
+  /** 「当前位置」开着（在「手动控制」页）：选中位姿绑成 GO 目标 */
+  liveMode?: boolean;
   onTabChange: (tab: ActionRightTab) => void;
   dockMode: EditorDockMode;
   sequence: ActionSequenceConfig | null;
@@ -46,6 +49,7 @@ type ActionRightPanelProps = {
 
 export const ActionRightPanel = ({
   activeTab,
+  liveMode = false,
   onTabChange,
   dockMode,
   sequence,
@@ -70,6 +74,7 @@ export const ActionRightPanel = ({
 
   return (
   <aside className="flex h-full w-[320px] shrink-0 flex-col overflow-hidden rounded-lg bg-card">
+    {liveMode ? <LivePoseGoBinding /> : null}
     <TabBar tabs={tabs} active={shownTab} onChange={onTabChange} variant="underline" />
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {shownTab === "selection" && readOnly && (
