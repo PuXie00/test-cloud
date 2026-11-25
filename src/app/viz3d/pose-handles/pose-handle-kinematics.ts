@@ -3,7 +3,6 @@ import { attachmentFrameMatrix } from "../state/preview-path-points";
 import type { SceneObjectConfig, Vec3, VirtualAxisId, VirtualAxisValues } from "../types";
 import {
   addVec,
-  angleBetween,
   anyPerpendicular,
   crossVec,
   dotVec,
@@ -61,6 +60,26 @@ export const transformDirection = (matrix: Matrix, direction: Vec3): Vec3 =>
 
 export const worldPointOf = (input: PoseKinematics, local: Vec3): Vec3 =>
   transformPoint(poseWorldMatrix(input), local);
+
+/** 物体尺寸盒在世界里的上下沿和中心（米；按运动学，不看显示的是本体还是影子） */
+export type PoseWorldBox = { bottom: number; top: number; center: Vec3 };
+
+export const poseWorldBox = (input: PoseKinematics): PoseWorldBox => {
+  const frame = poseWorldMatrix(input);
+  const { w, h, d } = input.config.dimensions;
+  let bottom = Number.POSITIVE_INFINITY;
+  let top = Number.NEGATIVE_INFINITY;
+  for (const sx of [-1, 1]) {
+    for (const sy of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        const corner = transformPoint(frame, { x: (sx * w) / 2, y: (sy * h) / 2, z: (sz * d) / 2 });
+        bottom = Math.min(bottom, corner.y);
+        top = Math.max(top, corner.y);
+      }
+    }
+  }
+  return { bottom, top, center: transformPoint(frame, { x: 0, y: 0, z: 0 }) };
+};
 
 /** 父物体（没挂载时为世界）的竖直方向：升降沿这个方向 */
 export const parentUpOf = (parentWorld: Matrix | null): Vec3 =>
@@ -149,13 +168,6 @@ const restValues = (values: FullAxisValues): FullAxisValues => ({ ...values, v2:
 export const restNormalOf = (input: PoseKinematics): Vec3 =>
   plateNormalOf(withValues(input, restValues(input.values)));
 
-/** 倾斜量取哪一边：沿用起点的正负；起点为 0 时行程只允许负值才取负 */
-const tiltSignOf = (current: number, range?: PoseHandleAxisRange): 1 | -1 => {
-  if (current > 1e-9) return 1;
-  if (current < -1e-9) return -1;
-  return range && range.max <= 0 && range.min < 0 ? -1 : 1;
-};
-
 /** 角度值超出行程时换一圈试试（方向角允许多圈），取进范围里离原值最近的 */
 export const fitAngleToRange = (value: number, range?: PoseHandleAxisRange): number => {
   if (!range || (value >= range.min && value <= range.max)) return value;
@@ -168,42 +180,35 @@ export const fitAngleToRange = (value: number, range?: PoseHandleAxisRange): num
   return best ?? value;
 };
 
-/** 摇杆试探用的倾斜量（度） */
+/** 多点摆放平时看不出倾斜方向：按这么大的倾斜量（度）试探 */
 const PROBE_TILT_DEG = 10;
-/** 比这更接近竖直就算放平 */
-const LEVEL_EPSILON_RAD = (0.05 * Math.PI) / 180;
+/** 倾斜量比这小（度）就当放平，按试探量看方向 */
+const LEVEL_TILT_DEG = 0.5;
 
-export type SwingRanges = { v2?: PoseHandleAxisRange; v3?: PoseHandleAxisRange };
+/** 多点摆这一刻倾斜着的方向用的倾斜量：放平时用试探量 */
+const headingTiltOf = (values: FullAxisValues): number =>
+  Math.abs(values.v2) >= LEVEL_TILT_DEG ? values.v2 : PROBE_TILT_DEG;
+
+/** 板面法线绕 axis 的方位角（弧度，右手定则，从 ref 量起） */
+const azimuthAbout = (normal: Vec3, axis: Vec3, ref: Vec3): number =>
+  Math.atan2(dotVec(normal, crossVec(axis, ref)), dotVec(normal, ref));
+
+/** 多点摆倾斜着的方向（板面法线在 axis 垂直面上的方向）；放平时按试探倾斜量看 */
+export const headingDirectionOf = (input: PoseKinematics, axis: Vec3): Vec3 => {
+  const tilt = headingTiltOf(input.values);
+  const normal = plateNormalOf(withValues(input, { ...input.values, v2: tilt }));
+  return normalizeVec(rejectVec(normal, axis)) ?? anyPerpendicular(axis);
+};
 
 /**
- * 多点摆摇杆：要让板面法线指向 target（世界单位向量）时的虚轴 2（倾斜量）和虚轴 3（倾斜方向）。
- * 倾斜量按正解里「倾斜角对 v2 的变化率」换算，方向按「倾斜方向对 v3 的变化率」换算，
- * v3 取离起点最近的那一圈；接近竖直时放平、方向不变。
+ * 多点摆「偏转」（虚轴 3 = 倾斜方向）：每单位虚轴 3，倾斜方向绕 axis 转多少（弧度，右手定则）。
+ * 放平时按试探倾斜量算；算不出来（虚轴 3 不改变方向）时 null。
  */
-export const solveSwingTowards = (
-  input: PoseKinematics,
-  target: Vec3,
-  ranges: SwingRanges = {},
-): { v2: number; v3: number } => {
-  const { values } = input;
-  const rest = restNormalOf(input);
-  const polar = angleBetween(rest, target);
-  if (polar < LEVEL_EPSILON_RAD) return { v2: 0, v3: values.v3 };
-
-  const normalAt = (v2: number, v3: number) => plateNormalOf(withValues(input, { ...values, v2, v3 }));
-  const probe = tiltSignOf(values.v2, ranges.v2) * PROBE_TILT_DEG;
-  const probePolar = angleBetween(rest, normalAt(probe, values.v3));
-  if (probePolar < 1e-9) return { v2: values.v2, v3: values.v3 };
-  const v2 = (polar / probePolar) * probe;
-
-  const restFrame = poseWorldMatrix(withValues(input, restValues(values)));
-  const e1 =
-    normalizeVec(rejectVec(transformDirection(restFrame, { x: 1, y: 0, z: 0 }), rest)) ?? anyPerpendicular(rest);
-  const e2 = crossVec(rest, e1);
-  const azimuth = (normal: Vec3) => Math.atan2(dotVec(normal, e2), dotVec(normal, e1));
-  const azimuthAt = (v3: number) => azimuth(normalAt(probe, v3));
-  const slope = wrapAngle(azimuthAt(values.v3 + 1) - azimuthAt(values.v3 - 1)) / 2;
-  if (Math.abs(slope) < 1e-9) return { v2, v3: values.v3 };
-  const v3 = values.v3 + wrapAngle(azimuth(target) - azimuthAt(values.v3)) / slope;
-  return { v2, v3: fitAngleToRange(v3, ranges.v3) };
+export const headingRateOf = (input: PoseKinematics, axis: Vec3): number | null => {
+  const tilt = headingTiltOf(input.values);
+  const ref = anyPerpendicular(axis);
+  const azimuthAt = (v3: number) =>
+    azimuthAbout(plateNormalOf(withValues(input, { ...input.values, v2: tilt, v3 })), axis, ref);
+  const slope = wrapAngle(azimuthAt(input.values.v3 + 1) - azimuthAt(input.values.v3 - 1)) / 2;
+  return Math.abs(slope) < 1e-9 ? null : slope;
 };

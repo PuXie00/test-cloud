@@ -2,20 +2,24 @@ import type { ControlType } from "@/app/project/configuration-types";
 import type { VirtualAxisId, VirtualAxisValues } from "../types";
 
 /**
- * 动作页 3D 位姿手柄：
- * lift 升降箭头（虚轴 1）、yaw 旋转环（旋转类虚轴 1）、tiltX / tiltY 多点倾斜的两道倾斜弧（虚轴 2 / 3）、
- * swing 多点摆的摇杆（虚轴 2 倾斜量 + 虚轴 3 倾斜方向一起改）。
+ * 动作页 3D 位姿手柄，一根虚轴一个：
+ * 虚轴 1 为 lift 升降箭头或 yaw 旋转环；虚轴 2 为 tiltX 摆动 X 弧；
+ * 虚轴 3 为 tiltY 摆动 Y 弧（多点倾斜）或 heading 偏转环（多点摆的倾斜方向）。
+ * 每台物体同时只出一个，按当前选的虚轴（手柄旁的切换、数字键 1/2/3）。
  */
-export type PoseHandleKind = "lift" | "yaw" | "tiltX" | "tiltY" | "swing";
+export type PoseHandleKind = "lift" | "yaw" | "tiltX" | "tiltY" | "heading";
 
-/** 每种手柄改哪几根轴 */
+/** 每种手柄改哪根轴 */
 export const POSE_HANDLE_AXES: Record<PoseHandleKind, readonly VirtualAxisId[]> = {
   lift: ["v1"],
   yaw: ["v1"],
   tiltX: ["v2"],
   tiltY: ["v3"],
-  swing: ["v2", "v3"],
+  heading: ["v3"],
 };
+
+/** 手柄改的那根轴 */
+export const poseHandleAxisOf = (kind: PoseHandleKind): VirtualAxisId => POSE_HANDLE_AXES[kind][0]!;
 
 const KINDS_BY_CONTROL_TYPE: Record<ControlType, readonly PoseHandleKind[]> = {
   singlePointMove: ["lift"],
@@ -23,7 +27,7 @@ const KINDS_BY_CONTROL_TYPE: Record<ControlType, readonly PoseHandleKind[]> = {
   singlePointRotation: ["yaw"],
   continuousRotation: ["yaw"],
   dualTiltFourPointSwing: ["lift", "tiltX", "tiltY"],
-  multiPointSwing: ["lift", "swing"],
+  multiPointSwing: ["lift", "tiltX", "heading"],
   railCar: [],
   staticProp: [],
 };
@@ -56,6 +60,8 @@ export type PoseHandleTarget = {
   /** 拖不了的原因：手柄画成虚的，按下时提示 */
   blockedReason?: string | null;
   describe?: PoseHandleDescribe;
+  /** 手柄切换上各虚轴的名字（升降、摆动 X……）；没有时写「虚轴 n」 */
+  axisLabels?: Partial<Record<VirtualAxisId, string>>;
 };
 
 export type PoseHandleValues = Partial<Record<VirtualAxisId, number>>;

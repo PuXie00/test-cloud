@@ -124,6 +124,59 @@ describe("3D pose handles in the action editor", () => {
     expect(posesOf(7)).toEqual([{ atMs: 1000, v1: 0 }]);
   });
 
+  it("writes a whole formation (start, values, end at once) as one undo step", async () => {
+    renderHarness();
+    await openWithSequence();
+    insert(pose("a", 7, 1000));
+    insert(pose("b", 8, 1000));
+    act(() => builder().handleCursorChange(3000));
+    const clampFor = (objectId: number, value: number) => {
+      const range = builder().getTimelineObject(objectId)?.rangeByAxis?.v1;
+      return Math.min(range?.max ?? Infinity, Math.max(range?.min ?? -Infinity, value));
+    };
+    // 右键队形：引擎算好值后一次写完（同 Viz3DPoseHandleSync 收到 poseFormation）
+    act(() => {
+      const current = builder();
+      expect(
+        current.handlePoseHandleDragStart([
+          { objectId: 7, blockId: null, atMs: 3000 },
+          { objectId: 8, blockId: null, atMs: 3000 },
+        ]),
+      ).toBe(true);
+      current.handlePoseHandleDrag([
+        { objectId: 7, values: { v1: 300 } },
+        { objectId: 8, values: { v1: 100 } },
+      ]);
+      current.handlePoseHandleDragEnd(true);
+    });
+    expect(posesOf(7)).toEqual([
+      { atMs: 1000, v1: 0 },
+      { atMs: 3000, v1: clampFor(7, 300) },
+    ]);
+    expect(posesOf(8)).toEqual([
+      { atMs: 1000, v1: 0 },
+      { atMs: 3000, v1: clampFor(8, 100) },
+    ]);
+    act(() => void builder().handleUndoEdit());
+    expect(posesOf(7)).toEqual([{ atMs: 1000, v1: 0 }]);
+    expect(posesOf(8)).toEqual([{ atMs: 1000, v1: 0 }]);
+  });
+
+  it("asks the timeline to show the cursor when it jumps from the 3D view", async () => {
+    renderHarness();
+    await openWithSequence();
+    insert(pose("a", 7, 5000));
+    const before = builder().cursorRevealRequestId;
+    act(() => builder().handleCursorChange(2000));
+    expect(builder().cursorRevealRequestId).toBe(before);
+    act(() => builder().handleCursorChange(4000, { reveal: true }));
+    expect(builder().cursorMs).toBe(4000);
+    expect(builder().cursorRevealRequestId).toBe(before + 1);
+    act(() => builder().handleViewportObjectDoubleClick(7));
+    expect(builder().cursorMs).toBe(5000);
+    expect(builder().cursorRevealRequestId).toBe(before + 2);
+  });
+
   it("cancelling puts the sequence back without an undo step", async () => {
     renderHarness();
     await openWithSequence();

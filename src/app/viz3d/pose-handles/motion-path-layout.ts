@@ -100,11 +100,10 @@ export const layoutMotionPath = (world: MotionPathWorld, projector: CellProjecto
   const ring = world.ring;
   if (!ring) return layout;
   const radius = ringRadiusIn(ring, projector);
-  if (!world.selected) {
-    const samples = Array.from({ length: 65 }, (_, index) => ringPoint(ring, radius, (index / 64) * Math.PI * 2));
-    layout.ring = projectPolyline(projector, samples);
-    layout.cursor = projector.project(ringPoint(ring, radius, 0));
-  }
+  // 刻点挂在物体上的环上（旋转手柄在升降箭头那里，不在这个环上）
+  const samples = Array.from({ length: 65 }, (_, index) => ringPoint(ring, radius, (index / 64) * Math.PI * 2));
+  layout.ring = projectPolyline(projector, samples);
+  layout.cursor = projector.project(ringPoint(ring, radius, 0));
   for (const keyframe of world.keyframes) {
     if (keyframe.angle === null) continue;
     const from = projector.project(ringPoint(ring, radius * TICK_INNER, keyframe.angle));

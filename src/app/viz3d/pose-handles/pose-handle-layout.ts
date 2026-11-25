@@ -7,7 +7,7 @@ import {
   scaleVec,
   type Pt,
 } from "./pose-handle-math";
-import type { LiftHandleModel, PoseHandleModel, RingHandleModel, SwingHandleModel } from "./pose-handle-model";
+import type { LiftHandleModel, PoseHandleModel, RingHandleModel } from "./pose-handle-model";
 import type { PoseHandleKind } from "./pose-handle-types";
 
 /** 一格视口的投影：世界 → 画布坐标（CSS px） */
@@ -23,15 +23,16 @@ export type CellProjector = {
 /** 升降箭头离顶面中心的空隙：让开虚轴标签 */
 export const LIFT_GAP_PX = 26;
 export const LIFT_LENGTH_PX = 58;
+/** 手柄（升降箭头的中间，环、弧的圆心）离顶面中心多远 */
+export const HANDLE_SPOT_PX = LIFT_GAP_PX + LIFT_LENGTH_PX / 2;
+/** 环、弧手柄的半径：和升降箭头差不多大 */
+export const COMPACT_RING_RADIUS_PX = 26;
 const ARROW_HEAD_PX = 10;
 const ARROW_HALF_WIDTH_PX = 6;
-/** 摇杆在屏幕上的长度 */
-export const SWING_LENGTH_PX = 72;
-/** 环、弧在屏幕上至少这么大，小物体也好抓 */
+/** 物体上的环（轨迹刻点）在屏幕上至少这么大 */
 export const MIN_RING_RADIUS_PX = 34;
 export const HANDLE_HIT_PX = 9;
 const KNOB_RADIUS_PX = 6;
-const SWING_KNOB_RADIUS_PX = 7;
 const END_ON_RADIUS_PX = 9;
 
 /** 一个手柄在一格视口里的屏幕形状：画和点中都用它 */
@@ -39,7 +40,7 @@ export type HandleLayout = {
   key: string;
   objectId: string;
   kind: PoseHandleKind;
-  /** 描边折线：箭杆、环、弧、摇杆 */
+  /** 描边折线：箭杆、环、弧 */
   strokes: Pt[][];
   /** 实心三角：箭头 */
   fills: Pt[][];
@@ -102,7 +103,7 @@ const tickAt = (at: Pt, dir: Pt | null): Pt[] => {
   return [offsetPt(at, normal, -5), offsetPt(at, normal, 5)];
 };
 
-/** 环、弧的世界半径：模型半径，屏幕上不小于 MIN_RING_RADIUS_PX */
+/** 物体上的环（轨迹刻点）的世界半径：模型半径，屏幕上不小于 MIN_RING_RADIUS_PX */
 export const ringRadiusIn = (model: RingHandleModel, projector: CellProjector): number =>
   Math.max(model.radius, MIN_RING_RADIUS_PX / Math.max(projector.pixelsPerMeter(model.center), 1e-6));
 
@@ -115,8 +116,18 @@ export const ringPoint = (model: RingHandleModel, radius: number, angle: number)
     ),
   );
 
-export const swingLengthIn = (model: SwingHandleModel, projector: CellProjector): number =>
-  SWING_LENGTH_PX / Math.max(projector.pixelsPerMeter(model.center), 1e-6);
+const metersPerPixelAt = (projector: CellProjector, point: Vec3): number =>
+  1 / Math.max(projector.pixelsPerMeter(point), 1e-6);
+
+/** 手柄放在哪（世界）：顶面中心沿竖直方向往上，正好是升降箭头的中间 */
+export const handleSpotOf = (anchor: Vec3, up: Vec3, projector: CellProjector): Vec3 =>
+  addVec(anchor, scaleVec(up, HANDLE_SPOT_PX * metersPerPixelAt(projector, anchor)));
+
+/** 环、弧手柄在这一格里的样子：圆心挪到升降箭头的位置，半径按屏幕上和箭头差不多大 */
+export const placeRingModel = (model: RingHandleModel, projector: CellProjector): RingHandleModel => {
+  const center = handleSpotOf(model.anchor, model.up, projector);
+  return { ...model, center, radius: COMPACT_RING_RADIUS_PX * metersPerPixelAt(projector, center) };
+};
 
 type LayoutBase = Pick<HandleLayout, "key" | "objectId" | "kind">;
 
@@ -129,11 +140,6 @@ const emptyLayout = (base: LayoutBase, labelAt: Pt): HandleLayout => ({
   limits: [],
   labelAt,
 });
-
-export type LayoutOptions = {
-  /** 升降箭头离顶面中心多远开始（px）：同一物体有倾斜弧、摇杆时让到它们上面 */
-  liftGapPx?: number;
-};
 
 const layoutLift = (
   model: LiftHandleModel,
@@ -173,37 +179,32 @@ const layoutLift = (
   return layout;
 };
 
-const layoutRing = (model: RingHandleModel, projector: CellProjector, base: LayoutBase): HandleLayout | null => {
-  const radius = ringRadiusIn(model, projector);
-  const [from, to] = model.arc ?? [0, Math.PI * 2];
-  const segments = model.arc ? 40 : 96;
+const layoutRing = (placed: RingHandleModel, projector: CellProjector, base: LayoutBase): HandleLayout | null => {
+  const [from, to] = placed.arc ?? [0, Math.PI * 2];
+  const segments = placed.arc ? 32 : 64;
   const points = Array.from({ length: segments + 1 }, (_, index) =>
-    ringPoint(model, radius, from + ((to - from) * index) / segments),
+    ringPoint(placed, placed.radius, from + ((to - from) * index) / segments),
   );
   const strokes = projectPolyline(projector, points);
   if (strokes.length === 0) return null;
-  const knob = projector.project(ringPoint(model, radius, 0));
+  const knob = projector.project(ringPoint(placed, placed.radius, 0));
   const layout = emptyLayout(base, knob ?? strokes[0]![0]!);
   layout.strokes = strokes;
+  if (placed.arc) {
+    // 弧两头画箭头：看得出是来回摆的
+    for (const [end, inward] of [
+      [to, to - 0.25],
+      [from, from + 0.25],
+    ] as const) {
+      const tip = projector.project(ringPoint(placed, placed.radius, end));
+      const back = projector.project(ringPoint(placed, placed.radius, inward));
+      const dir = tip && back ? unitPt(back, tip) : null;
+      if (tip && dir) layout.fills.push(arrowHead(tip, dir));
+    }
+  }
   if (knob) {
     layout.knobs = [{ ...knob, r: KNOB_RADIUS_PX }];
     layout.labelAt = { x: knob.x + 14, y: knob.y - 14 };
-  }
-  return layout;
-};
-
-const layoutSwing = (model: SwingHandleModel, projector: CellProjector, base: LayoutBase): HandleLayout | null => {
-  const center = projector.project(model.center);
-  if (!center) return null;
-  const length = swingLengthIn(model, projector);
-  const tipWorld = addVec(model.center, scaleVec(model.normal, length));
-  const tip = projector.project(tipWorld);
-  const layout = emptyLayout(base, center);
-  layout.guides = projectPolyline(projector, sampleSegment(model.center, addVec(model.center, scaleVec(model.up, length)), 8));
-  layout.strokes = projectPolyline(projector, sampleSegment(model.center, tipWorld, 8));
-  if (tip) {
-    layout.knobs = [{ ...tip, r: SWING_KNOB_RADIUS_PX }];
-    layout.labelAt = { x: tip.x + 16, y: tip.y - 12 };
   }
   return layout;
 };
@@ -212,29 +213,11 @@ export const layoutPoseHandle = (
   objectId: string,
   model: PoseHandleModel,
   projector: CellProjector,
-  options: LayoutOptions = {},
 ): HandleLayout | null => {
   const base: LayoutBase = { key: poseHandleKey(objectId, model.kind), objectId, kind: model.kind };
-  switch (model.kind) {
-    case "lift":
-      return layoutLift(model, projector, base, options.liftGapPx ?? LIFT_GAP_PX);
-    case "swing":
-      return layoutSwing(model, projector, base);
-    default:
-      return layoutRing(model, projector, base);
-  }
-};
-
-/** 同一物体的升降箭头要让开的距离：摇杆的长度、倾斜弧的半径（屏幕上） */
-export const liftGapAmong = (models: readonly PoseHandleModel[], projector: CellProjector): number => {
-  let gap = LIFT_GAP_PX;
-  for (const model of models) {
-    if (model.kind === "swing") gap = Math.max(gap, SWING_LENGTH_PX + 16);
-    if (model.kind === "tiltX" || model.kind === "tiltY") {
-      gap = Math.max(gap, ringRadiusIn(model, projector) * projector.pixelsPerMeter(model.center) + 16);
-    }
-  }
-  return gap;
+  return model.kind === "lift"
+    ? layoutLift(model, projector, base, LIFT_GAP_PX)
+    : layoutRing(placeRingModel(model, projector), projector, base);
 };
 
 export type HandleHit = { layout: HandleLayout; distance: number };

@@ -1,17 +1,26 @@
 import { describe, expect, it } from "vitest";
 import type { SceneObjectConfig } from "../types";
-import { createPoseHandleDragSession, type DragMember } from "./pose-handle-drag";
+import { ARC_DRAG_PX_PER_RAD, createPoseHandleDragSession, type DragMember } from "./pose-handle-drag";
 import {
   frontDirectionOf,
+  headingDirectionOf,
   localTopCenter,
   plateNormalOf,
+  restNormalOf,
   worldPointOf,
   type PoseKinematics,
 } from "./pose-handle-kinematics";
-import { hitTestHandles, layoutPoseHandle, ringPoint, ringRadiusIn } from "./pose-handle-layout";
-import { angleBetween, normalizeVec, subVec, type Pt } from "./pose-handle-math";
+import {
+  COMPACT_RING_RADIUS_PX,
+  HANDLE_SPOT_PX,
+  hitTestHandles,
+  layoutPoseHandle,
+  placeRingModel,
+  ringPoint,
+} from "./pose-handle-layout";
+import { angleBetween, normalizeVec, rotateVec, subVec, type Pt } from "./pose-handle-math";
 import { poseHandleModel, type RingHandleModel } from "./pose-handle-model";
-import { FRONT_VIEW, testObject, TOP_VIEW } from "./pose-handle-test-utils";
+import { FRONT_VIEW, orthoCamera, testObject, TOP_VIEW } from "./pose-handle-test-utils";
 
 const member = (
   objectId: string,
@@ -119,8 +128,11 @@ describe("lift drag", () => {
   });
 });
 
-const ringStart = (model: RingHandleModel, projector: ReturnType<typeof TOP_VIEW>["projector"], angle: number) =>
-  projector.project(ringPoint(model, ringRadiusIn(model, projector), angle))!;
+/** 手柄环上某个角度在屏幕上的位置：环画在升降箭头的位置（placeRingModel） */
+const ringStart = (model: RingHandleModel, projector: ReturnType<typeof TOP_VIEW>["projector"], angle: number) => {
+  const placed = placeRingModel(model, projector);
+  return projector.project(ringPoint(placed, placed.radius, angle))!;
+};
 
 describe("ring drag", () => {
   for (const runDirection of [1, 2] as const) {
@@ -139,25 +151,24 @@ describe("ring drag", () => {
       session.update(ringStart(model, projector, 0.6), { fine: false });
       const frame = session.update(ringStart(model, projector, 1.2), { fine: false });
       const turned = frontDirectionOf({ ...lead.input, values: { ...lead.input.values, ...valueOf(frame, "a") } });
-      const expected = normalizeVec(subVec(ringPoint(model, model.radius, 1.2), model.center))!;
+      const placed = placeRingModel(model, projector);
+      const expected = normalizeVec(subVec(ringPoint(placed, placed.radius, 1.2), placed.center))!;
       expect(angleBetween(turned, expected)).toBeLessThan(1e-3);
       expect(frame?.sweep?.angle).toBeCloseTo(1.2, 6);
     });
   }
 
-  it("rocks a four-point tilt arc seen from the front", () => {
+  it("rocks a four-point tilt arc seen from the front, by a fixed amount per pixel along the arc", () => {
     const { projector, rayAt } = FRONT_VIEW();
     const lead = member("a", testObject("dualTiltFourPointSwing"));
     const model = poseHandleModel("tiltX", lead.input) as RingHandleModel;
     expect(model).not.toBeNull();
-    const session = createPoseHandleDragSession({
-      kind: "tiltX",
-      members: [lead],
-      projector,
-      rayAt,
-      start: ringStart(model, projector, 0),
-    })!;
-    const frame = session.update(ringStart(model, projector, (20 * Math.PI) / 180), { fine: false });
+    const knob = ringStart(model, projector, 0);
+    const session = createPoseHandleDragSession({ kind: "tiltX", members: [lead], projector, rayAt, start: knob })!;
+    // 弧顶的切线是水平的：往弧上 20° 那一侧拖 20° 对应的像素
+    const toward = ringStart(model, projector, 0.2);
+    const step = ARC_DRAG_PX_PER_RAD * ((20 * Math.PI) / 180) * Math.sign(toward.x - knob.x);
+    const frame = session.update({ x: knob.x + step, y: knob.y }, { fine: false });
     const values = { ...lead.input.values, ...valueOf(frame, "a") };
     expect(Math.abs(values.v2)).toBeCloseTo(20, 3);
     const normal = plateNormalOf({ ...lead.input, values });
@@ -175,38 +186,90 @@ describe("ring drag", () => {
       rayAt,
       start: ringStart(model, projector, 0),
     })!;
-    const towardLevel = (-4.6 * Math.PI) / 180;
-    const frame = session.update(ringStart(model, projector, towardLevel), { fine: false });
+    const knob = ringStart(model, projector, 0);
+    const toward = ringStart(model, projector, -0.2);
+    const step = ARC_DRAG_PX_PER_RAD * ((4.6 * Math.PI) / 180) * Math.sign(toward.x - knob.x);
+    const frame = session.update({ x: knob.x + step, y: knob.y }, { fine: false });
     expect(valueOf(frame, "a")!.v2).toBeCloseTo(0, 6);
     expect(frame?.snap?.label).toBe("水平");
   });
 });
 
-describe("swing drag", () => {
-  it("tilts the plate toward where the stick is pulled", () => {
-    const { projector, rayAt } = TOP_VIEW();
-    const config = testObject("multiPointSwing", { betaInit: 30 });
-    const lead = member("a", config, { v3: 15 });
-    const center = projector.project({ x: 0, y: 3.2, z: 0 })!;
-    const session = createPoseHandleDragSession({ kind: "swing", members: [lead], projector, rayAt, start: center })!;
-    const frame = session.update({ x: center.x + 20, y: center.y }, { fine: false });
+describe("multi-point swing drag", () => {
+  it("rocks the plate with the swing X arc", () => {
+    const lead = member("a", testObject("multiPointSwing"));
+    const model = poseHandleModel("tiltX", lead.input) as RingHandleModel;
+    // 正对着弧看（视线沿摆动的转轴）
+    const { projector, rayAt } = orthoCamera(model.rotationAxis, { x: 0, y: 1, z: 0 });
+    const session = createPoseHandleDragSession({
+      kind: "tiltX",
+      members: [lead],
+      projector,
+      rayAt,
+      start: ringStart(model, projector, 0),
+    })!;
+    const knob = ringStart(model, projector, 0);
+    // 弧顶的切线方向
+    const toward = ringStart(model, projector, 0.001);
+    const along = { x: toward.x - knob.x, y: toward.y - knob.y };
+    const length = Math.hypot(along.x, along.y);
+    const step = ARC_DRAG_PX_PER_RAD * ((20 * Math.PI) / 180);
+    const frame = session.update(
+      { x: knob.x + (along.x / length) * step, y: knob.y + (along.y / length) * step },
+      { fine: false },
+    );
     const values = { ...lead.input.values, ...valueOf(frame, "a") };
-    const normal = plateNormalOf({ ...lead.input, values });
-    // 杆长 72px = 0.72 m，往 +X 拉 0.2 m
-    expect(Math.asin(normal.x)).toBeCloseTo(Math.asin(0.2 / 0.72), 3);
-    expect(normal.z).toBeCloseTo(0, 3);
+    expect(Math.abs(values.v2)).toBeCloseTo(20, 1);
+    expect(angleBetween(plateNormalOf({ ...lead.input, values }), { x: 0, y: 1, z: 0 })).toBeCloseTo(
+      (20 * Math.PI) / 180,
+      3,
+    );
   });
 
-  it("moves other swings by the same world rotation", () => {
+  for (const v2 of [0, 12]) {
+    it(`turns the tilt direction with the heading ring (tilt ${v2}°)`, () => {
+      const { projector, rayAt } = TOP_VIEW();
+      const config = testObject("multiPointSwing", { betaInit: 30 });
+      const lead = member("a", config, { v2, v3: 15 });
+      const model = poseHandleModel("heading", lead.input) as RingHandleModel;
+      expect(model.kind).toBe("heading");
+      const session = createPoseHandleDragSession({
+        kind: "heading",
+        members: [lead],
+        projector,
+        rayAt,
+        start: ringStart(model, projector, 0),
+      })!;
+      session.update(ringStart(model, projector, 0.3), { fine: false });
+      const frame = session.update(ringStart(model, projector, 0.6), { fine: false });
+      const after = { ...lead.input, values: { ...lead.input.values, ...valueOf(frame, "a") } };
+      const axis = restNormalOf(lead.input);
+      const expected = rotateVec(headingDirectionOf(lead.input, axis), model.rotationAxis, 0.6);
+      expect(angleBetween(headingDirectionOf(after, axis), expected)).toBeLessThan(1e-3);
+      expect(valueOf(frame, "a")!.v2).toBeUndefined();
+    });
+  }
+
+  it("turns other swings' direction by the same world angle", () => {
     const { projector, rayAt } = TOP_VIEW();
-    const lead = member("a", testObject("multiPointSwing"));
-    const other = member("b", testObject("multiPointSwing", { betaInit: 90, runDirection: 2 }));
-    const center = projector.project({ x: 0, y: 3.2, z: 0 })!;
-    const session = createPoseHandleDragSession({ kind: "swing", members: [lead, other], projector, rayAt, start: center })!;
-    const frame = session.update({ x: center.x, y: center.y - 25 }, { fine: false });
-    const leadNormal = plateNormalOf({ ...lead.input, values: { ...lead.input.values, ...valueOf(frame, "a") } });
-    const otherNormal = plateNormalOf({ ...other.input, values: { ...other.input.values, ...valueOf(frame, "b") } });
-    expect(angleBetween(leadNormal, otherNormal)).toBeLessThan(1e-3);
+    const lead = member("a", testObject("multiPointSwing"), { v2: 10 });
+    const other = member("b", testObject("multiPointSwing", { betaInit: 90, runDirection: 2 }), { v2: 10 });
+    const model = poseHandleModel("heading", lead.input) as RingHandleModel;
+    const session = createPoseHandleDragSession({
+      kind: "heading",
+      members: [lead, other],
+      projector,
+      rayAt,
+      start: ringStart(model, projector, 0),
+    })!;
+    session.update(ringStart(model, projector, 0.25), { fine: false });
+    const frame = session.update(ringStart(model, projector, 0.5), { fine: false });
+    for (const entry of [lead, other]) {
+      const axis = restNormalOf(entry.input);
+      const after = { ...entry.input, values: { ...entry.input.values, ...valueOf(frame, entry.objectId) } };
+      const expected = rotateVec(headingDirectionOf(entry.input, axis), model.rotationAxis, 0.5);
+      expect(angleBetween(headingDirectionOf(after, axis), expected)).toBeLessThan(1e-3);
+    }
   });
 });
 
@@ -220,13 +283,17 @@ describe("hitTestHandles", () => {
     expect(hitTestHandles([layout], { x: anchor.x + 40, y: anchor.y - 50 })).toBeNull();
   });
 
-  it("prefers the knob of the tilt arc under the pointer", () => {
+  it("puts the swing arc where the lift arrow is, about as big", () => {
     const { projector } = FRONT_VIEW();
     const lead = member("a", testObject("dualTiltFourPointSwing"));
-    const layouts = (["tiltX", "tiltY"] as const).map(
-      (kind) => layoutPoseHandle("a", poseHandleModel(kind, lead.input)!, projector)!,
-    );
-    const knob = layouts[0]!.knobs[0]!;
-    expect(hitTestHandles(layouts, knob)?.layout.kind).toBe("tiltX");
+    const layout = layoutPoseHandle("a", poseHandleModel("tiltX", lead.input)!, projector)!;
+    const anchor = projector.project({ x: 0, y: 3.2, z: 0 })!;
+    // 圆头在手柄中心正上方一个半径
+    const knob = layout.knobs[0]!;
+    expect(knob.x).toBeCloseTo(anchor.x, 3);
+    expect(knob.y).toBeCloseTo(anchor.y - HANDLE_SPOT_PX - COMPACT_RING_RADIUS_PX, 3);
+    expect(hitTestHandles([layout], knob)?.layout.kind).toBe("tiltX");
+    // 弧两头有箭头
+    expect(layout.fills).toHaveLength(2);
   });
 });

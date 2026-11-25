@@ -41,11 +41,12 @@ describe("parseMotionPathMode", () => {
 
 describe("motionPathWorld", () => {
   it("traces the top center of a hoist up and down", () => {
-    const world = motionPathWorld(liftEntry({ prev: { atMs: 0, values: { v1: 0 } } }), lift, () => null)!;
+    const world = motionPathWorld(liftEntry({ issueAtCursor: true }), lift, () => null)!;
     expect(world.style).toBe("path");
     expect(world.points.map(({ point }) => point.y)).toEqual([3.2, 3.7, 4.2, 3.7, 3.2].map((y) => expect.closeTo(y, 4)));
     expect(world.cursorPoint!.y).toBeCloseTo(3.7, 4);
-    expect(world.outlines).toHaveLength(1);
+    // 只有标红的框，不画前后位姿
+    expect(world.outlines.map((outline) => outline.kind)).toEqual(["issue"]);
     expect(world.outlines[0]!.corners).toHaveLength(8);
   });
 
@@ -147,7 +148,8 @@ describe("PoseHandleController with motion paths", () => {
     setup();
     const group = slot.querySelector('[data-motion-path="a"]');
     expect(group).not.toBeNull();
-    expect(group!.querySelectorAll("path")[5]!.getAttribute("d")).toMatch(/^M/);
+    // 路径顺序：红框、环、描边、轨迹线……
+    expect(group!.querySelectorAll("path")[3]!.getAttribute("d")).toMatch(/^M/);
   });
 
   it("clicking a pose dot picks that pose", () => {

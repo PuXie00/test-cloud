@@ -66,9 +66,10 @@ describe("object selection creation", () => {
     expect(onApplyStaticPreset).toHaveBeenCalledWith("static-slope", [7, 8]);
     fireEvent.click(screen.getByRole("button", { name: /动态预设.*水平升降/ }));
     expect(onApplyDynamicPreset).toHaveBeenCalledWith("dynamic-level", [7, 8]);
+    // 预设按钮只显示名称和说明，不再带「1 位姿/物体」「≥2 位姿/物体」角标
     expect(screen.getByText("同一时刻全体同一位姿")).not.toBeNull();
-    expect(screen.getAllByText("1 位姿/物体").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("≥2 位姿/物体").length).toBeGreaterThan(0);
+    expect(screen.getByText("全体从起点升降到终点")).not.toBeNull();
+    expect(screen.queryByText(/位姿\/物体/)).toBeNull();
   });
 
   it("has no 新建动作序列 or 新建 Cue; without a sequence it points to the library", () => {

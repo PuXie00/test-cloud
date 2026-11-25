@@ -51,9 +51,6 @@ export type MotionPathEntry = {
   /** 游标处的姿态：轨迹上的亮点 */
   cursor: MotionPathSample | null;
   issues: MotionPathIssueSpan[];
-  /** 上一个、下一个位姿的样子（线框） */
-  prev?: MotionPathSample | null;
-  next?: MotionPathSample | null;
   /** 游标这一刻在有问题的那段里：物体标红 */
   issueAtCursor?: boolean;
 };

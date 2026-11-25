@@ -29,8 +29,6 @@ type PathElements = {
   path: SVGPathElement;
   issue: SVGPathElement;
   ring: SVGPathElement;
-  prev: SVGPathElement;
-  next: SVGPathElement;
   issueOutline: SVGPathElement;
   ticks: SVGPathElement;
   selectedTicks: SVGPathElement;
@@ -143,15 +141,11 @@ export class MotionPathOverlay implements Disposable {
     setAttr(elements.issue, "stroke-width", layout.selected ? "3" : "2.2");
     setAttr(elements.ring, "d", joinPaths(layout.ring.map((run) => polylinePath(run, offset))));
 
-    const outline = (kind: "prev" | "next" | "issue") =>
-      joinPaths(
-        layout.outlines
-          .filter((entry) => entry.kind === kind)
-          .flatMap((entry) => entry.edges.map((edge) => polylinePath(edge, offset))),
-      );
-    setAttr(elements.prev, "d", outline("prev"));
-    setAttr(elements.next, "d", outline("next"));
-    setAttr(elements.issueOutline, "d", outline("issue"));
+    setAttr(
+      elements.issueOutline,
+      "d",
+      joinPaths(layout.outlines.flatMap((entry) => entry.edges.map((edge) => polylinePath(edge, offset)))),
+    );
 
     const tickPath = (filter: (tick: MotionPathLayout["ticks"][number]) => boolean) =>
       joinPaths(layout.ticks.filter(filter).map((tick) => polylinePath([tick.from, tick.to], offset)));
@@ -195,7 +189,6 @@ export class MotionPathOverlay implements Disposable {
     if (existing) return existing;
     const group = document.createElementNS(SVG_NS, "g");
     group.dataset.motionPath = objectId;
-    const dashed = { fill: "none", "stroke-width": "1.2", "stroke-dasharray": "4 3" };
     const elements: PathElements = {
       group,
       // 深色描边：浅色模型、网格上都看得清
@@ -203,8 +196,6 @@ export class MotionPathOverlay implements Disposable {
       path: svgPath({ fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round" }),
       issue: svgPath({ fill: "none", stroke: "var(--destructive)", "stroke-linecap": "round", "stroke-linejoin": "round" }),
       ring: svgPath({ fill: "none", stroke: "var(--muted-foreground)", "stroke-width": "1", "stroke-opacity": "0.5" }),
-      prev: svgPath({ ...dashed, stroke: "var(--muted-foreground)", "stroke-opacity": "0.8" }),
-      next: svgPath({ ...dashed, stroke: "var(--primary)", "stroke-opacity": "0.85" }),
       issueOutline: svgPath({ fill: "none", stroke: "var(--destructive)", "stroke-width": "1.6" }),
       ticks: svgPath({ fill: "none", "stroke-width": "2", "stroke-linecap": "round" }),
       selectedTicks: svgPath({ fill: "none", stroke: "var(--primary)", "stroke-width": "3.5", "stroke-linecap": "round" }),
@@ -215,8 +206,6 @@ export class MotionPathOverlay implements Disposable {
       cursor: svgPath({ fill: "var(--foreground)", stroke: "var(--primary)", "stroke-width": "2" }),
     };
     group.append(
-      elements.prev,
-      elements.next,
       elements.issueOutline,
       elements.ring,
       elements.halo,

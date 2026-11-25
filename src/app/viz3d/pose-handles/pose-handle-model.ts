@@ -2,6 +2,8 @@ import type { Vec3, VirtualAxisId } from "../types";
 import {
   angularRateOf,
   frontDirectionOf,
+  headingDirectionOf,
+  headingRateOf,
   localHoistCenter,
   localTopCenter,
   parentUpOf,
@@ -23,9 +25,13 @@ export type LiftHandleModel = {
   travel: { min: Vec3; max: Vec3 } | null;
 };
 
-/** 旋转环 / 倾斜弧：绕 axis（右手定则，值增大的方向）转；ref 是手柄圆头的方向 */
+/**
+ * 旋转环 / 摆动弧 / 偏转环：绕 rotationAxis（右手定则，值增大的方向）转；ref 是手柄圆头的方向。
+ * center、radius 是物体上的样子（轨迹的刻点环用）；3D 手柄画在升降箭头的位置（anchor 沿 up 往上），
+ * 大小和升降箭头差不多，见 placeRingModel。
+ */
 export type RingHandleModel = {
-  kind: "yaw" | "tiltX" | "tiltY";
+  kind: "yaw" | "tiltX" | "tiltY" | "heading";
   axis: VirtualAxisId;
   center: Vec3;
   rotationAxis: Vec3;
@@ -33,21 +39,17 @@ export type RingHandleModel = {
   ref: Vec3;
   /** 只画一段弧时相对 ref 的起止角（弧度）；整圈为 null */
   arc: readonly [number, number] | null;
-};
-
-/** 摇杆：从吊点平面中心沿板面法线伸出；up 是不倾斜时的法线 */
-export type SwingHandleModel = {
-  kind: "swing";
-  center: Vec3;
-  normal: Vec3;
+  /** 顶面中心（升降箭头挂的地方） */
+  anchor: Vec3;
+  /** 父物体的竖直方向 */
   up: Vec3;
 };
 
-export type PoseHandleModel = LiftHandleModel | RingHandleModel | SwingHandleModel;
+export type PoseHandleModel = LiftHandleModel | RingHandleModel;
 
 const RING_AXIS: Record<"yaw" | "tiltX" | "tiltY", VirtualAxisId> = { yaw: "v1", tiltX: "v2", tiltY: "v3" };
 
-/** 倾斜弧只画上面一段：±70° */
+/** 摆动弧只画上面一段：±70° */
 const TILT_ARC: readonly [number, number] = [(-70 * Math.PI) / 180, (70 * Math.PI) / 180];
 
 /** 物体沿世界方向 direction 的半宽（按尺寸盒） */
@@ -86,40 +88,56 @@ const ringModel = (kind: "yaw" | "tiltX" | "tiltY", input: PoseKinematics): Ring
   const rate = angularRateOf(input, axis);
   if (!rate) return null;
   const rotationAxis = rate.axis;
+  const anchor = worldPointOf(input, localTopCenter(input.config));
+  const up = parentUpOf(input.parentWorld);
   if (kind === "yaw") {
     const ref = normalizeVec(rejectVec(frontDirectionOf(input), rotationAxis)) ?? anyPerpendicular(rotationAxis);
     const { w, d } = input.config.dimensions;
     return {
       kind,
       axis,
-      center: worldPointOf(input, localTopCenter(input.config)),
+      center: anchor,
       rotationAxis,
       radius: Math.max(MIN_RADIUS_M, (Math.max(w, d) / 2) * 1.15),
       ref,
       arc: null,
+      anchor,
+      up,
     };
   }
   const ref = normalizeVec(rejectVec(plateNormalOf(input), rotationAxis)) ?? anyPerpendicular(rotationAxis);
   const sweep = crossVec(rotationAxis, ref);
-  // 两道弧半径错开，免得在顶上交在一起
-  const factor = kind === "tiltX" ? 1.3 : 1.08;
   return {
     kind,
     axis,
     center: worldPointOf(input, localHoistCenter(input.config)),
     rotationAxis,
-    radius: Math.max(MIN_RADIUS_M, halfExtentAlong(input, sweep) * factor),
+    radius: Math.max(MIN_RADIUS_M, halfExtentAlong(input, sweep) * 1.1),
     ref,
     arc: TILT_ARC,
+    anchor,
+    up,
   };
 };
 
-const swingModel = (input: PoseKinematics): SwingHandleModel => ({
-  kind: "swing",
-  center: worldPointOf(input, localTopCenter(input.config)),
-  normal: plateNormalOf(input),
-  up: restNormalOf(input),
-});
+/** 多点摆「偏转」：绕不倾斜时的法线转的整圈，圆头指着倾斜的方向（放平时是正着摆过去的方向） */
+const headingModel = (input: PoseKinematics): RingHandleModel | null => {
+  const rotationAxis = restNormalOf(input);
+  if (headingRateOf(input, rotationAxis) === null) return null;
+  const anchor = worldPointOf(input, localTopCenter(input.config));
+  const { w, d } = input.config.dimensions;
+  return {
+    kind: "heading",
+    axis: "v3",
+    center: anchor,
+    rotationAxis,
+    radius: Math.max(MIN_RADIUS_M, (Math.max(w, d) / 2) * 1.15),
+    ref: headingDirectionOf(input, rotationAxis),
+    arc: null,
+    anchor,
+    up: parentUpOf(input.parentWorld),
+  };
+};
 
 /** 这台物体这种手柄在世界里的样子；这根轴不带转动（如多点倾斜放平时没有方向）时 null */
 export const poseHandleModel = (
@@ -130,8 +148,8 @@ export const poseHandleModel = (
   switch (kind) {
     case "lift":
       return liftModel(input, ranges?.v1);
-    case "swing":
-      return swingModel(input);
+    case "heading":
+      return headingModel(input);
     default:
       return ringModel(kind, input);
   }

@@ -6,7 +6,8 @@ import { resolveActionSequence } from "@/app/project/action-sequence/resolve-seq
 import type { ModelPose, PoseBlock } from "@/app/project/action-sequence/types";
 import type { VirtualAxisId, VirtualAxisValues } from "@/app/project/project-document-types";
 import { useSessionDisplayLengthUnit } from "@/app/project/display-length-unit-provider";
-import type { PoseHandleTarget } from "@/app/viz3d/pose-handles/pose-handle-types";
+import type { PoseFormationEvent } from "@/app/viz3d/pose-handles/pose-formation";
+import { poseHandleAxisOf, type PoseHandleTarget } from "@/app/viz3d/pose-handles/pose-handle-types";
 import {
   poseHandleStartValues,
   resolvePoseHandleEditTargets,
@@ -122,9 +123,15 @@ export const Viz3DPoseHandleSync = () => {
       const controlType = object?.controlType;
       const format = (axis: VirtualAxisId, value: number) =>
         formatVirtualAxisCompact(axis, value, display, undefined, controlType);
+      const axisLabels: Partial<Record<VirtualAxisId, string>> = {};
+      for (const kind of target.kinds) {
+        const axis = poseHandleAxisOf(kind);
+        axisLabels[axis] = getVirtualAxisMeta(axis, controlType).label;
+      }
       return {
         objectId: engineId,
         kinds: target.kinds,
+        axisLabels,
         values: start.values,
         ranges: object?.rangeByAxis,
         onShadow: start.onShadow,
@@ -171,6 +178,36 @@ export const Viz3DPoseHandleSync = () => {
     const onBlocked = ({ reason }: { reason: string }) => {
       toast.info(reason, { id: "pose-handle-blocked" });
     };
+    // 右键队形：像拖手柄一样写进各台游标处的位姿（没有就加），一步撤销
+    const onFormation = (event: PoseFormationEvent) => {
+      const { builder: current, editTargets: targets } = latestRef.current;
+      const nameOf = (id: string) => {
+        const objectId = toProjectId(id);
+        return current.getTimelineObject(objectId)?.name ?? `物体 ${objectId}`;
+      };
+      const names = (ids: readonly string[]) => ids.map(nameOf).join("、");
+      const picked = event.updates.flatMap((update) => {
+        const target = targets.find((entry) => entry.objectId === toProjectId(update.objectId));
+        return target ? [{ objectId: target.objectId, blockId: target.blockId, atMs: target.atMs }] : [];
+      });
+      if (picked.length > 0 && current.handlePoseHandleDragStart(picked)) {
+        current.handlePoseHandleDrag(
+          event.updates.map((update) => ({ objectId: toProjectId(update.objectId), values: update.values })),
+        );
+        current.handlePoseHandleDragEnd(true);
+      }
+      if (event.clamped.length > 0) {
+        toast.warning(`${names(event.clamped)} 行程不够，停在行程头上`, { id: "pose-formation-clamped" });
+      }
+      if (event.skipped.length > 0) {
+        toast.info(`${names(event.skipped)} 升降不改变高度，没动`, { id: "pose-formation-skipped" });
+      }
+      if (event.blocked.length > 0) {
+        toast.info(`${names(event.blocked.map((entry) => entry.objectId))} 没动：${event.blocked[0]!.reason}`, {
+          id: "pose-formation-blocked",
+        });
+      }
+    };
 
     // 引擎在一次点选里先发 selectionChange 再发 objectClick / boxSelect：记下这次点选改没改选中
     // （改了的话全局选中随后会同步回动作编辑器，要认出是这一次）
@@ -197,6 +234,7 @@ export const Viz3DPoseHandleSync = () => {
     engine.events.on("poseHandleDrag", onDrag);
     engine.events.on("poseHandleDragEnd", onDragEnd);
     engine.events.on("poseHandleBlocked", onBlocked);
+    engine.events.on("poseFormation", onFormation);
     engine.events.on("selectionChange", onSelectionChange);
     engine.events.on("objectClick", onPick);
     engine.events.on("boxSelect", onPick);
@@ -206,6 +244,7 @@ export const Viz3DPoseHandleSync = () => {
       engine.events.off("poseHandleDrag", onDrag);
       engine.events.off("poseHandleDragEnd", onDragEnd);
       engine.events.off("poseHandleBlocked", onBlocked);
+      engine.events.off("poseFormation", onFormation);
       engine.events.off("selectionChange", onSelectionChange);
       engine.events.off("objectClick", onPick);
       engine.events.off("boxSelect", onPick);

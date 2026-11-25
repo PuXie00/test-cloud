@@ -52,6 +52,8 @@ export type ActionBuilderContextValue = {
   selectedBlockId: string | null;
   selectedObjectIds: number[];
   cursorMs: number;
+  /** 从时间轴以外（3D 里）跳了游标：每次加一，时间轴把游标移进视野 */
+  cursorRevealRequestId: number;
   activeRightTab: ActionRightTab;
   /**
    * 「当前位置」开着（联机编辑）：3D 显示实时位置，选中的位姿就是 GO 目标。
@@ -96,7 +98,8 @@ export type ActionBuilderContextValue = {
   handleObjectsSelect: (objectIds: number[]) => void;
   /** 轨道上点块时物体跟着块：只改物体选中，不清块的选中（全局选中由调用方一起改） */
   handleObjectsFollow: (objectIds: number[]) => void;
-  handleCursorChange: (ms: number) => void;
+  /** reveal：从时间轴以外跳过去，时间轴把游标移进视野 */
+  handleCursorChange: (ms: number, options?: { reveal?: boolean }) => void;
   handlePlaybackCursorChange: (ms: number) => void;
   /** 时间轴在播放（编辑坞报上来）：联机时影子不跟着游标走 */
   timelinePlaying: boolean;

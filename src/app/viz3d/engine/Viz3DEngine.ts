@@ -42,12 +42,13 @@ import type {
   ViewportLayout,
   ViewportSplit,
   ViewportState,
+  VirtualAxisId,
   VirtualAxisValues,
   Viz3DColorMap,
   Viz3DOptions,
 } from "../types";
 import { DEFAULT_GRID_SIZE_M, normalizeGridSizeM } from "../helpers/grid-config";
-import { mergeFocusBounds, resolveFocusFit } from "../cameras/camera-focus";
+import { mergeFocusBounds, resolveFocusFit, type FocusBounds } from "../cameras/camera-focus";
 import { VideoRecorder, isRecordingSupported } from "../output/VideoRecorder";
 import { canEditObjectFromStatus } from "../state/object-edit-lock";
 import { ModelLoader, resolveModelCacheId } from "../loaders/ModelLoader";
@@ -135,7 +136,13 @@ import {
   type MotionPathEntry,
   type MotionPathMode,
   type MotionPathPickEvent,
+  type MotionPathSample,
 } from "../pose-handles/motion-path-types";
+import type {
+  PoseFormationEvent,
+  PoseFormationInfo,
+  PoseFormationRequest,
+} from "../pose-handles/pose-formation";
 import type { SnapCandidate } from "../pose-handles/pose-handle-drag";
 import type { CellProjector } from "../pose-handles/pose-handle-layout";
 import { normalizeVec, subVec, type Pt, type Ray as PoseRay } from "../pose-handles/pose-handle-math";
@@ -188,6 +195,10 @@ export type Viz3DEventMap = {
   /** 动作页 3D 轨迹：点了位姿点或轨迹线 */
   motionPathPick: MotionPathPickEvent;
   motionPathModeChange: MotionPathMode;
+  /** 动作页右键队形：算好的各台虚轴 1，交给动作编辑器写进位姿 */
+  poseFormation: PoseFormationEvent;
+  /** 动作页位姿手柄的目标换了（右键菜单据此刷新队形工具） */
+  poseHandlesChange: void;
 };
 
 export class Viz3DEngine implements Disposable {
@@ -1256,6 +1267,7 @@ export class Viz3DEngine implements Disposable {
   setPoseHandles(targets: readonly PoseHandleTarget[]): void {
     this.poseHandleTargets = [...targets];
     this.poseHandles?.setTargets(this.poseHandleTargets);
+    this.events.emit("poseHandlesChange", undefined);
   }
 
   /** 左键按在位姿手柄上时由手柄接手（返回 true），不再框选 */
@@ -1284,6 +1296,31 @@ export class Viz3DEngine implements Disposable {
 
   isPoseHandleDragging(): boolean {
     return this.poseHandles?.isDragging() ?? false;
+  }
+
+  /** 动作页 3D 手柄现在出哪根虚轴的（每台只出一个） */
+  getPoseHandleAxis(): VirtualAxisId {
+    return this.poseHandles?.getActiveAxis() ?? "v1";
+  }
+
+  /** 换成这根虚轴的手柄（数字键 1/2/3、手柄旁的切换）；手柄里都没有这根轴时不换，返回 false */
+  setPoseHandleAxis(axis: VirtualAxisId): boolean {
+    return this.poseHandles?.setActiveAxis(axis) ?? false;
+  }
+
+  /** 动作页右键「队形」能不能用；referenceId 为右键的那台（空白处右键为 null） */
+  getPoseFormationInfo(referenceId: string | null): PoseFormationInfo | null {
+    return this.poseHandles?.formationInfo(referenceId) ?? null;
+  }
+
+  /**
+   * 动作页右键队形（高度对齐到这台、按比例缩放高低差）：按手柄的值算好各台虚轴 1，
+   * 发 poseFormation 交给动作编辑器写进位姿；用不了时返回 null
+   */
+  applyPoseFormation(request: PoseFormationRequest): PoseFormationEvent | null {
+    const plan = this.poseHandles?.planFormation(request) ?? null;
+    if (plan) this.events.emit("poseFormation", plan);
+    return plan;
   }
 
   /** 双击：拾取物体（选不中的穿过去）并发 objectDoubleClick */
@@ -1638,28 +1675,53 @@ export class Viz3DEngine implements Disposable {
 
   /** 聚焦当前选中物体（支持多选），保留观察方向，平滑缩放居中；缺省作用于当前格 */
   focusSelection(cellId?: ViewportCellId): void {
-    const viewportManager = this.viewportManager;
     const objectRegistry = this.objectRegistry;
-    if (!viewportManager || !objectRegistry) {
+    if (!objectRegistry) {
       return;
     }
-    const cell = viewportManager.getCell(cellId ?? viewportManager.getActiveCellId());
-
-    const selectedIds = this.getSelection();
-    if (selectedIds.length === 0) {
-      return;
-    }
-
     const bounds = mergeFocusBounds(
-      selectedIds.flatMap((id) => {
+      this.getSelection().flatMap((id) => {
         const handle = objectRegistry.get(id);
         return handle ? [readObjectBounds(handle)] : [];
       }),
     );
+    if (bounds) {
+      this.focusBoundsInCell(bounds, cellId);
+    }
+  }
+
+  /**
+   * 看全这些物体的动作：这一格的相机框住它们整段扫过的范围（和现在的样子），保留观察方向；
+   * samples 为各台按时间取的虚轴值（挂载的父物体也可以给，子物体叠加父物体那一刻的姿态）
+   */
+  focusMotionRange(
+    objectIds: readonly string[],
+    samples: ReadonlyMap<string, readonly MotionPathSample[]>,
+    cellId?: ViewportCellId,
+  ): boolean {
+    const objectRegistry = this.objectRegistry;
+    if (!objectRegistry) {
+      return false;
+    }
+    const boxes = objectIds.flatMap((id) => {
+      const handle = objectRegistry.get(id);
+      return handle ? [readObjectBounds(handle)] : [];
+    });
+    const range = this.poseHandles?.motionRangeBounds(objectIds, samples) ?? null;
+    const bounds = mergeFocusBounds(range ? [...boxes, range] : boxes);
     if (!bounds) {
+      return false;
+    }
+    this.focusBoundsInCell(bounds, cellId);
+    return true;
+  }
+
+  private focusBoundsInCell(bounds: FocusBounds, cellId?: ViewportCellId): void {
+    const viewportManager = this.viewportManager;
+    if (!viewportManager) {
       return;
     }
-
+    const cell = viewportManager.getCell(cellId ?? viewportManager.getActiveCellId());
     const rect = viewportManager.getCellRect(cell.id, this.getLocalSlotRect());
     const aspect = rect && rect.height > 0 ? rect.width / rect.height : 1;
     const fit = resolveFocusFit(bounds, {

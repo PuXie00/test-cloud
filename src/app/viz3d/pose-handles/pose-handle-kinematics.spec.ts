@@ -5,14 +5,16 @@ import type { SceneObjectConfig, VirtualAxisKinematics } from "../types";
 import {
   angularRateOf,
   fitAngleToRange,
+  headingDirectionOf,
+  headingRateOf,
   plateNormalOf,
   pointRateOf,
   localTopCenter,
   parentUpOf,
-  solveSwingTowards,
+  restNormalOf,
   type PoseKinematics,
 } from "./pose-handle-kinematics";
-import { angleBetween } from "./pose-handle-math";
+import { angleBetween, crossVec, dotVec, normalizeVec, rejectVec } from "./pose-handle-math";
 
 const kinematics = (overrides: Partial<VirtualAxisKinematics> = {}): VirtualAxisKinematics => ({
   controlType: "singlePointMove",
@@ -105,7 +107,7 @@ describe("angularRateOf", () => {
   });
 });
 
-describe("solveSwingTowards", () => {
+describe("multi-point swing heading", () => {
   const cases: Array<{ name: string; overrides: Partial<VirtualAxisKinematics>; parent: Matrix | null }> = [
     { name: "plain", overrides: {}, parent: null },
     { name: "initial tilt direction", overrides: { betaInit: 35 }, parent: null },
@@ -113,36 +115,36 @@ describe("solveSwingTowards", () => {
     { name: "mounted on a tilted parent", overrides: { betaInit: 20 }, parent: tiltedParent() },
   ];
 
+  /** 倾斜方向绕不倾斜时法线的方位角 */
+  const azimuth = (config: SceneObjectConfig, values: Partial<PoseKinematics["values"]>, parent: Matrix | null) => {
+    const at = input(config, values, parent);
+    const axis = restNormalOf(at);
+    const ref = normalizeVec(rejectVec({ x: 1, y: 0, z: 0 }, axis))!;
+    const lean = normalizeVec(rejectVec(plateNormalOf(at), axis))!;
+    return Math.atan2(dotVec(lean, crossVec(axis, ref)), dotVec(lean, ref));
+  };
+
   for (const { name, overrides, parent } of cases) {
-    it(`reaches the target normal (${name})`, () => {
+    it(`turns the tilt direction by the rate it reports (${name})`, () => {
       const config = objectOf("multiPointSwing", overrides);
-      const target = plateNormalOf(input(config, { v1: 300, v2: 14, v3: 127 }, parent));
-      const solved = solveSwingTowards(input(config, { v1: 300, v2: 3, v3: -20 }, parent), target);
-      const reached = plateNormalOf(input(config, { v1: 300, ...solved }, parent));
-      expect(angleBetween(reached, target)).toBeLessThan(1e-4);
-      expect(solved.v2).toBeCloseTo(14, 2);
+      const at = input(config, { v1: 300, v2: 12, v3: 40 }, parent);
+      const rate = headingRateOf(at, restNormalOf(at))!;
+      expect(Math.abs(rate)).toBeCloseTo(Math.PI / 180, 4);
+      const turned = azimuth(config, { v1: 300, v2: 12, v3: 70 }, parent) - azimuth(config, { v1: 300, v2: 12, v3: 40 }, parent);
+      expect(Math.atan2(Math.sin(turned), Math.cos(turned))).toBeCloseTo(rate * 30, 3);
     });
   }
 
-  it("keeps the direction when the target is level", () => {
-    const config = objectOf("multiPointSwing", { betaInit: 10 });
-    const level = plateNormalOf(input(config, { v2: 0, v3: 0 }));
-    expect(solveSwingTowards(input(config, { v2: 8, v3: 75 }), level)).toEqual({ v2: 0, v3: 75 });
+  it("still has a heading while the plate is level", () => {
+    const at = input(objectOf("multiPointSwing", { betaInit: 10 }), { v2: 0, v3: 25 });
+    expect(headingRateOf(at, restNormalOf(at))).not.toBeNull();
   });
 
-  it("keeps a negative tilt negative", () => {
-    const config = objectOf("multiPointSwing");
-    const target = plateNormalOf(input(config, { v2: -9, v3: 40 }));
-    const solved = solveSwingTowards(input(config, { v2: -2, v3: 30 }), target);
-    expect(solved.v2).toBeCloseTo(-9, 2);
-    expect(solved.v3).toBeCloseTo(40, 2);
-  });
-
-  it("picks the direction turn closest to the start", () => {
-    const config = objectOf("multiPointSwing");
-    const target = plateNormalOf(input(config, { v2: 10, v3: 10 }));
-    const solved = solveSwingTowards(input(config, { v2: 10, v3: 700 }), target);
-    expect(solved.v3).toBeCloseTo(730, 2);
+  it("points the direction where the plate leans", () => {
+    const at = input(objectOf("multiPointSwing", { betaInit: 30 }), { v2: 15, v3: -60 });
+    const axis = restNormalOf(at);
+    const lean = normalizeVec(rejectVec(plateNormalOf(at), axis))!;
+    expect(angleBetween(headingDirectionOf(at, axis), lean)).toBeLessThan(1e-6);
   });
 });
 

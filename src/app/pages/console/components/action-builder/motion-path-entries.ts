@@ -128,7 +128,7 @@ export type MotionPathBuildInput = {
   cursorMs: number;
   /** 要画轨迹的物体 */
   objectIds: readonly number[];
-  /** 选中的物体：画得显眼，画前后位姿的线框 */
+  /** 选中的物体：画得显眼，轨迹线能点 */
   selectedObjectIds: ReadonlySet<number>;
   selectedBlockIds: ReadonlySet<string>;
   invalid: Pick<InvalidTimelineTargets, "blockIds" | "segmentKeys">;
@@ -144,8 +144,7 @@ const issueSpansOf = (input: MotionPathBuildInput, objectId: number): MotionPath
 
 /**
  * 3D 轨迹要画的东西：轨迹、位姿点（选中的高亮、有错的标红）、游标亮点、有问题的段；
- * 选中的物体加上一个 / 下一个位姿的线框；游标正在有问题的段里时物体标红
- * （没画轨迹的物体也标，只画红框）。
+ * 游标正在有问题的段里时物体标红（没画轨迹的物体也标，只画红框）。
  */
 export const buildMotionPathEntries = (input: MotionPathBuildInput): MotionPathEntry[] => {
   const shown = new Set(input.objectIds);
@@ -180,12 +179,9 @@ export const buildMotionPathEntries = (input: MotionPathBuildInput): MotionPathE
         selected: point.sourceBlockId !== null && input.selectedBlockIds.has(point.sourceBlockId),
         invalid: point.sourceBlockId !== null && input.invalid.blockIds.has(point.sourceBlockId),
       }));
-    const selected = input.selectedObjectIds.has(objectId);
-    const before = keyframes.filter((keyframe) => keyframe.atMs < input.cursorMs).at(-1);
-    const after = keyframes.find((keyframe) => keyframe.atMs > input.cursorMs);
     entries.push({
       objectId: input.engineIdOf(objectId),
-      selected,
+      selected: input.selectedObjectIds.has(objectId),
       samples: (input.samples.get(objectId) ?? []).map((sample) => ({
         atMs: sample.atMs,
         values: pin(objectId, sample.pose),
@@ -193,8 +189,6 @@ export const buildMotionPathEntries = (input: MotionPathBuildInput): MotionPathE
       keyframes,
       cursor,
       issues,
-      prev: selected && before ? { atMs: before.atMs, values: before.values } : null,
-      next: selected && after ? { atMs: after.atMs, values: after.values } : null,
       issueAtCursor,
     });
   }

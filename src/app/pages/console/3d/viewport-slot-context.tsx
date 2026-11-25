@@ -39,6 +39,7 @@ import {
 import { DeleteImpactDialog } from "../components/right-sidebar/delete-impact-dialog";
 import { BoxSelectOverlay } from "./overlays/BoxSelectOverlay";
 import { SceneBuildContextMenuContent } from "./overlays/SceneBuildContextMenu";
+import { SequenceContextMenu } from "./overlays/SequenceContextMenu";
 import { MotorTelemetryOverlay } from "../components/build-debug/motor-telemetry-overlay";
 import { ViewportOverlay } from "./overlays/ViewportOverlay";
 import { GoReadyOverlay } from "./overlays/GoReadyOverlay";
@@ -137,6 +138,8 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
   const [contextMenuOpen, setContextMenuOpen] = useState(false);
   const [contextMenuPoint, setContextMenuPoint] = useState({ x: 0, y: 0 });
   const [contextMenuObjectId, setContextMenuObjectId] = useState<string | null>(null);
+  /** 右键所在的那一格（动作页「看全」在这一格里框） */
+  const [contextMenuCellId, setContextMenuCellId] = useState<ViewportCellId | null>(null);
   const appliedViewProjectIdRef = useRef<string | null>(null);
 
   const handleContextMenuOpenChange = useCallback(
@@ -276,6 +279,19 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
         return;
       }
 
+      // 动作页：主键盘数字 1/2/3 换 3D 手柄的虚轴（小键盘数字留给视角）；手柄里没有这根轴时不拦
+      if (
+        sequencesNav &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        !event.shiftKey &&
+        /^Digit[123]$/.test(event.code)
+      ) {
+        if (engine.setPoseHandleAxis(`v${event.code.slice(5)}` as "v1" | "v2" | "v3")) event.preventDefault();
+        return;
+      }
+
       // 其余编辑快捷键仅在搭建模式且画布聚焦时生效，避免与树/表单快捷键冲突。
       if (!buildMode) return;
       if (document.activeElement !== el) return;
@@ -322,13 +338,15 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [buildMode, copySelection, pasteClipboard, requestDeleteSelection, engine]);
+  }, [buildMode, sequencesNav, copySelection, pasteClipboard, requestDeleteSelection, engine]);
 
+  // 换页时收起右键菜单（搭建页、动作页各有各的菜单）
+  const menuNavRef = useRef(activeNav);
   useEffect(() => {
-    if (!buildMode && contextMenuOpen) {
+    if (contextMenuOpen && menuNavRef.current !== activeNav) {
       handleContextMenuOpenChange(false);
     }
-  }, [buildMode, contextMenuOpen, handleContextMenuOpenChange]);
+  }, [activeNav, contextMenuOpen, handleContextMenuOpenChange]);
 
   // Safety: never leave orbit disabled after unmount / menu teardown.
   useEffect(() => {
@@ -616,14 +634,48 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
     engine.doubleClickAt(event.nativeEvent.offsetX, event.nativeEvent.offsetY);
   };
 
+  /**
+   * 弹出右键菜单。Linux 上按下右键就发 contextmenu：这时立刻弹，松开右键那一下会落在刚弹出（还在滑入）的菜单上
+   * 把它关掉，所以等右键松开再弹；Windows / macOS 松开才发 contextmenu，直接弹。
+   */
+  const openContextMenuAfterRelease = (event: ReactMouseEvent<HTMLCanvasElement>) => {
+    if ((event.buttons & 2) === 0) {
+      handleContextMenuOpenChange(true);
+      return;
+    }
+    const open = () => {
+      window.removeEventListener("pointerup", open, true);
+      window.removeEventListener("pointercancel", open, true);
+      window.setTimeout(() => handleContextMenuOpenChange(true), 0);
+    };
+    window.addEventListener("pointerup", open, true);
+    window.addEventListener("pointercancel", open, true);
+  };
+
   const handleCanvasContextMenu = (event: ReactMouseEvent<HTMLCanvasElement>) => {
     event.preventDefault();
     event.stopPropagation();
+    const offsetX = event.nativeEvent.offsetX;
+    const offsetY = event.nativeEvent.offsetY;
+    if (sequencesNav) {
+      // 动作页：右键没选中的物体时先像左键一样选它（选它游标处的位姿）；右键选中的物体保留多选（队形工具用）
+      if (engine.isPoseHandleDragging()) return;
+      const target = engine.peekPickAt(offsetX, offsetY);
+      const objectId =
+        target?.kind === "object" ? target.id : target?.kind === "hoist-axis" ? target.objectId : null;
+      if (objectId && !engine.getSelection().includes(objectId)) {
+        engine.pickAt(offsetX, offsetY, "single", false);
+      }
+      setContextMenuObjectId(objectId);
+      setContextMenuCellId(engine.getCellIdAt(offsetX, offsetY));
+      setContextMenuPoint({ x: event.clientX, y: event.clientY });
+      menuNavRef.current = activeNav;
+      openContextMenuAfterRelease(event);
+      return;
+    }
     if (!buildMode) {
       return;
     }
-    const offsetX = event.nativeEvent.offsetX;
-    const offsetY = event.nativeEvent.offsetY;
     const objectId = resolveContextMenuObjectId(engine.peekPickAt(offsetX, offsetY));
     setContextMenuObjectId(objectId);
     if (objectId && !engine.getSelection().includes(objectId)) {
@@ -634,7 +686,8 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
       ? { x: mToMm(ground.x), z: mToMm(ground.z) }
       : null;
     setContextMenuPoint({ x: event.clientX, y: event.clientY });
-    handleContextMenuOpenChange(true);
+    menuNavRef.current = activeNav;
+    openContextMenuAfterRelease(event);
   };
 
   return (
@@ -696,6 +749,15 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
         </>
       ) : null}
       {axisTypeConfirmDialog}
+      {sequencesNav ? (
+        <SequenceContextMenu
+          open={contextMenuOpen}
+          onOpenChange={handleContextMenuOpenChange}
+          point={contextMenuPoint}
+          contextObjectId={contextMenuObjectId}
+          cellId={contextMenuCellId}
+        />
+      ) : null}
       <BoxSelectOverlay rect={boxRect} />
       <MotorTelemetryOverlay />
       <ViewportOverlay />

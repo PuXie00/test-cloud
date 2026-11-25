@@ -15,7 +15,8 @@ import type { MotionPathEntry, MotionPathIssueSpan, MotionPathSample } from "./m
 /** 旋转类不画轨迹线，在旋转环上画各位姿的刻点 */
 const RING_CONTROL_TYPES = new Set(["singlePointRotation", "continuousRotation"]);
 
-export type MotionPathOutlineKind = "prev" | "next" | "issue";
+/** 游标正在有问题的那段里：物体套红框 */
+export type MotionPathOutlineKind = "issue";
 
 /** 一台物体整条动作在世界里的样子 */
 export type MotionPathWorld = {
@@ -68,6 +69,36 @@ export const BOX_EDGES: ReadonlyArray<readonly [number, number]> = (() => {
   return edges;
 })();
 
+/** 世界包围盒（米） */
+export type MotionRangeBounds = { min: Vec3; max: Vec3 };
+
+/** 一台物体按这些取样的姿态扫过的范围：每个取样时尺寸盒 8 个角的包围盒 */
+export const motionRangeOf = (
+  samples: readonly MotionPathSample[],
+  config: SceneObjectConfig,
+  parentFrameAt: ParentFrameAt,
+): MotionRangeBounds | null => {
+  if (!config.kinematics || samples.length === 0) return null;
+  const min = { x: Infinity, y: Infinity, z: Infinity };
+  const max = { x: -Infinity, y: -Infinity, z: -Infinity };
+  for (const sample of samples) {
+    const corners = boxCornersOf({
+      config,
+      values: toFullAxisValues(sample.values),
+      parentWorld: parentFrameAt(sample.atMs),
+    });
+    for (const corner of corners) {
+      min.x = Math.min(min.x, corner.x);
+      min.y = Math.min(min.y, corner.y);
+      min.z = Math.min(min.z, corner.z);
+      max.x = Math.max(max.x, corner.x);
+      max.y = Math.max(max.y, corner.y);
+      max.z = Math.max(max.z, corner.z);
+    }
+  }
+  return Number.isFinite(min.x) ? { min, max } : null;
+};
+
 export const motionPathWorld = (
   entry: MotionPathEntry,
   config: SceneObjectConfig,
@@ -96,8 +127,6 @@ export const motionPathWorld = (
   };
 
   const outlines: MotionPathWorld["outlines"] = [];
-  if (entry.prev) outlines.push({ kind: "prev", corners: boxCornersOf(inputAt(entry.prev)) });
-  if (entry.next) outlines.push({ kind: "next", corners: boxCornersOf(inputAt(entry.next)) });
   if (entry.issueAtCursor && cursorInput) outlines.push({ kind: "issue", corners: boxCornersOf(cursorInput) });
 
   return {

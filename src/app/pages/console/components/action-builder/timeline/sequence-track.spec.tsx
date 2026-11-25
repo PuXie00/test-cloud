@@ -94,6 +94,7 @@ describe("sequence track", () => {
     expect(glyph.className.split(/\s+/)).toContain("-translate-x-1/2");
   });
 
+  // 选中 / 问题的区分靠整块填充色（不再用左边框）
   it("renders a shorter motion band with quiet fill and primary selection", () => {
     const { rerender } = render(<TimelineEditor {...createTimelineProps(sequence)} />);
     const idle = screen.getByRole("button", { name: /运动区间.*7/ });
@@ -106,9 +107,10 @@ describe("sequence track", () => {
       />,
     );
     const selected = screen.getByRole("button", { name: /运动区间.*7/ });
+    expect(selected.getAttribute("aria-pressed")).toBe("true");
     expect(selected.className.split(/\s+/)).toContain("h-5");
-    expect(selected.className.split(/\s+/)).toContain("bg-primary/20");
-    expect(selected.className.split(/\s+/)).toContain("border-l-primary");
+    expect(selected.className.split(/\s+/)).toContain("bg-primary/75");
+    expect(selected.className.split(/\s+/)).not.toContain("bg-secondary/15");
   });
 
   it("paints an invalid motion segment with warning fill, not destructive", () => {
@@ -125,11 +127,11 @@ describe("sequence track", () => {
     );
     const band = screen.getByRole("button", { name: /运动区间.*7/ });
     expect(band.getAttribute("data-invalid")).toBe("true");
-    expect(band.className.split(/\s+/)).toContain("bg-warning/20");
-    expect(band.className.split(/\s+/)).not.toContain("bg-destructive/20");
+    expect(band.className.split(/\s+/)).toContain("bg-warning/75");
+    expect(band.className).not.toMatch(/destructive/);
   });
 
-  it("keeps primary left border when an invalid segment is selected", () => {
+  it("keeps the warning fill on a selected invalid segment and shows selection on its end poses", () => {
     render(
       <TimelineEditor
         {...createTimelineProps(sequence)}
@@ -143,11 +145,16 @@ describe("sequence track", () => {
       />,
     );
     const selected = screen.getByRole("button", { name: /运动区间.*7/ });
-    expect(selected.className.split(/\s+/)).toContain("bg-warning/20");
-    expect(selected.className.split(/\s+/)).toContain("border-l-primary");
+    expect(selected.getAttribute("aria-pressed")).toBe("true");
+    expect(selected.className.split(/\s+/)).toContain("bg-warning/75");
+    expect(selected.className.split(/\s+/)).not.toContain("bg-primary/75");
+    for (const name of [/位姿 first/, /位姿 later/]) {
+      const glyph = screen.getByRole("button", { name }).querySelector("[aria-hidden]") as HTMLElement;
+      expect(glyph.className.split(/\s+/)).toContain("bg-primary");
+    }
   });
 
-  it("paints an invalid pose with warning background", () => {
+  it("paints an invalid pose glyph in warning, not destructive", () => {
     render(
       <TimelineEditor
         {...createTimelineProps(sequence)}
@@ -161,7 +168,9 @@ describe("sequence track", () => {
     );
     const pose = screen.getByRole("button", { name: /位姿 first/ });
     expect(pose.getAttribute("data-invalid")).toBe("true");
-    expect(pose.className.split(/\s+/)).toContain("bg-warning/20");
+    const glyph = pose.querySelector("[aria-hidden]") as HTMLElement;
+    expect(glyph.className.split(/\s+/)).toContain("bg-warning");
+    expect(glyph.className).not.toMatch(/destructive/);
   });
 
   it("selects a pose keyframe as a block", () => {

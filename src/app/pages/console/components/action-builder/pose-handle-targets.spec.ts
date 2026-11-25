@@ -119,11 +119,12 @@ describe("resolvePoseHandleEditTargets", () => {
     );
   });
 
-  it("gives a multi-point swing its lift and stick", () => {
+  it("gives a multi-point swing its lift, swing X and heading handles", () => {
     const sequence = sequenceOf([]);
     expect(resolvePoseHandleEditTargets({ ...base, sequence, selectedObjectIds: [3] })[0]?.kinds).toEqual([
       "lift",
-      "swing",
+      "tiltX",
+      "heading",
     ]);
   });
 });

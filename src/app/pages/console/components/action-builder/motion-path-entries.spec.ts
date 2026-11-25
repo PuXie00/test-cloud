@@ -71,7 +71,7 @@ describe("motionPathObjectIds", () => {
 });
 
 describe("buildMotionPathEntries", () => {
-  it("draws the selected object's path, its visible poses and its neighbours", () => {
+  it("draws the selected object's path and its visible poses", () => {
     const [entry] = buildMotionPathEntries(input());
     expect(entry).toMatchObject({ objectId: "e1", selected: true, issueAtCursor: false });
     expect(entry!.samples).toHaveLength(6);
@@ -81,20 +81,14 @@ describe("buildMotionPathEntries", () => {
       ["a3", false, true],
     ]);
     expect(entry!.cursor).toEqual({ atMs: 2000, values: pose(200) });
-    expect(entry!.prev).toEqual({ atMs: 1000, values: pose(0) });
-    expect(entry!.next).toEqual({ atMs: 3000, values: pose(500) });
+    // 不画前后位姿的线框
+    expect(entry).not.toHaveProperty("prev");
+    expect(entry).not.toHaveProperty("next");
   });
 
-  it("uses the poses on either side when the cursor sits on one", () => {
-    const [entry] = buildMotionPathEntries(input({ cursorMs: 3000 }));
-    expect(entry!.prev?.atMs).toBe(1000);
-    expect(entry!.next?.atMs).toBe(5000);
-  });
-
-  it("only outlines the neighbours of selected objects", () => {
+  it("draws unselected objects quietly", () => {
     const [entry] = buildMotionPathEntries(input({ selectedObjectIds: new Set() }));
-    expect(entry!.prev).toBeNull();
-    expect(entry!.next).toBeNull();
+    expect(entry!.selected).toBe(false);
   });
 
   it("marks problem segments and flags the object while the cursor is inside one", () => {

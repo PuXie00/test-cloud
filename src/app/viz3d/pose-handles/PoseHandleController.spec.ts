@@ -11,6 +11,7 @@ const configs = new Map<string, SceneObjectConfig>([
   ["a", testObject("singlePointMove", { runDirection: 2 }, { id: "a" })],
   ["b", testObject("singlePointMove", {}, { id: "b", position: { x: 3, y: 3, z: 0 } })],
   ["r", testObject("singlePointRotation", {}, { id: "r", position: { x: -3, y: 3, z: 0 } })],
+  ["t", testObject("dualTiltFourPointSwing", {}, { id: "t", position: { x: 2, y: 3, z: 0 } })],
 ]);
 
 const makeHost = () => {
@@ -30,12 +31,18 @@ const makeHost = () => {
   return { host, projector };
 };
 
+const KINDS: Record<string, PoseHandleTarget["kinds"]> = { r: ["yaw"], t: ["lift", "tiltX", "tiltY"] };
+
 const target = (objectId: string, overrides: Partial<PoseHandleTarget> = {}): PoseHandleTarget => ({
   objectId,
-  kinds: objectId === "r" ? ["yaw"] : ["lift"],
+  kinds: KINDS[objectId] ?? ["lift"],
   values: { v1: 0, v2: 0, v3: 0 },
+  axisLabels: objectId === "t" ? { v1: "升降", v2: "摆动 X", v3: "摆动 Y" } : undefined,
   ...overrides,
 });
+
+const handleKeys = (slot: HTMLElement) =>
+  [...slot.querySelectorAll("[data-handle]")].map((node) => (node as SVGGElement).dataset.handle);
 
 describe("PoseHandleController", () => {
   let slot: HTMLDivElement;
@@ -60,12 +67,53 @@ describe("PoseHandleController", () => {
     return { host, controller, arrow };
   };
 
-  it("draws a handle per target and kind", () => {
-    setup([target("a"), target("r")]);
-    expect([...slot.querySelectorAll("[data-handle]")].map((node) => (node as SVGGElement).dataset.handle)).toEqual([
-      "a:lift",
-      "r:yaw",
+  it("draws one handle per object", () => {
+    setup([target("a"), target("r"), target("t")]);
+    expect(handleKeys(slot)).toEqual(["a:lift", "r:yaw", "t:lift"]);
+  });
+
+  it("switches every object to the chosen axis, keeping the first handle where it has none", () => {
+    const { controller } = setup([target("a"), target("t")]);
+    expect(controller.setActiveAxis("v3")).toBe(true);
+    controller.render();
+    expect(handleKeys(slot)).toEqual(["a:lift", "t:tiltY"]);
+    expect(controller.getActiveAxis()).toBe("v3");
+  });
+
+  it("won't switch to an axis no handle has", () => {
+    const { controller } = setup([target("a"), target("r")]);
+    expect(controller.setActiveAxis("v2")).toBe(false);
+    expect(controller.getActiveAxis()).toBe("v1");
+  });
+
+  it("lists the axes beside the handle and switches on click", () => {
+    const { controller } = setup([target("a"), target("t")]);
+    const chips = [...slot.querySelectorAll<HTMLDivElement>('[data-testid="pose-handle-switch"]')];
+    expect(chips.map((chip) => [chip.textContent, chip.dataset.active])).toEqual([
+      ["1 升降", "true"],
+      ["2 摆动 X", "false"],
+      ["3 摆动 Y", "false"],
     ]);
+    // 切换条在画布坐标里：格子的 top 是 -400
+    const chip = chips[1]!;
+    const point = {
+      x: parseFloat(chip.style.left) + parseFloat(chip.style.width) / 2,
+      y: parseFloat(chip.style.top) - 400 + parseFloat(chip.style.height) / 2,
+    };
+    expect(controller.pointerDown(point, 1)).toBe(true);
+    controller.pointerUp(1);
+    controller.render();
+    expect(handleKeys(slot)).toEqual(["a:lift", "t:tiltX"]);
+  });
+
+  it("drags only the objects showing the same handle", () => {
+    const { host, controller, arrow } = setup([target("a"), target("t")]);
+    controller.setActiveAxis("v2");
+    controller.render();
+    controller.pointerDown(arrow, 1);
+    controller.pointerMove({ x: arrow.x, y: arrow.y - 30 }, 1, false);
+    expect(host.onDragStart).toHaveBeenCalledWith({ kind: "lift", objectId: "a", objectIds: ["a"] });
+    controller.pointerUp(1);
   });
 
   it("drags only after the pointer moves, and moves the same kind of handles together", () => {

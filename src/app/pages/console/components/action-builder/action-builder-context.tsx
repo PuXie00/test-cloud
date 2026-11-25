@@ -777,8 +777,11 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     setSequenceMissingHint(false);
   }, []);
 
-  const handleCursorChange = useCallback((ms: number) => {
+  // 从时间轴以外跳游标（3D 里）时让时间轴把游标移进视野：每次要求加一
+  const [cursorRevealRequestId, setCursorRevealRequestId] = useState(0);
+  const handleCursorChange = useCallback((ms: number, options?: { reveal?: boolean }) => {
     setCursorMs(clampCursorMs(ms));
+    if (options?.reveal) setCursorRevealRequestId((id) => id + 1);
   }, []);
 
   const handlePlaybackCursorChange = useCallback((ms: number) => {
@@ -1472,6 +1475,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         return;
       }
       setCursorMs(clampCursorMs(block.atMs));
+      setCursorRevealRequestId((id) => id + 1);
       setSelection({ kind: "block", blockId: block.id });
       setActiveRightTab((tab) => (tab === "manual" ? tab : "selection"));
       setSequenceMissingHint(false);
@@ -2417,6 +2421,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       selectedBlockId,
       selectedObjectIds,
       cursorMs,
+      cursorRevealRequestId,
       activeRightTab,
       selectedProgramNodeId,
       contextSelection,
@@ -2530,6 +2535,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       selectedBlockId,
       selectedObjectIds,
       cursorMs,
+      cursorRevealRequestId,
       activeRightTab,
       liveMode,
       selectedProgramNodeId,

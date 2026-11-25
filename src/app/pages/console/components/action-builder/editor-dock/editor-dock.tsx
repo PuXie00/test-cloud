@@ -75,6 +75,7 @@ const SequenceEditor = () => {
     selection,
     timelineObjects,
     cursorMs,
+    cursorRevealRequestId,
     timelinePxPerSecond,
     handleSelectionChange,
     handleObjectsFollow,
@@ -593,7 +594,7 @@ const SequenceEditor = () => {
             }
             snapEnabled={snapEnabled}
             fitRequestId={fitRequestId}
-            revealCursorRequestId={revealCursorRequestId}
+            revealCursorRequestId={revealCursorRequestId + (cursorRevealRequestId ?? 0)}
             onMarkersShift={canEdit ? handleShiftMarkers : undefined}
             onMarkersShiftEnd={canEdit ? handleShiftMarkersEnd : undefined}
             onMarkerRename={canEdit ? (marker) => setRenamingMarkerId(marker.id) : undefined}

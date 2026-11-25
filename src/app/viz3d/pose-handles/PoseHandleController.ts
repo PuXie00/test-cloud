@@ -1,9 +1,15 @@
 import type { Matrix } from "@babylonjs/core/Maths/math.vector";
 import { attachmentFrameMatrix } from "../state/preview-path-points";
 import type { SceneObjectConfig, SlotRect, ViewportCellId, VirtualAxisId } from "../types";
-import { motionPathWorld, type MotionPathWorld, type ParentFrameAt } from "./motion-path-geometry";
+import {
+  motionPathWorld,
+  motionRangeOf,
+  type MotionPathWorld,
+  type MotionRangeBounds,
+  type ParentFrameAt,
+} from "./motion-path-geometry";
 import { hitTestMotionPaths, layoutMotionPath, type MotionPathHit, type MotionPathLayout } from "./motion-path-layout";
-import type { MotionPathEntry, MotionPathPickEvent } from "./motion-path-types";
+import type { MotionPathEntry, MotionPathPickEvent, MotionPathSample } from "./motion-path-types";
 import type { MotionPathOverlay } from "./MotionPathOverlay";
 import {
   createPoseHandleDragSession,
@@ -12,20 +18,39 @@ import {
   type PoseHandleDragSession,
   type SnapCandidate,
 } from "./pose-handle-drag";
-import { toFullAxisValues, type PoseKinematics } from "./pose-handle-kinematics";
 import {
+  localTopCenter,
+  parentUpOf,
+  poseWorldBox,
+  toFullAxisValues,
+  worldPointOf,
+  type PoseKinematics,
+} from "./pose-handle-kinematics";
+import {
+  edgeHeightOf,
+  formationSpread,
+  solveFormation,
+  type FormationEdge,
+  type FormationTarget,
+  type PoseFormationBlocked,
+  type PoseFormationEvent,
+  type PoseFormationInfo,
+  type PoseFormationRequest,
+} from "./pose-formation";
+import {
+  handleSpotOf,
   hitTestHandles,
   layoutPoseHandle,
-  liftGapAmong,
   poseHandleKey,
   type CellProjector,
   type HandleLayout,
 } from "./pose-handle-layout";
 import { addVec, crossVec, distancePt, scaleVec, type Pt, type Ray } from "./pose-handle-math";
 import { poseHandleModel, type PoseHandleModel } from "./pose-handle-model";
-import type { OverlayCell, OverlayDrag, OverlayHandle, PoseHandleOverlay } from "./PoseHandleOverlay";
+import type { OverlayCell, OverlayDrag, OverlayHandle, OverlaySwitchChip, PoseHandleOverlay } from "./PoseHandleOverlay";
 import {
   POSE_HANDLE_AXES,
+  poseHandleAxisOf,
   type PoseHandleBlockedEvent,
   type PoseHandleDragEndEvent,
   type PoseHandleDragEvent,
@@ -67,6 +92,19 @@ export const POSE_HANDLE_DRAG_START_PX = 3;
 const PATH_PICK_SLOP_PX = 4;
 
 const formatSeconds = (ms: number): string => `${(ms / 1000).toFixed(1)} s`;
+
+/** 手柄旁的虚轴切换：一格一格竖着排在手柄左边 */
+const SWITCH_CHIP_WIDTH_PX = 58;
+const SWITCH_CHIP_HEIGHT_PX = 18;
+const SWITCH_CHIP_GAP_PX = 3;
+/** 切换条离手柄中心多远（让开环、弧） */
+const SWITCH_OFFSET_PX = 36;
+
+const AXIS_NUMBER: Record<VirtualAxisId, number> = { v1: 1, v2: 2, v3: 3 };
+
+/** 这台物体有哪几根虚轴的手柄（按 1、2、3） */
+const axesOf = (target: PoseHandleTarget): VirtualAxisId[] =>
+  [...new Set(target.kinds.map(poseHandleAxisOf))].sort((left, right) => AXIS_NUMBER[left] - AXIS_NUMBER[right]);
 
 type PendingPick = { pointerId: number; start: Pt; hit: MotionPathHit };
 
@@ -114,6 +152,10 @@ export class PoseHandleController {
   private pendingPick: PendingPick | null = null;
   private pathHover: { cellId: ViewportCellId; hit: MotionPathHit } | null = null;
   private cursor: string | null = null;
+  /** 现在出哪根虚轴的手柄：每台只出一个，没有这根轴的出它的第一个 */
+  private activeAxis: VirtualAxisId = "v1";
+  private readonly switchers = new Map<ViewportCellId, OverlaySwitchChip[]>();
+  private switchHover: { cellId: ViewportCellId; axis: VirtualAxisId } | null = null;
   private readonly handleKeyDown = (event: KeyboardEvent) => {
     if (event.key !== "Escape" || !this.drag) return;
     event.preventDefault();
@@ -150,6 +192,20 @@ export class PoseHandleController {
     return this.drag !== null;
   }
 
+  getActiveAxis(): VirtualAxisId {
+    return this.activeAxis;
+  }
+
+  /** 切到这根虚轴的手柄；拖动中或手柄里都没有这根轴时不切，返回 false */
+  setActiveAxis(axis: VirtualAxisId): boolean {
+    if (this.drag) return false;
+    if (!this.targets.some((target) => target.kinds.some((kind) => poseHandleAxisOf(kind) === axis))) return false;
+    this.activeAxis = axis;
+    this.pending = null;
+    this.setHovered(null);
+    return true;
+  }
+
   /** 每帧调用 */
   render(): void {
     this.layouts.clear();
@@ -159,7 +215,9 @@ export class PoseHandleController {
       // 别的页面每帧都走这里：没画过就什么都不做
       if (this.shown) {
         const cells = this.host.getCells();
-        this.overlay?.render(cells.map((cell) => ({ id: cell.id, rect: cell.rect, handles: [], drag: null })));
+        this.overlay?.render(
+          cells.map((cell) => ({ id: cell.id, rect: cell.rect, handles: [], drag: null, switcher: [] })),
+        );
         this.pathOverlay?.render(cells.map((cell) => ({ id: cell.id, rect: cell.rect, paths: [], hover: null })));
       }
       this.shown = false;
@@ -168,20 +226,21 @@ export class PoseHandleController {
     const cells = this.host.getCells();
     this.renderPaths(cells);
     const models = this.models();
+    this.switchers.clear();
     const overlayCells: OverlayCell[] = cells.map((cell) => {
       const layouts = models.flatMap(({ target, model }) => {
-        const siblings = models.filter((entry) => entry.target === target).map((entry) => entry.model);
-        const layout = layoutPoseHandle(target.objectId, model, cell.projector, {
-          liftGapPx: model.kind === "lift" ? liftGapAmong(siblings, cell.projector) : undefined,
-        });
+        const layout = layoutPoseHandle(target.objectId, model, cell.projector);
         return layout ? [layout] : [];
       });
       this.layouts.set(cell.id, layouts);
+      const switcher = this.layoutSwitcher(cell);
+      this.switchers.set(cell.id, switcher);
       return {
         id: cell.id,
         rect: cell.rect,
         handles: layouts.map((layout) => this.overlayHandle(layout)),
         drag: this.overlayDrag(cell, layouts),
+        switcher,
       };
     });
     this.overlay?.render(overlayCells);
@@ -196,6 +255,12 @@ export class PoseHandleController {
     if (this.drag) return false;
     const cell = this.host.getCells().find((entry) => rectContains(entry.rect, point));
     if (!cell) return false;
+    const chip = this.switchChipAt(cell.id, point);
+    if (chip) {
+      // 手柄旁的切换：换成这根虚轴的手柄
+      this.setActiveAxis(chip.axis);
+      return true;
+    }
     const hit = hitTestHandles(this.layouts.get(cell.id) ?? [], point);
     const target = hit ? this.targetOf(hit.layout.objectId) : undefined;
     if (hit && target) {
@@ -271,11 +336,14 @@ export class PoseHandleController {
   hover(point: Pt | null): void {
     if (this.drag) return;
     const cell = point ? this.host.getCells().find((entry) => rectContains(entry.rect, point)) : undefined;
-    const hit = cell && point ? hitTestHandles(this.layouts.get(cell.id) ?? [], point) : null;
+    const chip = cell && point ? this.switchChipAt(cell.id, point) : null;
+    this.switchHover = chip && cell ? { cellId: cell.id, axis: chip.axis } : null;
+    const hit = cell && point && !chip ? hitTestHandles(this.layouts.get(cell.id) ?? [], point) : null;
     const target = hit ? this.targetOf(hit.layout.objectId) : undefined;
     this.setHovered(hit && target ? { key: hit.layout.key, blocked: Boolean(target.blockedReason) } : null);
     // 手柄优先；不在手柄上时看轨迹
-    const pathHit = !this.hovered && cell && point ? hitTestMotionPaths(this.pathLayouts.get(cell.id) ?? [], point) : null;
+    const pathHit =
+      !this.hovered && !chip && cell && point ? hitTestMotionPaths(this.pathLayouts.get(cell.id) ?? [], point) : null;
     this.pathHover = pathHit && cell ? { cellId: cell.id, hit: pathHit } : null;
     this.syncCursor();
   }
@@ -313,28 +381,39 @@ export class PoseHandleController {
     );
   }
 
-  /** 挂载子物体的轨迹叠加父物体：父物体也有轨迹时按它那一刻的姿态，否则按它现在的样子 */
+  /**
+   * 挂载子物体叠加父物体的姿态：父物体也有取样时按它那一刻的样子，否则按它现在的样子
+   * （samples 按物体、时刻查虚轴值）
+   */
+  private parentFramesOf(
+    objectId: string,
+    samples: ReadonlyMap<string, ReadonlyMap<number, MotionPathSample["values"]>>,
+    depth = 0,
+  ): ParentFrameAt {
+    const parentId = this.host.getMountParentId?.(objectId) ?? null;
+    if (!parentId) return () => null;
+    const parentConfig = this.host.getConfig(parentId);
+    const parentSamples = samples.get(parentId);
+    const above = depth < 8 ? this.parentFramesOf(parentId, samples, depth + 1) : () => null;
+    let current: Matrix | null | undefined;
+    return (atMs) => {
+      const values = atMs === null ? undefined : parentSamples?.get(atMs);
+      if (!values || !parentConfig) {
+        if (current === undefined) current = this.host.getParentWorld(objectId, false);
+        return current;
+      }
+      const frame = attachmentFrameMatrix(parentConfig, values);
+      const grand = above(atMs);
+      return grand ? frame.multiply(grand) : frame;
+    };
+  }
+
+  /** 轨迹的世界形状：挂载子物体的轨迹叠加父物体 */
   private resolvePathWorlds(): MotionPathWorld[] {
     if (this.pathWorlds) return this.pathWorlds;
-    const byId = new Map(this.paths.map((entry) => [entry.objectId, entry]));
-    const parentFrames = (objectId: string, depth: number): ParentFrameAt => {
-      const parentId = this.host.getMountParentId?.(objectId) ?? null;
-      if (!parentId) return () => null;
-      const parentConfig = this.host.getConfig(parentId);
-      const parentSamples = new Map((byId.get(parentId)?.samples ?? []).map((sample) => [sample.atMs, sample.values]));
-      const above = depth < 8 ? parentFrames(parentId, depth + 1) : () => null;
-      let current: Matrix | null | undefined;
-      return (atMs) => {
-        const values = atMs === null ? undefined : parentSamples.get(atMs);
-        if (!values || !parentConfig) {
-          if (current === undefined) current = this.host.getParentWorld(objectId, false);
-          return current;
-        }
-        const frame = attachmentFrameMatrix(parentConfig, values);
-        const grand = above(atMs);
-        return grand ? frame.multiply(grand) : frame;
-      };
-    };
+    const samples = new Map(
+      this.paths.map((entry) => [entry.objectId, new Map(entry.samples.map((sample) => [sample.atMs, sample.values]))]),
+    );
     let complete = true;
     const worlds = this.paths.flatMap((entry) => {
       const config = this.host.getConfig(entry.objectId);
@@ -342,11 +421,114 @@ export class PoseHandleController {
         complete = false;
         return [];
       }
-      const world = motionPathWorld(entry, config, parentFrames(entry.objectId, 0));
+      const world = motionPathWorld(entry, config, this.parentFramesOf(entry.objectId, samples));
       return world ? [world] : [];
     });
     if (complete) this.pathWorlds = worlds;
     return worlds;
+  }
+
+  /**
+   * 这些物体整段动作扫过的范围（每个取样时尺寸盒的角，世界坐标、米）：「看全这台的动作」用。
+   * samples 里也可以放父物体的取样，挂载子物体按父物体那一刻的姿态叠加。
+   */
+  motionRangeBounds(
+    objectIds: readonly string[],
+    samples: ReadonlyMap<string, readonly MotionPathSample[]>,
+  ): MotionRangeBounds | null {
+    const lookup = new Map(
+      [...samples].map(([objectId, list]) => [objectId, new Map(list.map((sample) => [sample.atMs, sample.values]))]),
+    );
+    let bounds: MotionRangeBounds | null = null;
+    for (const objectId of objectIds) {
+      const config = this.host.getConfig(objectId);
+      const list = samples.get(objectId);
+      if (!config || !list) continue;
+      const range = motionRangeOf(list, config, this.parentFramesOf(objectId, lookup));
+      if (!range) continue;
+      bounds = bounds
+        ? {
+            min: {
+              x: Math.min(bounds.min.x, range.min.x),
+              y: Math.min(bounds.min.y, range.min.y),
+              z: Math.min(bounds.min.z, range.min.z),
+            },
+            max: {
+              x: Math.max(bounds.max.x, range.max.x),
+              y: Math.max(bounds.max.y, range.max.y),
+              z: Math.max(bounds.max.z, range.max.z),
+            },
+          }
+        : range;
+    }
+    return bounds;
+  }
+
+  /** 队形：能升降、拖得了的手柄物体（按选中顺序），和拖不了的及原因 */
+  private formationMembers(): { members: DragMember[]; blocked: PoseFormationBlocked[] } {
+    const members: DragMember[] = [];
+    const blocked: PoseFormationBlocked[] = [];
+    for (const target of this.targets) {
+      if (!target.kinds.includes("lift")) continue;
+      if (target.blockedReason) {
+        blocked.push({ objectId: target.objectId, reason: target.blockedReason });
+        continue;
+      }
+      const input = this.kinematicsOf(target);
+      if (input) members.push({ objectId: target.objectId, input, ranges: target.ranges });
+    }
+    return { members, blocked };
+  }
+
+  /**
+   * 对齐的参照高度（米）：参照有手柄时按它手柄的值（3D 显示的那一刻）算尺寸盒，
+   * 否则（静止道具等）按 3D 里显示的包围盒；跟着要动的物体一起动的参照不算
+   */
+  private referenceHeight(referenceId: string, edge: FormationEdge, members: readonly DragMember[]): number | null {
+    const target = this.targetOf(referenceId);
+    const input = target ? this.kinematicsOf(target) : null;
+    if (input) return edgeHeightOf(poseWorldBox(input), edge);
+    const moving = new Set(members.map((member) => member.objectId));
+    const candidate = this.host.getSnapCandidates(moving).find((entry) => entry.objectId === referenceId);
+    if (!candidate) return null;
+    return edge === "bottom" ? candidate.bottom : edge === "top" ? candidate.top : candidate.center.y;
+  }
+
+  /** 右键菜单里队形工具能不能用：参与的物体、高低差、对齐参照 */
+  formationInfo(referenceId: string | null): PoseFormationInfo {
+    const { members, blocked } = this.formationMembers();
+    const others = members.filter((member) => member.objectId !== referenceId);
+    return {
+      memberIds: members.map((member) => member.objectId),
+      blocked,
+      spread: formationSpread(members),
+      canAlign:
+        referenceId !== null && others.length > 0 && this.referenceHeight(referenceId, "bottom", members) !== null,
+    };
+  }
+
+  /** 算出队形要写的虚轴 1（同手柄拖动的写法）；拖动中或用不了时 null */
+  planFormation(request: PoseFormationRequest): PoseFormationEvent | null {
+    if (this.drag) return null;
+    const { members, blocked } = this.formationMembers();
+    let moving: DragMember[] = members;
+    let target: FormationTarget;
+    if (request.kind === "align") {
+      const height = this.referenceHeight(request.referenceId, request.edge, members);
+      if (height === null) return null;
+      moving = members.filter((member) => member.objectId !== request.referenceId);
+      target = { kind: "align", edge: request.edge, height };
+    } else {
+      if (members.length < 2) return null;
+      target = { kind: "scale", factor: request.factor };
+    }
+    if (moving.length === 0) return null;
+    const referenceId = request.kind === "align" ? request.referenceId : null;
+    return {
+      request,
+      ...solveFormation(moving, target),
+      blocked: blocked.filter((entry) => entry.objectId !== referenceId),
+    };
   }
 
   /** 光标：拖动中、手柄上、轨迹上各不相同 */
@@ -357,7 +539,7 @@ export class PoseHandleController {
         ? this.hovered.blocked
           ? "not-allowed"
           : "grab"
-        : this.pathHover
+        : this.pathHover || this.switchHover
           ? "pointer"
           : null;
     if (next === this.cursor) return;
@@ -379,15 +561,53 @@ export class PoseHandleController {
     };
   }
 
+  /** 这台物体现在出的手柄：当前虚轴的，没有这根轴时出它的第一个 */
+  private activeKindOf(target: PoseHandleTarget): PoseHandleKind | undefined {
+    return target.kinds.find((kind) => poseHandleAxisOf(kind) === this.activeAxis) ?? target.kinds[0];
+  }
+
   private models(): Array<{ target: PoseHandleTarget; model: PoseHandleModel }> {
     return this.targets.flatMap((target) => {
+      const kind = this.activeKindOf(target);
       const input = this.kinematicsOf(target);
-      if (!input) return [];
-      return target.kinds.flatMap((kind) => {
-        const model = poseHandleModel(kind, input, target.ranges);
-        return model ? [{ target, model }] : [];
-      });
+      if (!kind || !input) return [];
+      const model = poseHandleModel(kind, input, target.ranges);
+      return model ? [{ target, model }] : [];
     });
+  }
+
+  /**
+   * 手柄旁的虚轴切换：第一台有几根轴可切的物体旁边竖着排「1 升降 / 2 摆动 X / 3 …」，
+   * 拖动时收起
+   */
+  private layoutSwitcher(cell: PoseHandleHostCell): OverlaySwitchChip[] {
+    if (this.drag) return [];
+    const target = this.targets.find((entry) => axesOf(entry).length > 1);
+    const input = target ? this.kinematicsOf(target) : null;
+    if (!target || !input) return [];
+    const anchor = worldPointOf(input, localTopCenter(input.config));
+    const spot = cell.projector.project(handleSpotOf(anchor, parentUpOf(input.parentWorld), cell.projector));
+    if (!spot) return [];
+    const axes = axesOf(target);
+    const shownAxis = poseHandleAxisOf(this.activeKindOf(target)!);
+    const total = axes.length * SWITCH_CHIP_HEIGHT_PX + (axes.length - 1) * SWITCH_CHIP_GAP_PX;
+    const left = spot.x - SWITCH_OFFSET_PX - SWITCH_CHIP_WIDTH_PX;
+    return axes.map((axis, index) => ({
+      axis,
+      text: `${AXIS_NUMBER[axis]} ${target.axisLabels?.[axis] ?? `虚轴 ${AXIS_NUMBER[axis]}`}`,
+      active: axis === shownAxis,
+      hover: this.switchHover?.cellId === cell.id && this.switchHover.axis === axis,
+      rect: {
+        left,
+        top: spot.y - total / 2 + index * (SWITCH_CHIP_HEIGHT_PX + SWITCH_CHIP_GAP_PX),
+        width: SWITCH_CHIP_WIDTH_PX,
+        height: SWITCH_CHIP_HEIGHT_PX,
+      },
+    }));
+  }
+
+  private switchChipAt(cellId: ViewportCellId, point: Pt): OverlaySwitchChip | null {
+    return (this.switchers.get(cellId) ?? []).find((chip) => rectContains(chip.rect, point)) ?? null;
   }
 
   private setHovered(next: { key: string; blocked: boolean } | null): void {
@@ -400,10 +620,12 @@ export class PoseHandleController {
     const cell = this.host.getCells().find((entry) => entry.id === pending.cellId);
     const lead = this.targetOf(pending.objectId);
     if (!cell || !lead) return false;
-    // 同一种手柄的选中物体一起动（升降和旋转不混）；拖不了的不带
+    // 出着同一种手柄的选中物体一起动（升降和旋转不混）；拖不了的不带
     const group = [
       lead,
-      ...this.targets.filter((target) => target !== lead && !target.blockedReason && target.kinds.includes(pending.kind)),
+      ...this.targets.filter(
+        (target) => target !== lead && !target.blockedReason && this.activeKindOf(target) === pending.kind,
+      ),
     ];
     const members = group.flatMap((target): DragMember[] => {
       const input = this.kinematicsOf(target);

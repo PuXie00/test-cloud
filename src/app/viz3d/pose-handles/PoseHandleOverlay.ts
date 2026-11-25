@@ -1,4 +1,4 @@
-import type { Disposable, SlotRect, ViewportCellId } from "../types";
+import type { Disposable, SlotRect, ViewportCellId, VirtualAxisId } from "../types";
 import { viz3dAxisCssColor } from "../helpers/axes-config";
 import type { HandleLayout } from "./pose-handle-layout";
 import type { Pt } from "./pose-handle-math";
@@ -34,12 +34,23 @@ export type OverlayDrag = {
   sweep: Pt[] | null;
 };
 
+/** 手柄旁的虚轴切换的一格（画布坐标） */
+export type OverlaySwitchChip = {
+  axis: VirtualAxisId;
+  text: string;
+  /** 正出着这根轴的手柄 */
+  active: boolean;
+  hover: boolean;
+  rect: SlotRect;
+};
+
 export type OverlayCell = {
   id: ViewportCellId;
   /** 画布坐标 */
   rect: SlotRect;
   handles: OverlayHandle[];
   drag: OverlayDrag | null;
+  switcher: OverlaySwitchChip[];
 };
 
 type HandleElements = {
@@ -60,9 +71,23 @@ type CellLayer = {
   handles: Map<string, HandleElements>;
   label: HTMLDivElement;
   snapLabel: HTMLDivElement;
+  switcher: HTMLDivElement;
 };
 
-/** 手柄颜色：倾斜弧按它摆动的世界轴着色（和坐标轴一致），其余用主题主色 */
+const SWITCH_STYLE: Partial<CSSStyleDeclaration> = {
+  position: "absolute",
+  boxSizing: "border-box",
+  borderRadius: "4px",
+  fontSize: "11px",
+  lineHeight: "18px",
+  textAlign: "center",
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  pointerEvents: "none",
+  boxShadow: "0 1px 3px rgba(0, 0, 0, 0.35)",
+};
+
+/** 手柄颜色：摆动弧按它摆动的世界轴着色（和坐标轴一致），升降、旋转、偏转用主题主色 */
 const handleColor = (kind: PoseHandleKind): string => {
   if (kind === "tiltX") return viz3dAxisCssColor("x");
   if (kind === "tiltY") return viz3dAxisCssColor("z");
@@ -107,6 +132,7 @@ export class PoseHandleOverlay implements Disposable {
     const layer = this.ensureCell(cell.id);
     const show = cell.handles.length > 0 || cell.drag !== null;
     setStyle(layer.root, "display", show ? "block" : "none");
+    this.renderSwitcher(layer.switcher, show ? cell.switcher : [], { x: cell.rect.left, y: cell.rect.top });
     if (!show) {
       // 收起时把手柄也去掉：下次出来的是新的一组，不留旧的
       for (const elements of layer.handles.values()) elements.group.remove();
@@ -136,6 +162,33 @@ export class PoseHandleOverlay implements Disposable {
     const labelColor = drag?.label?.warning ? "var(--warning)" : "var(--foreground)";
     this.renderLabel(layer.label, drag?.label ?? null, offset, cell.rect, labelColor);
     this.renderLabel(layer.snapLabel, drag?.snapLabel ?? null, offset, cell.rect, "var(--warning)");
+  }
+
+  /** 手柄旁的虚轴切换：一格一个 div，按下标复用 */
+  private renderSwitcher(container: HTMLDivElement, chips: readonly OverlaySwitchChip[], offset: Pt): void {
+    while (container.children.length > chips.length) container.lastElementChild?.remove();
+    chips.forEach((chip, index) => {
+      let element = container.children[index] as HTMLDivElement | undefined;
+      if (!element) {
+        element = document.createElement("div");
+        Object.assign(element.style, SWITCH_STYLE);
+        element.dataset.testid = "pose-handle-switch";
+        container.appendChild(element);
+      }
+      if (element.textContent !== chip.text) element.textContent = chip.text;
+      element.dataset.axis = chip.axis;
+      element.dataset.active = String(chip.active);
+      setStyle(element, "left", px(chip.rect.left - offset.x));
+      setStyle(element, "top", px(chip.rect.top - offset.y));
+      setStyle(element, "width", px(chip.rect.width));
+      setStyle(element, "height", px(chip.rect.height));
+      setStyle(element, "color", chip.active ? "var(--primary-foreground)" : "var(--foreground)");
+      setStyle(
+        element,
+        "background",
+        chip.active ? "var(--primary)" : chip.hover ? "var(--accent)" : "var(--muted)",
+      );
+    });
   }
 
   /** 标签放在手柄旁边；快出格子时往回收，整段文字都看得见 */
@@ -225,9 +278,12 @@ export class PoseHandleOverlay implements Disposable {
     Object.assign(snapLabel.style, LABEL_STYLE, { background: "var(--muted)", display: "none" });
     snapLabel.dataset.testid = "pose-handle-snap";
 
-    root.append(svg, label, snapLabel);
+    const switcher = document.createElement("div");
+    switcher.dataset.testid = "pose-handle-switcher";
+
+    root.append(svg, label, snapLabel, switcher);
     this.root.appendChild(root);
-    const layer: CellLayer = { root, svg, sweep, snap, handles: new Map(), label, snapLabel };
+    const layer: CellLayer = { root, svg, sweep, snap, handles: new Map(), label, snapLabel, switcher };
     this.cells.set(id, layer);
     return layer;
   }

@@ -41,7 +41,7 @@ const resolveOrNull = (sequence: Parameters<typeof resolveActionSequence>[0] | n
 
 /**
  * 动作页 3D 里看整条动作：选中物体（视图菜单「轨迹」里可改成全部或关）的轨迹和位姿点、
- * 游标亮点、上一个 / 下一个位姿的线框、有问题的段和物体标红；
+ * 游标亮点、有问题的段和物体标红；
  * 点位姿点选中那个位姿，点轨迹线游标跳到那一刻（点在有问题的段上同时选中那段）。
  */
 export const Viz3DMotionPathSync = () => {
@@ -147,7 +147,7 @@ export const Viz3DMotionPathSync = () => {
         select({ kind: "block", blockId: event.blockId });
         return;
       }
-      current.builder.handleCursorChange(snapTimeMs(event.atMs));
+      current.builder.handleCursorChange(snapTimeMs(event.atMs), { reveal: true });
       const segment = event.segmentKey
         ? current.resolved?.segments.find((entry) => entry.key === event.segmentKey)
         : undefined;
