@@ -3,7 +3,6 @@ import {
   CircleHelp,
   Copy,
   FolderOpen,
-  FolderX,
   Globe,
   LockKeyhole,
   LogOut,
@@ -37,7 +36,6 @@ const MENU_SECTIONS: MenuSection[] = [
       { id: "project", label: "工程管理", icon: FolderOpen },
       { id: "save", label: "保存工程", icon: Save },
       { id: "save-as", label: "工程另存为", icon: Copy },
-      { id: "close", label: "关闭工程", icon: FolderX },
     ],
   },
   {
@@ -51,7 +49,7 @@ const MENU_SECTIONS: MenuSection[] = [
       { id: "log", label: "操作日志与回放", icon: ScrollText },
       { id: "assets", label: "设备资产管理", icon: Boxes },
       { id: "signals", label: "外部信号配置", icon: Radio },
-      { id: "collab", label: "多机协作管理", icon: Globe },
+      { id: "collab", label: "主备热备", icon: Globe },
       { id: "rules", label: "规则编辑器", icon: Zap },
       { id: "permissions", label: "用户与权限", icon: UserCog },
     ],
@@ -89,7 +87,6 @@ type AppMenuPanelProps = {
   onProjectManage?: () => void;
   onSaveProject?: () => void;
   onSaveProjectAs?: () => void;
-  onCloseProject?: () => void;
   onVersionHistory?: () => void;
   onImportExport?: () => void;
   onOperationLog?: () => void;
@@ -119,7 +116,6 @@ export const AppMenuPanel = ({
   onProjectManage,
   onSaveProject,
   onSaveProjectAs,
-  onCloseProject,
   onVersionHistory,
   onImportExport,
   onOperationLog,
@@ -171,10 +167,6 @@ export const AppMenuPanel = ({
         return;
       case "save-as":
         onSaveProjectAs?.();
-        onClose();
-        return;
-      case "close":
-        onCloseProject?.();
         onClose();
         return;
       case "undo":
@@ -257,13 +249,7 @@ export const AppMenuPanel = ({
                   return (
                     <li key={resolved.id}>
                       <button
-                        data-guide={
-                          resolved.id === "save"
-                            ? "console-app-menu-save"
-                            : resolved.id === "close"
-                              ? "console-app-menu-close"
-                              : undefined
-                        }
+                        data-guide={resolved.id === "save" ? "console-app-menu-save" : undefined}
                         type="button"
                         disabled={disabled}
                         aria-disabled={disabled || undefined}

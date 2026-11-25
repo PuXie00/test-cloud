@@ -69,7 +69,8 @@ export const multiPointFixture = (): ControlledObjectConfig =>
     motionParams: {
       h: { ...MOTION_DEFAULTS.move, maxAngle: 8000 },
       p: { ...MOTION_DEFAULTS.swingX },
-      y: { ...MOTION_DEFAULTS.yawY },
+      // Python 对数用例按 ±20° 算出，不跟默认范围走
+      y: { ...MOTION_DEFAULTS.yawY, minAngle: -20, maxAngle: 20 },
     },
   });
 

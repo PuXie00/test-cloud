@@ -13,6 +13,7 @@ import {
   MODEL_RUN_DIRECTION_OPTIONS,
   type ModelRunDirection,
 } from "@/app/project/hoist-point-defaults";
+import { useConfirmedBinding } from "@/app/pages/console/hooks/use-confirmed-binding";
 import { useProjectStore } from "@/app/pages/console/hooks/use-project-store";
 import type { AxisDefinition, ControlType } from "./config-wizard-types";
 import { MultiPointAxesDialog } from "./multi-point-axes/multi-point-axes-dialog";
@@ -49,8 +50,8 @@ type ObjectAxesEditorProps = {
 };
 
 export const ObjectAxesEditor = ({ objectId, controlType, axes }: ObjectAxesEditorProps) => {
-  const { findObject, updateObject, motors, plcs, applyMultiPointAxesConfiguration } =
-    useProjectStore();
+  const { findObject, updateObject, motors, plcs } = useProjectStore();
+  const { confirmApplyMultiPointAxesConfiguration, confirmDialog } = useConfirmedBinding();
   const [multiPointDialogOpen, setMultiPointDialogOpen] = useState(false);
   const [initialSelectedAxisKey, setInitialSelectedAxisKey] = useState<string | null>(null);
   const minimumAxes = CONTROL_TYPE_RULES[controlType].minimumDriveAxes;
@@ -163,9 +164,10 @@ export const ObjectAxesEditor = ({ objectId, controlType, axes }: ObjectAxesEdit
           plcs={plcs}
           initialSelectedAxisKey={initialSelectedAxisKey}
           onOpenChange={handleMultiPointDialogOpenChange}
-          onApply={(input) => applyMultiPointAxesConfiguration(object.id, input)}
+          onApply={(input) => confirmApplyMultiPointAxesConfiguration(object.id, input)}
         />
       ) : null}
+      {confirmDialog}
     </div>
   );
 };

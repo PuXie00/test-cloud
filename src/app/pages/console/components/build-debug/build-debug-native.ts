@@ -1,3 +1,4 @@
+import { setManualHold } from "@/app/hot-standby/manual-hold-registry";
 import { isCppAckFailed, isCppAckOk } from "@shared/csocket/ack";
 import type { DebugMotionParams } from "./build-debug-types";
 import { DEFAULT_DEBUG_MOTION_PARAMS } from "./build-debug-types";
@@ -173,6 +174,8 @@ export const applyJogMotor = async (
   if (!api?.jogMotor) throw new Error("csocketApi 不可用");
   const direction = toJogDirection(dir);
   const rangeProtectEnable = toRangeProtectEnable(rangeProtect);
+  // 主备热备：按住点动的电机算本机在用，松开就不算
+  setManualHold("motor-jog", direction === 0 ? null : motorIds);
   const result = await api.jogMotor(
     motorIds.map((deviceId) => ({ deviceId, rangeProtectEnable, direction })),
   );
@@ -183,6 +186,7 @@ export const applyJogMotor = async (
 
 export const applyStopMotor = async (motorIds: number[]): Promise<void> => {
   if (motorIds.length === 0) return;
+  setManualHold("motor-jog", null);
   const api = window.csocketApi;
   if (!api?.stopMotor) throw new Error("csocketApi 不可用");
   const result = await api.stopMotor(motorIds.map((deviceId) => ({ deviceId })));

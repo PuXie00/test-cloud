@@ -1,3 +1,4 @@
+import { emitProjectFileEvent } from './file-events'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
@@ -37,6 +38,30 @@ import type {
 import { fail, ok } from './types'
 
 let currentProjectName: string | null = null
+
+/** 当前打开的工程（名称、meta.id）；主备热备用它判断两边是不是同一个工程 */
+export type CurrentProjectInfo = { name: string; id: string }
+
+const currentProjectListeners = new Set<(info: CurrentProjectInfo | null) => void>()
+
+export const onCurrentProjectChange = (
+  listener: (info: CurrentProjectInfo | null) => void,
+): (() => void) => {
+  currentProjectListeners.add(listener)
+  return () => {
+    currentProjectListeners.delete(listener)
+  }
+}
+
+const notifyCurrentProject = (info: CurrentProjectInfo | null): void => {
+  for (const listener of currentProjectListeners) {
+    try {
+      listener(info)
+    } catch (err) {
+      console.error('[project] current project listener failed', err)
+    }
+  }
+}
 
 const countArray = (value: unknown): number => (Array.isArray(value) ? value.length : 0)
 
@@ -354,6 +379,7 @@ export const openProject = async (
     const document = await readProjectDocument(name)
     await ensureHistoryScaffold(name)
     currentProjectName = name
+    notifyCurrentProject({ name, id: document.meta.id })
     return ok({ summary: await buildSummary(name), document })
   } catch (err) {
     if (err instanceof ProjectDocumentError) return fail(err.code, err.message)
@@ -391,6 +417,7 @@ export const saveProject = async (
       await fs.writeFile(dest, Buffer.from(base64, 'base64'))
     }
 
+    const coverWritten = Boolean(params.coverPngBase64?.trim() || params.coverPath)
     if (params.coverPngBase64?.trim()) {
       await writeCoverFromBase64(params.coverPngBase64.trim())
     } else if (params.coverPath) {
@@ -414,6 +441,7 @@ export const saveProject = async (
       await fs.copyFile(params.coverPath, dest)
     }
 
+    emitProjectFileEvent({ kind: 'saved', projectName: name, coverWritten })
     return ok(await buildSummary(name))
   } catch (err) {
     return fail('SAVE_FAILED', err instanceof Error ? err.message : String(err))
@@ -452,6 +480,7 @@ export const saveProjectAs = async (
     await writeProjectDocument(newName, document)
 
     currentProjectName = newName
+    notifyCurrentProject({ name: newName, id: document.meta.id })
     return ok(await buildSummary(newName))
   } catch (err) {
     return fail('SAVE_AS_FAILED', err instanceof Error ? err.message : String(err))
@@ -480,6 +509,7 @@ export const deleteProject = async (
 
     if (currentProjectName === name) {
       currentProjectName = null
+      notifyCurrentProject(null)
     }
 
     await fs.rm(projectDir, { recursive: true, force: true })
@@ -491,6 +521,7 @@ export const deleteProject = async (
 
 export const closeProject = async (): Promise<ProjectResult<null>> => {
   currentProjectName = null
+  notifyCurrentProject(null)
   return ok(null)
 }
 

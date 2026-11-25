@@ -1,5 +1,6 @@
 import { toast } from "sonner";
 import { isCppAckFailed } from "@shared/csocket/ack";
+import { setManualHold } from "@/app/hot-standby/manual-hold-registry";
 import { DIMENSION_KEY_TO_VIRTUAL_AXIS } from "@/app/project/manual-jog";
 import type { VirtualAxisId } from "@/app/project/project-document-types";
 import type { GoDirection } from "./go-motion";
@@ -113,6 +114,7 @@ export const sendEnableModel = async (
 export const sendStopModel = async (deviceIds: readonly number[]): Promise<void> => {
   const items = buildStopItems(deviceIds);
   if (items.length === 0) return;
+  setManualHold("model-jog", null);
   const api = window.csocketApi;
   if (!api?.stopModel) {
     toast.error(DISCONNECTED);
@@ -157,6 +159,9 @@ export const sendHomeModel = async (
 
 export const sendJogModel = async (items: readonly JogModelItem[]): Promise<void> => {
   if (items.length === 0) return;
+  // 主备热备：按住点动的物体算本机在用，松开（方向 0）就不算
+  const moving = items.filter((item) => item.direction !== 0).map((item) => item.deviceId);
+  setManualHold("model-jog", moving);
   const api = window.csocketApi;
   const result = await api.jogModel([...items]);
   if (isCppAckFailed(result)) {

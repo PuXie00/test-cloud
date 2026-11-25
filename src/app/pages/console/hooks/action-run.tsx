@@ -1,4 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { peerRunningSequenceIds } from "@/app/hot-standby/ha-busy";
+import { useHaProjectSync } from "@/app/hot-standby/ha-project-sync-provider";
 import { useProject } from "@/app/project/use-project";
 import { useSystemStatusNormal } from "./plc-runtime-provider";
 import { ACTION_RUN_STALE_MS, parseActionRunReports } from "./exec-card-run-status";
@@ -72,14 +74,25 @@ export const useRunningActionIds = (): ReadonlySet<number> => {
   return useSystemStatusNormal() ? running : NO_RUNNING;
 };
 
-/** 把正在运行的动作交给工程数据层：动作编辑和 AI 改动这些序列时在那里统一拦 */
+/**
+ * 把正在运行的动作交给工程数据层：动作编辑和 AI 改动这些序列时在那里统一拦。
+ * 主备热备时另一台在运行的动作也算（方案 5.4）。
+ */
 export const ActionRunEditLockSync = () => {
   const { setRunningSequenceIds } = useProject();
   const running = useRunningActionIds();
+  const peerHolders = useHaProjectSync().snapshot.peerHolders;
+  const peerKey = peerRunningSequenceIds(peerHolders).join(",");
 
   useEffect(() => {
-    setRunningSequenceIds(running);
-  }, [running, setRunningSequenceIds]);
+    if (!peerKey) {
+      setRunningSequenceIds(running);
+      return;
+    }
+    const merged = new Set(running);
+    for (const id of peerKey.split(",")) merged.add(Number(id));
+    setRunningSequenceIds(merged);
+  }, [running, peerKey, setRunningSequenceIds]);
 
   useEffect(() => () => setRunningSequenceIds(NO_RUNNING), [setRunningSequenceIds]);
 

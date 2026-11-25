@@ -1,6 +1,8 @@
-import "@babylonjs/loaders/glTF/glTFFileLoader";
+// Babylon 9.15 起 glTFFileLoader 不再自带 2.0 解析器，只引它会报 "Unsupported version: 2.0"
+import "@babylonjs/loaders/glTF/2.0";
 import "@babylonjs/loaders/OBJ/objFileLoader";
 import { ImportMeshAsync, type ISceneLoaderAsyncResult } from "@babylonjs/core/Loading/sceneLoader";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Node } from "@babylonjs/core/node";
 import type { Scene } from "@babylonjs/core/scene";
@@ -13,6 +15,7 @@ import {
   type ModelNativeSizeMm,
 } from "./model-native-size";
 import { disposeNodeHierarchy, getWorldBounds } from "../babylon/utils";
+import { importObjWithAssets } from "./obj-assets";
 
 type CacheEntry = {
   template: TransformNode;
@@ -157,7 +160,7 @@ export class ModelLoader {
     const name = opts.name ?? (typeof input === "string" ? input : input.name);
     const format = detectFormat(name, opts.format);
     void opts.targetSize;
-    const content = await this.parseInput(input, format, name);
+    const content = await this.parseInput(input, format, name, opts.assets ?? []);
     const template = buildCenteredTemplate(content, this.scene);
     return { template, format };
   }
@@ -166,11 +169,12 @@ export class ModelLoader {
     input: File | string,
     format: ModelFormat,
     name: string,
+    assets: readonly File[],
   ): Promise<TransformNode> {
     if (typeof input === "string") {
       return this.loadFromUrl(input);
     }
-    return this.loadFromFile(input, format, name);
+    return this.loadFromFile(input, format, name, assets);
   }
 
   private async loadFromUrl(url: string): Promise<TransformNode> {
@@ -183,15 +187,38 @@ export class ModelLoader {
    * Babylon picks loader plugins from the filename extension.
    * Named File + pluginExtension avoids "Unable to find a plugin to load blob:".
    */
-  private async loadFromFile(file: File, format: ModelFormat, name: string): Promise<TransformNode> {
+  private async loadFromFile(
+    file: File,
+    format: ModelFormat,
+    name: string,
+    assets: readonly File[],
+  ): Promise<TransformNode> {
     const named = await toNamedModelFile(file, format, name);
-    const result = await ImportMeshAsync(named, this.scene, {
-      pluginExtension: `.${format}`,
-    });
+    const result =
+      format === "obj" && assets.length > 0
+        ? await importObjWithAssets(this.scene, named, assets)
+        : await ImportMeshAsync(named, this.scene, { pluginExtension: `.${format}` });
+    if (format === "obj") {
+      keepObjMaterialsSolid(result);
+    }
     stripImportedAnimations(result);
     return wrapImportedContent(result, this.scene, name);
   }
 }
+
+/**
+ * 3ds Max 同时写 o 和 g，o 是没有面的空网格，却和真正的网格共用材质。
+ * Babylon 看到没有索引就把这份材质改成点云，整个模型只剩散点。
+ */
+const keepObjMaterialsSolid = (result: ISceneLoaderAsyncResult): void => {
+  for (const mesh of result.meshes) {
+    if (mesh.getTotalIndices() === 0) continue;
+    const material = mesh.material;
+    if (material instanceof StandardMaterial) {
+      material.pointsCloud = false;
+    }
+  }
+};
 
 const stripImportedAnimations = (result: {
   animationGroups: Array<{ stop: () => void; dispose: () => void }>;

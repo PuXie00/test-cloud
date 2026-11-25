@@ -1,6 +1,6 @@
 import { UnitAwareNumericRangeInput } from "@/app/components/ics/unit-aware-numeric-range-input";
 import type { MotionAxisKind, MotionAxisParams } from "@/app/project/configuration-types";
-import type { StrokeLimits } from "@/app/project/stroke-limits";
+import { clampStroke, type StrokeLimits } from "@/app/project/stroke-limits";
 import { MOTION_AXIS_FIELD_DEFINITIONS } from "../config-wizard/config-descriptors";
 import { AXIS_RANGE_CONFIG } from "./motion-axis-range";
 
@@ -28,18 +28,23 @@ export const MotionAxisRangeField = ({ axis, value, onChange, limits }: MotionAx
           max: value[rangeConfig.maxKey],
         }}
         onChange={(range) =>
-          onChange({
-            ...value,
-            [rangeConfig.minKey]: range.min,
-            [rangeConfig.maxKey]: range.max,
-          })
+          onChange(
+            clampStroke(
+              {
+                ...value,
+                [rangeConfig.minKey]: range.min,
+                [rangeConfig.maxKey]: range.max,
+              },
+              limits,
+            ),
+          )
         }
         min={limits?.minStroke.min}
         minCeiling={limits?.minStroke.max}
         maxFloor={limits?.maxStroke.min}
         max={limits?.maxStroke.max}
         unit={rangeFieldSpec.unit}
-        step={rangeFieldSpec.step ?? 1}
+        step={limits?.maxStrokeMultiple ?? rangeFieldSpec.step ?? 1}
         precision={rangeFieldSpec.precision ?? 1}
         minAriaLabel={rangeConfig.minAriaLabel}
         maxAriaLabel={rangeConfig.maxAriaLabel}

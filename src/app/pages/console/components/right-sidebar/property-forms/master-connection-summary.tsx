@@ -1,3 +1,4 @@
+import { useHaWholePlcBlock } from "@/app/hot-standby/use-ha-whole-plc-block";
 import { usePermissions } from "@/app/auth/permissions";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -35,6 +36,8 @@ export const MasterConnectionSummary = ({
   const { findPlc } = useProjectStore();
   const { getPlcRuntime, getPlcOnline, scan, scanAll } = usePlcRuntime();
   const canResetPlc = usePermissions().can("build.plc");
+  // 主备热备：PLC 复位是整台 PLC 的操作，备机上不能做
+  const haBlock = useHaWholePlcBlock();
   const plc = findPlc(plcId);
   const runtime = getPlcRuntime(plcId);
   const online = getPlcOnline(plcId);
@@ -51,7 +54,7 @@ export const MasterConnectionSummary = ({
   };
 
   const handlePlcReset = () => {
-    if (!canResetPlc) return;
+    if (!canResetPlc || haBlock) return;
     // 后续接入 C++
     const send = window.csocketApi?.resetPlc;
     if (!send) return;
@@ -111,7 +114,9 @@ export const MasterConnectionSummary = ({
             type="button"
             onClick={handlePlcReset}
             aria-label="PLC复位"
-            className="inline-flex h-9 items-center rounded-md border border-border bg-background px-3 text-body-sm hover:bg-accent pointer-coarse:h-11"
+            disabled={haBlock !== null}
+            title={haBlock ?? undefined}
+            className="inline-flex h-9 items-center rounded-md border border-border bg-background px-3 text-body-sm hover:bg-accent pointer-coarse:h-11 disabled:pointer-events-none disabled:opacity-50"
           >
             PLC复位
           </button>

@@ -62,9 +62,9 @@ vi.mock("@/app/pages/console/components/show-mode-confirm/show-mode-confirm-dial
 vi.mock("@/app/pages/console/components/system-status/project-mismatch-dialog", () => ({
   ProjectMismatchDialog: () => null,
 }));
-vi.mock("@/app/pages/console/components/collaboration/collab-dialog", () => ({ CollabDialog: () => null }));
-vi.mock("@/app/pages/console/components/collaboration/collab-quick-popover", () => ({
-  CollabQuickPopover: () => null,
+vi.mock("@/app/pages/console/components/hot-standby/hot-standby-dialog", () => ({ HotStandbyDialog: () => null }));
+vi.mock("@/app/pages/console/components/hot-standby/hot-standby-pill", () => ({
+  HotStandbyPill: () => null,
 }));
 vi.mock("@/app/pages/console/components/operation-log/operation-log-dialog", () => ({
   OperationLogDialog: () => null,

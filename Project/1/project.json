@@ -4,7 +4,7 @@
     "id": "a7ed1569-d3ec-4799-af77-34611c846d3e",
     "name": "1",
     "createdAt": "2026-08-19T05:43:25.491Z",
-    "modifiedAt": "2026-10-07T07:51:11.941Z",
+    "modifiedAt": "2026-11-23T05:52:48.065Z",
     "author": "当前用户",
     "status": "draft",
     "wizard": {
@@ -174,7 +174,6 @@
         "maxAxisVelocity": 200,
         "safetyRadius": 1850,
         "initialTiltDirection": 0,
-        "mountRotation": 0,
         "driveAxes": [
           {
             "key": "0",
@@ -215,9 +214,9 @@
             "emergencyDecelTime": 0.1,
             "acceleration": 25,
             "deceleration": 25,
-            "maxAcceleration": 50,
-            "maxDeceleration": 50,
-            "abnormalDeceleration": 500
+            "maxAcceleration": 500,
+            "maxDeceleration": 500,
+            "abnormalDeceleration": 5000
           },
           "p": {
             "minAngle": -20,
@@ -228,23 +227,23 @@
             "emergencyDecelTime": 0.2,
             "acceleration": 0.7,
             "deceleration": 0.7,
-            "maxAcceleration": 2,
-            "maxDeceleration": 2,
-            "abnormalDeceleration": 10,
+            "maxAcceleration": 3,
+            "maxDeceleration": 3,
+            "abnormalDeceleration": 15,
             "defaultMaxVelocity": 3
           },
           "y": {
-            "minAngle": -20,
-            "maxAngle": 20,
+            "minAngle": 0,
+            "maxAngle": 720,
             "speed": 2,
             "accelTime": 3,
             "minAccelTime": 1,
             "emergencyDecelTime": 0.2,
             "acceleration": 0.7,
             "deceleration": 0.7,
-            "maxAcceleration": 2,
-            "maxDeceleration": 2,
-            "abnormalDeceleration": 10,
+            "maxAcceleration": 3,
+            "maxDeceleration": 3,
+            "abnormalDeceleration": 15,
             "defaultMaxVelocity": 3
           }
         },
@@ -446,6 +445,65 @@
     "orthoHalfHeight": 5.701543749999998,
     "preset": "persp",
     "focalLengthMm": 50,
+    "cells": {
+      "dualRight": {
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "alpha": 1.5707963267948966,
+        "beta": 0.01,
+        "zoomRadius": 6.520538192507824,
+        "orthoHalfHeight": 3.260269096253912,
+        "preset": "top",
+        "focalLengthMm": 50
+      },
+      "quadTopRight": {
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "alpha": 1.5707963267948966,
+        "beta": 0.01,
+        "zoomRadius": 6.520538192507824,
+        "orthoHalfHeight": 3.260269096253912,
+        "preset": "top",
+        "focalLengthMm": 50
+      },
+      "quadBottomLeft": {
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "alpha": 1.5707963267948966,
+        "beta": 1.5707963267948966,
+        "zoomRadius": 6.520538192507824,
+        "orthoHalfHeight": 3.260269096253912,
+        "preset": "front",
+        "focalLengthMm": 50
+      },
+      "quadBottomRight": {
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "alpha": 0,
+        "beta": 1.5707963267948966,
+        "zoomRadius": 6.520538192507824,
+        "orthoHalfHeight": 3.260269096253912,
+        "preset": "side",
+        "focalLengthMm": 50
+      }
+    },
+    "layout": "single",
+    "split": {
+      "x": 0.5,
+      "y": 0.5
+    },
     "gridSize": 20
   },
   "snapshots": []

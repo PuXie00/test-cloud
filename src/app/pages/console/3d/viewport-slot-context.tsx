@@ -20,6 +20,7 @@ import {
 import { cn } from "@/app/components/ui/utils";
 import { mToMm } from "@/app/project/length-units";
 import { useConsoleNav } from "../hooks/use-console-nav";
+import { useConfirmedBinding } from "../hooks/use-confirmed-binding";
 import { useProjectStore } from "../hooks/use-project-store";
 import { useSelection } from "../hooks/use-selection";
 import { useViz3DContext } from "./Viz3DProvider";
@@ -99,7 +100,9 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
   const engine = useViz3DContext();
   const { currentProject } = useProject();
   const { activeNav } = useConsoleNav();
-  const { addObjectFromShape, bindMotorsFromAxis } = useProjectStore();
+  const { addObjectFromShape } = useProjectStore();
+  const { confirmBindMotorsFromAxis, confirmDialog: axisTypeConfirmDialog } =
+    useConfirmedBinding();
   const { replaceSelection, setTreeFocus, clearSelection } = useSelection();
   const buildMode = activeNav === "devices";
   // 动作页：Ctrl 点加选，双击物体跳到它最近的位姿
@@ -553,6 +556,23 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
     [buildMode],
   );
 
+  const bindDroppedMotors = useCallback(
+    async (objectId: number, axisKey: string, motorIds: readonly number[]) => {
+      const outcome = await confirmBindMotorsFromAxis(objectId, axisKey, motorIds);
+      if (outcome === "cancelled") return;
+      if (outcome === "rejected") {
+        toast.warning("该受控物体已绑定其他主控的驱动单元，不可跨主控混绑");
+        return;
+      }
+      clearSelection();
+      const focusMotorId = motorIds[0];
+      if (focusMotorId) {
+        setTreeFocus({ kind: "motor", id: focusMotorId });
+      }
+    },
+    [clearSelection, confirmBindMotorsFromAxis, setTreeFocus],
+  );
+
   const handleDrop = useCallback(
     (event: ReactDragEvent<HTMLCanvasElement>) => {
       const motorIds = readMotorHoistDrag(event.dataTransfer);
@@ -564,16 +584,7 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
           toast.warning("请拖到吊点上以绑定电机");
           return;
         }
-        const ok = bindMotorsFromAxis(Number(pick.objectId), pick.axisKey, motorIds.map(Number));
-        if (!ok) {
-          toast.warning("该受控物体已绑定其他主控的驱动单元，不可跨主控混绑");
-          return;
-        }
-        clearSelection();
-        const focusMotorId = motorIds[0];
-        if (focusMotorId) {
-          setTreeFocus({ kind: "motor", id: Number(focusMotorId) });
-        }
+        void bindDroppedMotors(Number(pick.objectId), pick.axisKey, motorIds.map(Number));
         return;
       }
 
@@ -597,15 +608,7 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
         replaceSelection([obj.id]);
       }
     },
-    [
-      addObjectFromShape,
-      bindMotorsFromAxis,
-      buildMode,
-      clearSelection,
-      engine,
-      replaceSelection,
-      setTreeFocus,
-    ],
+    [addObjectFromShape, bindDroppedMotors, buildMode, engine, replaceSelection],
   );
 
   const handleCanvasDoubleClick = (event: ReactMouseEvent<HTMLCanvasElement>) => {
@@ -692,6 +695,7 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
           />
         </>
       ) : null}
+      {axisTypeConfirmDialog}
       <BoxSelectOverlay rect={boxRect} />
       <MotorTelemetryOverlay />
       <ViewportOverlay />

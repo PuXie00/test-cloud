@@ -22,6 +22,7 @@ import {
   type ReactNode,
 } from "react";
 import { NumericInput } from "@/app/components/ics/numeric-input";
+import { Select } from "@/app/components/ui/select";
 import { ProjectContext } from "@/app/project/project-provider";
 import { isEditableHistoryTarget } from "@/app/project/project-history-shortcuts";
 import { ProjectEditBoundary } from "./project-edit-boundary";
@@ -417,6 +418,7 @@ describe("ProjectEditBoundary native input", () => {
     );
 
     const input = screen.getByLabelText("名称");
+    input.focus();
     fireEvent.focusIn(input);
     fireEvent.change(input, { target: { value: "5" } });
     fireEvent.keyDown(input, { key: "Enter" });
@@ -435,6 +437,35 @@ describe("ProjectEditBoundary native input", () => {
     fireEvent.focusOut(input);
     expect(project.commitTrackedEdit).toHaveBeenCalledTimes(2);
     expect(project.pastCount).toBe(2);
+  });
+
+  it("ignores a programmatic change on an unfocused control (Radix Select hidden select)", () => {
+    const project = createProjectHistoryMock();
+    const Harness = () => {
+      const [shape, setShape] = useState("cube");
+      return (
+        <form>
+          <Select
+            aria-label="模型形状"
+            value={shape}
+            onValueChange={setShape}
+            options={[
+              { label: "立方体", value: "cube" },
+              { label: "外部模型", value: "external" },
+            ]}
+          />
+          <button type="button" onClick={() => setShape("external")}>
+            应用模型
+          </button>
+        </form>
+      );
+    };
+
+    renderWithBoundary(project, <Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "应用模型" }));
+
+    expect(project.beginTrackedEdit).not.toHaveBeenCalled();
+    expect(project.activeOwner).toBeNull();
   });
 });
 

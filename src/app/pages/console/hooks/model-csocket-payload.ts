@@ -115,7 +115,7 @@ export type ModelParamCount = ModelBindingParamCount & {
   yDefaultMaxVelocity?: number;
   /** 多级升降：中间分段点数量、位置（mm，严格递增）和过分段点速度保留比例（%） */
   nSections?: number;
-  adjustDistanceList?: { adjustDistance: number }[];
+  adjustDistanceList?: number[];
   decelerationRatio?: number;
 };
 
@@ -192,7 +192,7 @@ const multiLevelFields = (object: ControlledObject, h: MappedAxis) => {
   });
   return {
     nSections: points.length,
-    adjustDistanceList: points.map((adjustDistance) => ({ adjustDistance })),
+    adjustDistanceList: points,
     decelerationRatio: object.multiLevel.decelerationRatio,
   };
 };

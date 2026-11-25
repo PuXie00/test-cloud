@@ -56,7 +56,9 @@ export type DocumentMutationOrigin =
   | "history"
   | "version-restore"
   /** 本地 AI 经 HTTP 写入（动作序列）；动作 / 节目编辑器按外部改动重新载入 */
-  | "ai";
+  | "ai"
+  /** 主备热备：另一台同步来的内容；编辑器按外部改动重新载入，配置按差异下发给本机 C++ */
+  | "remote";
 
 export type DocumentRevision = {
   value: number;
@@ -123,6 +125,18 @@ type ProjectContextValue = {
     updater: (document: ProjectDocument) => ProjectDocument,
     origin?: Extract<DocumentMutationOrigin, "motion" | "program" | "ai">,
   ) => ProjectUpdateResult;
+  /**
+   * 主备热备：应用另一台同步来的内容。check 为 true（主机按先后应用备机的修改）时按本机的锁和校验，
+   * 不行返回原因，由调用方退回给备机；备机应用主机发来的内容不检查（以主机为准）。撤销、重做记录清空。
+   */
+  applyRemoteDocument: (
+    updater: (document: ProjectDocument) => ProjectDocument,
+    options: { check: boolean; reopen?: boolean },
+  ) => ProjectUpdateResult;
+  /** 当前文档（同步读，不等重新渲染）；主备热备应用完对方内容后马上要读 */
+  getCurrentDocument: () => ProjectDocument | null;
+  /** 主备热备：主机保存后，备机把当前内容标成已保存 */
+  markDocumentSaved: () => void;
   /** 轴运动中等暂时不许改搭建（跟踪修改、拖拽事务、撤销重做），null 表示不锁 */
   setSetupEditLock: (reason: string | null) => void;
   /** 正在运行的动作（Info|act，actionId 即序列 id）：动作编辑和 AI 不能改动或删掉这些序列 */
@@ -587,6 +601,9 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
 
   const deleteProject = useCallback(
     async (folderName: string) => {
+      if (currentProjectRef.current?.folderName === folderName) {
+        throw new ProjectIpcError("IN_USE", "当前打开的工程不能删除");
+      }
       const api = getProjectAPI();
       unwrapResult(await api.delete({ name: folderName }));
       if (currentProjectRef.current?.folderName === folderName) {
@@ -1032,6 +1049,77 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
     return { ok: true, changed: true, label: transition.label };
   }, [replaceCurrentDocument]);
 
+  const applyRemoteDocument = useCallback(
+    (
+      updater: (document: ProjectDocument) => ProjectDocument,
+      options: { check: boolean; reopen?: boolean },
+    ): ProjectUpdateResult => {
+      if (isRestoringVersionRef.current) {
+        return failUpdate("正在恢复版本，稍后再同步");
+      }
+      if (historyRef.current.activeTransaction) {
+        return failUpdate("本机正在编辑，稍后再同步");
+      }
+      const current = currentProjectRef.current;
+      if (!current?.document) {
+        return failUpdate("当前没有可更新的工程文档");
+      }
+      let nextDoc: ProjectDocument;
+      try {
+        nextDoc = updater(current.document);
+      } catch (err) {
+        return failUpdate(err instanceof Error ? err.message : String(err));
+      }
+      if (nextDoc === current.document) {
+        return okUpdate(false);
+      }
+      if (options.check) {
+        // 主机按先后应用备机的修改：和本机操作一样受锁和校验约束，不行就退回（不在本机弹提示）
+        if (nextDoc.setup !== current.document.setup && setupLockRef.current) {
+          return failUpdate(setupLockRef.current);
+        }
+        const runningBlock = runningSequenceEditBlock(
+          current.document.motion.actionSequences,
+          nextDoc.motion.actionSequences,
+          runningSequenceIdsRef.current,
+        );
+        if (runningBlock) return failUpdate(runningBlock);
+        const validation = validateProjectDocument(nextDoc);
+        if (!validation.ok) {
+          return failUpdate(validation.errors[0] ?? "文档校验失败");
+        }
+      }
+      const nextState = createProjectConfigurationState(
+        createConfigurationStateId(),
+        nextDoc,
+      );
+      // 撤销不能把对方的修改撤掉：收到对方的内容后撤销、重做记录清空（方案 5.8）
+      const nextHistory = resetProjectHistory(
+        nextState.id,
+        historyRef.current.savedStateId,
+      );
+      historyRef.current = nextHistory;
+      setHistory(nextHistory);
+      // reopen：整份换成主机的，之后由 C++ 重新打开工程重建设备表，不按差异下发（方案 4.4）
+      replaceCurrentDocument(nextDoc, options.reopen ? "version-restore" : "remote", nextState, false);
+      return okUpdate(true);
+    },
+    [replaceCurrentDocument],
+  );
+
+  const getCurrentDocument = useCallback(
+    (): ProjectDocument | null => currentProjectRef.current?.document ?? null,
+    [],
+  );
+
+  const markDocumentSaved = useCallback(() => {
+    const state = currentConfigurationStateRef.current;
+    if (!state || historyRef.current.savedStateId === state.id) return;
+    const nextHistory = { ...historyRef.current, savedStateId: state.id };
+    historyRef.current = nextHistory;
+    setHistory(nextHistory);
+  }, []);
+
   const updateCurrentDocument = useCallback(
     (
       updater: (document: ProjectDocument) => ProjectDocument,
@@ -1190,6 +1278,9 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       undoProjectConfiguration,
       redoProjectConfiguration,
       updateCurrentDocument,
+      applyRemoteDocument,
+      getCurrentDocument,
+      markDocumentSaved,
       setSetupEditLock,
       setRunningSequenceIds,
       searchQuery,
@@ -1232,6 +1323,9 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       undoProjectConfiguration,
       redoProjectConfiguration,
       updateCurrentDocument,
+      applyRemoteDocument,
+      getCurrentDocument,
+      markDocumentSaved,
       setSetupEditLock,
       setRunningSequenceIds,
       searchQuery,

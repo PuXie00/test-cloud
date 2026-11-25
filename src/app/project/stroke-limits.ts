@@ -3,7 +3,12 @@ import type { ControlType, MotionAxisId, MotionAxisParams } from "./configuratio
 /** 一端行程（最小或最大行程）允许的取值区间，单位同运动参数（mm / deg） */
 export type StrokeBound = { min: number; max: number };
 
-export type StrokeLimits = { minStroke: StrokeBound; maxStroke: StrokeBound };
+export type StrokeLimits = {
+  minStroke: StrokeBound;
+  maxStroke: StrokeBound;
+  /** 最大行程只能取该值的整数倍（无极轴一圈的周期） */
+  maxStrokeMultiple?: number;
+};
 
 /** 主控描述里不设上限的写法（uint32 最大值） */
 const UNBOUNDED = 4294967295;
@@ -19,6 +24,13 @@ const angleLimits = (minStrokeFloor: number): StrokeLimits => ({
   maxStroke: { min: 0, max: UNBOUNDED },
 });
 
+/** 多点摆虚轴3 是无极轴：PLC 只收最小 0、最大 360 / 720 / 1080… */
+const ENDLESS_YAW: StrokeLimits = {
+  minStroke: { min: 0, max: 0 },
+  maxStroke: { min: 360, max: UNBOUNDED },
+  maxStrokeMultiple: 360,
+};
+
 /**
  * 各物体类型的行程范围（来自主控物体描述，每种类型不同）；
  * h / p / y 对应运动参数的高度（或旋转角度）、角度（X 倾斜）、偏转（Y 倾斜）。轨道车、占位没有行程
@@ -33,7 +45,7 @@ export const STROKE_LIMITS: Record<ControlType, Partial<Record<MotionAxisId, Str
       maxStroke: { min: 0, max: 200000 },
     },
   },
-  multiPointSwing: { h: NON_NEGATIVE, p: angleLimits(-89.9), y: angleLimits(-3000) },
+  multiPointSwing: { h: NON_NEGATIVE, p: angleLimits(-89.9), y: ENDLESS_YAW },
   dualTiltFourPointSwing: { h: NON_NEGATIVE, p: angleLimits(-89.9), y: angleLimits(-89.9) },
   railCar: {},
   staticProp: {},
@@ -53,12 +65,16 @@ export const strokeLimitsFor = (
   for (const controlType of controlTypes) {
     const limits = STROKE_LIMITS[controlType][axisId];
     if (!limits) continue;
-    result = result
-      ? {
-          minStroke: intersect(result.minStroke, limits.minStroke),
-          maxStroke: intersect(result.maxStroke, limits.maxStroke),
-        }
-      : limits;
+    if (!result) {
+      result = limits;
+      continue;
+    }
+    const maxStrokeMultiple = result.maxStrokeMultiple ?? limits.maxStrokeMultiple;
+    result = {
+      minStroke: intersect(result.minStroke, limits.minStroke),
+      maxStroke: intersect(result.maxStroke, limits.maxStroke),
+      ...(maxStrokeMultiple ? { maxStrokeMultiple } : {}),
+    };
   }
   return result;
 };
@@ -66,14 +82,20 @@ export const strokeLimitsFor = (
 const clampTo = (value: number, bound: StrokeBound): number =>
   Math.min(bound.max, Math.max(bound.min, value));
 
-/** 把运动参数的行程收进该类型的范围（如切换类型后沿用的旧参数） */
+const roundToMultiple = (value: number, multiple: number | undefined): number =>
+  multiple ? Math.round(value / multiple) * multiple : value;
+
+/** 把运动参数的行程收进该类型的范围（如切换类型后沿用的旧参数、输入框改完的值） */
 export const clampStroke = (
   params: MotionAxisParams,
   limits: StrokeLimits | undefined,
 ): MotionAxisParams => {
   if (!limits) return params;
   const minAngle = clampTo(params.minAngle, limits.minStroke);
-  const maxAngle = clampTo(params.maxAngle, limits.maxStroke);
+  const maxAngle = clampTo(
+    roundToMultiple(params.maxAngle, limits.maxStrokeMultiple),
+    limits.maxStroke,
+  );
   return minAngle === params.minAngle && maxAngle === params.maxAngle
     ? params
     : { ...params, minAngle, maxAngle };

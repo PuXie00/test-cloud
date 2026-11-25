@@ -7,6 +7,7 @@ import { Input } from "@/app/components/ui/input";
 import { Select } from "@/app/components/ui/select";
 import { useProjectStore } from "@/app/pages/console/hooks/use-project-store";
 import { getMotorIdForAxis, getObjectBoundBusNo, getObjectBoundPlcId } from "@/app/pages/console/hooks/binding-utils";
+import { useConfirmedBinding } from "@/app/pages/console/hooks/use-confirmed-binding";
 import { getPlcBusLimitsForPlc, isBusNo } from "@/app/pages/console/hooks/motor-bus";
 import { loadMotorModelConfig } from "@/app/pages/console/hooks/motor-config";
 import { formatMotorDisplayName } from "@/app/pages/console/hooks/motor-mid";
@@ -53,9 +54,12 @@ export const MotorForm = ({ motorId }: MotorFormProps) => {
   const displayUnit = useSessionDisplayLengthUnit();
   const { findMotor, findObject, findPlc, updateMotor, objects, motors, plcs, bindAxis } =
     useProjectStore();
+  const { confirmBindAxis, confirmDialog } = useConfirmedBinding();
   const motor = findMotor(motorId);
   const [configAttributes, setConfigAttributes] = useState<DisplayAttribute[]>([]);
   const [variableConfig, setVariableConfig] = useState<DisplayAttribute[]>([]);
+  /** 绑定被取消/拒绝时递增，重建表单把绑定下拉还原为实际值 */
+  const [formRevision, setFormRevision] = useState(0);
 
   useEffect(() => {
     if (!motor) return;
@@ -112,7 +116,7 @@ export const MotorForm = ({ motorId }: MotorFormProps) => {
     if (boundObject && boundAxis) bindAxis(boundObject.id, boundAxis.key, null);
   };
 
-  const handleBindChange = (raw: string) => {
+  const handleBindChange = async (raw: string) => {
     if (!raw || raw === BIND_NONE) {
       handleUnbind();
       return;
@@ -120,21 +124,21 @@ export const MotorForm = ({ motorId }: MotorFormProps) => {
     const [objectIdRaw, axisKey] = raw.split(":");
     const objectId = Number(objectIdRaw);
     if (!Number.isFinite(objectId)) return;
-    handleUnbind();
-    const ok = bindAxis(objectId, axisKey, motorId);
-    if (!ok) {
-      const boundPlcId = getObjectBoundPlcId(objectId, objects, motors);
-      const boundBusNo = getObjectBoundBusNo(objectId, motors);
-      if (boundBusNo !== null && motor.busNo !== boundBusNo) {
-        toast.warning("同一受控物体不能同时绑定 C 口与 D 口电机");
-        return;
-      }
-      if (boundPlcId != null && motor.plcId !== boundPlcId) {
-        toast.warning("该受控物体已绑定其他主控的驱动单元，不可跨主控混绑");
-        return;
-      }
-      toast.warning("绑定失败");
+    const outcome = await confirmBindAxis(objectId, axisKey, motorId);
+    if (outcome === "bound") return;
+    setFormRevision((revision) => revision + 1);
+    if (outcome === "cancelled") return;
+    const boundPlcId = getObjectBoundPlcId(objectId, objects, motors);
+    const boundBusNo = getObjectBoundBusNo(objectId, motors);
+    if (boundBusNo !== null && motor.busNo !== boundBusNo) {
+      toast.warning("同一受控物体不能同时绑定 C 口与 D 口电机");
+      return;
     }
+    if (boundPlcId != null && motor.plcId !== boundPlcId) {
+      toast.warning("该受控物体已绑定其他主控的驱动单元，不可跨主控混绑");
+      return;
+    }
+    toast.warning("绑定失败");
   };
 
   const coerceEnumParams = (params: Motor["params"]) => {
@@ -155,7 +159,7 @@ export const MotorForm = ({ motorId }: MotorFormProps) => {
 
   const handleValuesChange = (changed: Partial<MotorFormValues>, all: MotorFormValues) => {
     if ("bindTarget" in changed) {
-      handleBindChange(String(changed.bindTarget ?? ""));
+      void handleBindChange(String(changed.bindTarget ?? ""));
       return;
     }
     if ("busNo" in changed) {
@@ -169,7 +173,8 @@ export const MotorForm = ({ motorId }: MotorFormProps) => {
       return;
     }
     if ("axisType" in changed) {
-      // 轴类型由物体控制类型/绑定状态决定，不可手改
+      if (boundObject) return;
+      updateMotor(motorId, { axisType: resolveAxisType(changed.axisType, axisType) });
       return;
     }
     if ("params" in changed || Object.keys(changed).some((key) => key.startsWith("params."))) {
@@ -303,7 +308,7 @@ export const MotorForm = ({ motorId }: MotorFormProps) => {
   return (
     <div className="min-w-0 space-y-2 p-3">
       <Form
-        key={`${motorId}-${bindTarget}-${motor.busNo}-${configAttributes.map((a) => a.id).join(",")}`}
+        key={`${motorId}-${bindTarget}-${motor.busNo}-${motor.axisType}-${formRevision}-${configAttributes.map((a) => a.id).join(",")}`}
         layout="horizontal"
         labelWidth={96}
         className="space-y-2"
@@ -343,12 +348,12 @@ export const MotorForm = ({ motorId }: MotorFormProps) => {
               label="轴类型"
               labelTitle={
                 boundObject
-                  ? "由绑定物体的控制类型决定，不可手改"
+                  ? "已绑定物体，轴类型由物体控制类型决定；解绑后可切换"
                   : resolveDriveFieldHelp("axisType", axisType, displayUnit)
               }
             >
               <Select
-                disabled
+                disabled={Boolean(boundObject)}
                 options={
                   axisTypeAttr ? enumOptionsFromAttr(axisTypeAttr) : [...AXIS_TYPE_OPTIONS]
                 }
@@ -513,6 +518,7 @@ export const MotorForm = ({ motorId }: MotorFormProps) => {
           </div>
         </CollapsePanel>
       </Form>
+      {confirmDialog}
     </div>
   );
 };

@@ -1,0 +1,46 @@
+{
+  "schemaVersion": "1",
+  "meta": {
+    "id": "c2b5af33-5e8f-48ed-abe4-532ad839d1b4",
+    "name": "空",
+    "createdAt": "2026-11-23T08:54:09.239Z",
+    "modifiedAt": "2026-11-23T08:54:09.240Z",
+    "author": "管理员",
+    "status": "draft",
+    "wizard": {
+      "currentStep": "objects",
+      "completedSteps": [],
+      "skippedSteps": [],
+      "simulationOnly": true,
+      "wizardCompleted": false
+    }
+  },
+  "setup": {
+    "plcs": [],
+    "motors": [],
+    "controlledObjects": [],
+    "alignment": {}
+  },
+  "motion": {
+    "actionSequences": [],
+    "programs": []
+  },
+  "rules": {
+    "rules": []
+  },
+  "view": {
+    "target": [
+      0,
+      0,
+      0
+    ],
+    "alpha": -0.7853981633974483,
+    "beta": 1.0471975511965976,
+    "zoomRadius": 14,
+    "orthoHalfHeight": 7,
+    "preset": "persp",
+    "focalLengthMm": 50,
+    "gridSize": 20
+  },
+  "snapshots": []
+}

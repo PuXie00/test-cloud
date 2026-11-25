@@ -130,8 +130,12 @@ export const ProjectCenterScreen = ({
     }
   };
 
+  const selectedIsOpen = Boolean(
+    selectedProject && currentProject?.folderName === selectedProject.folderName,
+  );
+
   const handleDelete = async () => {
-    if (!selectedProject) return;
+    if (!selectedProject || selectedIsOpen) return;
     const ok = await window.toolAPI.confirm({
       title: "删除工程",
       message: `确认删除工程「${selectedProject.name}」？`,
@@ -228,6 +232,7 @@ export const ProjectCenterScreen = ({
           onSaveAs={canManageFiles ? () => setSaveAsOpen(true) : undefined}
           onExport={canManageFiles ? () => void handleExport() : undefined}
           onDelete={canDelete ? () => void handleDelete() : undefined}
+          deleteDisabled={selectedIsOpen}
           onRestore={canManageFiles ? (entry) => void handleRestore(entry) : undefined}
         />
       </div>

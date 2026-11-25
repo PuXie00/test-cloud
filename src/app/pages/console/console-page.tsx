@@ -67,6 +67,9 @@ import {
 import { AxisMotionEditLockSync, AxisMotionProvider } from "./hooks/axis-motion";
 import { ActionRunEditLockSync, ActionRunProvider } from "./hooks/action-run";
 import { RulesProvider } from "./hooks/use-rules";
+import { HaStateProvider } from "@/app/hot-standby/ha-state-provider";
+import { HaProjectSyncProvider } from "@/app/hot-standby/ha-project-sync-provider";
+import { HaStatusSync } from "@/app/hot-standby/ha-status-sync";
 import { ControlLayoutProvider, useControlLayout } from "./hooks/use-control-layout";
 import { useEmptyProjectWizardEntry } from "./hooks/use-empty-project-wizard-entry";
 
@@ -286,6 +289,7 @@ const ConsoleInner = () => {
               <PlaceholderSelectionSync />
               <AxisMotionEditLockSync />
               <ActionRunEditLockSync />
+              <HaStatusSync />
               <BuildDebugLifecycle />
               <AiConsoleViewSync devicesTab={devicesRightTab} />
             </div>
@@ -299,37 +303,41 @@ const ConsoleInner = () => {
 };
 
 export const ConsolePage = () => (
-  <AxisMotionProvider>
-    <ActionRunProvider>
-      <ConsoleModeProvider>
-        <SelectionProvider>
-          <ProgramProvider>
-            <ProgramScopedProviders>
-              <ProjectStoreProvider>
-                <PlcRuntimeProvider>
-                  <ProjectExecCardsProvider>
-                    <ControlledObjectsProvider>
-                      <LogStreamProvider>
-                        <ActionBuilderProvider>
-                          <AlignmentChecklistProvider>
-                            <BuildDebugProvider>
-                              <ConsoleLoginProvider>
-                                <ProjectLeaveGuardProvider>
-                                  <ConsoleInner />
-                                </ProjectLeaveGuardProvider>
-                              </ConsoleLoginProvider>
-                            </BuildDebugProvider>
-                          </AlignmentChecklistProvider>
-                        </ActionBuilderProvider>
-                      </LogStreamProvider>
-                    </ControlledObjectsProvider>
-                  </ProjectExecCardsProvider>
-                </PlcRuntimeProvider>
-              </ProjectStoreProvider>
-            </ProgramScopedProviders>
-          </ProgramProvider>
-        </SelectionProvider>
-      </ConsoleModeProvider>
-    </ActionRunProvider>
-  </AxisMotionProvider>
+  <HaStateProvider>
+    <HaProjectSyncProvider>
+      <AxisMotionProvider>
+        <ActionRunProvider>
+          <ConsoleModeProvider>
+            <SelectionProvider>
+              <ProgramProvider>
+                <ProgramScopedProviders>
+                  <ProjectStoreProvider>
+                    <PlcRuntimeProvider>
+                      <ProjectExecCardsProvider>
+                        <ControlledObjectsProvider>
+                          <LogStreamProvider>
+                            <ActionBuilderProvider>
+                              <AlignmentChecklistProvider>
+                                <BuildDebugProvider>
+                                  <ConsoleLoginProvider>
+                                    <ProjectLeaveGuardProvider>
+                                      <ConsoleInner />
+                                    </ProjectLeaveGuardProvider>
+                                  </ConsoleLoginProvider>
+                                </BuildDebugProvider>
+                              </AlignmentChecklistProvider>
+                            </ActionBuilderProvider>
+                          </LogStreamProvider>
+                        </ControlledObjectsProvider>
+                      </ProjectExecCardsProvider>
+                    </PlcRuntimeProvider>
+                  </ProjectStoreProvider>
+                </ProgramScopedProviders>
+              </ProgramProvider>
+            </SelectionProvider>
+          </ConsoleModeProvider>
+        </ActionRunProvider>
+      </AxisMotionProvider>
+    </HaProjectSyncProvider>
+  </HaStateProvider>
 );

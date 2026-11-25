@@ -52,6 +52,8 @@ import type { KinematicsSolveResult } from '../../shared/kinematics/types'
 import type { AiRendererMessage, AiWriteRequest, AiWriteResult } from '../../shared/ai-bridge/types'
 import type { AuthAPI } from '../../electron/preload/auth-api'
 export type { AuthAPI }
+import type { HaAPI } from '../../electron/preload/ha-api'
+export type { HaAPI }
 
 export type {
   CreateProjectParams,
@@ -79,6 +81,19 @@ export type ProjectModelEntry = {
   sizeBytes: number
 }
 
+export type ProjectModelImportResult = ProjectModelEntry & {
+  /** OBJ 引用了、但没找到或格式不支持的材质文件和贴图 */
+  missingAssets: string[]
+}
+
+export type ProjectModelData = {
+  data: ArrayBuffer
+  fileName: string
+  ext: string
+  /** OBJ 的 .mtl 和贴图 */
+  assets: { name: string; data: ArrayBuffer }[]
+}
+
 /** 工程域门面：window.projectAPI */
 export type ProjectAPI = {
   list: () => Promise<ProjectResult<ProjectSummary[]>>
@@ -102,11 +117,9 @@ export type ProjectAPI = {
     list: () => Promise<ProjectResult<ProjectModelEntry[]>>
     import: (params?: {
       sourcePath?: string
-    }) => Promise<ProjectResult<ProjectModelEntry>>
+    }) => Promise<ProjectResult<ProjectModelImportResult>>
     delete: (params: { modelId: string }) => Promise<ProjectResult<null>>
-    read: (params: {
-      modelId: string
-    }) => Promise<ProjectResult<{ data: ArrayBuffer; fileName: string; ext: string }>>
+    read: (params: { modelId: string }) => Promise<ProjectResult<ProjectModelData>>
   }
 }
 
@@ -286,6 +299,8 @@ declare global {
     authAPI?: AuthAPI
     /** 软件升级；测试 / 纯浏览器环境下不存在 */
     updateAPI?: UpdateAPI
+    /** 主备热备；测试 / 纯浏览器环境下不存在 */
+    haAPI?: HaAPI
     /** @deprecated 新域请用 xxxAPI；仅兼容尚未迁移的通道 */
     ipcRenderer: {
       on: (

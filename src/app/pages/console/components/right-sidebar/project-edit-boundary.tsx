@@ -222,10 +222,15 @@ export const ProjectEditBoundary = ({
   };
 
   // After Enter commit while still focused, rearm before the next child onChange.
+  // Focus sessions only settle on blur, so an unfocused target (e.g. the hidden
+  // native select Radix Select dispatches change on) must not open one.
   const handleEditableRearmCapture = (
     event: FormEvent<HTMLElement> | ChangeEvent<HTMLElement>,
   ) => {
     if (sessionRef.current) {
+      return;
+    }
+    if (event.target !== document.activeElement) {
       return;
     }
     if (!isEditableHistoryTarget(event.target)) {

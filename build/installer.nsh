@@ -68,3 +68,27 @@
     MessageBox MB_OK|MB_ICONINFORMATION "工程保留在 $INSTDIR\Project。$\r$\n重新安装到同一位置会继续使用；不需要的话可以手动删除。" /SD IDOK
   ${EndIf}
 !macroend
+
+; 主备热备：主机的 C++（Runtime\YzRuntime.exe）当 ws 服务器，备机要能连进来（docs/cpp-hot-standby-api.md 7.1）。
+; 按程序放行，不用知道端口（端口由 C++ 定）；先删同名规则再加，升级、回退不会越加越多。
+; 改防火墙要管理员权限：没以管理员身份安装时加不上，安装日志里会写，需要手动放行或以管理员身份重装。
+; 规则名用英文：netsh 经 nsExec 传中文可能乱码。
+!define YZ_FIREWALL_RULE "YZDITEC YzRuntime hot standby"
+
+!macro customInstall
+  nsExec::Exec 'netsh advfirewall firewall delete rule name="${YZ_FIREWALL_RULE}"'
+  Pop $0
+  nsExec::Exec 'netsh advfirewall firewall add rule name="${YZ_FIREWALL_RULE}" dir=in action=allow program="$INSTDIR\Runtime\YzRuntime.exe" enable=yes profile=any'
+  Pop $0
+  ${If} $0 != 0
+    DetailPrint "主备热备的防火墙规则没加上（$0）：主机要在防火墙里放行 $INSTDIR\Runtime\YzRuntime.exe"
+  ${EndIf}
+!macroend
+
+!macro customUnInstall
+  ; 升级、回退时安装包会重新加，只在真卸载时删
+  ${IfNot} ${isUpdated}
+    nsExec::Exec 'netsh advfirewall firewall delete rule name="${YZ_FIREWALL_RULE}"'
+    Pop $0
+  ${EndIf}
+!macroend

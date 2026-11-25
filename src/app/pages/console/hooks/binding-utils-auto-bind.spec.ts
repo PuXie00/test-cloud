@@ -4,7 +4,12 @@ import type {
   ControlType,
   Motor,
 } from "../components/right-sidebar/config-wizard/config-wizard-types";
-import { planAutoBind } from "./binding-utils";
+import {
+  bindMotorsByAssignments,
+  listAxisTypeRewrites,
+  planAutoBind,
+  unbindMotor,
+} from "./binding-utils";
 
 const object = (id: number, controlType: ControlType, axisCount: number): ControlledObject =>
   ({
@@ -105,5 +110,40 @@ describe("planAutoBind", () => {
   it("没有空闲电机时不分配", () => {
     const plan = planAutoBind([object(1, "singlePointMove", 1)], []);
     expect(plan).toEqual({ assignments: [], unplacedAxisCount: 1 });
+  });
+});
+
+describe("轴类型改写", () => {
+  it("按分配绑定时按物体控制类型改写轴类型，未分配的电机不动", () => {
+    const motors = [motor(10, 9, 0), motor(11, 9, 0, { axisType: 1 }), motor(12, 9, 0)];
+    const next = bindMotorsByAssignments(
+      [object(1, "continuousRotation", 1), object(2, "singlePointMove", 1)],
+      motors,
+      [
+        { objectId: 1, axisKey: "0", motorId: 10 },
+        { objectId: 2, axisKey: "0", motorId: 11 },
+      ],
+    );
+    expect(next.map((item) => [item.controlledObjectId, item.axisKey, item.axisType])).toEqual([
+      [1, "0", 1],
+      [2, "0", 0],
+      [null, null, 0],
+    ]);
+    expect(next[2]).toBe(motors[2]);
+  });
+
+  it("列出轴类型变化的电机，忽略新出现的电机", () => {
+    const prev = [motor(10, 9, 0), motor(11, 9, 0, { axisType: 1 })];
+    const next = [
+      motor(10, 9, 0, { axisType: 1 }),
+      motor(11, 9, 0, { axisType: 1 }),
+      motor(12, 9, 0, { axisType: 1 }),
+    ];
+    expect(listAxisTypeRewrites(prev, next)).toEqual([{ motor: prev[0], from: 0, to: 1 }]);
+  });
+
+  it("解绑保留轴类型", () => {
+    const bound = motor(10, 9, 0, { axisType: 1, controlledObjectId: 1, axisKey: "0" });
+    expect(unbindMotor(bound)).toEqual({ ...bound, controlledObjectId: null, axisKey: null });
   });
 });

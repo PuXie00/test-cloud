@@ -162,7 +162,7 @@ describe("buildModelParamPayload multi-level hoist", () => {
     expect(payload?.paramCount).toMatchObject({
       modelType: 3,
       nSections: 2,
-      adjustDistanceList: [{ adjustDistance: 100 }, { adjustDistance: 400 }],
+      adjustDistanceList: [100, 400],
       decelerationRatio: 60,
     });
   });

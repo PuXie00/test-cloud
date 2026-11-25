@@ -90,6 +90,15 @@ export const MultiMotorDriveParamsForm = ({ motorIds }: MultiMotorDriveParamsFor
   })();
   const axisType = resolveAxisType(sharedAxisType === MIXED ? undefined : sharedAxisType);
   const axisTypeAttr = attrById.get("axisType");
+  const hasBoundMotor = selectedMotors.some((motor) => motor.controlledObjectId != null);
+
+  const handleAxisTypeChange = (next: string) => {
+    if (hasBoundMotor) return;
+    const nextAxisType = resolveAxisType(next, axisType);
+    for (const motor of selectedMotors) {
+      updateMotor(motor.id, { axisType: nextAxisType });
+    }
+  };
 
   const handleNumberChange = (key: string, next: number) => {
     for (const motor of selectedMotors) {
@@ -179,18 +188,23 @@ export const MultiMotorDriveParamsForm = ({ motorIds }: MultiMotorDriveParamsFor
       <CollapsePanel title="基础信息" defaultOpen>
         <div
           className="flex min-h-9 items-center gap-3"
-          title="由绑定物体的控制类型决定，不可手改"
+          title={
+            hasBoundMotor
+              ? "所选电机中有已绑定物体的，轴类型由物体控制类型决定；全部解绑后可切换"
+              : resolveDriveFieldHelp("axisType", axisType, displayUnit)
+          }
         >
           <span className="w-24 shrink-0 truncate text-body-sm text-muted-foreground">轴类型</span>
           <div className="min-w-0 flex-1">
             <Select
-              disabled
+              disabled={hasBoundMotor}
               aria-label="轴类型"
               options={
                 axisTypeAttr ? enumOptionsFromAttr(axisTypeAttr) : [...AXIS_TYPE_OPTIONS]
               }
               value={sharedAxisType === MIXED ? undefined : String(sharedAxisType ?? "")}
               placeholder={sharedAxisType === MIXED ? "多项不同" : undefined}
+              onValueChange={handleAxisTypeChange}
             />
           </div>
         </div>

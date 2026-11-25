@@ -158,7 +158,7 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
         label: '系统设置',
         description: '界面设置、控台校准、网络配置、通知与声音',
       },
-      { id: 'collab.manage', label: '多机协作管理', description: '菜单里的多机协作管理' },
+      { id: 'collab.manage', label: '主备热备', description: '菜单里的主备热备：设置、开启、关闭' },
     ],
   },
 ]
