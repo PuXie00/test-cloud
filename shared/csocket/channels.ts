@@ -7,6 +7,7 @@ export const CSOCKET_CHANNELS = {
   addDevicePlc: 'csocket:add-device-plc',
   deleteDevicePlc: 'csocket:delete-device-plc',
   actionReady: 'csocket:action-ready',
+  actionCancelPrepare: 'csocket:action-cancel-prepare',
   actionGo: 'csocket:action-go',
   actionStop: 'csocket:action-stop',
   actionSpeedScale: 'csocket:action-speed-scale',

@@ -10,6 +10,7 @@ import { MOTION_DEFAULTS } from "@/app/project/configuration-rules";
 import { createEmptyDocument } from "@/app/project/project-document-empty";
 import type { ControlledObjectConfig, ProjectDocument } from "@/app/project/project-document-types";
 import {
+  cancelPreparedSequence,
   createCsocketSequenceTransport,
   createLocalSequenceTransport,
   downloadSequence,
@@ -110,6 +111,7 @@ const createMockCsocketApi = (saveResult: unknown) => ({
   actionReady: vi.fn().mockResolvedValue(saveResult),
   actionGo: vi.fn().mockResolvedValue({ success: true, data: [] }),
   actionStop: vi.fn().mockResolvedValue({ success: true, data: [] }),
+  actionCancelPrepare: vi.fn().mockResolvedValue({ success: true, data: [] }),
 });
 
 const fixtureObject = (): ControlledObjectConfig => ({
@@ -444,6 +446,39 @@ describe("readySequence PLC rejection", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("cancelPreparedSequence", () => {
+  const handle = { actionId: 4, trajectoryMode: true, deviceId: [7, 8] };
+
+  it("sends actionCancelPrepare for the prepared action", async () => {
+    const api = createMockCsocketApi({ success: true, data: [] });
+    await expect(cancelPreparedSequence(handle, createCsocketSequenceTransport(api))).resolves.toEqual({
+      ok: true,
+    });
+    expect(api.actionCancelPrepare).toHaveBeenCalledWith([handle]);
+    expect(api.actionStop).not.toHaveBeenCalled();
+  });
+
+  it("keeps the prepare when the PLC rejects the cancel", async () => {
+    const api = createMockCsocketApi({ success: true, data: [] });
+    api.actionCancelPrepare.mockResolvedValueOnce([{ success: false, code: 2, message: "动作不存在" }]);
+    await expect(cancelPreparedSequence(handle, createCsocketSequenceTransport(api))).resolves.toEqual({
+      ok: false,
+      toast: "error",
+      message: "取消准备失败：动作不存在",
+    });
+  });
+
+  it("treats an unreachable PLC as canceled", async () => {
+    const api = createMockCsocketApi({ success: true, data: [] });
+    api.actionCancelPrepare.mockResolvedValueOnce([
+      { success: false, code: "SEND_FAILED", message: "SEND_FAILED" },
+    ]);
+    await expect(cancelPreparedSequence(handle, createCsocketSequenceTransport(api))).resolves.toEqual({
+      ok: true,
+    });
   });
 });
 

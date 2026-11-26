@@ -90,6 +90,12 @@ export type SequenceExecutionTransport = {
     trajectoryMode: boolean;
     deviceId: number[];
   }) => Promise<void>;
+  /** 主动取消准备。没有该能力的传输层可以不提供 */
+  cancelPrepare?: (input: {
+    actionId: number;
+    trajectoryMode: boolean;
+    deviceId: number[];
+  }) => Promise<void>;
   /** 运行中调速；没有该能力的传输层可以不提供 */
   setSpeed?: (input: SequenceSpeedInput) => Promise<void>;
 };
@@ -98,6 +104,7 @@ export type SequenceCsocketClient = {
   actionReady: (items: ActionDataSaveItem[], opts?: unknown) => Promise<unknown>;
   actionGo: (items: unknown[], opts?: unknown) => Promise<unknown>;
   actionStop: (items: unknown[], opts?: unknown) => Promise<unknown>;
+  actionCancelPrepare?: (items: unknown[], opts?: unknown) => Promise<unknown>;
   actionSpeedScale?: (items: unknown[], opts?: unknown) => Promise<unknown>;
 };
 
@@ -255,6 +262,22 @@ export const stopSequence = async (
 export type SequenceReleaseResult = { ok: true } | LocalSequenceFailure;
 
 /**
+ * 主动取消准备。PLC 拒绝时如实报错；没连上 PLC 时按已取消处理。
+ */
+export const cancelPreparedSequence = async (
+  handle: { actionId: number; trajectoryMode: boolean; deviceId: number[] },
+  transport: SequenceExecutionTransport = getSequenceTransport(),
+): Promise<SequenceReleaseResult> => {
+  try {
+    await transport.cancelPrepare?.(handle);
+    return { ok: true };
+  } catch (error) {
+    if (isPlcRejection(error)) return plcFailure("取消准备失败", error);
+    return { ok: true };
+  }
+};
+
+/**
  * 释放一个已停下的动作（同停止指令）。PLC 拒绝时如实报错；没连上 PLC 时按成功处理。
  * 下一个动作准备前要先释放上一个，否则释放会把刚准备好的同一批物体一起停掉。
  */
@@ -275,6 +298,7 @@ export const createLocalSequenceTransport = (): SequenceExecutionTransport => ({
   saveAction: async () => undefined,
   syncCall: async () => undefined,
   stopAction: async () => undefined,
+  cancelPrepare: async () => undefined,
   setSpeed: async () => undefined,
 });
 
@@ -401,6 +425,19 @@ export const createCsocketSequenceTransport = (
         },
       ]),
       "actionStop",
+    );
+  },
+  cancelPrepare: async (input) => {
+    if (!api.actionCancelPrepare) return;
+    requireSuccessfulAcks(
+      await api.actionCancelPrepare([
+        {
+          actionId: input.actionId,
+          trajectoryMode: input.trajectoryMode,
+          deviceId: input.deviceId,
+        },
+      ]),
+      "actionCancelPrepare",
     );
   },
   setSpeed: async (input) => {

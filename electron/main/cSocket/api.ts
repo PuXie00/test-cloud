@@ -674,7 +674,60 @@ export class CsocketApiService {
     }
     return Promise.all(result)
   }
-
+  // 取消准备
+  actionCancelPrepare(items:{
+    actionId: number;
+    trajectoryMode: boolean;
+    deviceId: number[];
+}[], opts?: CsocketSendOpts) {
+    const isTMapedHeadRelease: {
+      actionId: number,
+      startFlag: number,
+      startTimestamp: number,
+      deviceCount: number,
+    }[] = [] 
+    const isTMaped:{
+      deviceId: number,
+    }[] = []
+    const isNotTMaped:  {
+      actionId: number;
+      startFlag: number;
+      loopCount: number;
+    }[] = []
+    items.forEach(item => {
+      if(item.trajectoryMode) {
+        isTMapedHeadRelease.push({
+          actionId: item.actionId,
+          startFlag: 0,
+          startTimestamp: Date.now(),
+          deviceCount: item.deviceId.length,
+        })
+        item.deviceId.forEach(deviceId => {
+          isTMaped.push({
+            deviceId: deviceId,
+          })
+        })
+      } else {
+        isNotTMaped.push({
+          actionId: item.actionId,
+          startFlag: 0,
+          loopCount: 1,
+        })
+      }
+    })
+    const result: Promise<SendData>[] = []
+    if(isTMaped.length > 0) {
+      const releaseOpts = {
+        ...opts,
+        paramHeard: isTMapedHeadRelease,
+      }
+      result.push(this.sendBuilt('Opera|actionSyncRelease', '0x1007', isTMaped, releaseOpts))
+    }
+    if(isNotTMaped.length > 0) {
+      result.push(this.syncMovebegin(isNotTMaped, opts))
+    }
+    return Promise.all(result)
+  }
   // 调速
   actionSpeedScale(items: {
     actionId: number,

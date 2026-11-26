@@ -11,11 +11,12 @@ import { FaderSlot } from "./fader-slot";
 
 type ExecutorsProps = {
   onTriggerSequence: (slotIndex: number, sequenceId: number) => void;
+  onCancelReady: (slotIndex: number) => void;
 };
 
 /** ExecArea 跟着任务卡每帧重渲染；推子槽只随自己的数据变化 */
-export const Executors = memo(({ onTriggerSequence }: ExecutorsProps) => {
-  const { faderSlots, setFaderValue, clearSlotReady, setSlotRunOptions } = useExecutorSlots();
+export const Executors = memo(({ onTriggerSequence, onCancelReady }: ExecutorsProps) => {
+  const { faderSlots, setFaderValue, setSlotRunOptions } = useExecutorSlots();
   const { program, reorderItemInChapter, moveItemAcrossChapter, currentChapterId, currentPageIndex } =
     useProgram();
   const { currentProject } = useProject();
@@ -82,7 +83,7 @@ export const Executors = memo(({ onTriggerSequence }: ExecutorsProps) => {
                   }
                   onPreviewHoldEnd={stopPreview}
                   onGo={() => slot.sequence && onTriggerSequence(slot.index, slot.sequence.id)}
-                  onCancelReady={() => clearSlotReady(slot.index)}
+                  onCancelReady={() => onCancelReady(slot.index)}
                   onRunOptionsChange={(patch) => setSlotRunOptions(slot.index, patch)}
                   onFaderChange={(value) => setFaderValue(slot.index, value)}
                   onAssignFromDrag={handleAssignFromDrag(slot.index)}

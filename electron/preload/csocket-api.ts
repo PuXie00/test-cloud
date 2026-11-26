@@ -90,6 +90,7 @@ export const createCsocketApi = () => ({
   downloadPlcInfoPlc: invokeSend(CSOCKET_CHANNELS.downloadPlcInfoPlc),
   clearConfigPlc: invokeOptionalSend(CSOCKET_CHANNELS.clearConfigPlc),
   actionReady: invokeSend(CSOCKET_CHANNELS.actionReady) as ActionDataSaveFn,
+  actionCancelPrepare: invokeSend(CSOCKET_CHANNELS.actionCancelPrepare),
   actionGo: invokeSend(CSOCKET_CHANNELS.actionGo),
   actionSpeedScale: invokeSend(CSOCKET_CHANNELS.actionSpeedScale),
   disconnectMotionConfigPlc: invokeSend(CSOCKET_CHANNELS.disconnectMotionConfigPlc),

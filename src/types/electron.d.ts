@@ -184,6 +184,7 @@ export type CsocketAPI = {
   downloadPlcInfoPlc: CsocketSendFn
   clearConfigPlc: CsocketSendFn
   actionReady: (items: ActionDataSaveItem[], opts?: CsocketSendOpts) => CsocketSendResult
+  actionCancelPrepare: CsocketSendFn
   actionGo: CsocketSendFn
   actionSpeedScale: CsocketSendFn
   disconnectMotionConfigPlc: CsocketSendFn

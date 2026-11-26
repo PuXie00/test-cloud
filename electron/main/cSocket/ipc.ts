@@ -255,6 +255,9 @@ export const registerCppSocketIpc = (api: CsocketApiService): void => {
   handleItems(CSOCKET_CHANNELS.actionReady, (items, opts) =>
     api.actionReady(items as ActionDataSaveItem[], opts),
   )
+  handleItems(CSOCKET_CHANNELS.actionCancelPrepare, (items, opts) =>
+    api.actionCancelPrepare(items as Parameters<CsocketApiService['actionCancelPrepare']>[0], opts),
+  )
   handleItems(CSOCKET_CHANNELS.actionGo, (items, opts) =>
     api.actionGo(items as Parameters<CsocketApiService['actionGo']>[0], opts),
   )

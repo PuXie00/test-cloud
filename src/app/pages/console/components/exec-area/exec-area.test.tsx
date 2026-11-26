@@ -41,6 +41,7 @@ const {
   launchMock,
   stopSequenceMock,
   releaseSequenceMock,
+  cancelPreparedSequenceMock,
   localSequenceTransport,
   faderSlotsRef,
   documentRef,
@@ -66,6 +67,9 @@ const {
   launchMock: vi.fn(() => "card-1"),
   stopSequenceMock: vi.fn(async () => undefined),
   releaseSequenceMock: vi.fn(async (): Promise<
+    { ok: true } | { ok: false; toast: "warning" | "error"; message: string }
+  > => ({ ok: true })),
+  cancelPreparedSequenceMock: vi.fn(async (): Promise<
     { ok: true } | { ok: false; toast: "warning" | "error"; message: string }
   > => ({ ok: true })),
   localSequenceTransport: {
@@ -330,6 +334,7 @@ vi.mock("../../hooks/sequence-execution", () => ({
     startLocalAuthoredSequenceMock(...args as [{ sequenceId: number }]),
   stopSequence: (...args: unknown[]) => stopSequenceMock(...args),
   releaseSequence: (...args: unknown[]) => releaseSequenceMock(...(args as [])),
+  cancelPreparedSequence: (...args: unknown[]) => cancelPreparedSequenceMock(...(args as [])),
   resolveSequenceSpeedCap: (...args: unknown[]) => resolveSequenceSpeedCapMock(...(args as [])),
   getLocalSequenceTransport: () => localSequenceTransport,
   getSequenceTransport: () => localSequenceTransport,
@@ -524,6 +529,7 @@ afterEach(() => {
   launchMock.mockClear();
   stopSequenceMock.mockClear();
   releaseSequenceMock.mockClear();
+  cancelPreparedSequenceMock.mockClear();
   toastWarning.mockClear();
   toastError.mockClear();
   readySequenceMock.mockClear();
@@ -1408,6 +1414,11 @@ describe("ExecArea launch guard", () => {
     fireEvent.click(screen.getByRole("button", { name: "取消准备" }));
     await waitFor(() => {
       expect(screen.queryByRole("alertdialog")).toBeNull();
+    });
+    expect(cancelPreparedSequenceMock).toHaveBeenCalledWith({
+      actionId: 15,
+      trajectoryMode: false,
+      deviceId: [1],
     });
     expect(clearSlotReadyMock).toHaveBeenCalledWith(1);
     expect(goSequenceMock).not.toHaveBeenCalled();

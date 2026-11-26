@@ -27,6 +27,7 @@ import {
   nextSequenceSlot,
 } from "../../hooks/sequence-run-status";
 import {
+  cancelPreparedSequence,
   goSequence,
   readySequence,
   releaseSequence,
@@ -583,6 +584,29 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     readyFromSlot(slot, sequenceId);
   };
 
+  /** 主动取消准备：先通知 PLC，成功后再清掉槽上的已准备 */
+  const handleCancelReady = (slotIndex: number) => {
+    const sequenceId = faderSlots[slotIndex]?.sequence?.id;
+    const authored = currentProject?.document.motion.actionSequences.find(
+      (entry) => entry.id === sequenceId,
+    );
+    void (async () => {
+      if (authored) {
+        const canceled = await cancelPreparedSequence({
+          actionId: authored.id,
+          trajectoryMode: authored.trajectoryMode === true,
+          deviceId: [...sequenceObjectIds(authored)].sort((left, right) => left - right),
+        });
+        if (!canceled.ok) {
+          reportSequenceResult(canceled);
+          return;
+        }
+      }
+      clearSlotReady(slotIndex);
+      setPreparedPoseAlert((current) => (current?.slotIndex === slotIndex ? null : current));
+    })();
+  };
+
   /** 准备后设备被移动过：撤掉准备，按现在的位置重新走 Ready（需要时弹接入点选择） */
   const handleReprepare = (alert: PreparedPoseAlert) => {
     setPreparedPoseAlert(null);
@@ -609,7 +633,10 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
         />
       </div>
       <div data-guide="console-action-faders" className="min-w-0 flex-1">
-        <Executors onTriggerSequence={handleStableTriggerSequence} />
+        <Executors
+          onTriggerSequence={handleStableTriggerSequence}
+          onCancelReady={handleCancelReady}
+        />
       </div>
       <StartEntryDialog
         request={entryRequest}
@@ -619,10 +646,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       {preparedPoseAlert !== null ? (
         <PreparedPoseDialog
           open
-          onCancelReady={() => {
-            clearSlotReady(preparedPoseAlert.slotIndex);
-            setPreparedPoseAlert(null);
-          }}
+          onCancelReady={() => handleCancelReady(preparedPoseAlert.slotIndex)}
           onReprepare={() => handleReprepare(preparedPoseAlert)}
         />
       ) : null}
