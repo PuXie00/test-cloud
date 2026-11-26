@@ -156,11 +156,12 @@ describe("downloadSequence", () => {
   it("passes compiled save items with actionId and no actionNo", async () => {
     const transport = createTransport();
     const downloaded = await downloadSequence(validSequence, context, transport);
+    // 强制轨迹：准备时 1006 要用的物体、循环、速度一起带上（速度缺省 100%）
     const expected = toActionDataSaveItems(
       compilePlcAction(validSequence, context),
       validSequence.id,
       validSequence.trajectoryMode,
-    );
+    ).map((item) => ({ ...item, deviceId: [7], loopCount: 1, speedScale: 1 }));
     expect(transport.saveAction).toHaveBeenCalledWith(expected);
     expect(downloaded).toEqual({
       ok: true,
@@ -282,7 +283,51 @@ describe("readySequence", () => {
       name: "Seq",
       sequenceHandle: { actionId: validSequence.id },
       fingerprint: sequenceReadyFingerprint(validSequence),
+      speedPercent: 100,
     });
+  });
+
+  it("sends the fader speed, loop count and devices for the forced 1006, capped by the speed range", async () => {
+    const transport = createTransport();
+    const readied = await readySequence({
+      document: documentWithSequence(validSequence),
+      sequenceId: validSequence.id,
+      faderPercent: 150,
+      maxSpeedPercent: 120,
+      startPlan: {
+        forced: true,
+        nearest: true,
+        direction: 1,
+        startMode: "nearest",
+        targetFrameMs: 400,
+        transitionSec: 1,
+        prepareTimeMs: 1000,
+        loopCount: 0,
+        motorLimitScale: null,
+        members: [],
+      },
+      transport,
+    });
+    expect(readied).toMatchObject({ ok: true, speedPercent: 120 });
+    const items = transport.saveAction.mock.calls[0]?.[0] as Array<Record<string, unknown>>;
+    expect(items.length).toBeGreaterThan(0);
+    // 就近计划的实际循环配置优先
+    expect(items.every((item) => item.speedScale === 1.2 && item.loopCount === 0)).toBe(true);
+    expect(items.every((item) => JSON.stringify(item.deviceId) === "[7]")).toBe(true);
+  });
+
+  it("leaves the 1006 fields off non-forced items", async () => {
+    const transport = createTransport();
+    const nonForced = { ...validSequence, trajectoryMode: false };
+    await readySequence({
+      document: documentWithSequence(nonForced),
+      sequenceId: nonForced.id,
+      faderPercent: 80,
+      transport,
+    });
+    const items = transport.saveAction.mock.calls[0]?.[0] as Array<Record<string, unknown>>;
+    expect(items.length).toBeGreaterThan(0);
+    expect(items.some((item) => "speedScale" in item || "loopCount" in item || "deviceId" in item)).toBe(false);
   });
 
   it("attaches the start plan to every saved item only when one is given", async () => {
@@ -374,6 +419,7 @@ describe("readySequence", () => {
       name: "Seq",
       sequenceHandle: { actionId: validSequence.id },
       fingerprint: sequenceReadyFingerprint(validSequence),
+      speedPercent: 100,
     });
   });
 
@@ -394,6 +440,7 @@ describe("readySequence", () => {
         name: "Seq",
         sequenceHandle: { actionId: validSequence.id },
         fingerprint: sequenceReadyFingerprint(validSequence),
+        speedPercent: 100,
       });
       expect(api.actionReady).toHaveBeenCalledTimes(1);
     } finally {

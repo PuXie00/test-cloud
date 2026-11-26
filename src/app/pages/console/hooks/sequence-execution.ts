@@ -218,6 +218,8 @@ export const downloadSequence = async (
   startPlan?: NearestStartPlan | null,
   safeGroup = 1,
   runDirection = true,
+  /** 强制轨迹准备时 1006 的速度倍率，1 = 100%（按准备时的推子算） */
+  speedScale = 1,
 ): Promise<DownloadedSequence> => {
   const issues = validateActionSequence(sequence, toValidationContext(context));
   if (hasBlockingSequenceIssues(issues)) {
@@ -232,14 +234,27 @@ export const downloadSequence = async (
     return { ok: false, reason: "validation", issues: [COMPILE_FAILURE_ISSUE] };
   }
 
-  const items = toActionDataSaveItems(
+  const saveItems = toActionDataSaveItems(
     compiled,
     sequence.id,
     sequence.trajectoryMode,
     safeGroup,
     runDirection,
   );
-  await transport.saveAction(startPlan ? items.map((item) => ({ ...item, startPlan })) : items);
+  // 强制轨迹准备时紧跟着发 1006（主进程 actionReady）：带上物体、循环、速度，和 GO 原来发的一致
+  const forcedPrepare = sequence.trajectoryMode
+    ? {
+        deviceId: [...sequenceObjectIds(sequence)].sort((left, right) => left - right),
+        loopCount: startPlan?.loopCount ?? toActionGoLoopCount(isSequenceLooping(sequence)),
+        speedScale,
+      }
+    : null;
+  const items = saveItems.map((item) => ({
+    ...item,
+    ...(startPlan ? { startPlan } : {}),
+    ...forcedPrepare,
+  }));
+  await transport.saveAction(items);
   return {
     ok: true,
     actionId: sequence.id,
@@ -474,6 +489,8 @@ export type LocalSequenceReadyResult =
       name: string;
       sequenceHandle: SequenceRuntimeHandle;
       fingerprint: string;
+      /** 准备时下发的速度（百分比）：强制轨迹的 1006 在准备时发，GO 沿用它 */
+      speedPercent: number;
     }
   | LocalSequenceFailure;
 
@@ -533,12 +550,17 @@ export const readySequence = async (args: {
   runDirection?: boolean;
   /** 准备时的实时位置：非强制 move 表里序列不控制的轴填它 */
   telemetryByObjectId?: ReadonlyMap<number, HpyPose>;
+  /** 准备时的推子速度（百分比）；强制轨迹按它发 1006，缺省 100% */
+  faderPercent?: number;
+  /** 调速范围给出的速度上限（百分比）；缺省或 null 为不限 */
+  maxSpeedPercent?: number | null;
   transport?: SequenceExecutionTransport;
 }): Promise<LocalSequenceReadyResult> => {
   const found = lookupAuthoredSequence(args.document, args.sequenceId);
   if (!found.ok) return found;
 
   const transport = args.transport ?? getSequenceTransport();
+  const speedPercent = capSpeedPercent(args.faderPercent ?? 100, args.maxSpeedPercent);
   try {
     const downloaded = await downloadSequence(
       found.sequence,
@@ -550,6 +572,7 @@ export const readySequence = async (args: {
       args.startPlan,
       args.safeGroup ?? 1,
       args.runDirection ?? true,
+      mapFaderPercentToSpeedScale(speedPercent),
     );
     if (!downloaded.ok) {
       return { ok: false, toast: "warning", message: "动作序列校验失败，无法下载" };
@@ -562,6 +585,7 @@ export const readySequence = async (args: {
         actionId: downloaded.actionId,
       },
       fingerprint: sequenceReadyFingerprint(found.sequence),
+      speedPercent,
     };
   } catch (error) {
     // PLC 拒绝了准备：如实报错，不能当成已准备
@@ -574,6 +598,7 @@ export const readySequence = async (args: {
         actionId: found.sequence.id,
       },
       fingerprint: sequenceReadyFingerprint(found.sequence),
+      speedPercent,
     };
   }
 };
@@ -581,9 +606,10 @@ export const readySequence = async (args: {
 export const goSequence = async (args: {
   document: ProjectDocument;
   sequenceId: number;
+  /** 推子速度（百分比）。强制轨迹的速度在准备时已随 1006 发了，这里传准备时的那个，只记在任务卡上 */
   faderPercent?: number;
   reverse?: boolean;
-  /** 准备时就近算法给出的计划：1006 用它的准备所需时间、各设备 V/A 与实际循环配置 */
+  /** 准备时就近算法给出的计划：实际循环配置；强制轨迹的 1006 已在准备时按它发过，GO 只发 1007 */
   startPlan?: NearestStartPlan | null;
   /** 调速范围给出的速度上限（百分比）；缺省或 null 为不限 */
   maxSpeedPercent?: number | null;

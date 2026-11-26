@@ -9,6 +9,7 @@ import {
   fallbackActionCardSeed,
   isExecCardAtRest,
   isExecCardInTransition,
+  localActiveRuns,
   parseActionRunReports,
   settleSilentCards,
   type ActionRunReport,
@@ -270,5 +271,26 @@ describe("isExecCardInTransition", () => {
     expect(isExecCardInTransition(card({ run, status: "stopped" }))).toBe(false);
     expect(isExecCardInTransition(card({ run: { ...run, state: ACTION_RUN_STATE.running } }))).toBe(false);
     expect(isExecCardInTransition(card())).toBe(false);
+  });
+});
+
+describe("localActiveRuns", () => {
+  it("lists this machine's running, paused and stopping cards, but not external ones or finished ones", () => {
+    expect(
+      localActiveRuns([
+        card({ name: "开场", status: "running" }),
+        card({ name: "暂停的", status: "paused", source: { kind: "program" } }),
+        card({ name: "减速中", status: "stopping" }),
+        card({ name: "外部的", status: "running", source: { kind: "external" } }),
+        card({ name: "停在半路", status: "stopped" }),
+        card({ name: "已结束", status: "completed" }),
+        card({ name: "出错", status: "error" }),
+      ]),
+    ).toEqual({ running: ["开场", "暂停的"], stopping: ["减速中"] });
+  });
+
+  it("is empty when nothing local is running", () => {
+    expect(localActiveRuns([])).toEqual({ running: [], stopping: [] });
+    expect(localActiveRuns([card({ source: { kind: "external" } })])).toEqual({ running: [], stopping: [] });
   });
 });

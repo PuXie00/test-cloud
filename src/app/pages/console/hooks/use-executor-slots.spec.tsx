@@ -8,6 +8,7 @@ import type { PageItems } from "./program-context";
 import {
   deriveFaderSlotPhase,
   ExecutorSlotsProvider,
+  programItemKey,
   useExecutorSlots,
   type SlotRunOptions,
 } from "./use-executor-slots";
@@ -58,7 +59,13 @@ describe("deriveFaderSlotPhase", () => {
   });
 });
 
-const pageItemsFor = (ids: Array<number | null>): PageItems => ({
+const pageItemsFor = (
+  ids: Array<number | null>,
+  chapterId = "ch-1",
+  startIndex = 0,
+): PageItems => ({
+  chapterId,
+  startIndex,
   sequences: ids.flatMap((id) =>
     id === null
       ? []
@@ -75,11 +82,12 @@ describe("ExecutorSlotsProvider", () => {
       createElement(ExecutorSlotsProvider, { pageItems, sequenceFingerprints: fingerprints }, children);
 
     const { result, rerender } = renderHook(() => useExecutorSlots(), { wrapper });
+    const key = (index: number) => result.current.faderSlots[index]!.itemKey;
 
     act(() => {
-      result.current.markSlotReady(0, 15, "fp-15", null, {});
-      result.current.markSlotReady(1, 16, "fp-16", null, {});
-      result.current.setFaderValue(0, 150);
+      result.current.markSlotReady(key(0), 15, "fp-15", null, {});
+      result.current.markSlotReady(key(1), 16, "fp-16", null, {});
+      result.current.setFaderValue(key(0), 150);
     });
     expect(result.current.faderSlots[0]?.phase).toBe("ready");
     expect(result.current.faderSlots[0]?.faderValue).toBe(150);
@@ -105,26 +113,27 @@ describe("ExecutorSlotsProvider", () => {
         children,
       );
     const { result } = renderHook(() => useExecutorSlots(), { wrapper });
+    const key = (index: number) => result.current.faderSlots[index]!.itemKey;
 
     act(() => {
-      result.current.setFaderValue(0, 150);
-      result.current.setFaderValue(1, 150);
-      result.current.markSlotReady(0, 15, "fp-15", null, {}, 140);
-      result.current.markSlotReady(1, 16, "fp-16", null, {}, null);
+      result.current.setFaderValue(key(0), 150);
+      result.current.setFaderValue(key(1), 150);
+      result.current.markSlotReady(key(0), 15, "fp-15", null, {}, 140);
+      result.current.markSlotReady(key(1), 16, "fp-16", null, {}, null);
     });
     // 推子位置保持不动，上半段按 100%–上限换算
     expect(result.current.faderSlots[0]).toMatchObject({ maxSpeedPercent: 140, faderValue: 150, speedPercent: 120 });
     expect(result.current.faderSlots[1]).toMatchObject({ maxSpeedPercent: null, faderValue: 150, speedPercent: 150 });
 
     act(() => {
-      result.current.clearSlotReady(0);
-      result.current.setSlotRunning(0, true);
-      result.current.setFaderValue(0, 200);
+      result.current.clearSlotReady(key(0));
+      result.current.setSlotRunning(key(0), true);
+      result.current.setFaderValue(key(0), 200);
     });
     expect(result.current.faderSlots[0]).toMatchObject({ phase: "running", faderValue: 200, speedPercent: 140 });
 
     act(() => {
-      result.current.setSlotRunning(0, false);
+      result.current.setSlotRunning(key(0), false);
     });
     expect(result.current.faderSlots[0]).toMatchObject({ phase: "idle", maxSpeedPercent: null, speedPercent: 200 });
   });
@@ -151,9 +160,10 @@ describe("ExecutorSlotsProvider", () => {
         children,
       );
     const { result, rerender } = renderHook(() => useExecutorSlots(), { wrapper });
+    const key = (index: number) => result.current.faderSlots[index]!.itemKey;
 
     act(() => {
-      result.current.markSlotReady(0, 15, "fp-15", plan, poses);
+      result.current.markSlotReady(key(0), 15, "fp-15", plan, poses);
     });
     expect(result.current.faderSlots[0]?.phase).toBe("ready");
     expect(result.current.faderSlots[0]?.startPlan).toEqual(plan);
@@ -162,28 +172,28 @@ describe("ExecutorSlotsProvider", () => {
     expect(result.current.faderSlots[1]?.preparedPoses).toBeNull();
 
     act(() => {
-      result.current.setSlotRunning(0, true);
+      result.current.setSlotRunning(key(0), true);
     });
     expect(result.current.faderSlots[0]?.phase).toBe("running");
     expect(result.current.faderSlots[0]?.startPlan).toBeNull();
     expect(result.current.faderSlots[0]?.preparedPoses).toBeNull();
 
     act(() => {
-      result.current.setSlotRunning(0, false);
+      result.current.setSlotRunning(key(0), false);
     });
     expect(result.current.faderSlots[0]?.phase).toBe("ready");
     expect(result.current.faderSlots[0]?.startPlan).toEqual(plan);
     expect(result.current.faderSlots[0]?.preparedPoses).toEqual(poses);
 
     act(() => {
-      result.current.clearSlotReady(0);
+      result.current.clearSlotReady(key(0));
     });
     expect(result.current.faderSlots[0]?.phase).toBe("idle");
     expect(result.current.faderSlots[0]?.startPlan).toBeNull();
     expect(result.current.faderSlots[0]?.preparedPoses).toBeNull();
 
     act(() => {
-      result.current.markSlotReady(0, 15, "fp-15", plan, poses);
+      result.current.markSlotReady(key(0), 15, "fp-15", plan, poses);
     });
     fingerprints = { 15: "fp-15-next", 16: "fp-16" };
     rerender();
@@ -193,13 +203,16 @@ describe("ExecutorSlotsProvider", () => {
 
   it("reads run options from the program item and reports changes back to the program", () => {
     let pageItems = pageItemsFor([15, 16]);
-    const onSlotRunOptionsChange = vi.fn((index: number, runOptions: SlotRunOptions) => {
-      pageItems = {
-        sequences: pageItems.sequences.map((item, at) =>
-          at === index ? { ...item, runOptions: compactSlotRunOptions(runOptions) } : item,
-        ),
-      };
-    });
+    const onSlotRunOptionsChange = vi.fn(
+      (_chapterId: string, itemIndex: number, runOptions: SlotRunOptions) => {
+        pageItems = {
+          ...pageItems,
+          sequences: pageItems.sequences.map((item, at) =>
+            at === itemIndex ? { ...item, runOptions: compactSlotRunOptions(runOptions) } : item,
+          ),
+        };
+      },
+    );
     const wrapper = ({ children }: { children: ReactNode }) =>
       createElement(
         ExecutorSlotsProvider,
@@ -211,6 +224,7 @@ describe("ExecutorSlotsProvider", () => {
         children,
       );
     const { result, rerender } = renderHook(() => useExecutorSlots(), { wrapper });
+    const key = (index: number) => result.current.faderSlots[index]!.itemKey;
     expect(result.current.faderSlots[0]?.runOptions).toEqual({
       nearest: false,
       reverse: false,
@@ -218,20 +232,20 @@ describe("ExecutorSlotsProvider", () => {
     });
 
     act(() => {
-      result.current.setSlotRunOptions(0, { nearest: true });
+      result.current.setSlotRunOptions(key(0), { nearest: true });
     });
     rerender();
     act(() => {
-      result.current.setSlotRunOptions(0, { reverse: true });
+      result.current.setSlotRunOptions(key(0), { reverse: true });
     });
     rerender();
-    expect(onSlotRunOptionsChange).toHaveBeenLastCalledWith(0, {
+    expect(onSlotRunOptionsChange).toHaveBeenLastCalledWith("ch-1", 0, {
       nearest: true,
       reverse: true,
       safeGroup: false,
     });
     act(() => {
-      result.current.setSlotRunOptions(0, { safeGroup: true });
+      result.current.setSlotRunOptions(key(0), { safeGroup: true });
     });
     rerender();
     expect(result.current.faderSlots[0]?.runOptions).toEqual({
@@ -252,6 +266,72 @@ describe("ExecutorSlotsProvider", () => {
       reverse: false,
       safeGroup: false,
     });
+  });
+
+  it("keeps running, ready, busy and fader state with each chapter's own program item", () => {
+    // 两个章节放同样的序列：第 1 章节第 1 项、第 2 章节第 4 项在运行
+    let pageItems = pageItemsFor([15, 16, 15, 16], "ch-1");
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(
+        ExecutorSlotsProvider,
+        { pageItems, sequenceFingerprints: { 15: "fp-15", 16: "fp-16" } },
+        children,
+      );
+    const { result, rerender } = renderHook(() => useExecutorSlots(), { wrapper });
+    const phases = () => result.current.faderSlots.slice(0, 4).map((slot) => slot.phase);
+
+    act(() => {
+      result.current.syncRunningSlots(
+        new Set([programItemKey("ch-1", 0, 15), programItemKey("ch-2", 3, 16)]),
+      );
+      result.current.markSlotReady(result.current.faderSlots[1]!.itemKey, 16, "fp-16", null, {}, 140);
+      result.current.setFaderValue(result.current.faderSlots[1]!.itemKey, 150);
+      result.current.setSlotBusy(result.current.faderSlots[2]!.itemKey, true);
+    });
+    expect(phases()).toEqual(["running", "ready", "idle", "idle"]);
+    expect(result.current.faderSlots[1]).toMatchObject({ faderValue: 150, maxSpeedPercent: 140 });
+    expect(result.current.faderSlots[2]?.isBusy).toBe(true);
+
+    pageItems = pageItemsFor([15, 16, 15, 16], "ch-2");
+    rerender();
+    expect(phases()).toEqual(["idle", "idle", "idle", "running"]);
+    expect(result.current.faderSlots[1]).toMatchObject({ faderValue: 100, maxSpeedPercent: null });
+    expect(result.current.faderSlots[2]?.isBusy).toBe(false);
+    expect(result.current.faderSlots[3]).toMatchObject({ chapterId: "ch-2", itemIndex: 3 });
+
+    pageItems = pageItemsFor([15, 16, 15, 16], "ch-1");
+    rerender();
+    expect(phases()).toEqual(["running", "ready", "idle", "idle"]);
+    expect(result.current.faderSlots[1]?.faderValue).toBe(150);
+    expect(result.current.faderSlots[2]?.isBusy).toBe(true);
+
+    // 第 1 章节那一项停了：只有它回到未运行，第 2 章节的仍在运行
+    act(() => {
+      result.current.syncRunningSlots(new Set([programItemKey("ch-2", 3, 16)]));
+    });
+    expect(phases()).toEqual(["idle", "ready", "idle", "idle"]);
+    pageItems = pageItemsFor([15, 16, 15, 16], "ch-2");
+    rerender();
+    expect(phases()).toEqual(["idle", "idle", "idle", "running"]);
+  });
+
+  it("tells pages of the same chapter apart by the item index across the chapter", () => {
+    let pageItems = pageItemsFor([15], "ch-1", 0);
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(
+        ExecutorSlotsProvider,
+        { pageItems, sequenceFingerprints: { 15: "fp-15" } },
+        children,
+      );
+    const { result, rerender } = renderHook(() => useExecutorSlots(), { wrapper });
+    act(() => {
+      result.current.setSlotRunning(programItemKey("ch-1", 12, 15), true);
+    });
+    expect(result.current.faderSlots[0]?.phase).toBe("idle");
+
+    pageItems = pageItemsFor([15], "ch-1", 12);
+    rerender();
+    expect(result.current.faderSlots[0]).toMatchObject({ phase: "running", itemIndex: 12, label: "F1" });
   });
 
   it("always exposes twelve F1–F12 slots", () => {

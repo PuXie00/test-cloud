@@ -30,7 +30,12 @@ import {
 } from "@/app/project/project-motion-readiness";
 import { ConsoleModeProvider } from "../../hooks/use-console-mode";
 import type { ExecCard } from "../../hooks/use-exec-cards";
-import type { FaderSlotState } from "../../hooks/use-executor-slots";
+import type { PageItems } from "../../hooks/program-context";
+import {
+  ExecutorSlotsProvider,
+  programItemKey,
+  type FaderSlotState,
+} from "../../hooks/use-executor-slots";
 import type { ChapterItem, Program } from "../program-panel/program-data";
 import { PageSection } from "../program-panel/page-section";
 import { FaderSlot } from "./executors/fader-slot";
@@ -56,7 +61,9 @@ const {
   clearSlotReadyMock,
   setSlotBusyMock,
   setSlotRunningMock,
+  syncRunningSlotsMock,
   setSlotRunOptionsMock,
+  realSlotsRef,
   execCardsRef,
   closeMock,
   coupledObjectIdsRef,
@@ -77,11 +84,12 @@ const {
     syncCall: vi.fn(),
     stopAction: vi.fn(),
   },
-  readySequenceMock: vi.fn(async (args: { sequenceId: number }) => ({
+  readySequenceMock: vi.fn(async (args: { sequenceId: number; faderPercent?: number }) => ({
     ok: true as const,
     name: args.sequenceId === 15 ? "正常序列" : String(args.sequenceId),
     sequenceHandle: { actionId: args.sequenceId },
     fingerprint: `fp-${args.sequenceId}`,
+    speedPercent: args.faderPercent ?? 100,
   })),
   goSequenceMock: vi.fn(async (args: { sequenceId: number; faderPercent?: number }) => ({
     ok: true as const,
@@ -105,7 +113,10 @@ const {
   clearSlotReadyMock: vi.fn(),
   setSlotBusyMock: vi.fn(),
   setSlotRunningMock: vi.fn(),
+  syncRunningSlotsMock: vi.fn(),
   setSlotRunOptionsMock: vi.fn(),
+  /** true 时用真的 ExecutorSlotsProvider，验证推子槽显示 */
+  realSlotsRef: { current: false },
   execCardsRef: {
     current: [] as ExecCard[],
   },
@@ -230,15 +241,19 @@ vi.mock("../../hooks/use-executor-slots", async () => {
   );
   return {
     ...actual,
-    useExecutorSlots: () => ({
+    useExecutorSlots: () =>
+      realSlotsRef.current
+        ? actual.useExecutorSlots()
+        : {
       faderSlots: faderSlotsRef.current,
       setFaderValue: vi.fn(),
       setSlotRunning: (...args: unknown[]) => setSlotRunningMock(...args),
+      syncRunningSlots: (...args: unknown[]) => syncRunningSlotsMock(...args),
       setSlotBusy: (...args: unknown[]) => setSlotBusyMock(...args),
       setSlotRunOptions: (...args: unknown[]) => setSlotRunOptionsMock(...args),
       markSlotReady: (...args: unknown[]) => markSlotReadyMock(...args),
       clearSlotReady: (...args: unknown[]) => clearSlotReadyMock(...args),
-    }),
+          },
   };
 });
 
@@ -391,8 +406,17 @@ import { ProgramPanel } from "../program-panel/program-panel";
 import { ExecEmptyState } from "./exec-cards/exec-empty-state";
 import { advanceRunningCards } from "../../hooks/advance-running-cards";
 
+/** 测试里的推子槽都挂在章节 ch-1 第 index 项上 */
+const slotKey = (index: number, sequenceId: number | null) => programItemKey("ch-1", index, sequenceId);
+/** F1 挂空序列 14、F2 挂正常序列 15（ExecArea 各组用例的默认推子槽） */
+const F1_KEY = slotKey(0, 14);
+const F2_KEY = slotKey(1, 15);
+
 const makeFaderSlot = (overrides: Partial<FaderSlotState> & { index: number }): FaderSlotState => ({
   label: `F${overrides.index + 1}`,
+  chapterId: "ch-1",
+  itemIndex: overrides.index,
+  itemKey: slotKey(overrides.index, overrides.sequence?.id ?? null),
   sequence: null,
   faderValue: 100,
   phase: "idle",
@@ -401,6 +425,7 @@ const makeFaderSlot = (overrides: Partial<FaderSlotState> & { index: number }): 
   startPlan: null,
   preparedPoses: null,
   maxSpeedPercent: null,
+  readySpeedPercent: null,
   speedPercent: overrides.faderValue ?? 100,
   ...overrides,
 });
@@ -540,12 +565,14 @@ afterEach(() => {
   clearSlotReadyMock.mockClear();
   setSlotBusyMock.mockClear();
   setSlotRunningMock.mockClear();
+  syncRunningSlotsMock.mockClear();
   setSlotRunOptionsMock.mockClear();
   togglePreviewMock.mockClear();
   startPreviewMock.mockClear();
   stopPreviewMock.mockClear();
   previewSequenceIdRef.current = null;
   execCardsRef.current = [];
+  realSlotsRef.current = false;
   closeMock.mockClear();
   coupledObjectIdsRef.current = new Set([1]);
   capturedTriggers.onTriggerSequence = null;
@@ -1146,12 +1173,13 @@ describe("ExecArea launch guard", () => {
     expect(launchMock).not.toHaveBeenCalled();
     expect(goSequenceMock).not.toHaveBeenCalled();
     expect(markSlotReadyMock).toHaveBeenCalledWith(
-      1,
+      F2_KEY,
       15,
       "fp-15",
       expect.objectContaining({ startMode: "at-start", targetFrameMs: 2000, prepareTimeMs: 0 }),
       { 1: { h: 10, p: 0, y: 0 } },
       null,
+      100,
     );
     expect(screen.queryByRole("alertdialog")).toBeNull();
 
@@ -1200,7 +1228,7 @@ describe("ExecArea launch guard", () => {
     });
     expect(launchMock).not.toHaveBeenCalled();
     expect(goSequenceMock).not.toHaveBeenCalled();
-    expect(clearSlotReadyMock).toHaveBeenCalledWith(1);
+    expect(clearSlotReadyMock).toHaveBeenCalledWith(F2_KEY);
     expect(toastWarning).toHaveBeenCalledWith("动作序列校验失败，无法下载");
     expect(markSlotReadyMock).not.toHaveBeenCalled();
   });
@@ -1228,9 +1256,70 @@ describe("ExecArea launch guard", () => {
       name: "正常序列",
       durationMs: null,
       speedPercent: 150,
-      source: { kind: "fader", slotIndex: 1 },
+      source: { kind: "fader", slotIndex: 1, itemKey: F2_KEY },
     });
     expect(stopPreviewMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("Ready sends the fader speed of that moment, capped by the speed range worked out first", async () => {
+    resolveSequenceSpeedCapMock.mockReturnValueOnce({ ok: true, maxPercent: 70 });
+    faderSlotsRef.current = faderSlotsRef.current.map((slot) =>
+      slot.index === 1 ? { ...slot, faderValue: 80 } : slot,
+    );
+    render(withMode(<ExecArea />));
+
+    fireEvent.click(screen.getByRole("button", { name: "F2 Ready" }));
+    await waitFor(() => {
+      expect(markSlotReadyMock).toHaveBeenCalledTimes(1);
+    });
+    expect(readySequenceMock.mock.calls[0]?.[0]).toMatchObject({
+      sequenceId: 15,
+      faderPercent: 70,
+      maxSpeedPercent: 70,
+    });
+    expect(resolveSequenceSpeedCapMock.mock.invocationCallOrder[0]).toBeLessThan(
+      readySequenceMock.mock.invocationCallOrder[0]!,
+    );
+    expect(markSlotReadyMock.mock.calls[0]?.slice(5)).toEqual([70, 70]);
+  });
+
+  it("forced GO keeps the speed sent at Ready even after the fader moved; non-forced follows the fader", async () => {
+    const readySlot = (slot: FaderSlotState): FaderSlotState =>
+      slot.index === 1
+        ? {
+            ...slot,
+            phase: "ready",
+            faderValue: 90,
+            speedPercent: 90,
+            readySpeedPercent: 60,
+            preparedPoses: { 1: { h: 10, p: 0, y: 0 } },
+          }
+        : slot;
+    const forcedDocument = makeDocument();
+    forcedDocument.motion.actionSequences = forcedDocument.motion.actionSequences.map((sequence) =>
+      sequence.id === 15 ? { ...sequence, trajectoryMode: true } : sequence,
+    );
+    documentRef.current = forcedDocument;
+    faderSlotsRef.current = faderSlotsRef.current.map(readySlot);
+    const view = render(withMode(<ExecArea />));
+
+    fireEvent.click(screen.getByRole("button", { name: "F2 GO" }));
+    await waitFor(() => {
+      expect(launchMock).toHaveBeenCalledTimes(1);
+    });
+    expect(goSequenceMock.mock.calls[0]?.[0]).toMatchObject({ sequenceId: 15, faderPercent: 60 });
+    expect(launchMock.mock.calls[0]?.[0]).toMatchObject({ speedPercent: 60 });
+    view.unmount();
+
+    goSequenceMock.mockClear();
+    launchMock.mockClear();
+    documentRef.current = makeDocument();
+    render(withMode(<ExecArea />));
+    fireEvent.click(screen.getByRole("button", { name: "F2 GO" }));
+    await waitFor(() => {
+      expect(launchMock).toHaveBeenCalledTimes(1);
+    });
+    expect(goSequenceMock.mock.calls[0]?.[0]).toMatchObject({ sequenceId: 15, faderPercent: 90 });
   });
 
   it("GO failure stays ready and does not launch", async () => {
@@ -1258,12 +1347,12 @@ describe("ExecArea launch guard", () => {
     execCardsRef.current = [
       runningCard({
         id: "fader-stopped",
-        source: { kind: "fader", slotIndex: 1 },
+        source: { kind: "fader", slotIndex: 1, itemKey: F2_KEY },
         status: "stopped",
       }),
     ];
     render(withMode(<ExecArea />));
-    expect(setSlotRunningMock).toHaveBeenCalledWith(1, true);
+    expect(syncRunningSlotsMock).toHaveBeenLastCalledWith(new Set([F2_KEY]));
   });
 
   it("opens the start-pose dialog and waits for confirm before ready", async () => {
@@ -1292,7 +1381,7 @@ describe("ExecArea launch guard", () => {
     });
     expect(markSlotReadyMock).toHaveBeenCalledTimes(1);
     const stored = markSlotReadyMock.mock.calls[0];
-    expect(stored?.[0]).toBe(1);
+    expect(stored?.[0]).toBe(F2_KEY);
     expect(stored?.[1]).toBe(15);
     expect(stored?.[2]).toBe("fp-15");
     expect(stored?.[3]).toMatchObject({
@@ -1420,7 +1509,7 @@ describe("ExecArea launch guard", () => {
       trajectoryMode: false,
       deviceId: [1],
     });
-    expect(clearSlotReadyMock).toHaveBeenCalledWith(1);
+    expect(clearSlotReadyMock).toHaveBeenCalledWith(F2_KEY);
     expect(goSequenceMock).not.toHaveBeenCalled();
     expect(readySequenceMock).not.toHaveBeenCalled();
   });
@@ -1438,7 +1527,7 @@ describe("ExecArea launch guard", () => {
     fireEvent.click(screen.getByRole("button", { name: "重新准备" }));
     // 不在起点：撤掉准备后弹接入点选择
     expect(await screen.findByRole("heading", { name: "选择从哪里开始" })).toBeTruthy();
-    expect(clearSlotReadyMock).toHaveBeenCalledWith(1);
+    expect(clearSlotReadyMock).toHaveBeenCalledWith(F2_KEY);
     fireEvent.click(screen.getByRole("button", { name: /^确认，从/ }));
     await waitFor(() => {
       expect(readySequenceMock).toHaveBeenCalledTimes(1);
@@ -1468,7 +1557,7 @@ describe("ExecArea launch guard", () => {
         id: "card-stopped",
         kind: "sequence",
         name: "空序列",
-        source: { kind: "fader", slotIndex: 0 },
+        source: { kind: "fader", slotIndex: 0, itemKey: F1_KEY },
         durationMs: null,
         elapsedMs: 0,
         speedPercent: 80,
@@ -1537,17 +1626,17 @@ describe("ExecArea launch guard", () => {
     });
     // 槽状态和手动操作 F2 一致：先“已准备”，GO 成功后转“启动”
     expect(markSlotReadyMock).toHaveBeenCalledTimes(1);
-    expect(markSlotReadyMock.mock.calls[0]?.slice(0, 3)).toEqual([1, 15, "fp-15"]);
-    expect(clearSlotReadyMock).toHaveBeenCalledWith(1);
-    expect(setSlotRunningMock).toHaveBeenCalledWith(1, true);
-    expect(setSlotBusyMock).toHaveBeenCalledWith(1, true);
-    expect(setSlotBusyMock).toHaveBeenLastCalledWith(1, false);
+    expect(markSlotReadyMock.mock.calls[0]?.slice(0, 3)).toEqual([F2_KEY, 15, "fp-15"]);
+    expect(clearSlotReadyMock).toHaveBeenCalledWith(F2_KEY);
+    expect(setSlotRunningMock).toHaveBeenCalledWith(F2_KEY, true);
+    expect(setSlotBusyMock).toHaveBeenCalledWith(F2_KEY, true);
+    expect(setSlotBusyMock).toHaveBeenLastCalledWith(F2_KEY, false);
     expect(readySequenceMock.mock.invocationCallOrder[0]).toBeLessThan(markSlotReadyMock.mock.invocationCallOrder[0]!);
     expect(markSlotReadyMock.mock.invocationCallOrder[0]).toBeLessThan(closeMock.mock.invocationCallOrder[0]!);
     expect(closeMock.mock.invocationCallOrder[0]).toBeLessThan(goSequenceMock.mock.invocationCallOrder[0]!);
     expect(launchMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        source: { kind: "fader", slotIndex: 1 },
+        source: { kind: "fader", slotIndex: 1, itemKey: F2_KEY },
         sequenceId: 15,
         speedPercent: 100,
       }),
@@ -1579,7 +1668,7 @@ describe("ExecArea launch guard", () => {
       reverse: true,
     });
     expect(launchMock).toHaveBeenCalledWith(
-      expect.objectContaining({ source: { kind: "fader", slotIndex: 1 }, speedPercent: 60, reverse: true }),
+      expect.objectContaining({ source: { kind: "fader", slotIndex: 1, itemKey: F2_KEY }, speedPercent: 60, reverse: true }),
     );
   });
 
@@ -1599,9 +1688,9 @@ describe("ExecArea launch guard", () => {
     );
     expect(markSlotReadyMock).toHaveBeenCalledTimes(1);
     expect(closeMock).toHaveBeenCalledWith("card-stopped", { release: false });
-    expect(clearSlotReadyMock).toHaveBeenCalledWith(1);
+    expect(clearSlotReadyMock).toHaveBeenCalledWith(F2_KEY);
     expect(launchMock).toHaveBeenCalledWith(
-      expect.objectContaining({ source: { kind: "fader", slotIndex: 1 }, sequenceId: 15 }),
+      expect.objectContaining({ source: { kind: "fader", slotIndex: 1, itemKey: F2_KEY }, sequenceId: 15 }),
     );
   });
 
@@ -1620,7 +1709,7 @@ describe("ExecArea launch guard", () => {
     expect(readySequenceMock).not.toHaveBeenCalled();
     expect(goSequenceMock).not.toHaveBeenCalled();
     expect(closeMock).not.toHaveBeenCalled();
-    expect(setSlotBusyMock).toHaveBeenLastCalledWith(1, false);
+    expect(setSlotBusyMock).toHaveBeenLastCalledWith(F2_KEY, false);
   });
 
   it("does nothing while the next slot is busy or already running", () => {
@@ -1726,9 +1815,9 @@ describe("ExecArea launch guard", () => {
     });
     expect(closeMock).toHaveBeenCalledWith("card-stopped", { release: false });
     expect(launchMock).not.toHaveBeenCalled();
-    expect(markSlotReadyMock.mock.calls[0]?.slice(0, 2)).toEqual([1, 15]);
+    expect(markSlotReadyMock.mock.calls[0]?.slice(0, 2)).toEqual([F2_KEY, 15]);
     expect(clearSlotReadyMock).not.toHaveBeenCalled();
-    expect(setSlotRunningMock).not.toHaveBeenCalledWith(1, true);
+    expect(setSlotRunningMock).not.toHaveBeenCalledWith(F2_KEY, true);
     expect(toastError).toHaveBeenCalledWith("动作序列启动失败");
   });
 
@@ -1947,7 +2036,7 @@ describe("ExecArea continue / reverse back", () => {
         id: "card-stopped",
         kind: "sequence",
         name: "正常序列",
-        source: { kind: "fader", slotIndex: 1 },
+        source: { kind: "fader", slotIndex: 1, itemKey: F2_KEY },
         durationMs: null,
         elapsedMs: 0,
         speedPercent: 80,
@@ -1997,13 +2086,13 @@ describe("ExecArea continue / reverse back", () => {
       startPlan: readyArgs().startPlan,
     });
     expect(launchMock).toHaveBeenCalledWith(
-      expect.objectContaining({ source: { kind: "fader", slotIndex: 1 }, sequenceId: 15, reverse: false }),
+      expect.objectContaining({ source: { kind: "fader", slotIndex: 1, itemKey: F2_KEY }, sequenceId: 15, reverse: false }),
     );
     // 沿用原来的卡片，槽上保存的就近 / 反向不动
     expect(closeMock).not.toHaveBeenCalled();
     expect(setSlotRunOptionsMock).not.toHaveBeenCalled();
-    expect(setSlotBusyMock).toHaveBeenCalledWith(1, true);
-    expect(setSlotBusyMock).toHaveBeenLastCalledWith(1, false);
+    expect(setSlotBusyMock).toHaveBeenCalledWith(F2_KEY, true);
+    expect(setSlotBusyMock).toHaveBeenLastCalledWith(F2_KEY, false);
   });
 
   it("反向回 searches the segment of the card's runTime and runs back in reverse", async () => {
@@ -2170,7 +2259,7 @@ describe("ExecArea continue / reverse back", () => {
       expect(toastError).toHaveBeenCalledWith("动作启动失败：PLC 拒绝");
     });
     expect(markSlotReadyMock).toHaveBeenCalledTimes(1);
-    expect(clearSlotReadyMock).toHaveBeenCalledWith(1);
+    expect(clearSlotReadyMock).toHaveBeenCalledWith(F2_KEY);
     expect(launchMock).not.toHaveBeenCalled();
     expect(closeMock).not.toHaveBeenCalled();
   });
@@ -2178,7 +2267,85 @@ describe("ExecArea continue / reverse back", () => {
   it("keeps the fader slot running while its card has ended", () => {
     armCard({ status: "completed" });
     render(withMode(<ExecArea />));
-    expect(setSlotRunningMock).toHaveBeenCalledWith(1, true);
+    expect(syncRunningSlotsMock).toHaveBeenLastCalledWith(new Set([F2_KEY]));
+  });
+});
+
+describe("ExecArea running slots across chapters", () => {
+  // 两个章节放同样的序列，F1–F4 依次挂 15、16、15、16；
+  // 节目里在运行的是第 1 章节第 1 项（序列 15）和第 2 章节第 4 项（序列 16）
+  const chapterPage = (chapterId: string): PageItems => ({
+    chapterId,
+    startIndex: 0,
+    sequences: [15, 16, 15, 16].map((id) => ({
+      kind: "sequence" as const,
+      sequence: { id, name: id === 15 ? "正常序列" : "指令序列", durationMs: 2000 },
+    })),
+  });
+
+  const faderCard = (chapterId: string, slotIndex: number, sequenceId: number): ExecCard => ({
+    id: `card-${chapterId}-${slotIndex}`,
+    kind: "sequence",
+    name: String(sequenceId),
+    source: { kind: "fader", slotIndex, itemKey: programItemKey(chapterId, slotIndex, sequenceId) },
+    durationMs: null,
+    elapsedMs: 0,
+    speedPercent: 100,
+    status: "running",
+    startedAt: 0,
+    emergencyStopped: false,
+    sequenceId,
+    sequenceHandle: { actionId: sequenceId },
+  });
+
+  const onChapter = (chapterId: string) =>
+    withMode(
+      <ExecutorSlotsProvider
+        pageItems={chapterPage(chapterId)}
+        sequenceFingerprints={{ 14: "fp-14", 15: "fp-15", 16: "fp-16" }}
+      >
+        <ExecArea />
+      </ExecutorSlotsProvider>,
+    );
+
+  /** 运行中的推子槽按钮显示 GO 且不可按；未准备的显示 Ready */
+  const runningSlots = () =>
+    ["F1", "F2", "F3", "F4"].filter((label) => {
+      const go = screen.queryByRole("button", { name: `${label} GO` }) as HTMLButtonElement | null;
+      return go?.disabled === true;
+    });
+
+  beforeEach(() => {
+    realSlotsRef.current = true;
+    documentRef.current = makeDocument();
+    execCardsRef.current = [faderCard("ch-1", 0, 15), faderCard("ch-2", 3, 16)];
+  });
+
+  it("shows only the open chapter's running items and follows chapter switches", () => {
+    const { rerender } = render(onChapter("ch-1"));
+    expect(runningSlots()).toEqual(["F1"]);
+    // 同序列在第 1 章节第 4 项上，但运行的是第 2 章节那一项
+    expect(screen.getByRole("button", { name: "F4 Ready" })).toBeTruthy();
+
+    rerender(onChapter("ch-2"));
+    expect(runningSlots()).toEqual(["F4"]);
+    expect(screen.getByRole("button", { name: "F1 Ready" })).toBeTruthy();
+
+    rerender(onChapter("ch-1"));
+    expect(runningSlots()).toEqual(["F1"]);
+  });
+
+  it("clears only the chapter item whose card ended", () => {
+    const { rerender } = render(onChapter("ch-2"));
+    expect(runningSlots()).toEqual(["F4"]);
+
+    // 第 1 章节那张卡关掉了（在别的章节上看着）
+    execCardsRef.current = [faderCard("ch-2", 3, 16)];
+    rerender(onChapter("ch-2"));
+    expect(runningSlots()).toEqual(["F4"]);
+
+    rerender(onChapter("ch-1"));
+    expect(runningSlots()).toEqual([]);
   });
 });
 

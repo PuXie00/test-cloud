@@ -14,6 +14,9 @@ const totalMs = resolveActionSequence(sequence).totalMs;
 const slot = (overrides: Partial<FaderSlotState> = {}): FaderSlotState => ({
   index: 2,
   label: "F3",
+  chapterId: "ch-2",
+  itemIndex: 14,
+  itemKey: `ch-2#14#${sequence.id}`,
   sequence: { id: sequence.id, name: sequence.name, durationMs: totalMs },
   faderValue: 80,
   phase: "idle",
@@ -37,7 +40,7 @@ describe("buildActionCardSeed", () => {
   it("takes name, duration and devices from the sequence, and source, speed and direction from its slot", () => {
     expect(buildActionCardSeed(sequence.id, document, [slot()])).toEqual({
       name: sequence.name,
-      source: { kind: "fader", slotIndex: 2 },
+      source: { kind: "fader", slotIndex: 2, itemKey: `ch-2#14#${sequence.id}` },
       speedPercent: 80,
       sequenceId: sequence.id,
       sequenceHandle: { actionId: sequence.id, deviceId, loopCount: 1 },

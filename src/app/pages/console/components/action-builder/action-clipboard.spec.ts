@@ -76,8 +76,9 @@ describe("nextPastedSequenceName", () => {
     expect(nextPastedSequenceName("开幕升降", ["开幕升降", "开幕升降 (2)"])).toBe("开幕升降 (3)");
   });
 
-  it("shortens long names so the suffix fits the 8-character limit", () => {
-    expect(nextPastedSequenceName("一二三四五六七八", ["一二三四五六七八"])).toBe("一二三四 (2)");
+  it("shortens long names so the suffix fits the 15-character limit", () => {
+    const full = "一".repeat(15);
+    expect(nextPastedSequenceName(full, [full])).toBe(`${"一".repeat(11)} (2)`);
   });
 });
 

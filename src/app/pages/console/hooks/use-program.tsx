@@ -12,7 +12,11 @@ import { legacyProgramToMotion } from "@/app/project/motion-persist";
 import { useProject } from "@/app/project/use-project";
 import { motionProgramToLegacyProgram } from "../components/program-panel/resolve-program-motion";
 import { isControlProgramEmpty, programPageCount, sliceProgramPage } from "../components/program-panel/program-utils";
-import { type ChapterItem, type Program } from "../components/program-panel/program-data";
+import {
+  PROGRAM_SLOTS_PER_PAGE,
+  type ChapterItem,
+  type Program,
+} from "../components/program-panel/program-data";
 import { ProgramContext, type ProgramContextValue } from "./program-context";
 
 export type { PageItems } from "./program-context";
@@ -118,7 +122,11 @@ export const ProgramProvider = ({ children }: ProgramProviderProps) => {
   const totalPages = useMemo(() => programPageCount(currentChapter?.items ?? []), [currentChapter]);
 
   const pageItems = useMemo(
-    () => ({ sequences: sliceProgramPage(currentChapter?.items ?? [], currentPageIndex) }),
+    () => ({
+      chapterId: currentChapter?.id ?? "",
+      startIndex: currentPageIndex * PROGRAM_SLOTS_PER_PAGE,
+      sequences: sliceProgramPage(currentChapter?.items ?? [], currentPageIndex),
+    }),
     [currentChapter, currentPageIndex]
   );
 

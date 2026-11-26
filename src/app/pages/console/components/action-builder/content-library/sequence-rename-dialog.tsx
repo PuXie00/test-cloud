@@ -19,8 +19,6 @@ type SequenceRenameDialogProps = {
   sequenceId: number | null;
 };
 
-const clampDraft = (value: string): string => [...value].slice(0, SEQUENCE_NAME_MAX_LENGTH).join("");
-
 export const SequenceRenameDialog = ({ open, onOpenChange, sequenceId }: SequenceRenameDialogProps) => {
   const { sequences, handleRenameSequence } = useActionBuilder();
   const sequence = (sequences ?? []).find((item) => item.id === sequenceId);
@@ -65,7 +63,7 @@ export const SequenceRenameDialog = ({ open, onOpenChange, sequenceId }: Sequenc
         <DialogHeader className="bg-muted px-4 py-3 pr-10 text-left">
           <DialogTitle className="text-heading-md text-foreground">修改序列名</DialogTitle>
           <DialogDescription className="text-body-sm text-muted-foreground">
-            不超过 8 个字符，且不能与其他序列重名
+            不超过 {SEQUENCE_NAME_MAX_LENGTH} 个字符，且不能与其他序列重名
           </DialogDescription>
         </DialogHeader>
         <form className="bg-background p-4" onSubmit={handleSubmit}>
@@ -77,9 +75,10 @@ export const SequenceRenameDialog = ({ open, onOpenChange, sequenceId }: Sequenc
             aria-label="序列名"
             value={draft}
             autoFocus
+            // 不在输入时截断：中文输入法拼写中的拼音也在 value 里，截断会把拼音吃掉；超长交给下面的提示和禁用的确定键
             onChange={(event) => {
               setSubmitError(null);
-              setDraft(clampDraft(event.target.value));
+              setDraft(event.target.value);
             }}
             className="h-10 w-full rounded-md border border-border/60 bg-input-background px-3 text-body-md text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />

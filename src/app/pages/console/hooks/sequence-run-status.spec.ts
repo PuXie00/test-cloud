@@ -68,22 +68,26 @@ describe("nextSequenceSlot", () => {
 
 describe("execCardSlot", () => {
   const slots = [
-    { index: 0, sequence: { id: 7 } },
-    { index: 1, sequence: { id: 4 } },
-    { index: 2, sequence: null },
+    { itemKey: "ch-1#0#7", sequence: { id: 7 } },
+    { itemKey: "ch-1#1#4", sequence: { id: 4 } },
+    { itemKey: "ch-1#2#", sequence: null },
+    { itemKey: "ch-1#3#4", sequence: { id: 4 } },
   ];
+  const fader = (itemKey: string) => ({ kind: "fader", slotIndex: 0, itemKey });
 
-  it("uses the card's own fader slot while it still holds the sequence", () => {
-    expect(execCardSlot({ source: { kind: "fader", slotIndex: 1 }, sequenceId: 4 }, slots)).toBe(slots[1]);
+  it("uses the card's own program item while it is on the current page", () => {
+    expect(execCardSlot({ source: fader("ch-1#1#4"), sequenceId: 4 }, slots)).toBe(slots[1]);
+    // 同一序列在本页出现两次：认来源那一项，不是第一个同序列的槽
+    expect(execCardSlot({ source: fader("ch-1#3#4"), sequenceId: 4 }, slots)).toBe(slots[3]);
   });
 
-  it("finds the sequence on the current page after the source slot changed", () => {
-    expect(execCardSlot({ source: { kind: "fader", slotIndex: 2 }, sequenceId: 7 }, slots)).toBe(slots[0]);
+  it("finds the sequence on the current page when the source item is elsewhere", () => {
+    expect(execCardSlot({ source: fader("ch-2#5#7"), sequenceId: 7 }, slots)).toBe(slots[0]);
     expect(execCardSlot({ source: { kind: "external" }, sequenceId: 4 }, slots)).toBe(slots[1]);
   });
 
   it("is null when the sequence is not on the current page or the card has none", () => {
-    expect(execCardSlot({ source: { kind: "fader", slotIndex: 0 }, sequenceId: 9 }, slots)).toBeNull();
-    expect(execCardSlot({ source: { kind: "fader", slotIndex: 0 } }, slots)).toBeNull();
+    expect(execCardSlot({ source: fader("ch-1#0#9"), sequenceId: 9 }, slots)).toBeNull();
+    expect(execCardSlot({ source: fader("ch-1#0#7") }, slots)).toBeNull();
   });
 });

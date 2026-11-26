@@ -238,8 +238,14 @@ describe("content library rename", () => {
     fireEvent.change(input, { target: { value: "第二序列" } });
     expect(screen.getByText("序列名已存在")).toBeTruthy();
     expect((screen.getByRole("button", { name: "确定" }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(input, { target: { value: "一二三四五六七八九" } });
-    expect((input as HTMLInputElement).value).toBe("一二三四五六七八");
+    // 输入时不截断（输入法拼写中的拼音也在 value 里），超长只提示并禁用确定
+    const overlong = "一".repeat(16);
+    fireEvent.change(input, { target: { value: overlong } });
+    expect((input as HTMLInputElement).value).toBe(overlong);
+    expect(screen.getByText("序列名不能超过 15 个字符")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "确定" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(input, { target: { value: "kaichangdongzuo" } });
+    expect(screen.queryByText("序列名不能超过 15 个字符")).toBeNull();
     fireEvent.change(input, { target: { value: "新名字" } });
     fireEvent.click(screen.getByRole("button", { name: "确定" }));
     expect(handleRenameSequence).toHaveBeenCalledWith("新名字", 1);
