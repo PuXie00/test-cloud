@@ -158,7 +158,10 @@ export type ControlledObjectConfig = {
   centerOffset: { x: number; y: number; z: number };
   /** 模型朝向欧拉角，单位 deg，0–360 */
   rotation: { x: number; y: number; z: number };
+  /** 物体颜色 #rrggbb；预设形状直接用它 */
   color: string;
+  /** 导入模型也用 color 染色（只染没贴图的材质）；缺省 / false 保持模型自己的颜色和贴图 */
+  tintModel?: boolean;
   /**
    * 挂载的父物体 id（物理挂载，PLC 不感知）；有父物体时 position / rotation
    * 为相对父物体（父物体虚轴全 0）的局部值。见 object-mount.ts

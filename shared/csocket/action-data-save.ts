@@ -70,7 +70,7 @@ export type cCompiledModel = {
   }[] // 帧列表，按 time 升序
 }
 
-/** 上位机就近算法算出的接入计划。非强制由 syncMovePrepare 转成 PLC 报文，强制由 actionGo 的 1006 下发。 */
+/** 上位机就近算法算出的接入计划。非强制由 syncMovePrepare 转成 PLC 报文，强制由 actionReady 的 1006 下发。 */
 export type ActionStartMode = 'nearest' | 'boundary' | 'at-start'
 
 export type ActionStartPlan = {
@@ -114,6 +114,12 @@ export type ActionDataSaveItem = {
   IOBlockList: cCompiledEvent[]
   runDirection: boolean // 运行方向，true为正向，false为反向
   safeGroup: number // 安全组开启 1开启，0关闭
-  /** 上位机算出的就近/回起点接入计划。非强制准备转入 syncMovePrepare，强制轨迹只打印。 */
+  /** 上位机算出的就近/回起点接入计划。非强制准备转入 syncMovePrepare，强制轨迹给 1006 用（选中曲线时刻、准备时间、各设备 V/A）。 */
   startPlan?: ActionStartPlan
+  /** 强制轨迹准备时发 1006 用：该动作下面的所有物体 id（升序） */
+  deviceId?: number[]
+  /** 强制轨迹 1006：0 一直循环，1 播一次（就近计划的实际循环配置优先） */
+  loopCount?: number
+  /** 强制轨迹 1006：速度倍率，1 = 100%；按准备时的推子算，GO 不再改 */
+  speedScale?: number
 }

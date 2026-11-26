@@ -94,13 +94,13 @@ describe("planAiSequenceUpsert", () => {
     expect(badId.result).toMatchObject({ ok: false, code: "INVALID_SEQUENCE" });
   });
 
-  it("rejects a name taken by another sequence or longer than 8 characters", () => {
+  it("rejects a name taken by another sequence or longer than 15 characters", () => {
     expect(planAiSequenceUpsert(documentOf(), rise(9, "开场")).result).toMatchObject({
       ok: false,
       code: "VALIDATION_FAILED",
       message: "序列名：序列名已存在",
     });
-    expect(planAiSequenceUpsert(documentOf(), rise(9, "123456789")).result).toMatchObject({
+    expect(planAiSequenceUpsert(documentOf(), rise(9, "1".repeat(16))).result).toMatchObject({
       ok: false,
       code: "VALIDATION_FAILED",
     });

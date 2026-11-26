@@ -33,7 +33,9 @@ export const buildActionCardSeed = (
   const totalMs = sequenceTotalMs(sequence);
   return {
     name: sequence.name,
-    source: slot ? { kind: "fader", slotIndex: slot.index } : { kind: "external" },
+    source: slot
+      ? { kind: "fader", slotIndex: slot.index, itemKey: slot.itemKey }
+      : { kind: "external" },
     speedPercent: slot?.speedPercent ?? 100,
     ...(slot?.maxSpeedPercent != null ? { maxSpeedPercent: slot.maxSpeedPercent } : {}),
     sequenceId: sequence.id,

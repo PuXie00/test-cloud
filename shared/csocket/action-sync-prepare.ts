@@ -1,4 +1,4 @@
-import type { ActionStartPlan } from './action-data-save'
+import type { ActionDataSaveItem, ActionStartPlan } from './action-data-save'
 
 /** 0x1006 动作同步准备：每个设备的准备 V/A（D=A），由就近算法给出 */
 export type ActionPrepareDevice = {
@@ -11,7 +11,7 @@ export type ActionPrepareDevice = {
   accelerationY: number
 }
 
-/** actionGo 的一项。强制轨迹走 1006 准备 + 1007 启动；非强制走 syncMovebegin。 */
+/** actionGo 的一项。强制轨迹 GO 只发 1007 启动（1006 准备在 actionReady 里已发过）；非强制走 syncMovebegin。 */
 export type ActionGoItem = {
   actionId: number
   /** 1 正向，2 反向 */
@@ -81,3 +81,28 @@ export const toActionSyncPrepareParams = (item: ActionGoItem): ActionPrepareDevi
     (deviceId) =>
       item.prepareDevices?.find((device) => device.deviceId === deviceId) ?? zeroDevice(deviceId),
   )
+
+/**
+ * 强制轨迹准备（actionReady）：actionDataSave 之后紧跟着发 1006，参数从准备项里取——
+ * 方向、循环、速度倍率、物体，接入计划给选中曲线时刻、准备时间和各设备 V/A（没有计划时都按 0）。
+ * 物体没带时按编译出的模型列表。
+ */
+export const toReadyPrepareItem = (item: ActionDataSaveItem): ActionGoItem => {
+  const deviceId = item.deviceId ?? item.modelList.map((model) => model.deviceId)
+  const plan = item.startPlan
+  return {
+    actionId: item.actionId,
+    runDirection: item.runDirection ? 1 : 2,
+    speedScale: item.speedScale ?? 1,
+    loopCount: item.loopCount ?? plan?.loopCount ?? 1,
+    trajectoryMode: true,
+    deviceId,
+    ...(plan
+      ? {
+          selectedCurveTimeMs: plan.targetFrameMs,
+          prepareTimeMs: plan.prepareTimeMs,
+          prepareDevices: toActionPrepareDevices(plan, deviceId),
+        }
+      : {}),
+  }
+}

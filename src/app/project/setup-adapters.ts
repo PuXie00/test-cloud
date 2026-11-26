@@ -28,6 +28,7 @@ export const controlledObjectConfigToWizard = (
     centerOffset: config.centerOffset,
     rotation: normalizeObjectRotationDeg(config.rotation, controlType),
     color: config.color,
+    ...(config.tintModel === true ? { tintModel: true } : {}),
     ...(typeof config.parentId === "number" ? { parentId: config.parentId } : {}),
     motionParams: normalizeMotionParams(config.motionParams),
     motionSpeedControl: config.motionSpeedControl,

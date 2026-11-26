@@ -344,6 +344,40 @@ export const PALETTE_SHAPE_DEFINITIONS = SHAPE_DEFINITIONS.filter(
 
 type EngineDimensions = { w: number; h: number; d: number };
 
+/**
+ * 圆环 / 方环中空部分的 XZ 尺寸（mm）：圆环为内径，方环为外宽 / 外深各减两倍环宽。
+ * 其它形状或尺寸不完整时返回 undefined（3D 按默认壁厚画，不抛错）。
+ */
+export const toEngineHoleDimensions = (
+  shapePreset: ShapePresetId,
+  dimensions: ShapeDimensions | null | undefined,
+): { w: number; d: number } | undefined => {
+  if (typeof dimensions !== "object" || dimensions === null) return undefined;
+  const source = dimensions as unknown as Record<string, unknown>;
+  const num = (key: string): number | null => {
+    const value = source[key];
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+  };
+  switch (shapePreset) {
+    case "ring": {
+      const inner = num("innerDiameter");
+      return inner === null ? undefined : { w: Math.max(0, inner), d: Math.max(0, inner) };
+    }
+    case "sqRing": {
+      const outerWidth = num("outerWidth");
+      const outerDepth = num("outerDepth");
+      const ringWidth = num("ringWidth");
+      if (outerWidth === null || outerDepth === null || ringWidth === null) return undefined;
+      return {
+        w: Math.max(0, outerWidth - 2 * ringWidth),
+        d: Math.max(0, outerDepth - 2 * ringWidth),
+      };
+    }
+    default:
+      return undefined;
+  }
+};
+
 export function toEngineDimensions<T extends ShapePresetId>(
   shapePreset: T,
   dimensions: ShapeDimensions<NoInfer<T>>,

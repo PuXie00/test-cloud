@@ -147,6 +147,7 @@ export const wizardControlledObjectToConfig = (
     centerOffset: roundProjectVec3(object.centerOffset),
     rotation: roundProjectVec3(normalizeObjectRotationDeg(object.rotation, controlType)),
     color: object.color,
+    ...(object.tintModel === true ? { tintModel: true } : {}),
     ...(typeof object.parentId === "number" ? { parentId: object.parentId } : {}),
     pulleyDistance:
       typeof object.pulleyDistance === "number" &&

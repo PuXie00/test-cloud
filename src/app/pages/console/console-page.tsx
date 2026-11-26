@@ -18,7 +18,6 @@ import { useActionCardSeed } from "./hooks/action-card-seed";
 import { ExecCardsProvider } from "./hooks/use-exec-cards";
 import { useAllStop } from "./hooks/use-all-stop";
 import { ExecutorSlotsProvider, type SlotRunOptions } from "./hooks/use-executor-slots";
-import { PROGRAM_SLOTS_PER_PAGE } from "./components/program-panel/program-data";
 import { compactSlotRunOptions } from "@/app/project/program-item-run-options";
 import { sequenceReadyFingerprint } from "./hooks/sequence-execution";
 import { ProgramProvider, useProgram } from "./hooks/use-program";
@@ -85,7 +84,7 @@ const ProjectExecCardsProvider = ({ children }: { children: ReactNode }) => {
 };
 
 const ProgramScopedProviders = ({ children }: { children: ReactNode }) => {
-  const { pageItems, currentChapterId, currentPageIndex, setItemRunOptions } = useProgram();
+  const { pageItems, setItemRunOptions } = useProgram();
   const { currentProject } = useProject();
   const sequenceFingerprints = useMemo(() => {
     const fingerprints: Record<number, string> = {};
@@ -95,15 +94,10 @@ const ProgramScopedProviders = ({ children }: { children: ReactNode }) => {
     return fingerprints;
   }, [currentProject?.document.motion.actionSequences]);
   const handleSlotRunOptionsChange = useCallback(
-    (slotIndex: number, runOptions: SlotRunOptions) => {
-      // Slot index is per page; the program item index is across the chapter.
-      setItemRunOptions(
-        currentChapterId,
-        currentPageIndex * PROGRAM_SLOTS_PER_PAGE + slotIndex,
-        compactSlotRunOptions(runOptions),
-      );
+    (chapterId: string, itemIndex: number, runOptions: SlotRunOptions) => {
+      setItemRunOptions(chapterId, itemIndex, compactSlotRunOptions(runOptions));
     },
-    [currentChapterId, currentPageIndex, setItemRunOptions],
+    [setItemRunOptions],
   );
   return (
     <ExecutorSlotsProvider

@@ -32,7 +32,8 @@ import { createSpeedSender } from "./sequence-speed";
 import { capSpeedPercent } from "./speed-cap";
 
 export type ExecCardSource =
-  | { kind: "fader"; slotIndex: number }
+  /** slotIndex 只用于显示 F1–F12；认推子槽用 itemKey（节目项身份，见 programItemKey） */
+  | { kind: "fader"; slotIndex: number; itemKey: string }
   | { kind: "program" }
   | { kind: "external" }
   | { kind: "manual" };

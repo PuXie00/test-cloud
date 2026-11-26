@@ -2,8 +2,8 @@ import type { ActionDataSaveItem } from '../../../shared/csocket/action-data-sav
 import {
   toActionSyncPrepareHead,
   toActionSyncPrepareParams,
+  toReadyPrepareItem,
   type ActionGoItem,
-  type ActionPrepareDevice,
 } from '../../../shared/csocket/action-sync-prepare'
 import { toSyncMovePrepareItems, type SyncMovePrepareSource } from '../../../shared/csocket/sync-move-start-plan'
 import type {
@@ -100,6 +100,15 @@ const ackFailed = (r: SendData): SendData => ({
   message: r.message ?? 'C++ ACK reported failure',
   data: r.data,
 })
+
+/** actionDataSave 存好了：应答成功，且 PLC 没报错误（data[0].errorCount 为 0 或没有） */
+const actionDataSaved = (r: SendData): boolean => {
+  if (!isCppAckOk(r)) return false
+  const first: unknown = Array.isArray(r.data) ? r.data[0] : undefined
+  const errorCount =
+    typeof first === 'object' && first !== null ? (first as { errorCount?: unknown }).errorCount : undefined
+  return !(typeof errorCount === 'number' && errorCount > 0)
+}
 
 // const toCppRelativeProjectPath = (projectPath: string): string => {
 //   const normalized = projectPath.trim().replace(/\//g, '\\').replace(/\\+$/, '')
@@ -585,8 +594,10 @@ export class CsocketApiService {
   }
 
   // 动作准备Ready
-  actionReady(items: ActionDataSaveItem[], opts?: CsocketSendOpts) {
-    const isTMaped: any[] = []
+  // 强制轨迹：先 actionDataSave（0x1016），存好了再发 1006 准备（就近算法的准备时间、各设备 V/A，速度按准备时的推子）；
+  // 存失败或 PLC 报了错误就不发 1006。非强制照旧走 syncMovePrepare。
+  actionReady(items: ActionDataSaveItem[], opts?: CsocketSendOpts): Promise<SendData[]> {
+    const isTMaped: ActionDataSaveItem[] = []
     const isNotTMaped: SyncMovePrepareSource[] = []
     items.forEach(item => {
       if (item.trajectoryMode) {
@@ -600,26 +611,35 @@ export class CsocketApiService {
         })
       }
     })
-    const result: Promise<SendData>[] = []
+    const result: Promise<SendData[]>[] = []
     if(isTMaped.length > 0) {
-      result.push(this.actionDataSavePlc(isTMaped, opts))
+      result.push((async () => {
+        const saved = await this.actionDataSavePlc(isTMaped, opts)
+        if (!actionDataSaved(saved)) return [saved]
+        const prepareItems = isTMaped.map(toReadyPrepareItem)
+        const prepared = await this.sendBuilt(
+          'Opera|actionSyncPrepare',
+          '0x1006',
+          prepareItems.flatMap(toActionSyncPrepareParams),
+          { ...opts, paramHeard: prepareItems.map(toActionSyncPrepareHead) },
+        )
+        return [saved, isCppAckOk(prepared) ? prepared : ackFailed(prepared)]
+      })())
     }
     if(isNotTMaped.length > 0) {
-      result.push(this.syncMovePrepare(isNotTMaped, opts))
+      result.push(this.syncMovePrepare(isNotTMaped, opts).then((ack) => [ack]))
     }
-    return Promise.all(result)
+    return Promise.all(result).then((acks) => acks.flat())
   }
   // 动作执行 Go
-  // 强制轨迹：1006 带就近算法的准备所需时间与各设备准备 V/A，成功后 1007 启动
+  // 强制轨迹：只发 1007 启动（1006 准备已在 actionReady 里发过，速度用准备时的）；非强制照旧 syncMovebegin
   actionGo(items: ActionGoItem[], opts?: CsocketSendOpts) {
-    const isTMapedHeadPrepare: ReturnType<typeof toActionSyncPrepareHead>[] = []
     const isTMapedHeadRelease: {
       actionId: number,
       startFlag: number,
       startTimestamp: number,
       deviceCount: number,
     }[] = []
-    const isTMapedPrepare: ActionPrepareDevice[] = []
     const isTMaped:{
       deviceId: number,
     }[] = []
@@ -630,14 +650,12 @@ export class CsocketApiService {
     }[] = []
     items.forEach(item => {
       if(item.trajectoryMode) {
-        isTMapedHeadPrepare.push(toActionSyncPrepareHead(item))
         isTMapedHeadRelease.push({
           actionId: item.actionId,
           startFlag: 2,
           startTimestamp: Date.now() + 100,
           deviceCount: item.deviceId.length,
         })
-        isTMapedPrepare.push(...toActionSyncPrepareParams(item))
         item.deviceId.forEach(deviceId => {
           isTMaped.push({
             deviceId: deviceId,
@@ -653,18 +671,11 @@ export class CsocketApiService {
     })
     const result: Promise<SendData>[] = []
     if(isTMaped.length > 0) {
-      const prepareOpts = {
-        ...opts,
-        paramHeard: isTMapedHeadPrepare,
-      }
       const releaseOpts = {
         ...opts,
         paramHeard: isTMapedHeadRelease,
       }
       result.push((async () => {
-        console.log("isTMapedPrepare", isTMapedPrepare);
-        const prepared = await this.sendBuilt('Opera|actionSyncPrepare', '0x1006', isTMapedPrepare, prepareOpts)
-        if (!isCppAckOk(prepared)) return ackFailed(prepared)
         const released = await this.sendBuilt('Opera|actionSyncRelease', '0x1007', isTMaped, releaseOpts)
         return isCppAckOk(released) ? released : ackFailed(released)
       })())

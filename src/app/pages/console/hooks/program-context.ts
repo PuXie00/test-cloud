@@ -4,6 +4,10 @@ import type { ProgramItemRunOptions } from "@/app/project/project-document-types
 import type { ChapterItem, Program } from "../components/program-panel/program-data";
 
 export type PageItems = {
+  /** 这一页所属章节；推子槽按它和章节内序号认节目项 */
+  chapterId: string;
+  /** 这一页第一个槽在章节内的序号 */
+  startIndex: number;
   sequences: ChapterItem[];
 };
 

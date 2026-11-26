@@ -3,8 +3,10 @@ import {
   toActionPrepareDevices,
   toActionSyncPrepareHead,
   toActionSyncPrepareParams,
+  toReadyPrepareItem,
   type ActionGoItem,
 } from "@shared/csocket/action-sync-prepare";
+import type { ActionDataSaveItem } from "@shared/csocket/action-data-save";
 
 const zeroDevice = (deviceId: number) => ({
   deviceId,
@@ -95,5 +97,79 @@ describe("toActionPrepareDevices", () => {
       zeroDevice(5),
       zeroDevice(6),
     ]);
+  });
+});
+
+describe("toReadyPrepareItem", () => {
+  const saveItem: ActionDataSaveItem = {
+    actionId: 12,
+    totalDuration: 9000,
+    trajectoryMode: true,
+    timelineCount: 0,
+    timelineList: [],
+    modelList: [
+      { deviceId: 3, timeBlockList: [] },
+      { deviceId: 1, timeBlockList: [] },
+    ],
+    IOBlockList: [],
+    runDirection: false,
+    safeGroup: 1,
+    deviceId: [1, 2, 3],
+    loopCount: 0,
+    speedScale: 0.73,
+  };
+
+  it("builds the ready-time 1006 from the plan, the fader speed and the devices", () => {
+    const ready = toReadyPrepareItem({
+      ...saveItem,
+      startPlan: {
+        nearest: true,
+        direction: 1,
+        startMode: "nearest",
+        targetFrameMs: 8000,
+        transitionSec: 4.293,
+        prepareTimeMs: 4293,
+        loopCount: 1,
+        motorLimitScale: null,
+        members: [
+          {
+            objectId: 2,
+            axes: [
+              { axis: "v1", to: 0, velocity: 147.06, acceleration: 1922.5, deceleration: 1922.5 },
+              { axis: "v2", to: 0, velocity: 2.8, acceleration: 435.5, deceleration: 435.5 },
+            ],
+          },
+        ],
+      },
+    });
+    expect(toActionSyncPrepareHead(ready)).toEqual({
+      actionId: 12,
+      runDirection: 2,
+      speedScale: 73,
+      loopCount: 0,
+      selectedCurveTimeMs: 8000,
+      deviceCount: 3,
+      prepareTimeMs: 4293,
+    });
+    expect(toActionSyncPrepareParams(ready)).toEqual([
+      zeroDevice(1),
+      { ...zeroDevice(2), velocityH: 147.06, accelerationH: 1922.5, velocityP: 2.8, accelerationP: 435.5 },
+      zeroDevice(3),
+    ]);
+  });
+
+  it("falls back to 100%, the plan's loop count and the compiled models, with zeros and no plan", () => {
+    const { deviceId: _, loopCount: __, speedScale: ___, ...bare } = saveItem;
+    const ready = toReadyPrepareItem({ ...bare, runDirection: true });
+    expect(toActionSyncPrepareHead(ready)).toEqual({
+      actionId: 12,
+      runDirection: 1,
+      speedScale: 100,
+      loopCount: 1,
+      selectedCurveTimeMs: 0,
+      deviceCount: 2,
+      prepareTimeMs: 0,
+    });
+    expect(toActionSyncPrepareParams(ready)).toEqual([zeroDevice(3), zeroDevice(1)]);
   });
 });

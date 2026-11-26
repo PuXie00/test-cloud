@@ -146,6 +146,25 @@ export const applyActionRunReports = (
   return next === cards ? null : next;
 };
 
+/** 本机在运行的动作：正在运行（含暂停）的、已下发停止还没停稳的任务卡名 */
+export type LocalActiveRuns = { running: string[]; stopping: string[] };
+
+/**
+ * 本机启动、还没停下的动作（退出软件、切工程前要先停）：运行中、暂停、停止中的任务卡。
+ * 来源是「外部」的不算——不是本机启动的。
+ * 热备时另一台运行的动作，主进程已从本机的上报里滤掉（filterActionReport），本机没有它们的卡，也不算。
+ */
+export const localActiveRuns = (cards: readonly ExecCard[]): LocalActiveRuns => {
+  const running: string[] = [];
+  const stopping: string[] = [];
+  for (const card of cards) {
+    if (card.source.kind === "external") continue;
+    if (card.status === "running" || card.status === "paused") running.push(card.name);
+    else if (card.status === "stopping") stopping.push(card.name);
+  }
+  return { running, stopping };
+};
+
 /**
  * GO 成功后登记任务卡。PLC 的上报可能比 GO 的应答先到，这时已经按上报补建过一张卡：
  * 同一个动作只保留一张，用 GO 的信息覆盖它并沿用已收到的运行数据，不再新增。

@@ -49,7 +49,8 @@ type ExecAreaProps = { className?: string };
 
 type EntryDialogState = {
   intent: StartEntryIntent;
-  slotIndex: number;
+  /** 推子槽所挂节目项（FaderSlotState.itemKey）；翻页、换章节后不在当前页，弹窗就关掉 */
+  itemKey: string;
   cardId: string | null;
   sequenceId: number;
   reverse: boolean;
@@ -61,17 +62,29 @@ type EntryDialogState = {
   notice: string | null;
 };
 
-type PreparedPoseAlert = { slotIndex: number; sequenceId: number };
+type PreparedPoseAlert = { itemKey: string; sequenceId: number };
 
 const POSITION_CHANGED_NOTICE = "设备位置在弹窗打开后变了，已按现在的位置重新计算，请再确认一次。";
 
 /** 继续沿卡片原来的方向，反向回方向反过来 */
 type RerunIntent = "continue" | "reverse-back";
 
-const slotReadyOptions = (slot: FaderSlotState) => ({
+/** 准备时的速度：推子位置（按调速范围换算），或指定的速度百分比（继续 / 反向回沿用卡上的） */
+type ReadySlotOptions = {
+  safeGroup: number;
+  runDirection: boolean;
+  faderValue?: number;
+  speedPercent?: number;
+};
+
+const slotReadyOptions = (slot: FaderSlotState): ReadySlotOptions => ({
   safeGroup: slot.runOptions.safeGroup ? 1 : 0,
   runDirection: !slot.runOptions.reverse,
+  faderValue: slot.faderValue,
 });
+
+/** 准备的结果：调速上限（百分比，null 为不限）和准备时下发的速度 */
+type SlotReadied = { maxSpeedPercent: number | null; speedPercent: number | null };
 
 /**
  * 要先过渡、算不出方案时都弹；不用过渡但从曲线中间开始（就近落在中间）也弹，免得 GO 后跳着跑。
@@ -86,7 +99,7 @@ const reportSequenceResult = (result: { toast: "warning" | "error"; message: str
 };
 
 export const ExecArea = ({ className }: ExecAreaProps) => {
-  const { faderSlots, setSlotBusy, setSlotRunning, markSlotReady, clearSlotReady } =
+  const { faderSlots, setSlotBusy, setSlotRunning, syncRunningSlots, markSlotReady, clearSlotReady } =
     useExecutorSlots();
   const { cards, launch, close } = useExecCards();
   const { program, currentChapterId } = useProgram();
@@ -112,8 +125,9 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     if (!poseDialog) poseConfirmLockRef.current = false;
   }, [poseDialog]);
 
+  // 按任务卡来源的节目项同步运行状态（不是按槽位序号）：不同章节、不同页同一个槽位上的项互不影响
   useEffect(() => {
-    const runningSlots = new Set(
+    const runningItemKeys = new Set(
       cards.flatMap((card) =>
         card.source.kind === "fader" &&
         (card.status === "running" ||
@@ -121,19 +135,18 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
           card.status === "stopping" ||
           isExecCardAtRest(card)) &&
         !card.emergencyStopped
-          ? [card.source.slotIndex]
+          ? [card.source.itemKey]
           : [],
       ),
     );
-    // cards 每帧都在变；只在运行状态真的变化时才 setState，否则每帧都会排一次嵌套更新
-    for (const slot of faderSlots) {
-      const running = runningSlots.has(slot.index);
-      if ((slot.phase === "running") !== running) setSlotRunning(slot.index, running);
-    }
-  }, [cards, faderSlots, setSlotRunning]);
+    syncRunningSlots(runningItemKeys);
+  }, [cards, syncRunningSlots]);
+
+  const slotForItem = (itemKey: string): FaderSlotState | undefined =>
+    faderSlots.find((slot) => slot.itemKey === itemKey);
 
   // 只依赖槽上的序列 id：推子一动 faderSlots 就变，不能每次都重跑就近搜索
-  const dialogSlotSequenceId = poseDialog ? faderSlots[poseDialog.slotIndex]?.sequence?.id : undefined;
+  const dialogSlotSequenceId = poseDialog ? slotForItem(poseDialog.itemKey)?.sequence?.id : undefined;
   const entryRequest = useMemo((): StartEntryRequest | null => {
     if (!poseDialog) return null;
     const document = currentProject?.document;
@@ -165,30 +178,39 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
 
   /**
    * 准备一个推子槽；成功后槽显示“已准备”，推子按调速范围封顶。
-   * 返回调速上限（百分比，null 为不限）；失败返回 false。
+   * 强制轨迹准备时就发 1006，速度按此刻的推子（受调速上限封顶），GO 沿用它，所以调速上限要在准备前算好。
+   * 返回调速上限和准备时下发的速度；失败返回 false。
    */
   const readySlot = async (
-    slotIndex: number,
+    itemKey: string,
     sequenceId: number,
     startPlan: NearestStartPlan | null,
-    options: { safeGroup: number; runDirection: boolean },
-  ): Promise<{ maxSpeedPercent: number | null } | false> => {
+    options: ReadySlotOptions,
+  ): Promise<SlotReadied | false> => {
     const document = currentProject?.document;
     if (!document) return false;
+    const speedCap = resolveSequenceSpeedCap(document, sequenceId, telemetryRef.current);
+    const faderPercent =
+      options.speedPercent ??
+      (options.faderValue !== undefined
+        ? faderToSpeedPercent(options.faderValue, speedCap.maxPercent)
+        : undefined);
     const readied = await readySequence({
       document,
       sequenceId,
       startPlan,
       telemetryByObjectId: telemetryRef.current,
-      ...options,
+      safeGroup: options.safeGroup,
+      runDirection: options.runDirection,
+      ...(faderPercent !== undefined ? { faderPercent } : {}),
+      maxSpeedPercent: speedCap.maxPercent,
     });
     if (!readied.ok) {
-      clearSlotReady(slotIndex);
+      clearSlotReady(itemKey);
       reportSequenceResult(readied);
       return false;
     }
     const authored = document.motion.actionSequences.find((entry) => entry.id === sequenceId);
-    const speedCap = resolveSequenceSpeedCap(document, sequenceId, telemetryRef.current);
     if (!speedCap.ok) toast.warning(speedCap.message);
     else if (speedCap.maxPercent !== null && speedCap.maxPercent < PROGRAMMED_SPEED_PERCENT) {
       toast.warning(`该动作最高只能 ${speedCap.maxPercent}%，低于编程速度`);
@@ -197,53 +219,60 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     console.log("readied.fingerprint", readied.fingerprint);
     console.log("startPlan", startPlan);
     markSlotReady(
-      slotIndex,
+      itemKey,
       sequenceId,
       readied.fingerprint,
       startPlan,
       capturePreparedPoses(authored ? sequenceObjectIds(authored) : [], telemetryRef.current),
       speedCap.maxPercent,
+      readied.speedPercent,
     );
-    return { maxSpeedPercent: speedCap.maxPercent };
+    return { maxSpeedPercent: speedCap.maxPercent, speedPercent: readied.speedPercent };
   };
 
   /**
    * GO 一个推子槽；成功后槽显示“启动”，并出一张来源为该槽的任务卡（同一动作已有卡片时沿用那张）。
    * run 给任务卡的继续 / 反向回用：速度沿用卡上的，方向按按钮定；缺省按推子和槽的反向开关。
+   * 强制轨迹的速度在准备时已经随 1006 发了，GO 不再带速度：沿用准备时的，准备后再动推子不算。
    */
   const goSlot = async (
     slot: FaderSlotState,
     sequenceId: number,
     startPlan: NearestStartPlan | null,
-    maxSpeedPercent: number | null,
+    ready: SlotReadied,
     run?: { speedPercent: number; reverse: boolean },
   ): Promise<boolean> => {
     const document = currentProject?.document;
     if (!document) return false;
+    const authored = document.motion.actionSequences.find((entry) => entry.id === sequenceId);
+    const forcedReadySpeed =
+      authored?.trajectoryMode === true && typeof ready.speedPercent === "number" ? ready.speedPercent : undefined;
     const reverse = run?.reverse ?? slot.runOptions.reverse;
     const started = await goSequence({
       document,
       sequenceId,
-      // 用本次准备的调速上限换算：下一条连做时 slot 还是准备前的快照
-      faderPercent: run?.speedPercent ?? faderToSpeedPercent(slot.faderValue, maxSpeedPercent),
+      // 非强制用本次准备的调速上限换算：下一条连做时 slot 还是准备前的快照
+      faderPercent:
+        run?.speedPercent ??
+        forcedReadySpeed ??
+        faderToSpeedPercent(slot.faderValue, ready.maxSpeedPercent),
       reverse,
       startPlan,
-      maxSpeedPercent,
+      maxSpeedPercent: ready.maxSpeedPercent,
     });
     if (!started.ok) {
       reportSequenceResult(started);
       return false;
     }
-    const authored = document.motion.actionSequences.find((entry) => entry.id === sequenceId);
-    clearSlotReady(slot.index);
-    setSlotRunning(slot.index, true);
+    clearSlotReady(slot.itemKey);
+    setSlotRunning(slot.itemKey, true);
     launch({
       kind: "sequence",
       name: started.name,
       durationMs: null,
-      source: { kind: "fader", slotIndex: slot.index },
+      source: { kind: "fader", slotIndex: slot.index, itemKey: slot.itemKey },
       speedPercent: started.speedPercent,
-      ...(maxSpeedPercent !== null ? { maxSpeedPercent } : {}),
+      ...(ready.maxSpeedPercent !== null ? { maxSpeedPercent: ready.maxSpeedPercent } : {}),
       sequenceId,
       sequenceHandle: started.sequenceHandle,
       trajectoryMode: slot.sequence?.trajectoryMode,
@@ -255,18 +284,18 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
   };
 
   const beginReady = (
-    slotIndex: number,
+    itemKey: string,
     sequenceId: number,
     startPlan: NearestStartPlan | null,
-    options: { safeGroup: number; runDirection: boolean },
+    options: ReadySlotOptions,
   ) => {
     if (!currentProject?.document) return;
-    setSlotBusy(slotIndex, true);
+    setSlotBusy(itemKey, true);
     void (async () => {
       try {
-        await readySlot(slotIndex, sequenceId, startPlan, options);
+        await readySlot(itemKey, sequenceId, startPlan, options);
       } finally {
-        setSlotBusy(slotIndex, false);
+        setSlotBusy(itemKey, false);
       }
     })();
   };
@@ -285,7 +314,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
   ) => {
     if (!currentProject?.document) return;
     const card = cards.find((entry) => entry.id === cardId);
-    setSlotBusy(slot.index, true);
+    setSlotBusy(slot.itemKey, true);
     void (async () => {
       try {
         if (card?.sequenceHandle && !card.emergencyStopped) {
@@ -299,12 +328,12 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
             return;
           }
         }
-        const readied = await readySlot(slot.index, sequenceId, startPlan, slotReadyOptions(slot));
+        const readied = await readySlot(slot.itemKey, sequenceId, startPlan, slotReadyOptions(slot));
         if (!readied) return;
         close(cardId, { release: false });
-        await goSlot(slot, sequenceId, startPlan, readied.maxSpeedPercent);
+        await goSlot(slot, sequenceId, startPlan, readied);
       } finally {
-        setSlotBusy(slot.index, false);
+        setSlotBusy(slot.itemKey, false);
       }
     })();
   };
@@ -324,7 +353,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     if (!currentProject?.document) return;
     const card = cards.find((entry) => entry.id === cardId);
     if (!card || !canRerunExecCard(card)) return;
-    setSlotBusy(slot.index, true);
+    setSlotBusy(slot.itemKey, true);
     void (async () => {
       try {
         // if (card.sequenceHandle) {
@@ -338,18 +367,19 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
         //     return;
         //   }
         // }
-        const readied = await readySlot(slot.index, sequenceId, startPlan, {
+        const readied = await readySlot(slot.itemKey, sequenceId, startPlan, {
           safeGroup: slot.runOptions.safeGroup ? 1 : 0,
           runDirection: !reverse,
+          speedPercent: card.speedPercent,
         });
         if (!readied) return;
-        const started = await goSlot(slot, sequenceId, startPlan, readied.maxSpeedPercent, {
+        const started = await goSlot(slot, sequenceId, startPlan, readied, {
           speedPercent: card.speedPercent,
           reverse,
         });
-        if (!started) clearSlotReady(slot.index);
+        if (!started) clearSlotReady(slot.itemKey);
       } finally {
-        setSlotBusy(slot.index, false);
+        setSlotBusy(slot.itemKey, false);
       }
     })();
   };
@@ -357,7 +387,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
   const handleConfirmEntry = (plan: NearestStartPlan) => {
     if (!poseDialog || !entryRequest) return;
     if (poseConfirmLockRef.current) return;
-    const slot = faderSlots[poseDialog.slotIndex];
+    const slot = slotForItem(poseDialog.itemKey);
     if (!slot || slot.isBusy) return;
     if (poseDialog.intent !== "fader" && !poseDialog.cardId) return;
     // 弹窗开着时设备动过（别的动作、手动）：按现在的位置重算，让操作者再确认一次
@@ -374,7 +404,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       return;
     }
     poseConfirmLockRef.current = true;
-    const { slotIndex, sequenceId, cardId } = poseDialog;
+    const { itemKey, sequenceId, cardId } = poseDialog;
     setPoseDialog(null);
     if (poseDialog.intent === "next" && cardId) {
       readyThenGoNext(cardId, slot, sequenceId, plan);
@@ -384,7 +414,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       rerunOnSlot(cardId, slot, sequenceId, plan, poseDialog.reverse);
       return;
     }
-    beginReady(slotIndex, sequenceId, plan, slotReadyOptions(slot));
+    beginReady(itemKey, sequenceId, plan, slotReadyOptions(slot));
   };
 
   const openEntryDialog = (
@@ -447,7 +477,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
         openEntryDialog(
           {
             intent: "rerun",
-            slotIndex: slot.index,
+            itemKey: slot.itemKey,
             cardId,
             sequenceId,
             reverse,
@@ -502,7 +532,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       });
       if (needsEntryDialog(gate, "next")) {
         openEntryDialog(
-          { intent: "next", slotIndex: slot.index, cardId, sequenceId, reverse: slot.runOptions.reverse },
+          { intent: "next", itemKey: slot.itemKey, cardId, sequenceId, reverse: slot.runOptions.reverse },
           slot.runOptions,
         );
         return;
@@ -529,14 +559,14 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       });
       if (needsEntryDialog(gate, "fader")) {
         openEntryDialog(
-          { intent: "fader", slotIndex: slot.index, cardId: null, sequenceId, reverse: slot.runOptions.reverse },
+          { intent: "fader", itemKey: slot.itemKey, cardId: null, sequenceId, reverse: slot.runOptions.reverse },
           slot.runOptions,
         );
         return;
       }
       if (gate.status === "at-start") startPlan = gate.plan;
     }
-    beginReady(slot.index, sequenceId, startPlan, slotReadyOptions(slot));
+    beginReady(slot.itemKey, sequenceId, startPlan, slotReadyOptions(slot));
   };
 
   const handleTriggerSequence = (slotIndex: number, sequenceId: number) => {
@@ -567,15 +597,18 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
           telemetryByObjectId,
         )
       ) {
-        setPreparedPoseAlert({ slotIndex, sequenceId });
+        setPreparedPoseAlert({ itemKey: slot.itemKey, sequenceId });
         return;
       }
-      setSlotBusy(slotIndex, true);
+      setSlotBusy(slot.itemKey, true);
       void (async () => {
         try {
-          await goSlot(slot, sequenceId, slot.startPlan, slot.maxSpeedPercent);
+          await goSlot(slot, sequenceId, slot.startPlan, {
+            maxSpeedPercent: slot.maxSpeedPercent,
+            speedPercent: slot.readySpeedPercent,
+          });
         } finally {
-          setSlotBusy(slotIndex, false);
+          setSlotBusy(slot.itemKey, false);
         }
       })();
       return;
@@ -584,9 +617,9 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
     readyFromSlot(slot, sequenceId);
   };
 
-  /** 主动取消准备：先通知 PLC，成功后再清掉槽上的已准备 */
-  const handleCancelReady = (slotIndex: number) => {
-    const sequenceId = faderSlots[slotIndex]?.sequence?.id;
+  /** 主动取消准备：先通知 PLC，成功后再清掉该节目项的已准备 */
+  const handleCancelReady = (itemKey: string) => {
+    const sequenceId = slotForItem(itemKey)?.sequence?.id;
     const authored = currentProject?.document.motion.actionSequences.find(
       (entry) => entry.id === sequenceId,
     );
@@ -602,16 +635,16 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
           return;
         }
       }
-      clearSlotReady(slotIndex);
-      setPreparedPoseAlert((current) => (current?.slotIndex === slotIndex ? null : current));
+      clearSlotReady(itemKey);
+      setPreparedPoseAlert((current) => (current?.itemKey === itemKey ? null : current));
     })();
   };
 
   /** 准备后设备被移动过：撤掉准备，按现在的位置重新走 Ready（需要时弹接入点选择） */
   const handleReprepare = (alert: PreparedPoseAlert) => {
     setPreparedPoseAlert(null);
-    clearSlotReady(alert.slotIndex);
-    const slot = faderSlots[alert.slotIndex];
+    clearSlotReady(alert.itemKey);
+    const slot = slotForItem(alert.itemKey);
     if (!slot || slot.isBusy || slot.sequence?.id !== alert.sequenceId) return;
     readyFromSlot(slot, alert.sequenceId);
   };
@@ -646,7 +679,7 @@ export const ExecArea = ({ className }: ExecAreaProps) => {
       {preparedPoseAlert !== null ? (
         <PreparedPoseDialog
           open
-          onCancelReady={() => handleCancelReady(preparedPoseAlert.slotIndex)}
+          onCancelReady={() => handleCancelReady(preparedPoseAlert.itemKey)}
           onReprepare={() => handleReprepare(preparedPoseAlert)}
         />
       ) : null}
