@@ -41,7 +41,7 @@ export type TelemetryRegistry = {
 };
 
 export class TelemetryController {
-  private readonly binder = new TelemetryBinder();
+  private readonly binder = new TelemetryBinder((id) => this.registry.get(id) !== undefined);
   private readonly visuals = new Map<string, ObjectVisuals>();
   private readonly externalLabels = new Map<string, DriveUnitLabelFields | null>();
   private readonly labelPositionScratch = new Vector3();
@@ -74,21 +74,6 @@ export class TelemetryController {
   }
 
   applyTelemetry(snapshots: TelemetrySnapshotInput[]): void {
-    const objects = this.registry.list().map((handle) => ({
-      id: handle.id,
-      name: handle.getConfig().name ?? handle.id,
-    }));
-
-    const namedSnapshots = snapshots.map((snapshot) => ({
-      snapshotId: snapshot.snapshotId,
-      name: snapshot.name,
-    }));
-
-    this.binder.syncFromNames(
-      objects.map((object) => ({ id: object.id, name: object.name })),
-      namedSnapshots,
-    );
-
     snapshots.forEach((snapshot) => {
       const objectId = this.binder.resolveObjectId(snapshot.snapshotId);
       if (!objectId) {
