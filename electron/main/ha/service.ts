@@ -121,7 +121,7 @@ const toForwardEnvelope = (envelope: HaForwardEnvelope): HaForwardEnvelope => ({
  * - 链路状态（HA|info）、收到的消息（HA|haRecv）；连上后互发 hello，判断是不是同一个工程；
  * - 指令同步：本机执行的写指令发给另一台（停止类立即发，其它执行成功后发），
  *   收到的一律带「不写 PLC」标志交给本机 C++；
- * - 备机的指令规则：配置带标志，整台 PLC 的指令不能做，没核对完只能停止、急停。
+ * - 备机的指令规则：配置带标志，整台 PLC 的指令不能做，没核对完只能停止、总停止。
  */
 export class HaService {
   private settings: HaSettings | null = null
@@ -129,7 +129,7 @@ export class HaService {
   private starting = false
   private error: string | null = null
   private localProject: HaProjectInfo | null = null
-  /** 和主机核对完成的工程 id（备机）；核对在工程同步里做，没核对完只能停止、急停 */
+  /** 和主机核对完成的工程 id（备机）；核对在工程同步里做，没核对完只能停止、总停止 */
   private syncedProjectId: string | null = null
   /** 备机：主机发来的同步范围（核对完成时界面交过来），决定同步不同步模型 */
   private syncedScope: HaSyncScope | null = null
@@ -583,7 +583,7 @@ export class HaService {
 
   /**
    * 发出前（方案 6.1、6.4、6.5）：
-   * - 备机：配置带标志；整台 PLC 的指令不能做；没核对完只能停止、急停（点动松开算停止）；
+   * - 备机：配置带标志；整台 PLC 的指令不能做；没核对完只能停止、总停止（点动松开算停止）；
    * - 两台：另一台在用的设备不能操作（停止、急停除外）；主机上备机在用设备时不能做整台 PLC 的指令。
    */
   commandGate(optCmd: string, params?: unknown[]): HaCommandGate {
@@ -713,18 +713,18 @@ export class HaService {
     const active = this.active
     if (!active || active.role !== 'standby') return null
     const primary = this.peers.get(active.primaryIp)
-    if (!primary || primary.link !== 'up') return '与主机断开，只能停止、急停'
+    if (!primary || primary.link !== 'up') return '与主机断开，只能停止、总停止'
     const hello = primary.hello
-    if (!hello) return '等待主机回应，只能停止、急停'
-    if (primary.closedByPeer) return '主机已关闭热备，只能停止、急停'
-    if (hello.v !== HA_MESSAGE_VERSION) return '两边软件的热备版本不一致，只能停止、急停'
-    if (!this.localProject) return '本机没有打开工程，只能停止、急停'
-    if (!hello.project) return '主机没有打开工程，只能停止、急停'
-    if (hello.project.id !== this.localProject.id) return '和主机打开的不是同一个工程，只能停止、急停'
+    if (!hello) return '等待主机回应，只能停止、总停止'
+    if (primary.closedByPeer) return '主机已关闭热备，只能停止、总停止'
+    if (hello.v !== HA_MESSAGE_VERSION) return '两边软件的热备版本不一致，只能停止、总停止'
+    if (!this.localProject) return '本机没有打开工程，只能停止、总停止'
+    if (!hello.project) return '主机没有打开工程，只能停止、总停止'
+    if (hello.project.id !== this.localProject.id) return '和主机打开的不是同一个工程，只能停止、总停止'
     if (hello.project.formatVersion !== this.localProject.formatVersion) {
-      return '两边的工程格式版本不一致，只能停止、急停'
+      return '两边的工程格式版本不一致，只能停止、总停止'
     }
-    if (this.syncedProjectId !== this.localProject.id) return '还没和主机核对完成，只能停止、急停'
+    if (this.syncedProjectId !== this.localProject.id) return '还没和主机核对完成，只能停止、总停止'
     return null
   }
 

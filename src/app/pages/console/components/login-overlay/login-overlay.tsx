@@ -5,8 +5,7 @@ import { useAuth } from "@/app/auth/use-auth";
 import { EmergencyStopButton } from "@/app/components/ics/emergency-stop-button";
 import { useProject } from "@/app/project/use-project";
 import { LoginForm } from "@/app/pages/login/login-form";
-import { useExecCardActions } from "../../hooks/use-exec-cards";
-import { usePlcRuntime } from "../../hooks/plc-runtime-provider";
+import { useAllStop } from "../../hooks/use-all-stop";
 import { useConsoleLogin } from "./console-login-context";
 
 /**
@@ -16,8 +15,7 @@ import { useConsoleLogin } from "./console-login-context";
 export const LoginOverlay = () => {
   const { isAuthenticated, user } = useAuth();
   const { switchUserOpen, closeSwitchUser } = useConsoleLogin();
-  const { emergencyStopAll } = useExecCardActions();
-  const { allStopAll } = usePlcRuntime();
+  const handleAllStop = useAllStop();
   const { currentProject } = useProject();
   const open = !isAuthenticated || switchUserOpen;
 
@@ -74,13 +72,8 @@ export const LoginOverlay = () => {
           }
         />
       </main>
-      <p className="text-body-sm text-muted-foreground">急停按钮始终响应 ↓</p>
-      <EmergencyStopButton
-        onClick={() => {
-          emergencyStopAll();
-          void allStopAll();
-        }}
-      />
+      <p className="text-body-sm text-muted-foreground">总停止按钮始终响应 ↓</p>
+      <EmergencyStopButton onClick={handleAllStop} />
     </div>
   );
 };

@@ -12,6 +12,6 @@ export const EmergencyStopButton = ({ className, ...props }: EmergencyStopButton
     )}
     {...props}
   >
-    <span className="uppercase tracking-[0.2em]">急停</span>
+    <span className="uppercase tracking-[0.2em]">总停止</span>
   </button>
 );

@@ -65,7 +65,7 @@ const standbyState: HaState = {
       closedByPeer: false,
     },
   ],
-  deviceGate: "还没和主机核对完成，只能停止、急停",
+  deviceGate: "还没和主机核对完成，只能停止、总停止",
   error: null,
 };
 

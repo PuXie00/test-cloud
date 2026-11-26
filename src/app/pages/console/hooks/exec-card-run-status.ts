@@ -179,23 +179,27 @@ const silentRunStatus = (card: ExecCard): "completed" | "stopped" =>
 /**
  * PLC 不再上报的任务卡停下来，留给用户自己关闭：
  * 运行中的按 silentRunStatus 分正常结束 / 已停止；停止中的视为已真正停下（从未上报过的，按停止请求后的静默时间算）。
+ * 总停止后待清掉的（dismissWhenSettled）停下来就直接移除。
  */
 export const settleSilentCards = (cards: ExecCard[], now: number): ExecCard[] | null => {
   let changed = false;
-  const next = cards.map((card) => {
-    if (isReported(card, now)) return card;
+  const next = cards.flatMap((card): ExecCard[] => {
+    if (isReported(card, now)) return [card];
     const wasActive = card.plcActive === true;
     const stopSettled =
       card.status === "stopping" && now - (card.stopRequestedAt ?? 0) > ACTION_RUN_STALE_MS;
     const runSettled = wasActive && card.status === "running";
-    if (!wasActive && !stopSettled) return card;
+    if (!wasActive && !stopSettled) return [card];
     changed = true;
-    return {
-      ...card,
-      plcActive: false,
-      ...(stopSettled ? { status: "stopped" as const } : {}),
-      ...(runSettled ? { status: silentRunStatus(card) } : {}),
-    };
+    if (card.dismissWhenSettled) return [];
+    return [
+      {
+        ...card,
+        plcActive: false,
+        ...(stopSettled ? { status: "stopped" as const } : {}),
+        ...(runSettled ? { status: silentRunStatus(card) } : {}),
+      },
+    ];
   });
   return changed ? next : null;
 };

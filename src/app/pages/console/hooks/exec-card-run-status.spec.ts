@@ -226,6 +226,12 @@ describe("settleSilentCards", () => {
       plcActive: false,
     });
   });
+
+  it("removes a card cleared by the all-stop once the PLC goes silent", () => {
+    const dismissed = card({ run, plcActive: true, status: "error", emergencyStopped: true, dismissWhenSettled: true });
+    expect(settleSilentCards([dismissed], reportedAt + ACTION_RUN_STALE_MS)).toBeNull();
+    expect(settleSilentCards([dismissed], silentAt)).toEqual([]);
+  });
 });
 
 describe("canCloseExecCard", () => {

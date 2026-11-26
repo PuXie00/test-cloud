@@ -45,7 +45,7 @@ describe('hot standby labels', () => {
   it('summarizes for the top bar', () => {
     expect(summarizeHa(state({ enabled: false }))).toEqual({ label: '热备未开启', tone: 'idle' })
     expect(summarizeHa(state())).toEqual({ label: '备机 · 已同步', tone: 'ok' })
-    expect(summarizeHa(state({ deviceGate: '还没和主机核对完成，只能停止、急停' }))).toEqual({
+    expect(summarizeHa(state({ deviceGate: '还没和主机核对完成，只能停止、总停止' }))).toEqual({
       label: '备机 · 未同步',
       tone: 'warn',
     })

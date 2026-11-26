@@ -2,17 +2,15 @@ import { Lock } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { EmergencyStopButton } from "@/app/components/ics/emergency-stop-button";
 import { cn } from "@/app/components/ui/utils";
+import { useAllStop } from "../../hooks/use-all-stop";
 import { useConsoleMode } from "../../hooks/use-console-mode";
-import { useExecCardActions } from "../../hooks/use-exec-cards";
-import { usePlcRuntime } from "../../hooks/plc-runtime-provider";
 import { useProgram } from "../../hooks/use-program";
 
 const HOLD_MS = 3000;
 
 export const LockScreen = () => {
   const { isLocked, unlock } = useConsoleMode();
-  const { emergencyStopAll } = useExecCardActions();
-  const { allStopAll } = usePlcRuntime();
+  const handleAllStop = useAllStop();
   const { program } = useProgram();
   const [holdProgress, setHoldProgress] = useState(0);
   const holdRef = useRef<number | null>(null);
@@ -89,13 +87,8 @@ export const LockScreen = () => {
         </span>
       </button>
 
-      <p className="text-body-sm text-muted-foreground">急停按钮始终响应 ↓</p>
-      <EmergencyStopButton
-        onClick={() => {
-          emergencyStopAll();
-          void allStopAll();
-        }}
-      />
+      <p className="text-body-sm text-muted-foreground">总停止按钮始终响应 ↓</p>
+      <EmergencyStopButton onClick={handleAllStop} />
     </div>
   );
 };

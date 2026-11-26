@@ -261,7 +261,7 @@ describe('HaService link', () => {
     linkUp('192.168.0.100')
     helloFrom('192.168.0.100', PROJECT, { v: HA_MESSAGE_VERSION + 1 })
     expect(service.getState().peers[0]).toMatchObject({ versionMismatch: true })
-    expect(service.getState().deviceGate).toBe('两边软件的热备版本不一致，只能停止、急停')
+    expect(service.getState().deviceGate).toBe('两边软件的热备版本不一致，只能停止、总停止')
   })
 
   it('re-sends HA|start after the local C++ reconnects', async () => {
@@ -295,26 +295,26 @@ describe('HaService standby gate', () => {
     const { service, linkUp, helloFrom } = await setup()
     expect(service.commandGate('Opera|stop')).toEqual({ noPlc: false })
     expect(service.commandGate('Opera|eStop')).toEqual({ noPlc: false })
-    expect(service.commandGate('Opera|jog')).toEqual({ block: '与主机断开，只能停止、急停' })
+    expect(service.commandGate('Opera|jog')).toEqual({ block: '与主机断开，只能停止、总停止' })
     // 断线时点动松开不能拦
     expect(service.commandGate('Opera|jog', [{ deviceId: 6, direction: 0 }])).toEqual({ noPlc: false })
 
     linkUp('192.168.0.100')
-    expect(service.commandGate('Opera|jog')).toEqual({ block: '等待主机回应，只能停止、急停' })
+    expect(service.commandGate('Opera|jog')).toEqual({ block: '等待主机回应，只能停止、总停止' })
     helloFrom('192.168.0.100', { ...PROJECT, id: 'other' })
-    expect(service.commandGate('Opera|jog')).toEqual({ block: '和主机打开的不是同一个工程，只能停止、急停' })
+    expect(service.commandGate('Opera|jog')).toEqual({ block: '和主机打开的不是同一个工程，只能停止、总停止' })
     helloFrom('192.168.0.100')
-    expect(service.commandGate('Opera|jog')).toEqual({ block: '还没和主机核对完成，只能停止、急停' })
+    expect(service.commandGate('Opera|jog')).toEqual({ block: '还没和主机核对完成，只能停止、总停止' })
     service.setSynced(PROJECT.id)
     expect(service.commandGate('Opera|jog')).toEqual({ noPlc: false })
     expect(service.getState().deviceGate).toBeNull()
 
     linkUp('192.168.0.100', 'down')
-    expect(service.commandGate('Opera|jog')).toEqual({ block: '与主机断开，只能停止、急停' })
+    expect(service.commandGate('Opera|jog')).toEqual({ block: '与主机断开，只能停止、总停止' })
     linkUp('192.168.0.100', 'up')
     helloFrom('192.168.0.100')
     // 断线后要重新核对
-    expect(service.commandGate('Opera|jog')).toEqual({ block: '还没和主机核对完成，只能停止、急停' })
+    expect(service.commandGate('Opera|jog')).toEqual({ block: '还没和主机核对完成，只能停止、总停止' })
   })
 
   it('never gates the primary', async () => {

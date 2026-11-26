@@ -58,7 +58,13 @@ type ExecutorSlotsValue = {
   clearSlotReady: (index: number) => void;
 };
 
+type ExecutorSlotActions = {
+  /** 总停止后全部推子槽回到未准备 */
+  resetAllSlots: () => void;
+};
+
 const ExecutorSlotsContext = createContext<ExecutorSlotsValue | null>(null);
+const ExecutorSlotActionsContext = createContext<ExecutorSlotActions | null>(null);
 
 type ExecutorSlotsProviderProps = {
   children: ReactNode;
@@ -211,6 +217,14 @@ export const ExecutorSlotsProvider = ({
     });
   }, []);
 
+  const resetAllSlots = useCallback(() => {
+    setReadyBySlot({});
+    setRunningFaders(new Set());
+    setSpeedCapBySlot({});
+  }, []);
+
+  const actions = useMemo<ExecutorSlotActions>(() => ({ resetAllSlots }), [resetAllSlots]);
+
   const value = useMemo(
     () => ({
       faderSlots,
@@ -232,11 +246,22 @@ export const ExecutorSlotsProvider = ({
     ],
   );
 
-  return <ExecutorSlotsContext.Provider value={value}>{children}</ExecutorSlotsContext.Provider>;
+  return (
+    <ExecutorSlotActionsContext.Provider value={actions}>
+      <ExecutorSlotsContext.Provider value={value}>{children}</ExecutorSlotsContext.Provider>
+    </ExecutorSlotActionsContext.Provider>
+  );
 };
 
 export const useExecutorSlots = (): ExecutorSlotsValue => {
   const value = useContext(ExecutorSlotsContext);
   if (!value) throw new Error("useExecutorSlots must be used inside ExecutorSlotsProvider");
+  return value;
+};
+
+/** 推子一动 faderSlots 就变；只需要操作的组件用它，避免跟着重渲染 */
+export const useExecutorSlotActions = (): ExecutorSlotActions => {
+  const value = useContext(ExecutorSlotActionsContext);
+  if (!value) throw new Error("useExecutorSlotActions must be used inside ExecutorSlotsProvider");
   return value;
 };

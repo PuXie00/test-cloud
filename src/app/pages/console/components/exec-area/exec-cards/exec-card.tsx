@@ -185,83 +185,68 @@ export const ExecCardView = ({
         </span>
       </div>
 
-      <div className="flex gap-1.5">
-        {isError ? (
-          canRun && <button
-            type="button"
-            disabled={closeDisabled}
-            title={closeTitle}
-            onClick={onClose}
-            className={cn(
-              actionBtnClass,
-              "bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-40",
-            )}
-          >
-            <X className="h-3.5 w-3.5" /> 确认清除
-          </button>
-        ) : (
-          <>
-            {canRun && (
-              <button
-                type="button"
-                aria-label="反向回"
-                disabled={rerunDisabled}
-                onClick={onReverseBack}
-                className={cn(actionBtnClass, "bg-muted/50 text-foreground hover:bg-muted disabled:opacity-40")}
-              >
-                <Undo2 className="h-3.5 w-3.5" aria-hidden /> 反向回
-              </button>
-            )}
-            {busy && (isStopped || isEnded) ? (
-              canRun && <button
-                type="button"
-                disabled
-                className={cn(actionBtnClass, "bg-muted/50 text-foreground disabled:opacity-70")}
-              >
-                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> 准备中
-              </button>
-            ) : isEnded ? (
-              canRun && <button
-                type="button"
-                disabled={closeDisabled}
-                title={closeTitle}
-                onClick={onClose}
-                className={cn(actionBtnClass, "bg-muted text-foreground hover:bg-accent disabled:opacity-40")}
-              >
-                <X className="h-3.5 w-3.5" aria-hidden /> 关闭
-              </button>
-            ) : isStopped ? (
-              canRun && <button
-                type="button"
-                disabled={rerunDisabled}
-                onClick={onContinue}
-                className={cn(actionBtnClass, "bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40")}
-              >
-                <Play className="h-3.5 w-3.5 fill-current" aria-hidden /> 继续
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={onStop}
-                className={cn(actionBtnClass, "bg-muted/50 text-foreground hover:bg-muted")}
-              >
-                <Square className="h-3.5 w-3.5" /> {isStopping ? "停止中" : "停止"}
-              </button>
-            )}
-            {canRun && (
-              <button
-                type="button"
-                aria-label="下一条"
-                disabled={skipDisabled}
-                onClick={onSkipNext}
-                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-muted/50 text-foreground hover:bg-muted disabled:opacity-40"
-              >
-                <SkipForward className="h-3.5 w-3.5" aria-hidden />
-              </button>
-            )}
-          </>
-        )}
-      </div>
+      {!isError && (
+        <div className="flex gap-1.5">
+          {canRun && (
+            <button
+              type="button"
+              aria-label="反向回"
+              disabled={rerunDisabled}
+              onClick={onReverseBack}
+              className={cn(actionBtnClass, "bg-muted/50 text-foreground hover:bg-muted disabled:opacity-40")}
+            >
+              <Undo2 className="h-3.5 w-3.5" aria-hidden /> 反向回
+            </button>
+          )}
+          {busy && (isStopped || isEnded) ? (
+            canRun && <button
+              type="button"
+              disabled
+              className={cn(actionBtnClass, "bg-muted/50 text-foreground disabled:opacity-70")}
+            >
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> 准备中
+            </button>
+          ) : isEnded ? (
+            canRun && <button
+              type="button"
+              disabled={closeDisabled}
+              title={closeTitle}
+              onClick={onClose}
+              className={cn(actionBtnClass, "bg-muted text-foreground hover:bg-accent disabled:opacity-40")}
+            >
+              <X className="h-3.5 w-3.5" aria-hidden /> 关闭
+            </button>
+          ) : isStopped ? (
+            canRun && <button
+              type="button"
+              disabled={rerunDisabled}
+              onClick={onContinue}
+              className={cn(actionBtnClass, "bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40")}
+            >
+              <Play className="h-3.5 w-3.5 fill-current" aria-hidden /> 继续
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onStop}
+              className={cn(actionBtnClass, "bg-muted/50 text-foreground hover:bg-muted")}
+            >
+              <Square className="h-3.5 w-3.5" /> {isStopping ? "停止中" : "停止"}
+            </button>
+          )}
+          {canRun && (
+            <button
+              type="button"
+              aria-label="下一条"
+              disabled={skipDisabled}
+              onClick={onSkipNext}
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-muted/50 text-foreground hover:bg-muted disabled:opacity-40"
+            >
+              <SkipForward className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 };

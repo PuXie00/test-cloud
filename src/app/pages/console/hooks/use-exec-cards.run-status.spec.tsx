@@ -225,6 +225,21 @@ describe("ExecCardsProvider PLC action run status", () => {
     expect(rows()).toEqual([]);
   });
 
+  it("clears every card after the all-stop, keeping one the PLC still reports until it goes silent", () => {
+    report([running({ actionId: 5 })]);
+    act(() => vi.advanceTimersByTime(ACTION_RUN_STALE_MS + 200));
+    report([running()]);
+    act(() => api.emergencyStopAll());
+    act(() => api.clearAll());
+    expect(rows()).toEqual(["序列4|error|3|1000"]);
+    // 减速中还在上报：不补建、不恢复运行
+    act(() => vi.advanceTimersByTime(50));
+    report([running({ runTime: 1050 })]);
+    expect(rows()).toEqual(["序列4|error|3|1050"]);
+    act(() => vi.advanceTimersByTime(ACTION_RUN_STALE_MS + 200));
+    expect(rows()).toEqual([]);
+  });
+
   it("does not change speed during the transition state or while stopping", () => {
     report([running({ state: 1 })]);
     act(() => api.setSpeed(api.cards[0]!.id, 150));

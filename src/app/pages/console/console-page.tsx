@@ -15,7 +15,8 @@ import { ConsoleNavProvider, type ConsoleNavOptions } from "./hooks/use-console-
 import { ControlledObjectsProvider } from "./hooks/use-controlled-objects";
 import { LogStreamProvider } from "./hooks/use-log-stream";
 import { useActionCardSeed } from "./hooks/action-card-seed";
-import { ExecCardsProvider, useExecCardActions } from "./hooks/use-exec-cards";
+import { ExecCardsProvider } from "./hooks/use-exec-cards";
+import { useAllStop } from "./hooks/use-all-stop";
 import { ExecutorSlotsProvider, type SlotRunOptions } from "./hooks/use-executor-slots";
 import { PROGRAM_SLOTS_PER_PAGE } from "./components/program-panel/program-data";
 import { compactSlotRunOptions } from "@/app/project/program-item-run-options";
@@ -59,11 +60,7 @@ import { LockScreen } from "./components/lock-screen/lock-screen";
 import { ConsoleLoginProvider } from "./components/login-overlay/console-login-context";
 import { LoginOverlay } from "./components/login-overlay/login-overlay";
 import { ProjectStoreProvider } from "./hooks/use-project-store";
-import {
-  PlcRuntimeProvider,
-  usePlcRuntime,
-  useTelemetryListening,
-} from "./hooks/plc-runtime-provider";
+import { PlcRuntimeProvider, useTelemetryListening } from "./hooks/plc-runtime-provider";
 import { AxisMotionEditLockSync, AxisMotionProvider } from "./hooks/axis-motion";
 import { ActionRunEditLockSync, ActionRunProvider } from "./hooks/action-run";
 import { RulesProvider } from "./hooks/use-rules";
@@ -187,8 +184,7 @@ const ConsoleContent = ({
 
 const ConsoleInner = () => {
   const { mode } = useConsoleMode();
-  const { emergencyStopAll } = useExecCardActions();
-  const { allStopAll } = usePlcRuntime();
+  const handleAllStop = useAllStop();
   const { can } = usePermissions();
   const [activeNav, setActiveNav] = useState<LeftNavId>("control");
   const [devicesRightTab, setDevicesRightTab] = useState<RightPanelTab>("structure");
@@ -218,11 +214,6 @@ const ConsoleInner = () => {
   }, []);
   useEmptyProjectWizardEntry({ isShow, onEnter: enterConfigWizard });
 
-  const handleEmergencyStop = () => {
-    emergencyStopAll();
-    void allStopAll();
-  };
-
   // 用户切页面（左侧导航、页面里的跳转）离开动作页时，有未保存的序列先弹窗；
   // 切演出模式、权限变化引起的跳转不拦
   const leaveGuardRef = useRef<LeaveGuard | null>(null);
@@ -246,7 +237,7 @@ const ConsoleInner = () => {
             <GoReadyProvider>
               <ViewportSlotProvider>
             <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-body-md text-foreground">
-              <TopBar onStop={handleEmergencyStop} />
+              <TopBar onStop={handleAllStop} />
 
               <main className="flex min-h-0 flex-1 overflow-hidden gap-1 pr-1">
                 {!isShow && (

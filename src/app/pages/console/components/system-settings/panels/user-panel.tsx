@@ -150,7 +150,7 @@ export const UserPanel = ({ onRequestClose }: UserPanelProps) => {
           </p>
           {!session.isAdmin &&
             (grantedGroups.length === 0 ? (
-              <p className="text-body-sm text-foreground">只有基础功能（查看控制页、急停、停止）</p>
+              <p className="text-body-sm text-foreground">只有基础功能（查看控制页、总停止、停止）</p>
             ) : (
               grantedGroups.map((group) => (
                 <div key={group.label} className="flex flex-wrap items-center gap-2">

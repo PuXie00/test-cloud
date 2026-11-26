@@ -24,7 +24,7 @@ export const describeConfirmReason = (info: HaConfirmInfo): string[] => {
 
 /**
  * 备机核对后两边不一样、又不能直接用主机的：问一次用哪边的（整份二选一）。
- * 没答之前不同步，备机只能停止、急停；不能关掉，要选一边。
+ * 没答之前不同步，备机只能停止、总停止；不能关掉，要选一边。
  */
 export const HaConfirmDialog = ({
   info,
@@ -47,7 +47,7 @@ export const HaConfirmDialog = ({
               <p>
                 选一边的内容，另一边整份被覆盖；被覆盖的那边先自动存一个版本备份，选错了可以到版本备份里找回。
               </p>
-              <p className="text-warning">选好之前不同步，本机只能停止、急停。</p>
+              <p className="text-warning">选好之前不同步，本机只能停止、总停止。</p>
               {!canManage ? (
                 <p role="alert" className="text-destructive">
                   当前用户没有「主备热备」权限，请有权限的用户来选。

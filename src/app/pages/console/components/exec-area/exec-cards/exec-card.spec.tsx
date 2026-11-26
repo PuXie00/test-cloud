@@ -124,12 +124,15 @@ describe("ExecCardView stop and close gating", () => {
     expect(closeButton().disabled).toBe(false);
   });
 
-  it("keeps 确认清除 locked while the PLC still reports an emergency-stopped action", () => {
+  it("shows no action row for an emergency-stopped card, and keeps close locked while the PLC still reports it", () => {
     const errored = card({ status: "error", emergencyStopped: true, run: run(), plcActive: true });
     const { rerender } = render(<ExecCardView card={errored} hasNextSequence {...handlers} />);
-    expect((screen.getByRole("button", { name: "确认清除" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "确认清除" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^停止/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "反向回" })).toBeNull();
+    expect(closeButton().disabled).toBe(true);
     rerender(<ExecCardView card={{ ...errored, plcActive: false }} hasNextSequence {...handlers} />);
-    expect((screen.getByRole("button", { name: "确认清除" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(closeButton().disabled).toBe(false);
   });
 });
 

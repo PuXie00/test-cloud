@@ -112,13 +112,13 @@ describe("HotStandbyDialog", () => {
           closedByPeer: false,
         },
       ],
-      deviceGate: "还没和主机核对完成，只能停止、急停",
+      deviceGate: "还没和主机核对完成，只能停止、总停止",
     });
     await screen.findByRole("button", { name: "关闭热备" });
     expect((screen.getByLabelText("本机名称") as HTMLInputElement).disabled).toBe(true);
     expect((screen.getByLabelText("主机 IP") as HTMLInputElement).disabled).toBe(true);
     expect(screen.getByText("同一个工程「演出」")).toBeTruthy();
-    expect(screen.getByText("还没和主机核对完成，只能停止、急停")).toBeTruthy();
+    expect(screen.getByText("还没和主机核对完成，只能停止、总停止")).toBeTruthy();
   });
 
   it("is read-only without the permission", async () => {

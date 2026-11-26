@@ -82,6 +82,8 @@ export type ExecCard = {
   /** PLC 仍在上报这个动作 */
   plcActive?: boolean;
   stopRequestedAt?: number;
+  /** 总停止后要清掉，PLC 还在上报（减速中）：停稳后直接移除 */
+  dismissWhenSettled?: boolean;
 };
 
 type ExecCardsContextValue = {
@@ -104,6 +106,8 @@ type ExecCardsContextValue = {
   skipNext: (id: string) => void;
   setSpeed: (id: string, percent: number) => void;
   emergencyStopAll: () => void;
+  /** 总停止成功后清掉全部任务卡；PLC 还在上报的停稳后再移除 */
+  clearAll: () => void;
   /** release=false：动作已经在别处释放过，只移除任务卡，不再下发停止 */
   close: (id: string, options?: { release?: boolean }) => void;
 };
@@ -320,6 +324,12 @@ export const ExecCardsProvider = ({
     }
   }, []);
 
+  const clearAll = useCallback(() => {
+    setCards((current) =>
+      current.flatMap((card) => (card.plcActive ? [{ ...card, dismissWhenSettled: true }] : [])),
+    );
+  }, []);
+
   /** 动作真正停下来之后才能关闭任务卡 */
   const close = useCallback((id: string, options?: { release?: boolean }) => {
     const card = cardsRef.current.find((entry) => entry.id === id);
@@ -343,8 +353,8 @@ export const ExecCardsProvider = ({
   }, []);
 
   const actions = useMemo<ExecCardActions>(
-    () => ({ launch, pause, stop, skipNext, setSpeed, emergencyStopAll, close }),
-    [launch, pause, stop, skipNext, setSpeed, emergencyStopAll, close],
+    () => ({ launch, pause, stop, skipNext, setSpeed, emergencyStopAll, clearAll, close }),
+    [launch, pause, stop, skipNext, setSpeed, emergencyStopAll, clearAll, close],
   );
   const value = useMemo(() => ({ cards, ...actions }), [cards, actions]);
 

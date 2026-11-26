@@ -55,7 +55,8 @@ type PlcRuntimeContextValue = {
   scanInBackground: () => void;
   setSimulation: (plcId: number, enabled: boolean) => Promise<void>;
   setSimulationAll: (enabled: boolean) => Promise<void>;
-  allStopAll: () => Promise<void>;
+  /** PLC 应答成功时返回 true */
+  allStopAll: () => Promise<boolean>;
   simulationSwitchPending: boolean;
   shouldShowMismatchDialog: boolean;
   markMismatchDialogConsumed: () => void;
@@ -289,13 +290,15 @@ export const PlcRuntimeProvider = ({ children }: { children: ReactNode }) => {
 
   const allStopAll = useCallback(async () => {
     const send = window.csocketApi?.allStopPlc;
-    if (!send) return;
-    if (plcs.length === 0) return;
+    if (!send) return false;
+    if (plcs.length === 0) return false;
     try {
       const result = await send(plcs.map((plc) => ({ deviceId: plc.id })));
-      if (isCppAckFailed(result)) toast.error("急停失败");
+      if (isCppAckFailed(result)) toast.error("总停止失败");
+      return isCppAckOk(result);
     } catch {
-      toast.error("急停失败");
+      toast.error("总停止失败");
+      return false;
     }
   }, [plcs]);
 

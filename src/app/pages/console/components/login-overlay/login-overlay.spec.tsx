@@ -6,14 +6,10 @@ import { installFakeAuthApi, uninstallFakeAuthApi } from "@/app/auth/install-fak
 import { ConsoleLoginProvider, useConsoleLogin } from "./console-login-context";
 import { LoginOverlay } from "./login-overlay";
 
-const { emergencyStopAll, allStopAll } = vi.hoisted(() => ({
-  emergencyStopAll: vi.fn(),
-  allStopAll: vi.fn(async () => undefined),
-}));
+const { allStop } = vi.hoisted(() => ({ allStop: vi.fn() }));
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
-vi.mock("../../hooks/use-exec-cards", () => ({ useExecCardActions: () => ({ emergencyStopAll }) }));
-vi.mock("../../hooks/plc-runtime-provider", () => ({ usePlcRuntime: () => ({ allStopAll }) }));
+vi.mock("../../hooks/use-all-stop", () => ({ useAllStop: () => allStop }));
 vi.mock("@/app/project/use-project", () => ({ useProject: () => ({ currentProject: { name: "天鹅湖" } }) }));
 
 afterEach(() => {
@@ -48,9 +44,8 @@ describe("控制台原地登录框", () => {
     expect(screen.getByRole("dialog", { name: "登录" })).toBeTruthy();
     expect(screen.getByText("控制台内容")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "取消" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /急停/ }));
-    expect(emergencyStopAll).toHaveBeenCalledTimes(1);
-    expect(allStopAll).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: /总停止/ }));
+    expect(allStop).toHaveBeenCalledTimes(1);
   });
 
   it("登录框打开时背后的快捷键不响应", async () => {
