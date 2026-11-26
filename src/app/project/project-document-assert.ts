@@ -364,6 +364,7 @@ const validateObjectBase = (
   validateVector(object.position, `${path}.position`, a);
   validateVector(object.centerOffset, `${path}.centerOffset`, a);
   a.string(object.color, `${path}.color`);
+  a.optionalBoolean(object.tintModel, `${path}.tintModel`);
   if (object.parentId !== undefined && object.parentId !== null) {
     validateSetupEntityId(object.parentId, `${path}.parentId`, a);
   }

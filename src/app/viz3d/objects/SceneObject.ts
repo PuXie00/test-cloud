@@ -42,6 +42,7 @@ import {
 import { applyVisibility, DIMMED_VISIBILITY } from "./scene-object-dim";
 import { applyRuntimePivot, resetRuntimePivot } from "./runtime-pivot";
 import { resolveHoistTravel } from "../telemetry/hoist-travel";
+import { ModelTint } from "./model-tint";
 
 export type ModelTemplateProvider = (id: string) => TransformNode | undefined;
 
@@ -53,6 +54,8 @@ export class SceneObject implements Disposable {
   private bodyMesh: Mesh | null = null;
   private frontMarker: Mesh | null = null;
   private presetMaterial: StandardMaterial | null = null;
+  /** 导入模型的染色副本材质；仅模型 visual 有 */
+  private modelTint: ModelTint | null = null;
   private usesModelVisual = false;
   private config: SceneObjectConfig;
   private hoistPoints = new Map<string, HoistPointVisual>();
@@ -143,11 +146,19 @@ export class SceneObject implements Disposable {
         this.applyModelDimensions(config.dimensions);
       }
     } else {
-      const shapeOrDimsChanged = config.shape !== this.config.shape || dimsChanged;
+      const holeChanged =
+        config.holeDimensions?.w !== this.config.holeDimensions?.w ||
+        config.holeDimensions?.d !== this.config.holeDimensions?.d;
+      const shapeOrDimsChanged = config.shape !== this.config.shape || dimsChanged || holeChanged;
       if (shapeOrDimsChanged) {
         const mesh = this.bodyMesh;
         if (!mesh) return;
-        const nextMesh = createPresetMesh(config.shape, config.dimensions, this.scene);
+        const nextMesh = createPresetMesh(
+          config.shape,
+          config.dimensions,
+          this.scene,
+          config.holeDimensions,
+        );
         nextMesh.parent = mesh.parent;
         nextMesh.position.copyFrom(mesh.position);
         nextMesh.rotation.copyFrom(mesh.rotation);
@@ -316,6 +327,7 @@ export class SceneObject implements Disposable {
     this.frontMarker = null;
     this.usesModelVisual = true;
     this.presetMaterial = null;
+    this.modelTint = new ModelTint(this.scene);
     this.visual.parent = this.runtimePivot;
     this.applyModelDimensions(dimensions);
     this.refreshColor();
@@ -338,7 +350,7 @@ export class SceneObject implements Disposable {
       scene: this.scene,
       color: hexStringToColor3(config.color),
     });
-    const body = createPresetMesh(config.shape, config.dimensions, this.scene);
+    const body = createPresetMesh(config.shape, config.dimensions, this.scene, config.holeDimensions);
     body.receiveShadows = false;
     body.material = this.presetMaterial;
     setNodeMetadata(body, "viz3dObjectId", config.id);
@@ -355,7 +367,9 @@ export class SceneObject implements Disposable {
 
   private detachVisual(): void {
     if (this.usesModelVisual) {
-      // 材质、贴图与模型模板共用，由 ModelLoader 清理模板时销毁
+      // 材质、贴图与模型模板共用，由 ModelLoader 清理模板时销毁；本物体的染色副本自己销毁
+      this.modelTint?.dispose();
+      this.modelTint = null;
       this.visual.dispose(false, false);
     } else {
       // 预设：销毁几何与朝向标记；material 单独 dispose（mesh.dispose 勿带材质）
@@ -380,9 +394,16 @@ export class SceneObject implements Disposable {
   }
 
   private refreshColor(): void {
-    // 模型保持自己的颜色和贴图（材质与模型模板、其它物体共用）；运行状态由驱动单元标签的颜色表达（见 DriveUnitLabels.setStatus）
-    if (!this.presetMaterial) return;
-    applyMaterialBaseColor(this.presetMaterial, hexStringToColor3(this.config.color));
+    // 运行状态由驱动单元标签的颜色表达（见 DriveUnitLabels.setStatus），不改物体颜色
+    if (this.presetMaterial) {
+      applyMaterialBaseColor(this.presetMaterial, hexStringToColor3(this.config.color));
+      return;
+    }
+    // 模型默认保持自己的颜色和贴图；打开 tintModel 才把没贴图的部分染成物体颜色（见 ModelTint）
+    this.modelTint?.apply(
+      this.visual,
+      this.config.tintModel ? hexStringToColor3(this.config.color) : null,
+    );
   }
 
   private clearHoistPoints(): void {

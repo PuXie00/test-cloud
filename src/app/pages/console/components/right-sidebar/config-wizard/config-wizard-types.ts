@@ -53,7 +53,10 @@ export type ControlledObject = {
   centerOffset: { x: number; y: number; z: number };
   /** 模型朝向欧拉角，单位 deg，0–360；Babylon 顺序 XYZ；有父物体时相对父物体 */
   rotation: { x: number; y: number; z: number };
+  /** 物体颜色 #rrggbb */
   color: string;
+  /** 导入模型也用 color 染色（只染没贴图的材质）；缺省 / false 保持模型自己的颜色和贴图 */
+  tintModel?: boolean;
   /** 挂载的父物体 id；缺省 / null 表示不挂载 */
   parentId?: number | null;
   motionParams?: MotionParamsByAxis;

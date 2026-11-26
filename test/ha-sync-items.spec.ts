@@ -80,6 +80,19 @@ describe('sync items', () => {
     expect(isEmptySyncChange(diffSyncItems(extractSyncItems(before, DEFAULT_HA_SYNC_SCOPE), extractSyncItems(doc(), DEFAULT_HA_SYNC_SCOPE)))).toBe(true)
   })
 
+  it('syncs an object color / model tint change as that object item', () => {
+    const before = doc()
+    const after = doc()
+    after.setup.controlledObjects[1] = { ...after.setup.controlledObjects[1]!, color: '#123abc', tintModel: true } as never
+    const change = diffSyncItems(
+      extractSyncItems(before, DEFAULT_HA_SYNC_SCOPE),
+      extractSyncItems(after, DEFAULT_HA_SYNC_SCOPE),
+    )
+    expect(Object.keys(change.put)).toEqual(['setup:object:7'])
+    const applied = applySyncChange(before, change)
+    expect(applied.setup.controlledObjects[1]).toMatchObject({ color: '#123abc', tintModel: true })
+  })
+
   it('applies a change on another copy and ends with the same items', () => {
     const source = doc()
     const edited = {

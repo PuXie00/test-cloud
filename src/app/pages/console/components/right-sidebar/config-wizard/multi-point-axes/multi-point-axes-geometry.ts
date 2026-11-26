@@ -118,9 +118,10 @@ export const createShapeFootprint = (
       };
     }
     case "prism6": {
+      // 正六边形，与 3D 一致：对边朝 ±X（距中心 acrossFlats/2），棱角朝 ±Z（外接圆半径）
       const { acrossFlats } = shapeDimensions as { acrossFlats: number };
       const w = acrossFlats / 2;
-      const h = acrossFlats / 2;
+      const h = acrossFlats / Math.sqrt(3);
       return {
         kind: "polygon",
         points: [

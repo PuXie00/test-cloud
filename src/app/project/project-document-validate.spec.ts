@@ -295,6 +295,18 @@ describe("object mount parentId", () => {
   });
 });
 
+describe("object tintModel", () => {
+  it("accepts a boolean or nothing and rejects other values structurally", () => {
+    const document = documentOf();
+    document.setup.controlledObjects[0] = makeObject(OBJECT_A, "A", { tintModel: true });
+    expect(() => assertProjectDocumentStructure(document)).not.toThrow();
+    expect(validateProjectDocument(document).ok).toBe(true);
+
+    document.setup.controlledObjects[0] = makeObject(OBJECT_A, "A", { tintModel: "yes" as never });
+    expect(() => assertProjectDocumentStructure(document)).toThrow(/tintModel/);
+  });
+});
+
 describe("project-motion-readiness sequence gate", () => {
   it("blocks a missing sequence or a sequence with error issues", () => {
     const document = documentOf({

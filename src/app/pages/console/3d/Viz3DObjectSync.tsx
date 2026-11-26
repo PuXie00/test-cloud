@@ -4,6 +4,7 @@ import { useBuildDebugOptional } from "@/app/pages/console/components/build-debu
 import {
   mmDimensionsToM,
   mmMountToM,
+  mmToM,
   mmVec3ToM,
 } from "@/app/project/length-units";
 import {
@@ -19,6 +20,7 @@ import { sceneKinematicsEqual, sceneKinematicsForObject } from "./scene-kinemati
 import { useConsoleNav } from "../hooks/use-console-nav";
 import { useSelection } from "../hooks/use-selection";
 import { useViz3DContext } from "./Viz3DProvider";
+import { toEngineHoleDimensions } from "../components/right-sidebar/config-wizard/config-descriptors";
 
 const sceneConfigsEqual = (a: SceneObjectConfig, b: SceneObjectConfig): boolean =>
   a.id === b.id &&
@@ -27,6 +29,8 @@ const sceneConfigsEqual = (a: SceneObjectConfig, b: SceneObjectConfig): boolean 
   a.dimensions.w === b.dimensions.w &&
   a.dimensions.h === b.dimensions.h &&
   a.dimensions.d === b.dimensions.d &&
+  a.holeDimensions?.w === b.holeDimensions?.w &&
+  a.holeDimensions?.d === b.holeDimensions?.d &&
   a.position.x === b.position.x &&
   a.position.y === b.position.y &&
   a.position.z === b.position.z &&
@@ -38,6 +42,7 @@ const sceneConfigsEqual = (a: SceneObjectConfig, b: SceneObjectConfig): boolean 
   a.rotation.z === b.rotation.z &&
   (a.rotationAxes?.join(",") ?? "") === (b.rotationAxes?.join(",") ?? "") &&
   a.color === b.color &&
+  (a.tintModel ?? false) === (b.tintModel ?? false) &&
   a.model?.id === b.model?.id &&
   a.showHoistPoints === b.showHoistPoints &&
   a.selectedMotorId === b.selectedMotorId &&
@@ -45,6 +50,11 @@ const sceneConfigsEqual = (a: SceneObjectConfig, b: SceneObjectConfig): boolean 
   hoistAxesEqual(a.hoistAxes, b.hoistAxes) &&
   sceneKinematicsEqual(a.kinematics, b.kinematics) &&
   (a.parentId ?? null) === (b.parentId ?? null);
+
+const holeDimensionsToM = (
+  hole: { w: number; d: number } | undefined,
+): SceneObjectConfig["holeDimensions"] =>
+  hole ? { w: mmToM(hole.w), d: mmToM(hole.d) } : undefined;
 
 export const Viz3DObjectSync = () => {
   const engine = useViz3DContext();
@@ -76,6 +86,9 @@ export const Viz3DObjectSync = () => {
       // viz3d PresetShape 不含 external；外模走 model，几何回退 cube
       shape: object.shapePreset === "external" ? "cube" : object.shapePreset,
       dimensions: mmDimensionsToM(object.dimensions),
+      holeDimensions: holeDimensionsToM(
+        toEngineHoleDimensions(object.shapePreset, object.shapeDimensions),
+      ),
       position: mmVec3ToM(object.position),
       centerOffset: mmVec3ToM(object.centerOffset),
       rotation: objectRotationDegToRad(
@@ -83,6 +96,7 @@ export const Viz3DObjectSync = () => {
       ),
       rotationAxes: modelRotationAxesForControlType(object.controlType),
       color: object.color,
+      tintModel: object.tintModel === true,
       model: object.modelId ? { id: object.modelId } : undefined,
       hoistAxes: object.axes.map((axis, index) => {
         const motorId = getMotorIdForAxis(object.id, axis.key, motors);

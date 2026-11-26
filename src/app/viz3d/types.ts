@@ -76,6 +76,8 @@ export type SceneObjectConfig = {
   name?: string;
   shape: PresetShape;
   dimensions: { w: number; h: number; d: number };
+  /** 预设圆环 / 方环中空部分的 XZ 尺寸（米）：圆环 w = d = 内径，方环为内框宽 / 深；缺省按默认壁厚 */
+  holeDimensions?: { w: number; d: number };
   position: Vec3;
   /** 3D 模型变换中心相对几何中心的局部偏移（米），不改变吊点/运动基准 */
   centerOffset: Vec3;
@@ -87,6 +89,8 @@ export type SceneObjectConfig = {
    */
   rotationAxes?: readonly ModelRotationAxis[];
   color: string;
+  /** 导入模型是否用 color 染色（只染没贴图的材质）；缺省 false 保持模型自己的材质。预设形状始终用 color */
+  tintModel?: boolean;
   status?: SceneObjectStatus;
   model?: ModelSource;
   hoistAxes?: HoistAxisConfig[];

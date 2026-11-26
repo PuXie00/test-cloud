@@ -6,7 +6,6 @@ import { UnitAwareNumericInput } from "@/app/components/ics/unit-aware-numeric-i
 import { UnitAwareNumericRangeInput } from "@/app/components/ics/unit-aware-numeric-range-input";
 import { Select } from "@/app/components/ui/select";
 import { Slider } from "@/app/components/ui/slider";
-import { cn } from "@/app/components/ui/utils";
 import { useProjectStore } from "@/app/pages/console/hooks/use-project-store";
 import { useProject } from "@/app/project/use-project";
 import {
@@ -44,7 +43,7 @@ import {
   SHAPE_DEFINITIONS,
   toEngineDimensions,
 } from "./config-wizard/config-descriptors";
-import { OBJECT_COLORS } from "./config-wizard/config-wizard-constants";
+import { ObjectColorField } from "./property-forms/object-color-field";
 import type { ControlledObject, ShapePresetId } from "./config-wizard/config-wizard-types";
 import { ControlTypeSelector } from "./property-forms/control-type-selector";
 import { ControlTypeChangeConfirmDialog } from "./property-forms/control-type-change-confirm-dialog";
@@ -123,6 +122,10 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
   const sharedControlType = getSharedValue(selectedObjects.map((object) => object.controlType));
   const sharedShape = getSharedValue(selectedObjects.map((object) => object.shapePreset));
   const sharedColor = getSharedValue(selectedObjects.map((object) => object.color));
+  const modelObjects = selectedObjects.filter((object) => object.modelId);
+  const sharedTintModel = getSharedValue(
+    modelObjects.map((object) => object.tintModel === true),
+  );
   const sharedPosX = getSharedValue(selectedObjects.map((object) => object.position.x));
   const sharedPosY = getSharedValue(selectedObjects.map((object) => object.position.y));
   const sharedPosZ = getSharedValue(selectedObjects.map((object) => object.position.z));
@@ -599,23 +602,23 @@ export const MultiSelectSummaryPanel = ({ objectIds }: MultiSelectSummaryPanelPr
 
             <div className="space-y-1">
               <span className="text-body-sm text-muted-foreground">颜色</span>
-              <div className="flex flex-wrap gap-2">
-                {OBJECT_COLORS.map((color) => (
-                  <button
-                    key={color}
-                    type="button"
-                    aria-label={`颜色 ${color}`}
-                    onClick={() => patchAll(() => ({ color }))}
-                    className={cn(
-                      "h-8 w-8 rounded-sm border-2 transition-transform hover:scale-105",
-                      sharedColor !== MIXED && sharedColor === color
-                        ? "border-primary"
-                        : "border-transparent",
-                    )}
-                    style={{ backgroundColor: color }}
-                  />
-                ))}
-              </div>
+              <ObjectColorField
+                value={sharedColor === MIXED ? null : sharedColor}
+                // 有模型的物体选颜色时顺带打开模型染色，与单选一致
+                onChange={(color) =>
+                  patchAll((object) => (object.modelId ? { color, tintModel: true } : { color }))
+                }
+                tintModel={
+                  modelObjects.length === 0
+                    ? undefined
+                    : sharedTintModel === MIXED
+                      ? null
+                      : sharedTintModel
+                }
+                onTintModelChange={(tintModel) =>
+                  patchAll((object) => (object.modelId ? { tintModel } : {}))
+                }
+              />
             </div>
           </div>
 

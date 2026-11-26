@@ -1,6 +1,5 @@
 import { useMemo, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { cn } from "@/app/components/ui/utils";
 import { Button } from "@/app/components/ui/button";
 import { CollapsePanel } from "@/app/components/ics/collapse-panel";
 import { NumericInputGroup } from "@/app/components/ics/numeric-input-group";
@@ -51,7 +50,6 @@ import {
   toEngineDimensions,
 } from "../config-wizard/config-descriptors";
 import { ObjectAxesEditor } from "../config-wizard/object-axes-editor";
-import { OBJECT_COLORS } from "../config-wizard/config-wizard-constants";
 import type { ControlledObject, ShapePresetId } from "../config-wizard/config-wizard-types";
 import { STROKE_LIMITS } from "@/app/project/stroke-limits";
 import { MotionAxisRangeField } from "./motion-axis-range-field";
@@ -59,6 +57,7 @@ import { ObjectControlTypeField } from "./object-control-type-field";
 import { AXIS_RANGE_CONFIG } from "./motion-axis-range";
 import { MotionAxisSection } from "./motion-axis-section";
 import { MultiLevelSection } from "./multi-level-section";
+import { ObjectColorField } from "./object-color-field";
 import { ProjectModelLibraryDialog } from "./project-model-library-dialog";
 import { ShapeDimensionFields } from "./shape-dimension-fields";
 
@@ -631,21 +630,15 @@ export const ControlledObjectForm = ({ objectId }: ControlledObjectFormProps) =>
             </Form.Item>
 
             <Form.Item label="颜色">
-              <div className="flex flex-wrap gap-2">
-                {OBJECT_COLORS.map((color) => (
-                  <button
-                    key={color}
-                    type="button"
-                    aria-label={`颜色 ${color}`}
-                    onClick={() => updateObject(objectId, { color })}
-                    className={cn(
-                      "h-8 w-8 rounded-sm border-2 transition-transform hover:scale-105",
-                      object.color === color ? "border-primary" : "border-transparent",
-                    )}
-                    style={{ backgroundColor: color }}
-                  />
-                ))}
-              </div>
+              <ObjectColorField
+                value={object.color}
+                // 有模型时选颜色就是要染模型，顺带打开染色（同一步撤销）
+                onChange={(color) =>
+                  updateObject(objectId, object.modelId ? { color, tintModel: true } : { color })
+                }
+                tintModel={object.modelId ? object.tintModel === true : undefined}
+                onTintModelChange={(tintModel) => updateObject(objectId, { tintModel })}
+              />
             </Form.Item>
             <CollapsePanel defaultOpen={false} title="更多">
               <Form.Item label="变换中心">
