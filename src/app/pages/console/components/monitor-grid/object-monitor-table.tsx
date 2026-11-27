@@ -1,9 +1,35 @@
 import type { KeyboardEvent, MouseEvent } from "react";
 import { cn } from "@/app/components/ui/utils";
 import { useSessionDisplayLengthUnit } from "@/app/project/display-length-unit-provider";
-import type { ControlledObjectSnapshot } from "./monitor-data";
+import type { ControlledObjectSnapshot, ControlledObjectStatus } from "./monitor-data";
 import { formatMonitorDimension } from "./monitor-display";
-import { ObjectStatusBadge } from "./object-status-badge";
+import { SortableMonitorHeader, sortMonitorRows, type MonitorSort } from "./monitor-table-sort";
+import { ObjectStatusBadge, resolveObjectStatusLabel } from "./object-status-badge";
+
+const STATUS_ORDER: Record<ControlledObjectStatus, number> = {
+  alarm: 0, warning: 1, running: 2, ready: 3, disabled: 4, offline: 5,
+};
+const COLUMNS = [
+  ["name", "名称"], ["status", "状态"], ["h", "H"], ["p", "P"], ["y", "Y"],
+] as const;
+const SORT_HINTS: Partial<Record<typeof COLUMNS[number][0], string>> = {
+  status: "升序优先显示报警和警告",
+  h: "长度和角度分组排序",
+};
+
+const hUnit = (snapshot: ControlledObjectSnapshot) => snapshot.descriptor.dimensions[0]?.unit ?? "mm";
+
+const valueForSort = (row: ControlledObjectSnapshot, key: string) => {
+  if (key === "name") return row.descriptor.name;
+  if (key === "status") {
+    const status = row.descriptor.status;
+    return `${STATUS_ORDER[status]} ${resolveObjectStatusLabel(status, row.modelStatus)}`;
+  }
+  if (key === "h" || key === "p" || key === "y") return row.positions?.[key];
+};
+
+export const sortMonitorObjects = (rows: ControlledObjectSnapshot[], sort: MonitorSort) =>
+  sortMonitorRows(rows, sort, valueForSort, sort?.key === "h" ? hUnit : undefined);
 
 const formatAxisCell = (
   value: number | null | undefined,
@@ -18,12 +44,16 @@ type ObjectMonitorTableProps = {
   snapshots: ControlledObjectSnapshot[];
   selectedIds: number[];
   onSelect: (id: number, event: MouseEvent | KeyboardEvent) => void;
+  sort: MonitorSort;
+  onSort: (key: string) => void;
 };
 
 export const ObjectMonitorTable = ({
   snapshots,
   selectedIds,
   onSelect,
+  sort,
+  onSort,
 }: ObjectMonitorTableProps) => {
   const displayUnit = useSessionDisplayLengthUnit();
 
@@ -31,14 +61,9 @@ export const ObjectMonitorTable = ({
     <table className="w-full min-w-[480px] border-collapse text-body-sm">
       <thead>
         <tr>
-          {["名称", "状态", "H", "P", "Y"].map((label) => (
-            <th
-              key={label}
-              scope="col"
-              className="px-3 py-2 text-left text-label-caps text-muted-foreground"
-            >
-              {label}
-            </th>
+          {COLUMNS.map(([key, label]) => (
+            <SortableMonitorHeader key={key} columnKey={key} label={label} sort={sort} onSort={onSort}
+              hint={SORT_HINTS[key]} />
           ))}
         </tr>
       </thead>
@@ -72,7 +97,7 @@ export const ObjectMonitorTable = ({
                 />
               </td>
               <td className="px-3 py-2 font-mono text-mono-sm tabular-nums text-muted-foreground">
-                {formatAxisCell(positions?.h, descriptor.dimensions[0]?.unit ?? "mm", displayUnit)}
+                {formatAxisCell(positions?.h, hUnit(snapshot), displayUnit)}
               </td>
               <td className="px-3 py-2 font-mono text-mono-sm tabular-nums text-muted-foreground">
                 {formatAxisCell(positions?.p, "°", displayUnit)}

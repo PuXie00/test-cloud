@@ -28,6 +28,8 @@ export const LOG_RESULT = { ok: 0, failed: 1, timeout: 103 } as const
 
 export type LogTimeRange = { start: number; end: number }
 
+export type LogExportResult = { canceled: boolean }
+
 export type LogRecord = {
   /** 库里的自增 id，转成字符串 */
   id: string
@@ -209,11 +211,11 @@ export const normalizeLogPush = (data: unknown): LogRecord[] => {
     const row = item as RawLogPush
     if (!isLogCategory(row.category) || !isLogLevel(row.level) || typeof row.message !== 'string') continue
     if (row.category === 'optCall') continue
-    const timestamp = finiteNumber(row.ts)
+    const timestamp = finiteNumber(row.ts) ?? finiteNumber(row.timestamp)
     if (timestamp == null) continue
-    const user = text(row.user_name)
-    const opGroup =  opGroupOf(row.op_group)
-    const result = finiteNumber(row.result_ok)
+    const user = text(row.user_name) ?? text(row.user)
+    const opGroup = opGroupOf(row.op_group) ?? opGroupOf(row.opGroup)
+    const result = finiteNumber(row.result_ok) ?? finiteNumber(row.result)
     records.push({
       id: pushId(row, timestamp, row.category, row.message),
       timestamp,

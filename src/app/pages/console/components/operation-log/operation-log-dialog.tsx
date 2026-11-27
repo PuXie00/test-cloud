@@ -1,6 +1,9 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { Loader2, RefreshCw, X } from "lucide-react";
+import { Download, Loader2, RefreshCw, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { useProject } from "@/app/project/use-project";
+import { Button } from "@/app/components/ui/button";
 import type { LogRecord } from "@shared/csocket/operation-log";
 import {
   Dialog,
@@ -39,7 +42,8 @@ import { useAlarmReview, useLogFilterOptions, useLogQuery } from "./use-operatio
 const MAX_SPAN_FACTOR = 3;
 const MIN_MAX_SPAN_MS = 10 * 60_000;
 
-const OperationLogBody = () => {
+const OperationLogBody = ({ exporting, onExport }: { exporting: boolean; onExport: () => void }) => {
+  const { currentProject } = useProject();
   const [filters, setFilters] = useState<LogFilters>(DEFAULT_LOG_FILTERS);
   // 相对时间（最近 15 分钟等）的基准：改筛选、刷新时更新，翻页不变
   const [queryNow, setQueryNow] = useState(() => Date.now());
@@ -105,6 +109,18 @@ const OperationLogBody = () => {
           {query.status === "ready" ? `共 ${query.total} 条` : null}
         </span>
         <div className="ml-auto flex items-center gap-1">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={!currentProject || exporting}
+            aria-busy={exporting}
+            title={currentProject ? "导出当前工程的全部日志" : "请先打开工程"}
+            onClick={onExport}
+          >
+            {exporting ? <Loader2 aria-hidden className="animate-spin" /> : <Download aria-hidden />}
+            {exporting ? "导出中…" : "导出日志"}
+          </Button>
           <button
             type="button"
             aria-label="刷新"
@@ -186,23 +202,41 @@ export type OperationLogDialogProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-export const OperationLogDialog = ({ open, onOpenChange }: OperationLogDialogProps) => (
-  <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogPortal>
-      <DialogOverlay className="bg-background/80 backdrop-blur-sm" />
-      <DialogPrimitive.Content
-        className={cn(
-          "bg-card data-[state=open]:animate-in data-[state=closed]:animate-out",
-          "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
-          "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
-          "fixed top-[50%] left-[50%] z-50 flex h-[880px] max-h-[calc(100vh-2rem)] w-[1400px] max-w-[calc(100vw-2rem)]",
-          "-translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg",
-          "shadow-[0_4px_24px_rgba(0,0,0,0.4)] duration-200 outline-none",
-        )}
-        aria-describedby={undefined}
-      >
-        <OperationLogBody />
-      </DialogPrimitive.Content>
-    </DialogPortal>
-  </Dialog>
-);
+export const OperationLogDialog = ({ open, onOpenChange }: OperationLogDialogProps) => {
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      if (!window.csocketApi?.logExport) throw new Error("日志服务不可用");
+      const result = await window.csocketApi.logExport();
+      if (!result.canceled) toast.success("日志已导出");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "日志导出失败");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogPortal>
+        <DialogOverlay className="bg-background/80 backdrop-blur-sm" />
+        <DialogPrimitive.Content
+          className={cn(
+            "bg-card data-[state=open]:animate-in data-[state=closed]:animate-out",
+            "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+            "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
+            "fixed top-[50%] left-[50%] z-50 flex h-[880px] max-h-[calc(100vh-2rem)] w-[1400px] max-w-[calc(100vw-2rem)]",
+            "-translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg",
+            "shadow-[0_4px_24px_rgba(0,0,0,0.4)] duration-200 outline-none",
+          )}
+          aria-describedby={undefined}
+        >
+          <OperationLogBody exporting={exporting} onExport={handleExport} />
+        </DialogPrimitive.Content>
+      </DialogPortal>
+    </Dialog>
+  );
+};

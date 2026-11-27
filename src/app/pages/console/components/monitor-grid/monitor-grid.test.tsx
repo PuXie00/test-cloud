@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ControlledObjectSnapshot, MotorMonitorSnapshot } from "./monitor-data";
@@ -52,6 +52,7 @@ const { selectMock, toggleMultiMock, replaceSelectionMock, mockSnapshots, mockMo
       mockMotorSnapshots: motorSnapshots,
     };
   });
+const selectedIds = vi.hoisted(() => [] as number[]);
 
 vi.mock("../../hooks/use-controlled-objects", () => ({
   useControlledObjects: () => ({
@@ -63,7 +64,7 @@ vi.mock("../../hooks/use-controlled-objects", () => ({
 
 vi.mock("../../hooks/use-project-store", () => ({
   useProjectStore: () => ({
-    objects: [{ id: 1 }],
+    objects: mockSnapshots.map(({ descriptor }) => ({ id: descriptor.id })),
     motors: [{ id: 7 }],
   }),
 }));
@@ -76,7 +77,7 @@ vi.mock("@/app/project/use-project-document", () => ({
 
 vi.mock("../../hooks/use-selection", () => ({
   useSelection: () => ({
-    multiSelectedIds: [],
+    multiSelectedIds: selectedIds,
     select: selectMock,
     toggleMulti: toggleMultiMock,
     replaceSelection: replaceSelectionMock,
@@ -95,6 +96,8 @@ describe("MonitorGrid", () => {
     selectMock.mockClear();
     toggleMultiMock.mockClear();
     replaceSelectionMock.mockClear();
+    mockSnapshots.splice(1);
+    selectedIds.length = 0;
   });
 
   it("defaults to object card view with object name and layout toggle", () => {
@@ -122,5 +125,32 @@ describe("MonitorGrid", () => {
     expect(screen.queryByLabelText("物体布局")).toBeNull();
     fireEvent.click(screen.getByText("7"));
     expect(selectMock).not.toHaveBeenCalled();
+  });
+
+  it("sorts table names naturally, follows displayed rows for Shift and preserves the order across views", () => {
+    const base = mockSnapshots[0]!;
+    for (const [id, name] of [[2, "灯架10"], [3, "灯架2"], [4, "灯架1"]] as const) {
+      mockSnapshots.push({ ...base, descriptor: { ...base.descriptor, id, name } });
+    }
+    selectedIds.push(4);
+    render(<MonitorGrid />);
+    const switchLayout = (value: string) => fireEvent.change(screen.getByLabelText("物体布局"), { target: { value } });
+    const tableNames = () => screen.getAllByRole("row").slice(1)
+      .map(row => within(row).getAllByRole("cell")[0]!.textContent).filter(name => name?.startsWith("灯架"));
+
+    switchLayout("table");
+    fireEvent.click(within(screen.getByRole("columnheader", { name: /名称/ })).getByRole("button"));
+    expect(tableNames()).toEqual(["灯架1", "灯架2", "灯架10"]);
+    fireEvent.click(screen.getByText("灯架10"), { shiftKey: true });
+    expect(replaceSelectionMock).toHaveBeenLastCalledWith([4, 3, 2]);
+
+    switchLayout("card");
+    expect(screen.getAllByText(/^灯架\d+$/).map(el => el.textContent)).toEqual(["灯架10", "灯架2", "灯架1"]);
+    fireEvent.click(screen.getByText("灯架10"), { shiftKey: true });
+    expect(replaceSelectionMock).toHaveBeenLastCalledWith([2, 3, 4]);
+    switchLayout("table");
+    fireEvent.click(screen.getByRole("button", { name: "电机" }));
+    fireEvent.click(screen.getByRole("button", { name: "物体" }));
+    expect(tableNames()).toEqual(["灯架1", "灯架2", "灯架10"]);
   });
 });

@@ -70,15 +70,8 @@ const CreateUserDialog = ({ open, onOpenChange, admin, onCreated }: CreateUserDi
     }
     setBusy(true);
     try {
-      const created = await admin.run(
-        () =>
-          window.authAPI?.createUser({
-            username,
-            displayName,
-            roleId,
-            password,
-            mustChangePassword: mustChange,
-          }),
+      const created = await admin.saveUser(
+        { username, displayName, roleId, password, mustChangePassword: mustChange },
         `已添加用户「${displayName.trim()}」`,
       );
       if (created) {
@@ -164,7 +157,7 @@ export const UserManagementPanel = ({ admin }: { admin: UserAdmin }) => {
     if (!selected) return;
     const next = displayNameDraft.trim();
     if (next === selected.displayName) return;
-    const updated = await run(() => window.authAPI?.updateUser({ id: selected.id, displayName: next }));
+    const updated = await admin.saveUser({ id: selected.id, displayName: next });
     if (!updated) setDisplayNameDraft(selected.displayName);
   };
 
@@ -177,7 +170,7 @@ export const UserManagementPanel = ({ admin }: { admin: UserAdmin }) => {
       danger: true,
     });
     if (!ok) return;
-    const done = await run(() => window.authAPI?.deleteUser({ id: selected.id }), "用户已删除");
+    const done = await admin.deleteUser(selected);
     if (done) setSelectedId(null);
   };
 
@@ -259,7 +252,7 @@ export const UserManagementPanel = ({ admin }: { admin: UserAdmin }) => {
                 value={selected.roleId}
                 disabled={isSelf}
                 aria-label="角色"
-                onValueChange={(roleId) => void run(() => window.authAPI?.updateUser({ id: selected.id, roleId }))}
+                onValueChange={(roleId) => void admin.saveUser({ id: selected.id, roleId })}
                 options={roles.map((role) => ({ value: role.id, label: role.name }))}
               />
             </label>
@@ -271,7 +264,7 @@ export const UserManagementPanel = ({ admin }: { admin: UserAdmin }) => {
                   disabled={isSelf}
                   aria-label="启用"
                   onCheckedChange={(enabled) =>
-                    void run(() => window.authAPI?.updateUser({ id: selected.id, enabled }))
+                    void admin.saveUser({ id: selected.id, enabled })
                   }
                 />
                 <span className="text-body-sm text-muted-foreground">

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { toast } from "sonner";
 import type { LogQueryParams, LogRecord } from "@shared/csocket/operation-log";
 import { DisplayLengthUnitProvider } from "@/app/project/display-length-unit-provider";
 import { OperationLogDialog } from "./operation-log-dialog";
@@ -8,6 +9,13 @@ import { OperationLogDialog } from "./operation-log-dialog";
 const STORAGE_KEY = "yz.operationLog.pageSize";
 
 let total = 120;
+let hasProject = true;
+const logExport = vi.fn<() => Promise<{ canceled: boolean }>>();
+
+vi.mock("@/app/project/use-project", () => ({
+  useProject: () => ({ currentProject: hasProject ? { folderName: "test-project" } : null }),
+}));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const recordAt = (n: number): LogRecord => ({
   id: `r-${n}`,
@@ -40,10 +48,13 @@ const renderDialog = () =>
 
 beforeEach(() => {
   total = 120;
-  logQuery.mockClear();
+  hasProject = true;
+  logExport.mockReset();
+  vi.clearAllMocks();
   window.localStorage.clear();
   (window as unknown as { csocketApi: unknown }).csocketApi = {
     logQuery,
+    logExport,
     logFilterOptions: async () => ({
       success: true,
       data: [{ users: [], timeRange: null }],
@@ -138,5 +149,47 @@ describe("OperationLogDialog 分页", () => {
     renderDialog();
     expect(await screen.findByText("共 5000 条")).not.toBeNull();
     expect(screen.queryByText(/请缩小筛选范围/)).toBeNull();
+  });
+});
+
+describe("OperationLogDialog 导出", () => {
+  it("请求完整工程日志，导出期间防止重复点击，完成后显示成功提示", async () => {
+    let finish!: (result: { canceled: boolean }) => void;
+    logExport.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    renderDialog();
+    await screen.findByText("共 120 条");
+    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+    await screen.findByText("第 2 / 3 页");
+    fireEvent.click(screen.getByRole("button", { name: "导出日志" }));
+    const pending = screen.getByRole("button", { name: "导出中…" }) as HTMLButtonElement;
+    expect(pending.disabled).toBe(true);
+    fireEvent.click(pending);
+    expect(logExport.mock.calls).toEqual([[]]);
+    await act(async () => { finish({ canceled: false }); });
+    expect(toast.success).toHaveBeenCalledWith("日志已导出");
+    expect((screen.getByRole("button", { name: "导出日志" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("取消保存时安静返回，失败时说明原因并允许重试", async () => {
+    logExport.mockResolvedValueOnce({ canceled: true }).mockRejectedValueOnce(new Error("磁盘空间不足"));
+    renderDialog();
+    await screen.findByText("共 120 条");
+    fireEvent.click(screen.getByRole("button", { name: "导出日志" }));
+    fireEvent.click(await screen.findByRole("button", { name: "导出日志" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("磁盘空间不足")));
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(toast.success).not.toHaveBeenCalled();
+    expect((screen.getByRole("button", { name: "导出日志" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("未打开工程时禁用导出", async () => {
+    hasProject = false;
+    renderDialog();
+    await screen.findByText("共 120 条");
+    const button = screen.getByRole("button", { name: "导出日志" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toContain("打开工程");
+    fireEvent.click(button);
+    expect(logExport).not.toHaveBeenCalled();
   });
 });
