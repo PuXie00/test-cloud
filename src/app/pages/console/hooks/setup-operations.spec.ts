@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { MOTION_DEFAULTS } from "@/app/project/configuration-rules";
-import type { WizardSetupState } from "@/app/project/setup-persist";
+import { persistSetupFromWizard, type WizardSetupState } from "@/app/project/setup-persist";
+import { createEmptyDocument } from "@/app/project/project-document-empty";
 import type { ControlledObject } from "../components/right-sidebar/config-wizard/config-wizard-types";
 import { distributeMounts } from "../components/right-sidebar/config-wizard/multi-point-axes/multi-point-axes-distribute";
 import { applyMultiPointAxesConfiguration, changeObjectControlType } from "./setup-operations";
+import { analyzeControlTypeChangeImpact, applyControlTypeChange } from "./control-type-change";
 
 const objectOf = (overrides: Partial<ControlledObject>): ControlledObject => ({
   id: 1,
@@ -114,6 +116,41 @@ describe("changeObjectControlType per-type params", () => {
 });
 
 describe("multi-point swing params", () => {
+  it("switches a four-hoist swing to XY without removing hoists or unbinding motors", () => {
+    const object = objectOf({
+      controlType: "multiPointSwing",
+      mountLayout: { kind: "line", spacings: [200, 200, 200] },
+      axes: [-300, -100, 100, 300].map((x, i) => ({
+        key: String(i), custom: false, mount: { x, z: 0 },
+      })),
+    });
+    const state = stateOf(object);
+    state.motors = object.axes.map((axis, i) => ({
+      id: 20 + i, plcId: 10, productModel: "hoist", busNo: 0, axisType: 0,
+      nodeAddress: null, selected: true, controlledObjectId: object.id, axisKey: axis.key, params: {},
+    }));
+    const document = createEmptyDocument({ id: "swing", name: "swing", author: "" });
+    document.setup = persistSetupFromWizard(state);
+    const impact = analyzeControlTypeChangeImpact(document, [object.id], "dualTiltFourPointSwing");
+    expect(impact).toMatchObject({ changed: false, removedDriveAxes: 0, unboundMotors: 0 });
+    const next = applyControlTypeChange(document, [object.id], "dualTiltFourPointSwing");
+    expect(next.setup.controlledObjects[0]).toMatchObject({
+      driveAxes: document.setup.controlledObjects[0]!.driveAxes, mountLayout: object.mountLayout,
+    });
+    expect(next.setup.motors).toEqual(document.setup.motors);
+  });
+
+  it("keeps nonconsecutive XY hoist keys and adds only enough for a four-hoist swing", () => {
+    const axes = [
+      { key: "4", custom: true, mount: { x: -300, z: 0 } },
+      { key: "1", custom: false, mount: { x: 300, z: 0 } },
+    ];
+    const object = objectOf({ controlType: "dualTiltFourPointSwing", axes });
+    const next = changed(object, "multiPointSwing");
+    expect(next.axes.slice(0, 2)).toEqual(axes);
+    expect(next.axes.map(axis => axis.key)).toEqual(["4", "1", "0", "2"]);
+  });
+
   const dualTilt = () =>
     changed(objectOf({ shapeDimensions: { width: 3000, height: 1000, depth: 3000 }, dimensions: { w: 3000, h: 1000, d: 3000 } }), "dualTiltFourPointSwing");
 

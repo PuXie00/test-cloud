@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Checkbox } from "@/app/components/ui/checkbox";
+import { Input } from "@/app/components/ui/input";
 import { cn } from "@/app/components/ui/utils";
 import { TabBar } from "@/app/components/ics/tab-bar";
 import type { VirtualAxisId, VirtualAxisValues } from "@/app/project/project-document-types";
@@ -40,8 +41,9 @@ type DimensionControlProps = {
   onCaptureAxis?: (axis: VirtualAxisId) => void;
 };
 
-/** 输入框里还没写入 GO 目标的值：绝对是输入的位置，相对是相对当前实际位置的增量 */
+/** 绝对模式下尚未提交的轴位置 */
 type AxisDrafts = Partial<Record<VirtualAxisId, number>>;
+const RELATIVE_STEPS = [0.1, 0.5, 1, 5] as const;
 
 const targetSignature = (target: VirtualAxisValues | undefined): string =>
   target ? `${target.v1 ?? ""},${target.v2 ?? ""},${target.v3 ?? ""}` : "-";
@@ -66,6 +68,9 @@ export const DimensionControl = ({
 
   const [mode, setMode] = useState<AxisEditMode>("abs");
   const [drafts, setDrafts] = useState<AxisDrafts>({});
+  const [stepText, setStepText] = useState("1");
+  const step = Number(stepText);
+  const validStep = Number.isFinite(step) && step > 0;
 
   const selectedIds =
     objectIds ??
@@ -76,6 +81,7 @@ export const DimensionControl = ({
   });
   const participants = buildDimensionParticipants(snapshots, objects);
   const axes = unionAxes(participants);
+  const stepUnits = [...new Set(participants.flatMap(item => Object.values(item.unitByAxis)))].join(" / ");
   const armedTargetsByObjectId = Object.fromEntries(
     state.entries.map((entry) => [entry.objectId, entry.target]),
   );
@@ -155,29 +161,62 @@ export const DimensionControl = ({
                 className="h-7 w-44 border-b-0 bg-transparent"
               />
             </div>
+            {mode === "rel" && axes.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0 text-body-sm">微调步长</span>
+                  <Input type="number" aria-label="微调步长" min={0.1} step={0.1} precision={1}
+                    value={stepText} disabled={disabled} onChange={event => setStepText(event.target.value)} />
+                  <span className="shrink-0 text-body-sm text-muted-foreground">{stepUnits}</span>
+                </div>
+                <div className="grid grid-cols-4 gap-1" role="group" aria-label="预设步长">
+                  {RELATIVE_STEPS.map(preset => (
+                    <button key={preset} type="button" disabled={disabled} aria-pressed={step === preset}
+                      onClick={() => setStepText(String(preset))}
+                      className="h-7 rounded-sm bg-input-background font-mono text-mono-sm hover:bg-accent aria-pressed:bg-primary aria-pressed:text-primary-foreground disabled:opacity-40">
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {axes.map((axis) => {
               const range = axisInputRange(participants, axis);
               const shared = sharedAxisValue(participants, axis, armedTargetsByObjectId);
               const draft = drafts[axis];
-              const value = mode === "rel" ? (draft ?? 0) : (draft ?? shared ?? 0);
-              const mixed = mode === "abs" && draft === undefined && shared === undefined;
+              const value = draft ?? shared ?? 0;
+              const mixed = draft === undefined && shared === undefined;
               const unit = axisUnit(participants, axis);
               // 当前实际位置：各物体一致时显示，不一致或没有数据时 --
               const current = showCurrent ? sharedAxisValue(participants, axis, {}) : undefined;
               const label = virtualAxisLabel(axis);
               return (
                 <div key={axis} className="space-y-1">
-                  <VirtualAxisRow
-                    axis={axis}
-                    value={value}
-                    mixed={mixed}
-                    unit={unit}
-                    min={mode === "abs" ? range.min : undefined}
-                    max={mode === "abs" ? range.max : undefined}
-                    disabled={disabled}
-                    onChange={(next) => handleDraftChange(axis, next)}
-                    onCommit={(next) => handleCommit(axis, next)}
-                  />
+                  {mode === "rel" ? (
+                    <div className="flex items-center gap-2">
+                      <span className="w-12 shrink-0 text-body-sm">{label}</span>
+                      {[-1, 1].map(direction => (
+                        <button key={direction} type="button" disabled={disabled || !validStep}
+                          aria-label={`${label} ${direction < 0 ? "减少" : "增加"}`}
+                          onClick={() => handleCommit(axis, direction * step)}
+                          className="h-7 min-w-0 flex-1 rounded-sm border border-border font-mono text-mono-sm hover:bg-accent disabled:opacity-40">
+                          {direction < 0 ? "−" : "+"}{validStep && (unit ? formatQuantity(step, unit, display) : step)}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <VirtualAxisRow
+                      axis={axis}
+                      value={value}
+                      mixed={mixed}
+                      unit={unit}
+                      min={range.min}
+                      max={range.max}
+                      disabled={disabled}
+                      onChange={(next) => handleDraftChange(axis, next)}
+                      onCommit={(next) => handleCommit(axis, next)}
+                    />
+                  )}
                   {showCurrent ? (
                     <div className="flex min-h-7 items-center justify-between gap-2 pl-14 text-body-sm text-muted-foreground">
                       <span aria-label={`${label} 当前位置`} className="font-mono tabular-nums">

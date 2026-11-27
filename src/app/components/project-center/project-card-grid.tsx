@@ -4,10 +4,16 @@ import { ProjectCard } from "./project-card";
 type ProjectCardGridProps = {
   projects: ProjectRecord[];
   selectedId: string | null;
+  currentProjectFolderName: string | null;
   onSelect: (id: string) => void;
 };
 
-export const ProjectCardGrid = ({ projects, selectedId, onSelect }: ProjectCardGridProps) => {
+export const ProjectCardGrid = ({
+  projects,
+  selectedId,
+  currentProjectFolderName,
+  onSelect,
+}: ProjectCardGridProps) => {
   if (projects.length === 0) {
     return (
       <div className="flex min-h-[200px] items-center justify-center text-body-md text-muted-foreground">
@@ -23,6 +29,7 @@ export const ProjectCardGrid = ({ projects, selectedId, onSelect }: ProjectCardG
           key={project.id}
           project={project}
           selected={project.id === selectedId}
+          isCurrent={project.folderName === currentProjectFolderName}
           onSelect={() => onSelect(project.id)}
         />
       ))}

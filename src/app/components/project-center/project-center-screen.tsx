@@ -220,6 +220,7 @@ export const ProjectCenterScreen = ({
               <ProjectCardGrid
                 projects={filteredProjects}
                 selectedId={selectedProject?.id ?? null}
+                currentProjectFolderName={currentProject?.folderName ?? null}
                 onSelect={setSelectedProjectId}
               />
             )}

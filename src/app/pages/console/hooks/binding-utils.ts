@@ -1,9 +1,6 @@
 import type { ControlType } from "@/app/project/configuration-types";
-import {
-  controlTypeHasNoDriveAxes,
-  ensureMinimumDriveAxes,
-} from "@/app/project/configuration-rules";
-import { mergeTemplateAxes } from "../components/right-sidebar/config-wizard/axis-utils";
+import { controlTypeHasNoDriveAxes } from "@/app/project/configuration-rules";
+import { axesForControlTypeChange } from "../components/right-sidebar/config-wizard/axis-utils";
 import type {
   BusNo,
   ControlledObject,
@@ -71,11 +68,8 @@ export const countBoundMotorsNeedingAxisTypeChange = (
 ): number => {
   if (controlTypeHasNoDriveAxes(nextControlType)) return 0;
   const required = requiredAxisTypeForControlType(nextControlType);
-  const templateKeys = ensureMinimumDriveAxes(nextControlType, []).map((axis) => ({
-    key: axis.key,
-  }));
   const nextKeys = new Set(
-    mergeTemplateAxes(nextControlType, templateKeys, object.axes).map((axis) => axis.key),
+    axesForControlTypeChange(object, nextControlType).map((axis) => axis.key),
   );
   let count = 0;
   for (const motor of motors) {

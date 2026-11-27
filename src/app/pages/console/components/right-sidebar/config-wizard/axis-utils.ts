@@ -1,7 +1,7 @@
-import { ensureMinimumDriveAxes } from "@/app/project/configuration-rules";
+import { controlTypeHasMultiPointSwingParams, ensureMinimumDriveAxes } from "@/app/project/configuration-rules";
 import type { ControlType } from "@/app/project/configuration-types";
 import { defaultMountForAxisIndex } from "@/app/project/hoist-point-defaults";
-import type { AxisDefinition } from "./config-wizard-types";
+import type { AxisDefinition, ControlledObject } from "./config-wizard-types";
 
 export const formatAxisLabel = (index: number): string => `吊${index + 1}`;
 
@@ -15,11 +15,20 @@ export const buildTemplateAxes = (
     mount: defaultMountForAxisIndex(controlType, index),
   }));
 
-export const mergeTemplateAxes = (
+export const axesForControlTypeChange = (
+  object: ControlledObject,
   controlType: ControlType,
-  template: { key: string }[],
-  existing: AxisDefinition[],
 ): AxisDefinition[] => {
+  const existing = object.axes;
+  const template = ensureMinimumDriveAxes(controlType, []);
+  if (controlTypeHasMultiPointSwingParams(object.controlType) && controlTypeHasMultiPointSwingParams(controlType)) {
+    // 多点模型共用吊点配置，目标模板只负责补足最低数量。
+    const missing = template.length - existing.length;
+    if (missing <= 0) return existing;
+    const keys = new Set(existing.map(axis => axis.key));
+    const additions = buildTemplateAxes(template, controlType).filter(axis => !keys.has(axis.key));
+    return [...existing, ...additions.slice(0, missing)];
+  }
   const bindings = new Map(existing.map((axis) => [axis.key, axis]));
   const templateKeySet = new Set(template.map((axis) => axis.key));
   const templateAxes = template.map((axis, index) => {

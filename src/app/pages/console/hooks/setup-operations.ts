@@ -1,9 +1,9 @@
-import { mergeTemplateAxes } from "@/app/pages/console/components/right-sidebar/config-wizard/axis-utils";
+import { axesForControlTypeChange } from "@/app/pages/console/components/right-sidebar/config-wizard/axis-utils";
 import {
   CONTROL_TYPE_RULES,
   controlTypeHasNoDriveAxes,
+  controlTypeHasMultiPointSwingParams,
   defaultMotionParamsForControlType,
-  ensureMinimumDriveAxes,
   maxDriveAxesForControlType,
   resolveSwingYawModelParams,
 } from "@/app/project/configuration-rules";
@@ -334,10 +334,11 @@ export const changeObjectControlType = (
   }
   const motionSpeedControl = keepSpeedOverrides(object.motionSpeedControl, keptAxisIds);
 
-  const templateKeys = ensureMinimumDriveAxes(resolved, []).map((axis) => ({ key: axis.key }));
-  const mergedAxes = mergeTemplateAxes(resolved, templateKeys, object.axes);
+  const mergedAxes = axesForControlTypeChange(object, resolved);
   const maxDriveAxes = maxDriveAxesForControlType(resolved);
   const nextAxes = maxDriveAxes !== undefined ? mergedAxes.slice(0, maxDriveAxes) : mergedAxes;
+  const keepMountLayout = controlTypeHasMultiPointSwingParams(resolved) &&
+    nextAxes.length === object.axes.length && nextAxes.every((axis, i) => axis.key === object.axes[i]?.key);
   const nextKeys = new Set(nextAxes.map((axis) => axis.key));
 
   return {
@@ -359,6 +360,7 @@ export const changeObjectControlType = (
         motionParams,
         ...(motionSpeedControl !== undefined ? { motionSpeedControl } : {}),
         axes: nextAxes,
+        ...(keepMountLayout && item.mountLayout ? { mountLayout: item.mountLayout } : {}),
         pulleyDistance: item.pulleyDistance ?? DEFAULT_PULLEY_DISTANCE,
         modelRunDirection: item.modelRunDirection ?? DEFAULT_MODEL_RUN_DIRECTION,
         maxAxisVelocity: item.maxAxisVelocity ?? DEFAULT_MAX_AXIS_VELOCITY,

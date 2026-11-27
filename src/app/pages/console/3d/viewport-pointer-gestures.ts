@@ -1,3 +1,5 @@
+import type { SelectionMode } from "@/app/viz3d/types";
+
 export const PRIMARY_POINTER_BUTTON = 0;
 export const MIDDLE_POINTER_BUTTON = 1;
 export const DRAG_THRESHOLD_PX = 5;
@@ -5,7 +7,7 @@ export const DRAG_THRESHOLD_PX = 5;
 export type ViewportPointerDownKind = "camera" | "boxSelect" | "ignore";
 
 export type ViewportDragFinish =
-  | { kind: "pick"; mode: "single" }
+  | { kind: "pick"; mode: SelectionMode }
   | { kind: "boxSelect"; mode: "replace" | "additive" };
 
 export const resolvePointerDownKind = (button: number): ViewportPointerDownKind => {
@@ -22,11 +24,12 @@ export const shouldFinishViewportDrag = (button: number): boolean =>
 
 export const resolveViewportDragFinish = (input: {
   additive: boolean;
+  toggle: boolean;
   dx: number;
   dy: number;
 }): ViewportDragFinish => {
   if (!isOverDragThreshold(input.dx, input.dy)) {
-    return { kind: "pick", mode: "single" };
+    return { kind: "pick", mode: input.toggle ? "toggle" : "single" };
   }
   return {
     kind: "boxSelect",

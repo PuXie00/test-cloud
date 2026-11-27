@@ -60,7 +60,7 @@ type DragState = {
   startOffsetY: number;
   pointerId: number;
   additive: boolean;
-  /** Ctrl / ⌘ 点：动作页加选 / 减选 */
+  /** Ctrl / ⌘ 点选时切换模型的选中状态 */
   toggle: boolean;
   /** 框选只在起点所在格里进行 */
   cellId: ViewportCellId | null;
@@ -106,7 +106,7 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
     useConfirmedBinding();
   const { replaceSelection, setTreeFocus, clearSelection } = useSelection();
   const buildMode = activeNav === "devices";
-  // 动作页：Ctrl 点加选，双击物体跳到它最近的位姿
+  // 动作页：双击物体跳到它最近的位姿
   const sequencesNav = activeNav === "sequences";
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -472,13 +472,12 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
 
     const action = resolveViewportDragFinish({
       additive: drag.additive,
+      toggle: drag.toggle,
       dx: event.clientX - drag.startX,
       dy: event.clientY - drag.startY,
     });
 
-    if (action.kind === "pick" && drag.toggle && sequencesNav) {
-      engine.pickAt(event.nativeEvent.offsetX, event.nativeEvent.offsetY, "toggle", false);
-    } else if (action.kind === "boxSelect") {
+    if (action.kind === "boxSelect") {
       engine.pickInRect(
         toCanvasRelativeRect(
           drag.startOffsetX,
@@ -490,7 +489,7 @@ export const ViewportSlot = ({ className }: ViewportSlotProps) => {
         drag.cellId ?? undefined,
       );
     } else {
-      engine.pickAt(event.nativeEvent.offsetX, event.nativeEvent.offsetY, action.mode, true);
+      engine.pickAt(event.nativeEvent.offsetX, event.nativeEvent.offsetY, action.mode, action.mode === "single");
     }
 
     clearDrag();

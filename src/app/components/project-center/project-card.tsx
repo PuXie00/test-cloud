@@ -6,6 +6,7 @@ import type { ProjectRecord } from "@/app/project/project-types";
 type ProjectCardProps = {
   project: ProjectRecord;
   selected: boolean;
+  isCurrent?: boolean;
   onSelect: () => void;
 };
 
@@ -15,12 +16,13 @@ const statusBadge = (status: ProjectRecord["status"]) => {
   return { label: "已归档", className: "bg-muted text-muted-foreground" };
 };
 
-export const ProjectCard = ({ project, selected, onSelect }: ProjectCardProps) => {
+export const ProjectCard = ({ project, selected, isCurrent, onSelect }: ProjectCardProps) => {
   const compatBadge = projectCompatBadge(project);
 
   return (
     <button
       type="button"
+      aria-current={isCurrent || undefined}
       onClick={onSelect}
       className={cn(
         "flex w-full flex-col overflow-hidden rounded-lg bg-card text-left transition-shadow",
@@ -50,6 +52,11 @@ export const ProjectCard = ({ project, selected, onSelect }: ProjectCardProps) =
             {compatBadge.label}
           </span>
         ) : null}
+        {isCurrent && (
+          <span className="absolute bottom-2 left-2 rounded bg-primary px-2 py-0.5 text-body-sm font-medium text-primary-foreground">
+            当前工程
+          </span>
+        )}
       </div>
       <div className="flex flex-col gap-2 p-4">
         <div className="flex items-start justify-between gap-2">

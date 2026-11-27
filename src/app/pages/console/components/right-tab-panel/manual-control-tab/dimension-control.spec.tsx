@@ -208,7 +208,8 @@ describe("DimensionControl 写入", () => {
     selectLiftAndSwing();
     renderControl();
     fireEvent.click(screen.getByRole("tab", { name: "相对" }));
-    stepUp("虚轴2");
+    fireEvent.click(screen.getByRole("button", { name: "0.1" }));
+    fireEvent.click(screen.getByRole("button", { name: "虚轴2 增加" }));
     expect(hookState.arm).toHaveBeenCalledTimes(1);
     const [entries, mode] = hookState.arm.mock.calls[0] as [
       { objectId: string; target: Record<string, number> }[],
@@ -228,7 +229,7 @@ describe("DimensionControl 写入", () => {
     hookState.snapshots.set(2, snapshot(2, [HEIGHT, PITCH, YAW], { h: 500, p: 0, y: 0 }));
     renderControl();
     fireEvent.click(screen.getByRole("tab", { name: "相对" }));
-    stepUp("虚轴1");
+    fireEvent.click(screen.getByRole("button", { name: "虚轴1 增加" }));
     const [entries] = hookState.arm.mock.calls[0] as [
       { objectId: string; target: Record<string, number> }[],
     ];
@@ -247,22 +248,38 @@ describe("DimensionControl 写入", () => {
     };
     renderControl();
     fireEvent.click(screen.getByRole("tab", { name: "相对" }));
-    stepUp("虚轴1");
+    fireEvent.click(screen.getByRole("button", { name: "虚轴1 增加" }));
     const [entries] = hookState.arm.mock.calls[0] as [
       { objectId: string; target: Record<string, number> }[],
     ];
     expect(entries.find((entry) => entry.objectId === "1")?.target.v1).toBe(101);
   });
 
-  it("相对模式：写入后输入框回到 0", () => {
+  it("相对模式：多根轴共用一个步长，切预设和编辑数值只设置步长", () => {
     selectLiftAndSwing();
-    renderControl();
+    const onWrite = vi.fn();
+    render(<DisplayLengthUnitProvider initialUnit="cm"><DimensionControl onWrite={onWrite} /></DisplayLengthUnitProvider>);
     fireEvent.click(screen.getByRole("tab", { name: "相对" }));
-    expect(numericOf("虚轴1").textContent).toContain("0");
-    stepUp("虚轴1");
-    expect(hookState.arm).toHaveBeenCalledTimes(1);
-    expect(numericOf("虚轴1").textContent).toContain("0");
-    expect(numericOf("虚轴1").textContent).not.toContain("1");
+    const input = screen.getByRole("spinbutton", { name: "微调步长" }) as HTMLInputElement;
+    expect(screen.getAllByRole("spinbutton")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "0.5" }));
+    expect(input.value).toBe("0.5");
+    expect(onWrite).not.toHaveBeenCalled();
+    const decrease = screen.getByRole("button", { name: "虚轴1 减少" });
+    expect(decrease.textContent).toContain("0.05 cm");
+    fireEvent.click(decrease);
+    fireEvent.click(screen.getByRole("button", { name: "虚轴2 增加" }));
+    expect(onWrite.mock.calls).toEqual([
+      [{ mode: "rel", axis: "v1", value: -0.5 }],
+      [{ mode: "rel", axis: "v2", value: 0.5 }],
+    ]);
+    fireEvent.change(input, { target: { value: "0.2" } });
+    fireEvent.click(screen.getByRole("button", { name: "虚轴3 减少" }));
+    expect(onWrite).toHaveBeenLastCalledWith({ mode: "rel", axis: "v3", value: -0.2 });
+    fireEvent.change(input, { target: { value: "" } });
+    expect((decrease as HTMLButtonElement).disabled).toBe(true);
+    expect(onWrite).toHaveBeenCalledTimes(3);
+    expect(hookState.go).not.toHaveBeenCalled();
   });
 
   it("绝对模式：同一个值写给所有有这根轴的物体，其余虚轴保持当前位置", () => {

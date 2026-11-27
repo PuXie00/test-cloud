@@ -36,22 +36,29 @@ describe("shouldFinishViewportDrag", () => {
 
 describe("resolveViewportDragFinish", () => {
   it("picks single on click; shift+click still picks single", () => {
-    expect(resolveViewportDragFinish({ additive: false, dx: 0, dy: 0 })).toEqual({
+    expect(resolveViewportDragFinish({ additive: false, toggle: false, dx: 0, dy: 0 })).toEqual({
       kind: "pick",
       mode: "single",
     });
-    expect(resolveViewportDragFinish({ additive: true, dx: 3, dy: 3 })).toEqual({
+    expect(resolveViewportDragFinish({ additive: true, toggle: false, dx: 3, dy: 3 })).toEqual({
       kind: "pick",
       mode: "single",
     });
   });
 
+  it("toggles the clicked model when Ctrl or Command is held", () => {
+    expect(resolveViewportDragFinish({ additive: false, toggle: true, dx: 2, dy: 1 })).toEqual({
+      kind: "pick",
+      mode: "toggle",
+    });
+  });
+
   it("box-selects replace without shift and additive with shift", () => {
-    expect(resolveViewportDragFinish({ additive: false, dx: 6, dy: 0 })).toEqual({
+    expect(resolveViewportDragFinish({ additive: false, toggle: true, dx: 6, dy: 0 })).toEqual({
       kind: "boxSelect",
       mode: "replace",
     });
-    expect(resolveViewportDragFinish({ additive: true, dx: 0, dy: 6 })).toEqual({
+    expect(resolveViewportDragFinish({ additive: true, toggle: false, dx: 0, dy: 6 })).toEqual({
       kind: "boxSelect",
       mode: "additive",
     });
