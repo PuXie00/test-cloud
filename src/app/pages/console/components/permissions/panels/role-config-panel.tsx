@@ -48,13 +48,8 @@ const CreateRoleDialog = ({ open, onOpenChange, admin, copyFromId, onCreated }: 
     const source = admin.roles.find((role) => role.id === sourceId);
     setBusy(true);
     try {
-      const created = await admin.run(
-        () =>
-          window.authAPI?.createRole({
-            name,
-            description,
-            permissions: source ? [...source.permissions] : [],
-          }),
+      const created = await admin.saveRole(
+        { name, description, permissions: source ? [...source.permissions] : [] },
         `已新建角色「${name.trim()}」`,
       );
       if (created) {
@@ -109,7 +104,7 @@ const CreateRoleDialog = ({ open, onOpenChange, admin, copyFromId, onCreated }: 
 
 /** 角色：管理员内置不可改；其他角色的名称、说明、权限改了立即生效 */
 export const RoleConfigPanel = ({ admin }: { admin: UserAdmin }) => {
-  const { users, roles, run } = admin;
+  const { users, roles } = admin;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [copyFromId, setCopyFromId] = useState<string | null>(null);
@@ -127,7 +122,7 @@ export const RoleConfigPanel = ({ admin }: { admin: UserAdmin }) => {
   const commitText = async (field: "name" | "description", value: string) => {
     if (!selected || selected.builtin) return;
     if (value.trim() === selected[field]) return;
-    const updated = await run(() => window.authAPI?.updateRole({ id: selected.id, [field]: value }));
+    const updated = await admin.saveRole({ id: selected.id, [field]: value });
     if (!updated) {
       setNameDraft(selected.name);
       setDescriptionDraft(selected.description);
@@ -136,7 +131,7 @@ export const RoleConfigPanel = ({ admin }: { admin: UserAdmin }) => {
 
   const handlePermissions = (permissions: PermissionId[]) => {
     if (!selected || selected.builtin) return;
-    void run(() => window.authAPI?.updateRole({ id: selected.id, permissions }));
+    void admin.saveRole({ id: selected.id, permissions });
   };
 
   const handleDelete = async () => {
@@ -147,7 +142,7 @@ export const RoleConfigPanel = ({ admin }: { admin: UserAdmin }) => {
       danger: true,
     });
     if (!ok) return;
-    const done = await run(() => window.authAPI?.deleteRole({ id: selected.id }), "角色已删除");
+    const done = await admin.deleteRole(selected);
     if (done) setSelectedId(null);
   };
 
@@ -248,7 +243,7 @@ export const RoleConfigPanel = ({ admin }: { admin: UserAdmin }) => {
 
           <PermissionChecklist
             value={selected.permissions}
-            readOnly={selected.builtin}
+            readOnly={selected.builtin || admin.permissionsPending}
             onChange={handlePermissions}
           />
         </div>
