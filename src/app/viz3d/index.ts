@@ -34,6 +34,7 @@ export type {
   AxesConfig,
   BoundingBoxKind,
   CameraPose,
+  CellOrientation,
   Disposable,
   GridSizeM,
   ModelFormat,

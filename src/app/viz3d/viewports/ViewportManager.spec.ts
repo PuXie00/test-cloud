@@ -1,7 +1,7 @@
 import { Camera } from "@babylonjs/core/Cameras/camera";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Scene } from "@babylonjs/core/scene";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SavedView } from "../types";
 import { ViewportManager } from "./ViewportManager";
 
@@ -86,6 +86,46 @@ describe("ViewportManager 单 / 双 / 四视图", () => {
     expect(top.lowerAlphaLimit).toBe(top.upperAlphaLimit);
     const main = manager.getCell("main").camera;
     expect(main.lowerAlphaLimit).toBeNull();
+  });
+
+  it("方向立方体切到底视时保留当前目标和缩放，并稳定显示台口在上", () => {
+    const cell = manager.getCell("main");
+    const previous = cell.getSavedView();
+    cell.applySavedView({ ...previous, target: [12, 2, -9], zoomRadius: 22, orthoHalfHeight: 11 });
+    const listener = vi.fn();
+    const stop = cell.observeOrientation(listener);
+    manager.setCellView("main", "bottom", true);
+    manager.render(scene, SLOT);
+    const saved = cell.getSavedView();
+    expect(saved.target).toEqual([12, 2, -9]);
+    expect(saved.orthoHalfHeight).toBeCloseTo(22 * Math.tan(cell.camera.fov / 2));
+    expect(cell.isOrthographic()).toBe(true);
+    const orientation = listener.mock.lastCall![0];
+    expect(orientation.towardCamera.y).toBeCloseTo(-1, 5);
+    expect(orientation.up.z).toBeCloseTo(1, 5);
+    expect(orientation.right.x).toBeCloseTo(-1, 5);
+    stop();
+  });
+
+  it("每格方向独立，只旋转很小角度也会通知；取消订阅后不再通知", () => {
+    manager.setLayout("dual");
+    const main = manager.getCell("main");
+    const listener = vi.fn();
+    const other = vi.fn();
+    const stopMain = main.observeOrientation(listener);
+    const stopOther = manager.getCell("dualRight").observeOrientation(other);
+    manager.render(scene, SLOT);
+    listener.mockClear();
+    other.mockClear();
+    main.camera.alpha += 0.015;
+    manager.render(scene, SLOT);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(other).not.toHaveBeenCalled();
+    stopMain();
+    main.camera.alpha += 0.015;
+    manager.render(scene, SLOT);
+    expect(listener).toHaveBeenCalledTimes(1);
+    stopOther();
   });
 
   it("按格找相机：拾取落在光标所在格", () => {

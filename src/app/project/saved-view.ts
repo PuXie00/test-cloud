@@ -1,8 +1,9 @@
-import type {
-  SavedCameraView,
-  SavedView,
-  SecondaryViewportCellId,
-  ViewPreset,
+import {
+  VIEW_PRESETS,
+  type SavedCameraView,
+  type SavedView,
+  type SecondaryViewportCellId,
+  type ViewPreset,
 } from "@/app/viz3d/types";
 import { clampSplit, isViewportLayout } from "@/app/viz3d/viewports/ViewportLayout";
 import { DEFAULT_FOCAL_LENGTH_MM } from "@/app/viz3d/cameras/focal-length";
@@ -15,16 +16,6 @@ import {
 
 export type { SavedView } from "@/app/viz3d/types";
 export { DEFAULT_GRID_SIZE_M, GRID_SIZE_PRESETS, isGridSizeM, normalizeGridSizeM } from "@/app/viz3d/helpers/grid-config";
-
-const VIEW_PRESETS: readonly ViewPreset[] = [
-  "top",
-  "front",
-  "back",
-  "side",
-  "left",
-  "persp",
-  "iso",
-];
 
 /** 新建工程缺省：persp + 默认焦距与视距 + 默认网格 */
 export const createDefaultSavedView = (): SavedView => ({

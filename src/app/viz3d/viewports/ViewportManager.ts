@@ -156,8 +156,8 @@ export class ViewportManager {
     }
   }
 
-  setCellView(id: ViewportCellId, preset: ViewPreset): void {
-    this.getCell(id).setView(preset);
+  setCellView(id: ViewportCellId, preset: ViewPreset, preserveFraming = false): void {
+    this.getCell(id).setView(preset, preserveFraming);
     this.onStateChange();
   }
 

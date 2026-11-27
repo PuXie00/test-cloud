@@ -11,6 +11,7 @@ export const LAYOUT_OPTIONS: { label: string; layout: ViewportLayout }[] = [
 export const CELL_VIEW_OPTIONS: { label: string; preset: ViewPreset }[] = [
   { label: "透视", preset: "persp" },
   { label: "顶视图", preset: "top" },
+  { label: "底视图", preset: "bottom" },
   { label: "前视图", preset: "front" },
   { label: "右视图", preset: "side" },
   { label: "左视图", preset: "left" },

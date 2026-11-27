@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { Fragment, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ChevronDown, Maximize2, Minimize2 } from "lucide-react";
 import {
   DropdownMenu,
@@ -11,10 +11,12 @@ import {
   DropdownMenuTrigger,
 } from "@/app/components/ui/dropdown-menu";
 import { cn } from "@/app/components/ui/utils";
-import type { ViewPreset, ViewportCellInfo, ViewportState, Viz3DEngine } from "@/app/viz3d";
+import type { CellOrientation, ViewPreset, ViewportCellInfo, ViewportState, Viz3DEngine } from "@/app/viz3d";
 import { useViz3DContext } from "../Viz3DProvider";
+import { useViz3DReadyVersion } from "../use-viz3d-ready-version";
 import { CELL_VIEW_OPTIONS, cellTitle, cellViewValue } from "./viewport-cell-labels";
 import { MENU_CONTENT_CLASS, MENU_ITEM_CLASS } from "./ViewMenu";
+import { StageOrientationCube } from "./stage-orientation-cube";
 
 /** 顶栏（视图菜单那一条）的高度；顶行格子的格名放在它下面 */
 const TOP_BAR_PX = 32;
@@ -55,6 +57,43 @@ const useEngineSelection = (engine: Viz3DEngine): string[] => {
 };
 
 const percent = (ratio: number): string => `${ratio * 100}%`;
+
+const CellOrientationControl = ({
+  cell,
+  paletteVisible,
+}: {
+  cell: ViewportCellInfo;
+  paletteVisible: boolean;
+}) => {
+  const engine = useViz3DContext();
+  const readyVersion = useViz3DReadyVersion(engine);
+  const [orientation, setOrientation] = useState<CellOrientation | null>(null);
+  useEffect(() => engine.observeCellOrientation(cell.id, setOrientation), [engine, cell.id, readyVersion]);
+  if (!orientation) return null;
+
+  const { left, top, width, height } = cell.rect;
+  // 搭建页右边缘的几何工具列跨过分屏边界，给它留出点击空间。
+  const rightInset = paletteVisible && left + width >= 1 ? TOOL_PALETTE_INSET_PX : 8;
+  return (
+    <div
+      className="pointer-events-none absolute overflow-hidden"
+      style={{ left: percent(left), top: percent(top), width: percent(width), height: percent(height) }}
+    >
+      <div
+        className="absolute"
+        style={{ right: rightInset, top: top === 0 ? TOP_BAR_PX + CHIP_GAP_PX : CHIP_GAP_PX }}
+      >
+        <StageOrientationCube
+          orientation={orientation}
+          onSelect={(preset) => {
+            engine.setActiveCell(cell.id);
+            engine.setCellView(cell.id, preset, true);
+          }}
+        />
+      </div>
+    </div>
+  );
+};
 
 type CellChipProps = {
   cell: ViewportCellInfo;
@@ -328,20 +367,22 @@ export const ViewportCellsOverlay = ({ toolPaletteVisible, onPointerGuard }: Vie
     <>
       {showDividers ? <ViewportDividers state={state} /> : null}
       {state.cells.map((cell) => (
-        <CellChip
-          key={cell.id}
-          cell={cell}
-          active={cell.id === state.activeCellId}
-          multiCell={multiCell}
-          maximized={state.maximizedCellId === cell.id}
-          leftInsetPx={
-            toolPaletteVisible && cell.rect.left === 0 && cell.rect.top > 0
-              ? TOOL_PALETTE_INSET_PX
-              : 8
-          }
-          primarySelectionId={selection[0]}
-          onPointerGuard={onPointerGuard}
-        />
+        <Fragment key={cell.id}>
+          <CellOrientationControl cell={cell} paletteVisible={toolPaletteVisible} />
+          <CellChip
+            cell={cell}
+            active={cell.id === state.activeCellId}
+            multiCell={multiCell}
+            maximized={state.maximizedCellId === cell.id}
+            leftInsetPx={
+              toolPaletteVisible && cell.rect.left === 0 && cell.rect.top > 0
+                ? TOOL_PALETTE_INSET_PX
+                : 8
+            }
+            primarySelectionId={selection[0]}
+            onPointerGuard={onPointerGuard}
+          />
+        </Fragment>
       ))}
     </>
   );

@@ -125,7 +125,11 @@ export type SelectionMode = "single" | "toggle";
 /** 3D 点选 / 框选对象：物体，或吊点电机（搭建调试） */
 export type PickMode = "object" | "motor";
 
-export type ViewPreset = "top" | "front" | "back" | "side" | "left" | "persp" | "iso";
+export const VIEW_PRESETS = ["top", "bottom", "front", "back", "side", "left", "persp", "iso"] as const;
+export type ViewPreset = (typeof VIEW_PRESETS)[number];
+
+/** Current screen-right, screen-up and outward camera axes in world coordinates. */
+export type CellOrientation = { right: Vec3; up: Vec3; towardCamera: Vec3 };
 
 /** 一格视口的相机状态 */
 export type SavedCameraView = {
