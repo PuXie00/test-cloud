@@ -50,6 +50,7 @@ import type {
 } from "../types";
 import { DEFAULT_GRID_SIZE_M, normalizeGridSizeM } from "../helpers/grid-config";
 import { mergeFocusBounds, resolveFocusFit, type FocusBounds } from "../cameras/camera-focus";
+import { recordPreviewVideo } from "../output/record-preview-video";
 import { VideoRecorder, isRecordingSupported } from "../output/VideoRecorder";
 import { canEditObjectFromStatus } from "../state/object-edit-lock";
 import { ModelLoader, resolveModelCacheId } from "../loaders/ModelLoader";
@@ -221,6 +222,7 @@ export class Viz3DEngine implements Disposable {
   private mode: ToolMode = "select";
   private hoistLabelMode: HoistLabelMode = DEFAULT_HOIST_LABEL_MODE;
   private videoRecorder: VideoRecorder | null = null;
+  private previewVideo: AbortController | null = null;
   private colors = readThemeColors(domGetCssVar);
   private telemetryController: TelemetryController | null = null;
   private goShadowController: GoShadowController | null = null;
@@ -313,6 +315,8 @@ export class Viz3DEngine implements Disposable {
       return;
     }
 
+    this.previewVideo?.abort();
+    this.cancelRecording();
     this.babylonEngine?.stopRenderLoop();
 
     if (this.visibilityHandler && typeof document !== "undefined") {
@@ -1155,21 +1159,48 @@ export class Viz3DEngine implements Disposable {
     return this.viewportManager?.getFocalLength() ?? 50;
   }
 
-  startRecording(opts?: RecordingOptions): void {
-    if (!this.canvas) {
-      throw new Error("Viz3DEngine not initialized");
+  async recordEditorPreview(
+    durationMs: number,
+    setCursor: (ms: number) => void,
+    signal: AbortSignal,
+  ): Promise<Blob> {
+    if (this.isRecording() || this.previewVideo) throw new Error("请先结束当前录制");
+    const engine = this.babylonEngine;
+    if (!engine || !this.canvas || !this.viewportManager) throw new Error("3D 视窗尚未就绪");
+
+    const controller = new AbortController();
+    this.previewVideo = controller;
+    const abort = () => controller.abort(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    try {
+      signal.throwIfAborted();
+      return await recordPreviewVideo(this.canvas, durationMs, setCursor, (onFrame) => {
+        const observer = engine.onEndFrameObservable.add(() => onFrame(performance.now()));
+        return () => { engine.onEndFrameObservable.remove(observer); };
+      }, controller.signal);
+    } finally {
+      signal.removeEventListener("abort", abort);
+      this.previewVideo = null;
     }
-    if (!isRecordingSupported()) {
-      this.events.emit("recordingState", {
-        state: "unsupported",
-        message: "MediaRecorder not supported",
-      });
-      throw new Error("MediaRecorder not supported");
+  }
+
+  startRecording(opts?: RecordingOptions): void {
+    if (this.previewVideo) throw new Error("正在生成动作序列视频");
+    if (this.videoRecorder?.isActive()) return;
+    if (!this.canvas || !this.viewportManager) {
+      const message = "3D 视窗尚未就绪";
+      this.events.emit("recordingState", { state: "error", message });
+      throw new Error(message);
+    }
+    if (!isRecordingSupported(opts?.mimeType) || typeof this.canvas.captureStream !== "function") {
+      const message = "当前环境不支持视窗录制";
+      this.events.emit("recordingState", { state: "unsupported", message });
+      throw new Error(message);
     }
     try {
-      if (!this.videoRecorder) {
-        this.videoRecorder = new VideoRecorder();
-      }
+      this.videoRecorder ??= new VideoRecorder((error) => {
+        this.events.emit("recordingState", { state: "error", message: error.message });
+      });
       this.videoRecorder.start(this.canvas, opts);
       this.events.emit("recordingState", { state: "recording" });
     } catch (error) {
@@ -1181,11 +1212,19 @@ export class Viz3DEngine implements Disposable {
 
   async stopRecording(): Promise<Blob> {
     if (!this.videoRecorder?.isActive()) {
-      throw new Error("Not recording");
+      throw new Error("当前没有可停止的录制");
     }
     const blob = await this.videoRecorder.stop();
     this.events.emit("recordingState", { state: "idle" });
     return blob;
+  }
+
+  /** 放弃当前视窗的录制；切换工程时不把上个工程的视频带过去。 */
+  cancelRecording(): void {
+    if (!this.videoRecorder) return;
+    this.videoRecorder.dispose();
+    this.videoRecorder = null;
+    this.events.emit("recordingState", { state: "idle" });
   }
 
   isRecording(): boolean {
@@ -1864,8 +1903,6 @@ export class Viz3DEngine implements Disposable {
     this.unmount();
     this.dimmedObjects.clear();
     this.hoistTravel = new Map();
-    this.videoRecorder?.dispose();
-    this.videoRecorder = null;
     this.events.clear();
   }
 

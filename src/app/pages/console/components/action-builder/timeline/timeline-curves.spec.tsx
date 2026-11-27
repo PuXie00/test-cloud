@@ -406,13 +406,22 @@ describe("timeline toolbar view menu", () => {
     await screen.findByRole("menu");
   };
 
-  it("puts the curve switch, the graph and the axis in the view menu", async () => {
+  const openCurveSettings = async () => {
+    fireEvent.keyDown(screen.getByRole("menuitem", { name: "曲线设置" }), { key: "ArrowRight" });
+    await screen.findByRole("menuitemradio", { name: "位置" });
+  };
+
+  it("keeps the curve switch at the top level and groups graph and axis settings together", async () => {
     const { onViewModeChange, onCurveGraphChange, onCurveAxisChange } = renderToolbar();
     expect(screen.queryByRole("radio")).toBeNull();
     await openViewMenu();
 
     const showCurves = screen.getByRole("menuitemcheckbox", { name: "显示曲线" });
     expect(showCurves.getAttribute("aria-checked")).toBe("true");
+    expect(screen.queryByRole("menuitemradio", { name: "位置" })).toBeNull();
+    fireEvent.click(showCurves);
+    expect(onViewModeChange).toHaveBeenCalledWith("tracks");
+    await openCurveSettings();
     expect(screen.getByRole("menuitemradio", { name: "位置" }).getAttribute("aria-checked")).toBe("true");
     expect(screen.getByRole("menuitemradio", { name: "V1" }).getAttribute("aria-checked")).toBe("true");
     expect(screen.getByRole("menuitemradio", { name: /V3/ }).getAttribute("aria-disabled")).toBe("true");
@@ -422,18 +431,20 @@ describe("timeline toolbar view menu", () => {
     // 切完菜单不关，可以接着设
     fireEvent.click(screen.getByRole("menuitemradio", { name: "V2" }));
     expect(onCurveAxisChange).toHaveBeenCalledWith("v2");
-    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "显示曲线" }));
-    expect(onViewModeChange).toHaveBeenCalledWith("tracks");
+    fireEvent.keyDown(screen.getByRole("menuitemradio", { name: "V2" }), { key: "ArrowLeft" });
+    expect(screen.queryByRole("menuitemradio", { name: "速度" })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "曲线设置" })).toBe(document.activeElement);
   });
 
   it("greys out the curve options while the tracks are shown", async () => {
     const { onViewModeChange } = renderToolbar({ viewMode: "tracks" });
     await openViewMenu();
     expect(screen.getByRole("menuitemcheckbox", { name: "显示曲线" }).getAttribute("aria-checked")).toBe("false");
-    expect(screen.getByRole("menuitemradio", { name: "速度" }).getAttribute("aria-disabled")).toBe("true");
-    expect(screen.getByRole("menuitemradio", { name: "V2" }).getAttribute("aria-disabled")).toBe("true");
     fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "显示曲线" }));
     expect(onViewModeChange).toHaveBeenCalledWith("curves");
+    await openCurveSettings();
+    expect(screen.getByRole("menuitemradio", { name: "速度" }).getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByRole("menuitemradio", { name: "V2" }).getAttribute("aria-disabled")).toBe("true");
   });
 
   it("lets the curve underlay use the graph and axis options while the tracks are shown", async () => {
@@ -444,6 +455,7 @@ describe("timeline toolbar view menu", () => {
       onCurveUnderlayChange,
     });
     await openViewMenu();
+    await openCurveSettings();
     const underlay = screen.getByRole("menuitemcheckbox", { name: /曲线底图/ });
     expect(underlay.getAttribute("aria-checked")).toBe("true");
     expect(screen.getByRole("menuitemradio", { name: "速度" }).getAttribute("aria-disabled")).toBeNull();

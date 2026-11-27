@@ -173,6 +173,9 @@ import type {
 } from "./action-builder-context-types";
 import { ActionBuilderContext } from "./action-builder-react-context";
 import type { ContextSelection } from "./context-bar/selection-context-bar";
+import type { CollisionSaveBatch } from "@/app/project/collision/types";
+import { collisionIdsAt, type CollisionPreview, type CollisionSource } from "./collision-preview";
+import { CollisionMenuProvider } from "./editor-dock/collision-menu-context";
 import { LivePoseBridge, type LivePoseLookup } from "./live-pose-bridge";
 import type { PhaseInputMode } from "./motion-profile/phase-rates";
 import { staggerSegments } from "./right-panel/segment-rhythm";
@@ -308,6 +311,11 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   const [selection, setSelection] = useState<SequenceSelection>(null);
   const [selectedObjectIds, setSelectedObjectIds] = useState<number[]>([]);
   const [cursorMs, setCursorMs] = useState(0);
+  const [collisionResult, setCollisionPreview] = useState<CollisionPreview | null>(null);
+  const [savedBatch, setSavedBatch] = useState<CollisionSaveBatch | null>(null);
+  const [inspectedResult, setInspectedResult] = useState<CollisionPreview | null>(null);
+  const collisionPosesRef = useRef<() => Map<number, Partial<ModelPose>>>(() => new Map());
+  const readBasePoses = useCallback(() => collisionPosesRef.current(), []);
   const [activeRightTab, setActiveRightTab] = useState<ActionRightTab>("selection");
   // 「当前位置」和「手动控制」页签同步：在「手动控制」页就显示当前位置，切走就关
   const liveMode = activeRightTab === "manual";
@@ -323,6 +331,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   const [lastPersistError, setLastPersistError] = useState<string | null>(null);
   // 拖块、在曲线上拖值的过程中不跑校验，松手再跑
   const [isDraggingTimeline, setIsDraggingTimeline] = useState(false);
+  const [isScrubbing, setIsScrubbing] = useState(false);
   const [sequenceIssues, setSequenceIssues] = useState<SequenceIssue[]>([]);
   const shiftOriginRef = useRef<ActionSequenceConfig | null>(null);
   const poseDragOriginRef = useRef<ActionSequenceConfig | null>(null);
@@ -457,8 +466,14 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   );
 
   /** 时间轴拖动开始：之后每次移动都并进这一步，松手（endDragStep）才记 */
-  const beginDragStep = openEditorStep;
-  const endDragStep = finishOpenStep;
+  const beginDragStep = useCallback(() => {
+    setIsDraggingTimeline(true);
+    openEditorStep();
+  }, [openEditorStep]);
+  const endDragStep = useCallback(() => {
+    setIsDraggingTimeline(false);
+    finishOpenStep();
+  }, [finishOpenStep]);
 
   // 指针从按下到抬起之间的编辑合成一步：曲线手柄、预设面板等拖动控件不用各自接开始 / 结束
   useEffect(() => {
@@ -467,7 +482,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     };
     const onUp = () => {
       pointerDownRef.current = false;
-      finishOpenStep();
+      endDragStep();
     };
     window.addEventListener("pointerdown", onDown, true);
     window.addEventListener("pointerup", onUp, true);
@@ -479,7 +494,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       window.removeEventListener("pointercancel", onUp, true);
       window.removeEventListener("blur", onUp);
     };
-  }, [finishOpenStep]);
+  }, [endDragStep]);
   const hydratingRef = useRef(false);
   const hydratedProjectIdRef = useRef<string | null>(null);
   const hydratedMotionRef = useRef<ProjectMotion | null>(null);
@@ -530,6 +545,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         hydratingRef.current = true;
         motionRef.current = { sequences: [], programs: [] };
         setAppliedSequences([]);
+        setSavedBatch(null);
         replaceDrafts(NO_DRAFTS);
         clearEditorHistory();
         setPrograms([]);
@@ -590,6 +606,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     setAppliedSequences(bundle.sequences);
     // 换工程清空草稿；同一工程里序列被删（撤销、删物体等）时丢掉它的草稿
     if (projectChanged) {
+      setSavedBatch(null);
       replaceDrafts(NO_DRAFTS);
     } else if (draftsRef.current.size > 0) {
       const ids = new Set(bundle.sequences.map((item) => item.id));
@@ -780,16 +797,39 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   // 从时间轴以外跳游标（3D 里）时让时间轴把游标移进视野：每次要求加一
   const [cursorRevealRequestId, setCursorRevealRequestId] = useState(0);
   const handleCursorChange = useCallback((ms: number, options?: { reveal?: boolean }) => {
+    setInspectedResult(null);
     setCursorMs(clampCursorMs(ms));
     if (options?.reveal) setCursorRevealRequestId((id) => id + 1);
   }, []);
 
   const handlePlaybackCursorChange = useCallback((ms: number) => {
+    setInspectedResult(null);
     setCursorMs(Math.max(0, ms));
   }, []);
 
   // 时间轴在播放：联机时影子不跟着游标走（停下再跟）
   const [timelinePlaying, setTimelinePlaying] = useState(false);
+
+  const setup = currentProject?.document?.setup;
+  const projectKey = currentProject?.id;
+  const collisionSource = useMemo<CollisionSource | null>(() =>
+    setup && projectKey ? { setup, projectKey, readBasePoses, dragging: isDraggingTimeline || isScrubbing,
+      savedBatch: savedBatch?.projectKey === projectKey ? savedBatch : null } : null,
+  [setup, projectKey, readBasePoses, isDraggingTimeline, isScrubbing, savedBatch]);
+  const collisionPreview = collisionResult?.sequence === sequence && collisionResult.setup === setup && !isDraggingTimeline
+    ? collisionResult : null;
+  const collisionObjectIds = useMemo(() =>
+    collisionPreview && !liveMode ? collisionIdsAt(collisionPreview.times, cursorMs) : [],
+  [collisionPreview, cursorMs, liveMode]);
+  const inspectingCollision = collisionPreview !== null && inspectedResult === collisionPreview;
+  const handleLocateCollision = useCallback((ms: number) => {
+    setInspectedResult(collisionPreview);
+    setActiveRightTab("selection");
+    setSelection(null);
+    // 报告里的首次接触可能在两个吸附刻度之间。
+    setCursorMs(ms);
+    setCursorRevealRequestId((id) => id + 1);
+  }, [collisionPreview]);
 
   const sequenceEditOptions = useMemo<SequenceEditOptions>(
     () => ({
@@ -845,7 +885,6 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   /** 曲线上拖位姿的值：所选位姿这根轴都加同样的增量，增量相对拖动开始，松手前不跑校验 */
   const handleDragPoseAxis = useCallback(
     (blockIds: readonly string[], axis: VirtualAxisId, deltaValue: number) => {
-      setIsDraggingTimeline(true);
       beginDragStep();
       updateSelectedSequence((current) => {
         const origin = poseDragOriginRef.current ?? current;
@@ -864,7 +903,6 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
 
   const handleDragPoseAxisEnd = useCallback(() => {
     poseDragOriginRef.current = null;
-    setIsDraggingTimeline(false);
     endDragStep();
   }, [endDragStep]);
 
@@ -911,7 +949,6 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
 
   const handleShiftTimelineBlocks = useCallback(
     (blockIds: string[], deltaMs: number) => {
-      setIsDraggingTimeline(true);
       beginDragStep();
       updateSelectedSequence((current) => {
         const origin = shiftOriginRef.current ?? current;
@@ -924,7 +961,6 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
 
   const handleShiftTimelineBlocksEnd = useCallback(() => {
     shiftOriginRef.current = null;
-    setIsDraggingTimeline(false);
     endDragStep();
   }, [endDragStep]);
 
@@ -1051,7 +1087,6 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
   const handleScaleTimelineBlocks = useCallback(
     (request: ScaleBlocksRequest, live = false): boolean => {
       if (live) {
-        setIsDraggingTimeline(true);
         beginDragStep();
       }
       let refusal: Extract<ScaleBlocksResult, { ok: false }> | null = null;
@@ -1075,7 +1110,6 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
 
   const handleScaleTimelineBlocksEnd = useCallback(() => {
     scaleOriginRef.current = null;
-    setIsDraggingTimeline(false);
     endDragStep();
     if (scaleFailureRef.current) toast.warning(scaleFailureRef.current);
     scaleFailureRef.current = null;
@@ -1529,7 +1563,6 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       }
       if (blockIds.size === 0) return false;
       poseHandleDragRef.current = { origin, base, blockIds };
-      setIsDraggingTimeline(true);
       beginDragStep();
       if (base !== origin) updateSelectedSequence(() => base);
       // 播放停下时游标可能不在整格上：对到这一格，3D 显示的就是正在改的这一刻
@@ -1569,7 +1602,6 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       const drag = poseHandleDragRef.current;
       poseHandleDragRef.current = null;
       if (drag && !commit) updateSelectedSequence(() => drag.origin);
-      setIsDraggingTimeline(false);
       endDragStep();
       if (!drag || !commit) return;
       setSelection(selectionFromBlockIds([...drag.blockIds.values()]));
@@ -2299,11 +2331,12 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       toast.error("保存失败");
       return;
     }
+    setSavedBatch({ projectKey: currentProject.id, sequences: nextSequences.filter(item => item.id === id) });
     setDraft(id, null);
     toast.success(
       `已保存「${draft.name}」，节目列表已更新${followers > 0 ? `，引用它的 ${followers} 个序列跟着更新` : ""}`,
     );
-  }, [selectedSequenceId, currentProject?.document, commitSequences, setDraft, followSavedSequences]);
+  }, [selectedSequenceId, currentProject, commitSequences, setDraft, followSavedSequences]);
 
   /**
    * 保存所有能保存的草稿（离开动作页时用）；待修复的、对应动作正在运行的留着草稿，
@@ -2328,6 +2361,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
         toast.error("保存失败");
         return { saved: 0, blocked, running };
       }
+      setSavedBatch({ projectKey: currentProject.id, sequences: nextSequences.filter(item => savable.has(item.id)) });
       replaceDrafts(new Map([...drafted].filter(([id]) => !savable.has(id))));
       toast.success(`已保存 ${savable.size} 个动作序列，节目列表已更新`);
     }
@@ -2336,7 +2370,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
     }
     if (running.length > 0) toast.warning(runningSequenceMessage(running, "保存"));
     return { saved: savable.size, blocked, running };
-  }, [currentProject?.document, commitSequences, replaceDrafts, followSavedSequences]);
+  }, [currentProject, commitSequences, replaceDrafts, followSavedSequences]);
 
   /**
    * 退回到某一步：序列的增删、顺序、名字和节目列表写回工程；
@@ -2421,6 +2455,12 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       selectedBlockId,
       selectedObjectIds,
       cursorMs,
+      collisionSource,
+      collisionPreview,
+      collisionObjectIds,
+      inspectingCollision,
+      setCollisionPreview,
+      handleLocateCollision,
       cursorRevealRequestId,
       activeRightTab,
       selectedProgramNodeId,
@@ -2457,6 +2497,7 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       handlePlaybackCursorChange,
       timelinePlaying,
       handleTimelinePlayingChange: setTimelinePlaying,
+      handleTimelineScrubbingChange: setIsScrubbing,
       handleInsertTimelineBlock,
       handleReplaceTimelineBlock,
       handleApplyPoseAxisWrite,
@@ -2535,6 +2576,12 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
       selectedBlockId,
       selectedObjectIds,
       cursorMs,
+      collisionSource,
+      collisionPreview,
+      collisionObjectIds,
+      inspectingCollision,
+      setCollisionPreview,
+      handleLocateCollision,
       cursorRevealRequestId,
       activeRightTab,
       liveMode,
@@ -2632,8 +2679,8 @@ export const ActionBuilderProvider = ({ children }: { children: ReactNode }) => 
 
   return (
     <ActionBuilderContext.Provider value={value}>
-      <LivePoseBridge lookupRef={livePoseRef} />
-      {children}
+      <LivePoseBridge lookupRef={livePoseRef} collisionPosesRef={collisionPosesRef} />
+      <CollisionMenuProvider>{children}</CollisionMenuProvider>
     </ActionBuilderContext.Provider>
   );
 };

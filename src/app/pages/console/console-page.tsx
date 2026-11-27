@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ActionBuilderProvider } from "./components/action-builder/action-builder-context";
 import { ActionBuilderRightSidebar } from "./components/action-builder/action-builder-right-sidebar";
+import { SequenceCollisionBridge } from "./components/action-builder/editor-dock/sequence-collision-control";
 import { ActionBuilderSelectionSync } from "./components/action-builder/action-builder-selection-sync";
 import { ContentLibraryPanel } from "./components/action-builder/content-library/content-library-panel";
 import { EditorDock } from "./components/action-builder/editor-dock/editor-dock";
@@ -269,6 +270,7 @@ const ConsoleInner = () => {
               <Viz3DTransformSync />
               <Viz3DSelectionSync />
               <ActionBuilderSelectionSync />
+              <SequenceCollisionBridge />
               <UnsavedLeaveGuard guardRef={leaveGuardRef} />
               <StructureSelectionBridge />
               <PlaceholderSelectionSync />

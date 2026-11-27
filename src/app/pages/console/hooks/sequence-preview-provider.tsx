@@ -26,6 +26,7 @@ import { useOptionalControlledObjects } from "./use-controlled-objects";
 import { advancePreviewTimeline, buildPreviewTimeline } from "./sequence-preview-timeline";
 import {
   DEFAULT_PREVIEW_MULTIPLIER,
+  SequencePreviewPlayingContext,
   SequencePreviewContext,
   type SequencePreviewMultiplier,
   type SequencePreviewState,
@@ -266,5 +267,9 @@ export const SequencePreviewProvider: FC<{ children: ReactNode }> = ({ children 
     [state, startPreview, togglePreview, stopPreview, setCursorMs, play, pause, setMultiplier],
   );
 
-  return <SequencePreviewContext.Provider value={value}>{children}</SequencePreviewContext.Provider>;
+  return (
+    <SequencePreviewPlayingContext.Provider value={state.isPlaying}>
+      <SequencePreviewContext.Provider value={value}>{children}</SequencePreviewContext.Provider>
+    </SequencePreviewPlayingContext.Provider>
+  );
 };

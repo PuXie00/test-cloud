@@ -25,8 +25,8 @@ import { useViz3DContext } from "../Viz3DProvider";
 import { SequencePreviewBar } from "./sequence-preview-bar";
 import { MeasureToolPanel } from "./MeasureToolPanel";
 import { ShapePresetPalette } from "./ShapePresetPalette";
-import { ViewMenu } from "./ViewMenu";
 import { QuickGroupMenu } from "./QuickGroupMenu";
+import { ViewportRecordingControls } from "./ViewportRecordingControls";
 import { ViewportCellsOverlay } from "./ViewportCellsOverlay";
 
 const MODE_BUTTONS: { mode: ToolMode; icon: LucideIcon; label: string }[] = [
@@ -202,6 +202,7 @@ export const PreviewFrame = ({
 };
 
 export const ViewportOverlay = () => {
+  const { currentProject } = useProject();
   const engine = useViz3DContext();
   const { activeNav } = useConsoleNav();
   const preview = useSequencePreview();
@@ -231,7 +232,7 @@ export const ViewportOverlay = () => {
   const handleMode = (next: ToolMode) => engine.setMode(next);
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden rounded-md">
+    <div className="@container pointer-events-none absolute inset-0 z-20 overflow-hidden rounded-md">
       <ViewportCellsOverlay toolPaletteVisible={showToolMode} onPointerGuard={stopPointer} />
       {showToolMode && (
         <>
@@ -275,7 +276,7 @@ export const ViewportOverlay = () => {
         }}
       >
         <div className="flex items-center gap-1">
-          <ViewMenu onPointerGuard={stopPointer} showMotionPaths={isSequences} />
+          <ViewportRecordingControls key={currentProject?.id} onPointerGuard={stopPointer} showMotionPaths={isSequences} />
           <QuickGroupMenu canEdit={canEdit} />
         </div>
         {isControl ? (

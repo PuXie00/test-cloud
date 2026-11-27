@@ -8,6 +8,7 @@ import fs from 'node:fs'
 import { getCsocketApiService, registerCppSocketHandlers, shutdownCppSocket } from './cSocket'
 import { registerAuthHandlers } from './auth'
 import { registerKinematicsHandlers, shutdownKinematics } from './kinematics'
+import { registerRecordingHandlers } from './recording'
 import { attachCloseGuard, registerToolHandlers } from './tool'
 import { registerConfigHandlers } from './getConfig'
 import { checkProjectsRootWritableOnStartup, registerProjectHandlers, restoreKeptProjectsOnStartup } from './project'
@@ -157,6 +158,7 @@ app.whenReady().then(async () => {
   registerKinematicsHandlers()
   registerConfigHandlers()
   registerToolHandlers()
+  registerRecordingHandlers()
   registerAiBridgeHandlers()
   startAiAgent()
   registerUpdateHandlers()

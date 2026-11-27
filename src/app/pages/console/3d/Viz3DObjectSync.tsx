@@ -1,26 +1,15 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { SceneObjectConfig } from "@/app/viz3d";
 import { useBuildDebugOptional } from "@/app/pages/console/components/build-debug/build-debug-context";
-import {
-  mmDimensionsToM,
-  mmMountToM,
-  mmToM,
-  mmVec3ToM,
-} from "@/app/project/length-units";
-import {
-  modelRotationAxesForControlType,
-  normalizeObjectRotationDeg,
-  objectRotationDegToRad,
-} from "@/app/project/object-rotation";
 import { getMotorIdForAxis } from "../hooks/binding-utils";
 import { getMotorDisplayIndex } from "@/app/pages/console/hooks/motor-mid";
 import { hoistAxesEqual } from "@/app/viz3d/hoist-axis-config";
 import { useProjectStore } from "../hooks/use-project-store";
-import { sceneKinematicsEqual, sceneKinematicsForObject } from "./scene-kinematics";
+import { sceneKinematicsEqual } from "./scene-kinematics";
 import { useConsoleNav } from "../hooks/use-console-nav";
 import { useSelection } from "../hooks/use-selection";
 import { useViz3DContext } from "./Viz3DProvider";
-import { toEngineHoleDimensions } from "../components/right-sidebar/config-wizard/config-descriptors";
+import { sceneConfigForObject } from "./scene-object-config";
 
 const sceneConfigsEqual = (a: SceneObjectConfig, b: SceneObjectConfig): boolean =>
   a.id === b.id &&
@@ -51,11 +40,6 @@ const sceneConfigsEqual = (a: SceneObjectConfig, b: SceneObjectConfig): boolean 
   sceneKinematicsEqual(a.kinematics, b.kinematics) &&
   (a.parentId ?? null) === (b.parentId ?? null);
 
-const holeDimensionsToM = (
-  hole: { w: number; d: number } | undefined,
-): SceneObjectConfig["holeDimensions"] =>
-  hole ? { w: mmToM(hole.w), d: mmToM(hole.d) } : undefined;
-
 export const Viz3DObjectSync = () => {
   const engine = useViz3DContext();
   const { objects, motors } = useProjectStore();
@@ -80,40 +64,21 @@ export const Viz3DObjectSync = () => {
 
   const syncObjects = useCallback(() => {
     const configs: SceneObjectConfig[] = objects.map((object) => {
+      const config = sceneConfigForObject(object);
       return {
-      id: String(object.id),
-      name: object.name,
-      // viz3d PresetShape 不含 external；外模走 model，几何回退 cube
-      shape: object.shapePreset === "external" ? "cube" : object.shapePreset,
-      dimensions: mmDimensionsToM(object.dimensions),
-      holeDimensions: holeDimensionsToM(
-        toEngineHoleDimensions(object.shapePreset, object.shapeDimensions),
-      ),
-      position: mmVec3ToM(object.position),
-      centerOffset: mmVec3ToM(object.centerOffset),
-      rotation: objectRotationDegToRad(
-        normalizeObjectRotationDeg(object.rotation, object.controlType),
-      ),
-      rotationAxes: modelRotationAxesForControlType(object.controlType),
-      color: object.color,
-      tintModel: object.tintModel === true,
-      model: object.modelId ? { id: object.modelId } : undefined,
-      hoistAxes: object.axes.map((axis, index) => {
-        const motorId = getMotorIdForAxis(object.id, axis.key, motors);
-        return {
-          key: axis.key,
-          motorId: motorId == null ? null : String(motorId),
-          mount: mmMountToM(axis.mount),
-          index,
-          motorDisplayIndex: motorId == null ? null : getMotorDisplayIndex(motors, motorId),
-        };
-      }),
-      selectedMotorId: selectedMotorId == null ? null : String(selectedMotorId),
-      selectedMotorIds: selectedMotorIds?.map(String),
-      showHoistPoints,
-      kinematics: sceneKinematicsForObject(object),
-      parentId: object.parentId != null ? String(object.parentId) : null,
-    };
+        ...config,
+        hoistAxes: config.hoistAxes?.map((axis) => {
+          const motorId = getMotorIdForAxis(object.id, axis.key, motors);
+          return {
+            ...axis,
+            motorId: motorId == null ? null : String(motorId),
+            motorDisplayIndex: motorId == null ? null : getMotorDisplayIndex(motors, motorId),
+          };
+        }),
+        selectedMotorId: selectedMotorId == null ? null : String(selectedMotorId),
+        selectedMotorIds: selectedMotorIds?.map(String),
+        showHoistPoints,
+      };
     });
 
     const prev = prevConfigsRef.current;

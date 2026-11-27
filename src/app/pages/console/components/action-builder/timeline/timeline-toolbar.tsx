@@ -1,5 +1,7 @@
 import type { ButtonHTMLAttributes, ElementType } from "react";
 import {
+  ChevronDown,
+  Film,
   Magnet,
   Maximize2,
   Minus,
@@ -11,6 +13,7 @@ import {
   RotateCcw,
   Route,
   Save,
+  ScanLine,
   SkipBack,
   SkipForward,
   Trash2,
@@ -22,12 +25,17 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuPortal,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/app/components/ui/dropdown-menu";
+import { useCollisionMenu } from "../editor-dock/collision-menu-context";
 import { Switch } from "@/app/components/ui/switch";
 import { cn } from "@/app/components/ui/utils";
 import type { TimelineMarker } from "@/app/project/action-sequence/types";
@@ -45,6 +53,8 @@ import { pxPerSecondFromZoomSlider, ZOOM_SLIDER_STEPS, zoomSliderValue } from ".
 import { formatProjectHistoryShortcutHint } from "@/app/project/project-history-shortcuts";
 
 type TimelineToolbarProps = {
+  canExportVideo?: boolean;
+  onExportVideo?: () => void;
   /** 没有编辑权限：不显示删除、保存，开关只读 */
   readOnly?: boolean;
   trajectoryMode?: TrajectoryMode;
@@ -130,6 +140,8 @@ const viewMenuItemClass = "[@media(pointer:coarse)]:py-2.5";
 const keepMenuOpen = (event: Event) => event.preventDefault();
 
 export const TimelineToolbar = ({
+  canExportVideo = false,
+  onExportVideo,
   trajectoryMode,
   onTrajectoryModeChange,
   readOnly = false,
@@ -176,6 +188,9 @@ export const TimelineToolbar = ({
 }: TimelineToolbarProps) => {
   // 曲线视图或曲线底图开着时，曲线看什么才有用
   const curveOptionsOn = viewMode === "curves" || (onCurveUnderlayChange !== undefined && curveUnderlay);
+  const collision = useCollisionMenu();
+  const hasGraphSettings = curveGraph !== undefined && !!onCurveGraphChange;
+  const hasAxisSettings = curveAxis !== undefined && !!curveAxes?.length && !!onCurveAxisChange;
   const playLabel = isPlaying ? "暂停" : atEnd ? "重新播放" : "播放";
   const PlayIcon = isPlaying ? Pause : atEnd ? RotateCcw : Play;
 
@@ -183,18 +198,116 @@ export const TimelineToolbar = ({
     <div className="flex h-9 shrink-0 items-center gap-0.5 bg-muted px-2">
 
     {viewMode !== undefined && onViewModeChange ? (
-      <DropdownMenu>
+      <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
           <button type="button" aria-label="视图" className={menuButtonClass}>
-            {/* <Eye className="h-3.5 w-3.5" aria-hidden /> */}
             视图
-            {/* <ChevronDown className="h-3 w-3" aria-hidden /> */}
+            <ChevronDown className="size-3 opacity-70" aria-hidden />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="min-w-[12rem] border-border bg-card text-foreground">
+          <DropdownMenuCheckboxItem
+            checked={viewMode === "curves"}
+            onCheckedChange={(checked) => onViewModeChange(checked ? "curves" : "tracks")}
+            onSelect={keepMenuOpen}
+            className={viewMenuItemClass}
+          >
+            显示曲线
+          </DropdownMenuCheckboxItem>
+          {(onCurveUnderlayChange || hasGraphSettings || hasAxisSettings) && (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger inset className={viewMenuItemClass}>曲线设置</DropdownMenuSubTrigger>
+              <DropdownMenuPortal>
+                <DropdownMenuSubContent className="max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-48 overflow-y-auto border-border bg-card text-foreground">
+                  {onCurveUnderlayChange ? (
+                    <DropdownMenuCheckboxItem
+                      checked={curveUnderlay}
+                      disabled={viewMode === "curves"}
+                      onCheckedChange={(checked) => onCurveUnderlayChange(checked === true)}
+                      onSelect={keepMenuOpen}
+                      className={viewMenuItemClass}
+                    >
+                      曲线底图
+                      <DropdownMenuShortcut>选一个物体时</DropdownMenuShortcut>
+                    </DropdownMenuCheckboxItem>
+                  ) : null}
+                  {hasGraphSettings ? (
+                    <>
+                      {onCurveUnderlayChange && <DropdownMenuSeparator />}
+                      <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">曲线类型</DropdownMenuLabel>
+                      <DropdownMenuRadioGroup
+                        value={curveGraph}
+                        onValueChange={(value) => onCurveGraphChange(value as CurveGraph)}
+                      >
+                        {CURVE_GRAPHS.map((graph) => (
+                          <DropdownMenuRadioItem
+                            key={graph.id}
+                            value={graph.id}
+                            disabled={!curveOptionsOn}
+                            onSelect={keepMenuOpen}
+                            className={viewMenuItemClass}
+                          >
+                            {graph.label}
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                    </>
+                  ) : null}
+                  {hasAxisSettings ? (
+                    <>
+                      {(onCurveUnderlayChange || hasGraphSettings) && <DropdownMenuSeparator />}
+                      <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">虚轴</DropdownMenuLabel>
+                      <DropdownMenuRadioGroup
+                        value={curveAxis}
+                        onValueChange={(value) => onCurveAxisChange(value as VirtualAxisId)}
+                      >
+                        {curveAxes.map(({ axis, available }) => (
+                          <DropdownMenuRadioItem
+                            key={axis}
+                            value={axis}
+                            disabled={!curveOptionsOn || !available}
+                            onSelect={keepMenuOpen}
+                            className={viewMenuItemClass}
+                          >
+                            {axis.toUpperCase()}
+                            {available ? null : <DropdownMenuShortcut>没有曲线</DropdownMenuShortcut>}
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                    </>
+                  ) : null}
+                </DropdownMenuSubContent>
+              </DropdownMenuPortal>
+            </DropdownMenuSub>
+          )}
+          {onPoseCursorFollowChange ? (
+            <DropdownMenuCheckboxItem
+              checked={poseCursorFollow}
+              onCheckedChange={(checked) => onPoseCursorFollowChange(checked === true)}
+              onSelect={keepMenuOpen}
+              className={viewMenuItemClass}
+            >
+              选中位姿时跳到位姿
+            </DropdownMenuCheckboxItem>
+          ) : null}
+          {(collision || onExportVideo) && <DropdownMenuSeparator />}
+          {collision && (
+            <DropdownMenuItem className={viewMenuItemClass} onSelect={collision.open} aria-haspopup="dialog">
+              <ScanLine aria-hidden />
+              碰撞检测
+              {collision.label && <DropdownMenuShortcut className="tracking-normal">{collision.label}</DropdownMenuShortcut>}
+            </DropdownMenuItem>
+          )}
+          {onExportVideo && (
+            <DropdownMenuItem className={viewMenuItemClass} onSelect={onExportVideo}
+              disabled={!canExportVideo} aria-haspopup="dialog">
+              <Film aria-hidden />
+              导出视频
+            </DropdownMenuItem>
+          )}
           {onUndo || onRedo ? (
             <>
-              {/* 连着撤销几步时菜单不关 */}
+              <DropdownMenuSeparator />
               {onUndo ? (
                 <DropdownMenuItem
                   disabled={!canUndo}
@@ -223,82 +336,6 @@ export const TimelineToolbar = ({
                   <DropdownMenuShortcut>{formatProjectHistoryShortcutHint("redo")}</DropdownMenuShortcut>
                 </DropdownMenuItem>
               ) : null}
-              <DropdownMenuSeparator />
-            </>
-          ) : null}
-          <DropdownMenuCheckboxItem
-            checked={viewMode === "curves"}
-            onCheckedChange={(checked) => onViewModeChange(checked ? "curves" : "tracks")}
-            onSelect={keepMenuOpen}
-            className={viewMenuItemClass}
-          >
-            显示曲线
-          </DropdownMenuCheckboxItem>
-          {onCurveUnderlayChange ? (
-            <DropdownMenuCheckboxItem
-              checked={curveUnderlay}
-              disabled={viewMode === "curves"}
-              onCheckedChange={(checked) => onCurveUnderlayChange(checked === true)}
-              onSelect={keepMenuOpen}
-              className={viewMenuItemClass}
-            >
-              曲线底图
-              <DropdownMenuShortcut>选一个物体时</DropdownMenuShortcut>
-            </DropdownMenuCheckboxItem>
-          ) : null}
-          {onPoseCursorFollowChange ? (
-            <DropdownMenuCheckboxItem
-              checked={poseCursorFollow}
-              onCheckedChange={(checked) => onPoseCursorFollowChange(checked === true)}
-              onSelect={keepMenuOpen}
-              className={viewMenuItemClass}
-            >
-              选中位姿时跳到位姿
-            </DropdownMenuCheckboxItem>
-          ) : null}
-          {curveGraph !== undefined && onCurveGraphChange ? (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">曲线</DropdownMenuLabel>
-              <DropdownMenuRadioGroup
-                value={curveGraph}
-                onValueChange={(value) => onCurveGraphChange(value as CurveGraph)}
-              >
-                {CURVE_GRAPHS.map((graph) => (
-                  <DropdownMenuRadioItem
-                    key={graph.id}
-                    value={graph.id}
-                    disabled={!curveOptionsOn}
-                    onSelect={keepMenuOpen}
-                    className={viewMenuItemClass}
-                  >
-                    {graph.label}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </>
-          ) : null}
-          {curveAxis !== undefined && curveAxes && onCurveAxisChange ? (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">虚轴</DropdownMenuLabel>
-              <DropdownMenuRadioGroup
-                value={curveAxis}
-                onValueChange={(value) => onCurveAxisChange(value as VirtualAxisId)}
-              >
-                {curveAxes.map(({ axis, available }) => (
-                  <DropdownMenuRadioItem
-                    key={axis}
-                    value={axis}
-                    disabled={!curveOptionsOn || !available}
-                    onSelect={keepMenuOpen}
-                    className={viewMenuItemClass}
-                  >
-                    {axis.toUpperCase()}
-                    {available ? null : <DropdownMenuShortcut>没有曲线</DropdownMenuShortcut>}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
             </>
           ) : null}
         </DropdownMenuContent>

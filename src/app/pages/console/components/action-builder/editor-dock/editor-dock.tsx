@@ -1,5 +1,5 @@
 import { usePermissions } from "@/app/auth/permissions";
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { MousePointerClick } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/app/components/ui/utils";
@@ -45,12 +45,14 @@ import {
   previousKeyframeMs,
 } from "../timeline/timeline-keyframes";
 import { TimelineEditor } from "../timeline/timeline-editor";
+import { SequenceVideoExport } from "./sequence-video-export";
 import { TimelineToolbar } from "../timeline/timeline-toolbar";
 import { MarkerRenameDialog } from "./marker-rename-dialog";
 import { SecondsPromptDialog, type SecondsPrompt } from "./seconds-prompt-dialog";
 import { ScalePromptDialog, type ScalePrompt } from "./scale-prompt-dialog";
 import { SequenceDeleteDialog } from "./sequence-delete-dialog";
 import { sortedMarkers } from "../marker-ops";
+import { useSequenceVideoCapture } from "../timeline/use-sequence-video-capture";
 import { useTimelinePlayback } from "../timeline/use-timeline-playback";
 
 const isEditableTarget = (target: EventTarget | null): boolean => {
@@ -81,7 +83,10 @@ const SequenceEditor = () => {
     handleObjectsFollow,
     handleCursorChange,
     handlePlaybackCursorChange,
+    liveMode,
+    setLiveMode,
     handleTimelinePlayingChange,
+    handleTimelineScrubbingChange,
     handleMoveTimelineBlock,
     handleShiftTimelineBlocks,
     handleShiftTimelineBlocksEnd,
@@ -129,6 +134,7 @@ const SequenceEditor = () => {
     handleTrajectoryModeChange,
     handleLoopChange,
     sequenceIssues,
+    inspectingCollision,
   } = useActionBuilder();
   // 这条序列的动作正在运行时删不了：按下时提示，不弹确认（保存由 handleSave 提示）
   const runningActionIds = useRunningActionIds();
@@ -165,6 +171,7 @@ const SequenceEditor = () => {
     replaceSelection(objectIds);
   };
   const rootRef = useRef<HTMLDivElement>(null);
+  const exportVideo = useRef<(() => void) | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [fitRequestId, setFitRequestId] = useState(0);
@@ -229,16 +236,22 @@ const SequenceEditor = () => {
     handleSelectionChange({ kind: "markers", markerIds: [marker.id] });
     jumpTo(marker.atMs);
   };
-  const { isPlaying, toggle: handlePlayToggle } = useTimelinePlayback({
+  const { isPlaying, pause, toggle: handlePlayToggle } = useTimelinePlayback({
     cursorMs,
     totalMs,
     onCursorMs: handlePlaybackCursorChange ?? (() => {}),
     pauseKey: sequence,
   });
+  const videoCapture = useSequenceVideoCapture({
+    sequence, totalMs, cursorMs, onCursorMs: handlePlaybackCursorChange, pause, liveMode, setLiveMode,
+  });
+  useLayoutEffect(() => {
+    if (inspectingCollision) pause();
+  }, [inspectingCollision, cursorRevealRequestId, pause]);
   // 播放中联机的影子不跟着游标走：把播放状态报给 context
   useEffect(() => {
-    handleTimelinePlayingChange?.(isPlaying);
-  }, [isPlaying, handleTimelinePlayingChange]);
+    handleTimelinePlayingChange?.(isPlaying || videoCapture.capturing);
+  }, [isPlaying, videoCapture.capturing, handleTimelinePlayingChange]);
   useEffect(() => () => handleTimelinePlayingChange?.(false), [handleTimelinePlayingChange]);
 
   // 选中位姿（同一时刻）时游标跳过去，3D 显示的就是正在改的那一帧；改了位姿的时刻也跟着走。
@@ -501,7 +514,10 @@ const SequenceEditor = () => {
       tabIndex={0}
       className="flex min-h-0 min-w-0 flex-1 flex-col outline-none"
     >
+      <SequenceVideoExport key={sequence.id} ref={exportVideo} name={sequence.name} captureState={videoCapture} />
       <TimelineToolbar
+        onExportVideo={() => exportVideo.current?.()}
+        canExportVideo={canPlay}
         readOnly={!canEdit}
         trajectoryMode={sequence.trajectoryMode}
         onTrajectoryModeChange={handleTrajectoryModeChange}
@@ -580,6 +596,7 @@ const SequenceEditor = () => {
             timelinePxPerSecond={timelinePxPerSecond}
             onSelectionChange={handleTimelineSelectionChange}
             onCursorChange={handleCursorChange}
+            onScrubbingChange={handleTimelineScrubbingChange}
             onPoseMove={canEdit ? handleMoveTimelineBlock : ignoreEdit}
             onPresetMove={canEdit ? handleMoveTimelineBlock : ignoreEdit}
             onBlocksShift={canEdit ? handleShiftTimelineBlocks : undefined}

@@ -304,6 +304,30 @@ const mockRect = (element: Element, rect: { left: number; top: number; width: nu
 };
 
 describe("timeline interaction", () => {
+  it.each([
+    ["播放游标", "pointerup"],
+    ["时间标尺（秒）", "pointercancel"],
+    ["播放游标", "blur"],
+    ["时间标尺（秒）", "unmount"],
+  ])("releases the scrub signal on %s / %s and stops tracking movement", (name, exit) => {
+    const onScrubbingChange = vi.fn();
+    const onCursorChange = vi.fn();
+    const { unmount } = render(<TimelineEditor {...createTimelineProps(sequence)}
+      onScrubbingChange={onScrubbingChange} onCursorChange={onCursorChange} />);
+    fireEvent.pointerDown(screen.getByRole("slider", { name }), { button: 0, clientX: 120 });
+    fireEvent.pointerMove(window, { clientX: 130 });
+    expect(onScrubbingChange.mock.calls).toEqual([[true]]);
+    if (exit === "unmount") unmount();
+    else if (exit === "blur") fireEvent.blur(window);
+    else if (exit === "pointercancel") fireEvent.pointerCancel(window);
+    else fireEvent.pointerUp(window);
+    onCursorChange.mockClear();
+    fireEvent.pointerMove(window, { clientX: 140 });
+    fireEvent.pointerUp(window);
+    expect(onCursorChange).not.toHaveBeenCalled();
+    expect(onScrubbingChange.mock.calls).toEqual([[true], [false]]);
+  });
+
   it("allows the playhead past occupied time from the ruler", () => {
     const onCursorChange = vi.fn();
     render(<TimelineEditor {...createTimelineProps(sequence)} onCursorChange={onCursorChange} />);

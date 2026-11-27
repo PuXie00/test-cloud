@@ -657,6 +657,7 @@ export const TimelineCurves = ({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", handleUp);
       window.removeEventListener("pointercancel", handleCancel);
+      window.removeEventListener("blur", handleCancel);
     };
     const handleUp = (event: globalThis.PointerEvent) => {
       stop();
@@ -669,6 +670,7 @@ export const TimelineCurves = ({
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", handleUp);
     window.addEventListener("pointercancel", handleCancel);
+    window.addEventListener("blur", handleCancel);
   };
 
   /** 框选的点：位置图是关键帧，速度图是位姿处的速度点 */

@@ -44,6 +44,7 @@ export type DeleteModelParams = {
 }
 
 export type ReadModelParams = {
+  includeAssets?: boolean
   modelId: string
 }
 
@@ -286,7 +287,7 @@ export const readModel = async (
     }
 
     const buf = await fs.readFile(fullPath)
-    const assets = await readModelAssets(modelsDir, fileName)
+    const assets = params.includeAssets === false ? [] : await readModelAssets(modelsDir, fileName)
     return ok({
       data: bufferToArrayBuffer(buf),
       fileName,

@@ -41,3 +41,5 @@ export type SequencePreviewValue = SequencePreviewState & {
 };
 
 export const SequencePreviewContext = createContext<SequencePreviewValue | null>(null);
+// 后台任务只订阅播放的启停，不订阅逐帧刷新的游标。
+export const SequencePreviewPlayingContext = createContext(false);

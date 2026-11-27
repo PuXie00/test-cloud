@@ -100,6 +100,19 @@ const wrapImportedContent = (
   return root;
 };
 
+/** Worker-side collision geometry uses the viewport's loader, coordinate convention and centering. */
+export const loadGeometryTemplate = async (
+  bytes: Uint8Array, format: ModelFormat, scene: Scene,
+): Promise<TransformNode> => {
+  const source = format === "obj" ? "data:" + new TextDecoder().decode(bytes) : bytes;
+  const result = await ImportMeshAsync(source, scene, {
+    pluginExtension: `.${format}`,
+    pluginOptions: { gltf: { skipMaterials: true, createInstances: false }, obj: { skipMaterials: true } },
+  });
+  stripImportedAnimations(result);
+  return buildCenteredTemplate(wrapImportedContent(result, scene, "collision-geometry"), scene);
+};
+
 export class ModelLoader {
   private readonly pending = new Map<string, Promise<CacheEntry>>();
   private readonly ready = new Map<string, TransformNode>();

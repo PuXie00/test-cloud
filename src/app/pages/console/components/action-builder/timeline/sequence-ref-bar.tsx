@@ -79,6 +79,8 @@ export const SequenceRefBar = ({
     const handleUp = () => {
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
+      window.removeEventListener("pointercancel", handleUp);
+      window.removeEventListener("blur", handleUp);
       edgeScroll.end();
       if (!moved) return;
       setDragging(false);
@@ -87,6 +89,8 @@ export const SequenceRefBar = ({
     };
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
+    window.addEventListener("pointercancel", handleUp);
+    window.addEventListener("blur", handleUp);
     const edgeScroll = beginEdgeScroll(() => handleMove({ clientX: lastClientX }));
   };
 

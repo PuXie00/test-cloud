@@ -100,6 +100,7 @@ describe("action builder drafts", () => {
     expect(result.current.builder.sequence!.blocks.map((block) => block.id)).toEqual(["a", "b"]);
     expect(result.current.builder.draftSequenceIds.has(id)).toBe(true);
     expect(saved(result, id).blocks).toEqual([]);
+    expect(result.current.builder.collisionSource?.savedBatch).toBeNull();
 
     act(() => result.current.builder.handleSave());
 
@@ -107,6 +108,10 @@ describe("action builder drafts", () => {
     expect(result.current.builder.draftSequenceIds.has(id)).toBe(false);
     expect(saved(result, id).blocks.map((block) => block.id)).toEqual(["a", "b"]);
     expect(result.current.builder.sequence!.blocks.map((block) => block.id)).toEqual(["a", "b"]);
+    const batch = result.current.builder.collisionSource?.savedBatch;
+    expect(batch?.sequences).toEqual([result.current.builder.sequence]);
+    act(() => result.current.builder.handleSave());
+    expect(result.current.builder.collisionSource?.savedBatch).toBe(batch);
   });
 
   it("refuses to save an unrepaired draft and asks to repair it first", async () => {
@@ -114,6 +119,7 @@ describe("action builder drafts", () => {
     await openFixtureProject(result);
     const id = createWithTwoPoses(result);
     act(() => result.current.builder.handleSave());
+    const batch = result.current.builder.collisionSource?.savedBatch;
     // 2 秒走 1000 万 mm，必然超速
     act(() => result.current.builder.handleInsertTimelineBlock(pose("c", 7, 13_000, 10_000_000)));
 
@@ -122,6 +128,7 @@ describe("action builder drafts", () => {
     expect(toast.warning).toHaveBeenCalledWith("动作序列有待修复的问题，请先修复再保存");
     expect(result.current.builder.draftSequenceIds.has(id)).toBe(true);
     expect(saved(result, id).blocks.map((block) => block.id)).toEqual(["a", "b"]);
+    expect(result.current.builder.collisionSource?.savedBatch).toBe(batch);
   });
 
   it("asks to arrange an emptied sequence before saving", async () => {
@@ -157,6 +164,7 @@ describe("action builder drafts", () => {
     expect(saved(result, good).blocks.map((block) => block.id)).toEqual(["a", "b"]);
     expect(saved(result, bad).blocks).toEqual([]);
     expect([...result.current.builder.draftSequenceIds]).toEqual([bad]);
+    expect(result.current.builder.collisionSource?.savedBatch?.sequences.map(item => item.id)).toEqual([good]);
     expect(toast.warning).toHaveBeenCalledWith("「待修复的」待修复，没有保存");
   });
 

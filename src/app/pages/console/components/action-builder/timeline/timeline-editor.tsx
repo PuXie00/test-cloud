@@ -104,6 +104,7 @@ export type TimelineEditorProps = {
   /** follow：轨道上点选时物体选中怎么跟（见 ObjectFollow）；不传时物体不跟 */
   onSelectionChange: (selection: SequenceSelection, follow?: ObjectFollow) => void;
   onCursorChange: (ms: number) => void;
+  onScrubbingChange?: (scrubbing: boolean) => void;
   onPoseMove: (blockId: string, atMs: number) => void;
   onPresetMove: (blockId: string, atMs: number) => void;
   onBlocksShift?: (blockIds: string[], deltaMs: number) => void;
@@ -227,6 +228,7 @@ export const TimelineEditor = ({
   timelinePxPerSecond,
   onSelectionChange,
   onCursorChange,
+  onScrubbingChange,
   onPoseMove,
   onPresetMove,
   onBlocksShift,
@@ -287,6 +289,8 @@ export const TimelineEditor = ({
   const [dropAtMs, setDropAtMs] = useState<number | null>(null);
   const [marquee, setMarquee] = useState<MarqueeDrag | null>(null);
   const [snapIndicatorMs, setSnapIndicatorMs] = useState<number | null>(null);
+  const endPlayheadDrag = useRef<(() => void) | null>(null);
+  useLayoutEffect(() => () => endPlayheadDrag.current?.(), [sequence.id]);
   // 拖动时按住 Alt 不吸附：捕获阶段先记下，块自己的拖动处理再读到
   const altHeldRef = useRef(false);
   const occupiedEndMs = resolved.totalMs;
@@ -623,31 +627,45 @@ export const TimelineEditor = ({
    * 拖游标：指针出了左右边时游标停在边上，视图贴边滚、游标跟着走。
    * frame 是按下处的横向范围（标尺用自己的，轨道里的游标用时间区的）
    */
-  const startPlayheadDrag = (startClientX: number, frame: DragFrame | null) => {
-    let lastClientX = startClientX;
+  const startPlayheadDrag = (event: React.PointerEvent<Element>, frame: DragFrame | null) => {
+    if (endPlayheadDrag.current) return;
+    const { pointerId } = event;
+    let lastClientX = event.clientX;
     const update = () => {
       const current = frame ?? scrollFrame();
       if (current) onCursorChange(snapCursor(frameMs(current, lastClientX, true)));
     };
     const handleMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
       lastClientX = moveEvent.clientX;
       update();
     };
-    const handleUp = () => {
-      window.removeEventListener("pointermove", handleMove);
-      window.removeEventListener("pointerup", handleUp);
-      edgeScroll.end();
-    };
-    window.addEventListener("pointermove", handleMove);
-    window.addEventListener("pointerup", handleUp);
     const edgeScroll = beginEdgeScroll(update);
+    const end = () => {
+      endPlayheadDrag.current = null;
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleEnd);
+      window.removeEventListener("pointercancel", handleEnd);
+      window.removeEventListener("blur", end);
+      edgeScroll.end();
+      onScrubbingChange?.(false);
+    };
+    const handleEnd = (upEvent: PointerEvent) => {
+      if (upEvent.pointerId === pointerId) end();
+    };
+    endPlayheadDrag.current = end;
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleEnd);
+    window.addEventListener("pointercancel", handleEnd);
+    window.addEventListener("blur", end);
+    onScrubbingChange?.(true);
   };
 
   const handlePlayheadDrag = (event: React.PointerEvent<Element>) => {
     if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
-    startPlayheadDrag(event.clientX, null);
+    startPlayheadDrag(event, null);
   };
 
   /** 标尺内层的横向范围：left 处是视图起点 */
@@ -693,7 +711,7 @@ export const TimelineEditor = ({
       return;
     }
     onCursorChange(snapCursor(frameMs(frame, event.clientX)));
-    startPlayheadDrag(event.clientX, frame);
+    startPlayheadDrag(event, frame);
   };
 
   // 有位姿的时刻：标尺上的小菱形，整列都选中了的高亮
@@ -744,11 +762,14 @@ export const TimelineEditor = ({
       const atMs = applySnap(proposedMs, blockSnapTargets(new Set(dragIds)));
       onBlocksShift(dragIds, atMs - column.atMs);
     };
-    const handleUp = () => {
+    const handleUp = (event: Event) => {
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
+      window.removeEventListener("pointercancel", handleUp);
+      window.removeEventListener("blur", handleUp);
       edgeScroll.end();
       if (dragIds === null) {
+        if (event.type !== "pointerup") return;
         handleColumnSelect(column.atMs, additive);
         if (!additive) onCursorChange(column.atMs);
         return;
@@ -757,6 +778,8 @@ export const TimelineEditor = ({
     };
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
+    window.addEventListener("pointercancel", handleUp);
+    window.addEventListener("blur", handleUp);
     const edgeScroll = beginEdgeScroll(() => handleMove({ clientX: lastClientX }));
   };
 
@@ -929,6 +952,8 @@ export const TimelineEditor = ({
     const handleUp = () => {
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
+      window.removeEventListener("pointercancel", handleUp);
+      window.removeEventListener("blur", handleUp);
       edgeScroll.end();
       setScaleDrag(null);
       setSnapIndicatorMs(null);
@@ -936,6 +961,8 @@ export const TimelineEditor = ({
     };
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
+    window.addEventListener("pointercancel", handleUp);
+    window.addEventListener("blur", handleUp);
     const edgeScroll = beginEdgeScroll(() => handleMove({ clientX: lastClientX }));
   };
 

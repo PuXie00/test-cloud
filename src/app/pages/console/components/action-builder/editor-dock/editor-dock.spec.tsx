@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
 import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
+import { getViz3DEngine } from "@/app/viz3d";
 import type { TimelineEditorProps } from "../timeline/timeline-editor";
 import { EditorDock } from "./editor-dock";
 
@@ -510,11 +511,44 @@ describe("editor dock sequence editor", () => {
     expect(handleLoopChange).toHaveBeenCalledWith(false);
   });
 
-  it("disables 播放 when the sequence has no duration", () => {
+  it("disables 播放 and the 视图 menu's 导出视频 when the sequence has no duration", async () => {
     render(<EditorDock />);
     expect((screen.getByRole("button", { name: "播放" }) as HTMLButtonElement).disabled).toBe(
       true,
     );
+    expect(screen.queryByRole("button", { name: "导出视频" })).toBeNull();
+    fireEvent.pointerDown(screen.getByRole("button", { name: "视图" }), { button: 0, ctrlKey: false });
+    expect((await screen.findByRole("menuitem", { name: "导出视频" })).getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("keeps the video dialog open after the view menu closes and can retry or cancel capture", async () => {
+    const playable: ActionSequenceConfig = { ...sequence, blocks: [{
+      kind: "pose", id: "end", objectId: 7, atMs: 2000, pose: { v1: 100 },
+    }] };
+    mockBuilder({ sequence: playable });
+    let signal: AbortSignal | undefined;
+    const record = vi.spyOn(getViz3DEngine(), "recordEditorPreview")
+      .mockRejectedValueOnce(new Error("导出中断"))
+      .mockImplementationOnce((_ms, _frame, abort) => new Promise((_resolve, reject) => {
+        signal = abort;
+        abort.addEventListener("abort", () => reject(abort.reason), { once: true });
+      }));
+    try {
+      render(<EditorDock />);
+      fireEvent.pointerDown(screen.getByRole("button", { name: "视图" }), { button: 0, ctrlKey: false });
+      fireEvent.click(await screen.findByRole("menuitem", { name: "导出视频" }));
+      expect(await screen.findByText("导出中断")).toBeTruthy();
+      expect(screen.queryByRole("menu")).toBeNull();
+      expect(screen.getByRole("dialog", { name: "动作序列预览视频" })).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "重试" }));
+      expect(record).toHaveBeenCalledTimes(2);
+      fireEvent.click(screen.getByRole("button", { name: "取消生成" }));
+      expect(signal?.aborted).toBe(true);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(document.body.style.pointerEvents).not.toBe("none");
+    } finally {
+      record.mockRestore();
+    }
   });
 
   it("disables 播放 when the sequence cannot resolve", () => {
@@ -539,6 +573,19 @@ describe("editor dock sequence editor", () => {
     expect((screen.getByRole("button", { name: "播放" }) as HTMLButtonElement).disabled).toBe(
       true,
     );
+  });
+
+  it("pauses editor playback when the collision report locates a contact", () => {
+    const playable: ActionSequenceConfig = { ...sequence, blocks: [{
+      kind: "pose", id: "end", objectId: 7, atMs: 2000, pose: { v1: 100 },
+    }] };
+    mockBuilder({ sequence: playable });
+    const { rerender } = render(<EditorDock />);
+    fireEvent.click(screen.getByRole("button", { name: "播放" }));
+    expect(capturedEditor.current?.isPlaying).toBe(true);
+    mockBuilder({ sequence: playable, inspectingCollision: true, cursorRevealRequestId: 1 });
+    rerender(<EditorDock />);
+    expect(capturedEditor.current?.isPlaying).toBe(false);
   });
 
   it("toggles playback from the toolbar and Space, but not while typing", () => {
@@ -785,6 +832,7 @@ describe("curve view in the dock", () => {
 
     await openViewMenu();
     // 序列只动了虚轴 1
+    fireEvent.click(screen.getByRole("menuitem", { name: "曲线设置" }));
     expect(screen.getByRole("menuitemradio", { name: /V2/ }).getAttribute("aria-disabled")).toBe("true");
     expect(screen.getByRole("menuitemradio", { name: /V3/ }).getAttribute("aria-disabled")).toBe("true");
     fireEvent.click(screen.getByRole("menuitemradio", { name: "位置" }));
@@ -805,6 +853,7 @@ describe("curve view in the dock", () => {
     render(<EditorDock />);
     expect(capturedEditor.current?.curveAxis).toBe("v2");
     await openViewMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "曲线设置" }));
     expect(screen.getByRole("menuitemradio", { name: "V2" }).getAttribute("aria-checked")).toBe("true");
   });
 });

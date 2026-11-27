@@ -1,5 +1,5 @@
 import { useContext } from "react";
-import { SequencePreviewContext } from "./sequence-preview-context";
+import { SequencePreviewContext, SequencePreviewPlayingContext } from "./sequence-preview-context";
 
 export type {
   SequencePreviewMultiplier,
@@ -13,3 +13,5 @@ export const useSequencePreview = () => {
   if (!ctx) throw new Error("useSequencePreview must be used inside SequencePreviewProvider");
   return ctx;
 };
+
+export const useSequencePreviewPlaying = (): boolean => useContext(SequencePreviewPlayingContext);

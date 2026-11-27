@@ -3,81 +3,96 @@ import type { RecordingOptions } from "../types";
 const DEFAULT_FPS = 30;
 const DEFAULT_MIME = "video/webm";
 
-export const isRecordingSupported = (): boolean => {
-  if (typeof MediaRecorder === "undefined") {
-    return false;
-  }
-  try {
-    return MediaRecorder.isTypeSupported(DEFAULT_MIME);
-  } catch {
-    return false;
-  }
+export const isRecordingSupported = (mimeType = DEFAULT_MIME): boolean =>
+  typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(mimeType);
+
+const stopTracks = (stream: MediaStream) => {
+  for (const track of stream.getTracks()) track.stop();
 };
 
 export class VideoRecorder {
   private recorder: MediaRecorder | null = null;
-  private chunks: BlobPart[] = [];
-  private mimeType = DEFAULT_MIME;
+  private pendingStop: { resolve: (blob: Blob) => void; reject: (error: Error) => void } | null = null;
 
-  start(canvas: HTMLCanvasElement, opts: RecordingOptions = {}): void {
-    if (!isRecordingSupported()) {
-      throw new Error("MediaRecorder not supported");
+  constructor(private readonly onError?: (error: Error) => void) {}
+
+  start(canvas: HTMLCanvasElement, opts: RecordingOptions = {}, onStarted?: () => void): void {
+    if (this.recorder) throw new Error("上一段录制尚未结束");
+    const mimeType = opts.mimeType ?? DEFAULT_MIME;
+    if (!isRecordingSupported(mimeType) || typeof canvas.captureStream !== "function") {
+      throw new Error("当前环境不支持视窗录制");
     }
-
-    const fps = opts.fps ?? DEFAULT_FPS;
-    this.mimeType = opts.mimeType ?? DEFAULT_MIME;
-    const stream = canvas.captureStream(fps);
-
-    this.chunks = [];
-    this.recorder = new MediaRecorder(stream, {
-      mimeType: this.mimeType,
-      videoBitsPerSecond: opts.videoBitsPerSecond,
-    });
-
-    this.recorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        this.chunks.push(event.data);
-      }
-    };
-
-    this.recorder.start();
+    const stream = canvas.captureStream(opts.fps ?? DEFAULT_FPS);
+    try {
+      const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: opts.videoBitsPerSecond });
+      const chunks: Blob[] = [];
+      recorder.onstart = onStarted ?? null;
+      recorder.ondataavailable = ({ data }) => {
+        if (data.size > 0) chunks.push(data);
+      };
+      recorder.onerror = () => this.fail(new Error("视频编码失败，请重新录制"));
+      recorder.onstop = () => {
+        if (!this.pendingStop) {
+          this.fail(new Error("视窗录制意外中断"));
+          return;
+        }
+        if (!chunks.length) {
+          this.fail(new Error("未录到视频帧，请重新录制"));
+          return;
+        }
+        const { resolve } = this.pendingStop;
+        this.release();
+        resolve(new Blob(chunks, { type: recorder.mimeType || mimeType }));
+      };
+      // 一次交付完整文件，让 Chromium 在结束时写入 WebM 时长和定位索引。
+      recorder.start();
+      this.recorder = recorder;
+    } catch (error) {
+      stopTracks(stream);
+      throw error;
+    }
   }
 
   async stop(): Promise<Blob> {
     const recorder = this.recorder;
-    if (!recorder || recorder.state === "inactive") {
-      throw new Error("VideoRecorder is not active");
+    if (!recorder || recorder.state === "inactive" || this.pendingStop) {
+      throw new Error("当前没有可停止的录制");
     }
-
     return new Promise<Blob>((resolve, reject) => {
-      recorder.onstop = () => {
-        const blob = new Blob(this.chunks, { type: this.mimeType });
-        this.recorder = null;
-        this.chunks = [];
-        resolve(blob);
-      };
-      recorder.onerror = () => {
-        reject(new Error("MediaRecorder failed"));
-      };
-      recorder.stop();
-      recorder.stream.getTracks().forEach((track) => track.stop());
+      this.pendingStop = { resolve, reject };
+      try {
+        recorder.stop();
+      } catch (error) {
+        this.fail(error instanceof Error ? error : new Error(String(error)));
+      }
     });
   }
 
   isActive(): boolean {
-    return this.recorder != null && this.recorder.state === "recording";
+    return this.recorder?.state === "recording";
   }
 
   dispose(): void {
-    if (this.recorder && this.recorder.state !== "inactive") {
-      this.recorder.stream.getTracks().forEach((track) => track.stop());
-      try {
-        this.recorder.stop();
-      } catch {
-        // ignore stop errors during dispose
-      }
-    }
+    this.pendingStop?.reject(new Error("视窗已关闭，录制已中断"));
+    this.release();
+  }
+
+  private fail(error: Error): void {
+    this.pendingStop?.reject(error);
+    this.release();
+    this.onError?.(error);
+  }
+
+  private release(): void {
+    const recorder = this.recorder;
     this.recorder = null;
-    this.chunks = [];
+    this.pendingStop = null;
+    if (recorder) {
+      recorder.onstart = null;
+      recorder.ondataavailable = null;
+      recorder.onstop = null;
+      recorder.onerror = null;
+      stopTracks(recorder.stream);
+    }
   }
 }

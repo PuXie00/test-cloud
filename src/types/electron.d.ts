@@ -1,3 +1,4 @@
+import type { RecordingAPI } from '../../shared/recording'
 /**
  * 渲染进程 Window API
  * 数据契约见 shared/project/types
@@ -119,7 +120,7 @@ export type ProjectAPI = {
       sourcePath?: string
     }) => Promise<ProjectResult<ProjectModelImportResult>>
     delete: (params: { modelId: string }) => Promise<ProjectResult<null>>
-    read: (params: { modelId: string }) => Promise<ProjectResult<ProjectModelData>>
+    read: (params: { modelId: string; includeAssets?: boolean }) => Promise<ProjectResult<ProjectModelData>>
   }
 }
 
@@ -294,6 +295,7 @@ declare global {
     kinematicsApi: KinematicsAPI
     configAPI: ConfigAPI
     toolAPI: ToolAPI
+    recordingAPI?: RecordingAPI
     /** 测试 / 纯浏览器环境下不存在 */
     aiBridgeApi?: AiBridgeAPI
     /** 本机用户与权限；测试 / 纯浏览器环境下不存在 */
