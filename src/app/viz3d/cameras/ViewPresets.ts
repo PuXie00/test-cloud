@@ -4,18 +4,15 @@ export type ViewPose = { position: Vec3; target: Vec3; up: Vec3 };
 
 export const DEFAULT_VIEW_DISTANCE = 14;
 
-/** 顶/前/后/侧/左为正交视角；透视与等轴测保持透视 */
+/** 六个轴向预设使用正交投影 */
 export const isOrthographicViewPreset = (preset: ViewPreset): boolean =>
-  preset === "top" ||
-  preset === "front" ||
-  preset === "back" ||
-  preset === "side" ||
-  preset === "left";
+  preset !== "persp" && preset !== "iso";
 
 const ORIGIN: Vec3 = { x: 0, y: 0, z: 0 };
 
 const DIRECTIONS: Record<ViewPreset, Vec3> = {
   top: { x: 0, y: 1, z: 0 },
+  bottom: { x: 0, y: -1, z: 0 },
   front: { x: 0, y: 0, z: 1 },
   back: { x: 0, y: 0, z: -1 },
   side: { x: 1, y: 0, z: 0 },
@@ -26,6 +23,7 @@ const DIRECTIONS: Record<ViewPreset, Vec3> = {
 
 const UP_VECTORS: Record<ViewPreset, Vec3> = {
   top: { x: 0, y: 0, z: -1 },
+  bottom: { x: 0, y: 0, z: 1 },
   front: { x: 0, y: 1, z: 0 },
   back: { x: 0, y: 1, z: 0 },
   side: { x: 0, y: 1, z: 0 },

@@ -50,6 +50,18 @@ describe("normalizeSavedView 多格视口", () => {
 });
 
 describe("工程文件结构校验：view.cells / layout / split", () => {
+  it("保留主格和分屏格的底视图", () => {
+    const document = createEmptyDocument({ id: "p1", name: "测试", author: "admin" });
+    const view = {
+      ...document.view,
+      preset: "bottom",
+      cells: { dualRight: { ...camera, preset: "bottom" } },
+      layout: "dual",
+    };
+    expect(() => assertProjectDocumentStructure({ ...document, view })).not.toThrow();
+    expect(normalizeSavedView(view)).toEqual(view);
+  });
+
   it("可缺省，填了要合法", () => {
     const document = createEmptyDocument({ id: "p1", name: "测试", author: "admin" });
     expect(() => assertProjectDocumentStructure(document)).not.toThrow();

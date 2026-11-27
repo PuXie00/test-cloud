@@ -15,6 +15,7 @@ import type {
   AlignEdge,
   BoundingBoxKind,
   CameraPose,
+  CellOrientation,
   Disposable,
   DriveUnitLabelFields,
   LoadModelOptions,
@@ -557,6 +558,10 @@ export class Viz3DEngine implements Disposable {
     return cellId ? this.viewportManager.getCell(cellId).getPose() : this.viewportManager.getPose();
   }
 
+  observeCellOrientation(id: ViewportCellId, listener: (orientation: CellOrientation) => void): () => void {
+    return this.viewportManager?.getCell(id).observeOrientation(listener) ?? (() => {});
+  }
+
   /** 屏幕标签和调试徽章所在的格（主透视格；最大化别的格时为那一格） */
   getLabelCellId(): ViewportCellId {
     return this.viewportManager?.getLabelCellId() ?? "main";
@@ -606,9 +611,9 @@ export class Viz3DEngine implements Disposable {
     this.viewportManager?.toggleMaximize(id);
   }
 
-  setCellView(id: ViewportCellId, preset: ViewPreset): void {
+  setCellView(id: ViewportCellId, preset: ViewPreset, preserveFraming = false): void {
     if (!this.viewportManager) return;
-    this.viewportManager.setCellView(id, preset);
+    this.viewportManager.setCellView(id, preset, preserveFraming);
     if (id === this.viewportManager.getActiveCellId()) {
       this.events.emit("viewChange", preset);
     }

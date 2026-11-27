@@ -12,6 +12,7 @@ import {
   type ControlTypeCode,
 } from "./control-type-code";
 import { PROJECT_SCHEMA_VERSION } from "./project-document-types";
+import { VIEW_PRESETS } from "@/app/viz3d/types";
 import { motionAxisIdForKind } from "./virtual-axis-mapping";
 import {
   controlTypeHasMultiLevelParams,
@@ -818,7 +819,6 @@ const validateRules = (value: unknown, path: string, a: StructuralAssertions): v
   });
 };
 
-const VIEW_PRESETS = ["top", "front", "back", "side", "left", "persp", "iso"] as const;
 const GRID_SIZES = [10, 20, 40, 80] as const;
 
 const VIEWPORT_LAYOUTS = ["single", "dual", "quad"] as const;

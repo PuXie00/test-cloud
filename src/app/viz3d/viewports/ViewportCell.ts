@@ -2,7 +2,7 @@ import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { Camera } from "@babylonjs/core/Cameras/camera";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Scene } from "@babylonjs/core/scene";
-import type { CameraPose, SavedCameraView, Vec3, ViewPreset, ViewportCellId } from "../types";
+import type { CameraPose, CellOrientation, SavedCameraView, Vec3, ViewPreset, ViewportCellId } from "../types";
 import {
   invertOrthoContainHalf,
   perspectiveContainScale,
@@ -25,11 +25,22 @@ import { CameraFlyTo, DEFAULT_FOCUS_DURATION_MS, type FocusFrame } from "../came
 const ORIGIN = { x: 0, y: 0, z: 0 };
 const DEFAULT_ORTHO_HALF = DEFAULT_VIEW_DISTANCE * 0.5;
 const RADIUS_EPS = 1e-4;
+const POLE_EPS = 1e-6;
 
-const applyPoseToCamera = (camera: ArcRotateCamera, preset: ViewPreset): void => {
-  const pose = resolveViewPose(preset);
-  camera.setPosition(new Vector3(pose.position.x, pose.position.y, pose.position.z));
-  camera.setTarget(new Vector3(pose.target.x, pose.target.y, pose.target.z));
+const applyPoseToCamera = (
+  camera: ArcRotateCamera,
+  preset: ViewPreset,
+  target: Vec3 = ORIGIN,
+  distance = DEFAULT_VIEW_DISTANCE,
+): void => {
+  const { position } = resolveViewPose(preset, distance);
+  camera.setTarget(new Vector3(target.x, target.y, target.z));
+  camera.setPosition(new Vector3(target.x + position.x, target.y + position.y, target.z + position.z));
+  if (preset === "top" || preset === "bottom") {
+    // 极点处视线与 Y 轴共线；留极小夹角使顶视和底视的屏幕上方始终稳定。
+    camera.alpha = Math.PI / 2;
+    camera.beta = preset === "top" ? POLE_EPS : Math.PI - POLE_EPS;
+  }
 };
 
 const syncOrthoFrustum = (camera: ArcRotateCamera, halfHeight: number, aspect: number): void => {
@@ -118,6 +129,28 @@ export class ViewportCell {
     return this.preset;
   }
 
+  observeOrientation(listener: (orientation: CellOrientation) => void): () => void {
+    const camera = this.camera;
+    let lastAlpha: number;
+    let lastBeta: number;
+    const publish = () => {
+      // Pan and zoom also fire onViewMatrixChanged, but do not rotate the cube.
+      if (camera.alpha === lastAlpha && camera.beta === lastBeta) return;
+      lastAlpha = camera.alpha;
+      lastBeta = camera.beta;
+      const m = camera.getViewMatrix().m;
+      const sign = camera.getScene().useRightHandedSystem ? 1 : -1;
+      listener({
+        right: { x: m[0], y: m[4], z: m[8] },
+        up: { x: m[1], y: m[5], z: m[9] },
+        towardCamera: { x: sign * m[2], y: sign * m[6], z: sign * m[10] },
+      });
+    };
+    publish();
+    const observer = camera.onViewMatrixChangedObservable.add(publish);
+    return () => camera.onViewMatrixChangedObservable.remove(observer);
+  }
+
   isOrthographic(): boolean {
     return this.camera.mode === Camera.ORTHOGRAPHIC_CAMERA;
   }
@@ -152,15 +185,21 @@ export class ViewportCell {
     applyCameraFollow(this.camera, this.controls, center);
   }
 
-  setView(preset: ViewPreset): void {
+  setView(preset: ViewPreset, preserveFraming = false): void {
+    this.flyTo.cancel();
     this.captureZoomFromCamera();
     this.preset = preset;
     // 先解锁角度：正交锁住的 alpha / beta 会把新视角夹回旧视角（顶 → 前切不过去）
     this.controls.setRotateEnabled(true);
-    applyPoseToCamera(this.camera, preset);
-    this.controls.setTarget(ORIGIN);
-    this.zoomRadius = Math.max(0.1, this.camera.radius);
-    this.orthoHalfHeight = Math.max(0.5, this.zoomRadius * 0.5);
+    if (!preserveFraming) {
+      this.zoomRadius = DEFAULT_VIEW_DISTANCE;
+      this.orthoHalfHeight = DEFAULT_ORTHO_HALF;
+    } else if (!this.isOrthographic() && isOrthographicViewPreset(preset)) {
+      // Match the perspective image scale at the orbit target when snapping to a face.
+      this.orthoHalfHeight = Math.max(0.5, this.zoomRadius * Math.tan(this.camera.fov / 2));
+    }
+    const target = preserveFraming ? this.controls.getTarget() : ORIGIN;
+    applyPoseToCamera(this.camera, preset, target, this.zoomRadius);
     if (isOrthographicViewPreset(preset)) {
       this.applyOrthoForAspect(this.resolveAspect());
     } else {
