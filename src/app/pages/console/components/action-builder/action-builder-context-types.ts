@@ -9,6 +9,7 @@ import type {
 import type { SequenceIssue } from "@/app/project/action-sequence/validate-sequence";
 import type { VirtualAxisId, VirtualAxisValues } from "@/app/project/project-document-types";
 import type { CapturedPoseRequest } from "@/app/project/capture-pose-sequence";
+import type { CollisionPreview, CollisionSource } from "./collision-preview";
 import type { ContextSelection } from "./context-bar/selection-context-bar";
 import type { PhaseInputMode } from "./motion-profile/phase-rates";
 import type { TransitionTiming } from "./shape-transition";
@@ -52,6 +53,12 @@ export type ActionBuilderContextValue = {
   selectedBlockId: string | null;
   selectedObjectIds: number[];
   cursorMs: number;
+  collisionSource: CollisionSource | null;
+  collisionPreview: CollisionPreview | null;
+  collisionObjectIds: readonly number[];
+  inspectingCollision: boolean;
+  setCollisionPreview: (preview: CollisionPreview | null) => void;
+  handleLocateCollision: (ms: number) => void;
   /** 从时间轴以外（3D 里）跳了游标：每次加一，时间轴把游标移进视野 */
   cursorRevealRequestId: number;
   activeRightTab: ActionRightTab;
@@ -104,6 +111,7 @@ export type ActionBuilderContextValue = {
   /** 时间轴在播放（编辑坞报上来）：联机时影子不跟着游标走 */
   timelinePlaying: boolean;
   handleTimelinePlayingChange: (playing: boolean) => void;
+  handleTimelineScrubbingChange: (scrubbing: boolean) => void;
   handleInsertTimelineBlock: (block: TimelineBlock) => boolean;
   handleReplaceTimelineBlock: (block: TimelineBlock) => boolean;
   handleApplyPoseAxisWrite: (blockIds: readonly string[], write: PoseAxisWrite) => boolean;

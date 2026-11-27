@@ -134,6 +134,21 @@ describe("one drag = one undo step, through the real timeline", () => {
     handles.current = null;
   });
 
+  it.each(["pointerup", "pointercancel", "blur"])("pauses validation until a held keyframe receives %s", async (end) => {
+    renderHarness();
+    await openWithSequence();
+    insert(pose("a", 7, 1000));
+    fireEvent.pointerDown(screen.getByRole("button", { name: /位姿 a/ }), { clientX: 100, button: 0 });
+    fireEvent.pointerMove(window, { clientX: 150 });
+    fireEvent.pointerMove(window, { clientX: 150 });
+    expect(builder().collisionSource?.dragging).toBe(true);
+    if (end === "pointercancel") fireEvent.pointerCancel(window);
+    else if (end === "blur") fireEvent.blur(window);
+    else fireEvent.pointerUp(window);
+    fireEvent.pointerMove(window, { clientX: 170 });
+    expect(builder().collisionSource?.dragging).toBe(false);
+  });
+
   it("dragging a single pose", async () => {
     renderHarness();
     await openWithSequence();

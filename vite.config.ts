@@ -37,6 +37,7 @@ export default defineConfig(({ command, mode }) => {
         '@shared': path.join(__dirname, 'shared'),
       },
     },
+    worker: { format: 'es' },
     esbuild: esbuildDrop,
     define: {
       __YZ_PROJECT_SCHEMA_VERSION__: projectSchemaVersion,

@@ -542,6 +542,19 @@ describe("editor dock sequence editor", () => {
     );
   });
 
+  it("pauses editor playback when the 3D collision report locates a contact", () => {
+    const playable: ActionSequenceConfig = { ...sequence, blocks: [{
+      kind: "pose", id: "end", objectId: 7, atMs: 2000, pose: { v1: 100 },
+    }] };
+    mockBuilder({ sequence: playable });
+    const { rerender } = render(<EditorDock />);
+    fireEvent.click(screen.getByRole("button", { name: "播放" }));
+    expect(capturedEditor.current?.isPlaying).toBe(true);
+    mockBuilder({ sequence: playable, inspectingCollision: true, cursorRevealRequestId: 1 });
+    rerender(<EditorDock />);
+    expect(capturedEditor.current?.isPlaying).toBe(false);
+  });
+
   it("toggles playback from the toolbar and Space, but not while typing", () => {
     const playable: ActionSequenceConfig = {
       id: 1,

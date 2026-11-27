@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { ENABLED_VIRTUAL_AXES_BY_CONTROL_TYPE } from "@/app/project/configuration-rules";
 import { resolveActionSequence } from "@/app/project/action-sequence/resolve-sequence";
 import type { ModelPose } from "@/app/project/action-sequence/types";
+import { collisionPreviewPoses } from "../components/action-builder/collision-preview";
 import { useActionBuilder } from "../components/action-builder/use-action-builder";
 import { useControlledObjects } from "../hooks/use-controlled-objects";
 import { useProjectStore } from "../hooks/use-project-store";
@@ -9,7 +10,7 @@ import { mergeHoldPoses, pinLiveAxes, resolveLivePoses } from "./resolve-live-po
 import { resolvePreviewPoses } from "./resolve-preview-poses";
 
 export const useActionPreviewPoses = (): Map<number, ModelPose> => {
-  const { dockMode, sequence, cursorMs, liveMode } = useActionBuilder();
+  const { dockMode, sequence, cursorMs, liveMode, collisionPreview, collisionObjectIds, inspectingCollision } = useActionBuilder();
   const { snapshots } = useControlledObjects();
   const { objects } = useProjectStore();
   // 「当前位置」开着（不管在哪个页签）
@@ -51,10 +52,19 @@ export const useActionPreviewPoses = (): Map<number, ModelPose> => {
     }
   }, [dockMode, sequence]);
 
-  const sequencePoses = useMemo(
-    () => pinLiveAxes(previewPoses, uncontrolledByObject, livePoses),
-    [previewPoses, uncontrolledByObject, livePoses],
-  );
+  const inspectionBase = collisionPreview && (inspectingCollision || collisionObjectIds.length > 0)
+    ? collisionPreview.basePoses : null;
+  const sequencePoses = useMemo(() => {
+    if (inspectionBase) return collisionPreviewPoses(previewPoses, uncontrolledByObject, inspectionBase);
+    const pinned = pinLiveAxes(previewPoses, uncontrolledByObject, livePoses);
+    if (!sequence || !collisionPreview) return pinned;
+    // 离开碰撞区间后，还原未编入序列的物体本次实时姿态。
+    const restored = new Map(pinned);
+    for (const [id, pose] of livePoses) {
+      if (!restored.has(id)) restored.set(id, pose);
+    }
+    return restored;
+  }, [previewPoses, uncontrolledByObject, livePoses, inspectionBase, sequence, collisionPreview]);
 
   return useMemo(
     () => mergeHoldPoses(sequencePoses, livePoses, showLivePose),

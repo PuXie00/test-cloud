@@ -120,7 +120,7 @@ export type ProjectAPI = {
       sourcePath?: string
     }) => Promise<ProjectResult<ProjectModelImportResult>>
     delete: (params: { modelId: string }) => Promise<ProjectResult<null>>
-    read: (params: { modelId: string }) => Promise<ProjectResult<ProjectModelData>>
+    read: (params: { modelId: string; includeAssets?: boolean }) => Promise<ProjectResult<ProjectModelData>>
   }
 }
 

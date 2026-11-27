@@ -6,7 +6,7 @@ import {
 } from "@/app/project/action-sequence/resolve-sequence";
 import type { ModelPose } from "@/app/project/action-sequence/types";
 import { invalidTimelineTargets } from "@/app/project/action-sequence/validate-sequence";
-import type { MotionPathMode, MotionPathPickEvent } from "@/app/viz3d/pose-handles/motion-path-types";
+import type { MotionPathEntry, MotionPathMode, MotionPathPickEvent } from "@/app/viz3d/pose-handles/motion-path-types";
 import {
   buildMotionPathEntries,
   motionPathObjectIds,
@@ -86,7 +86,7 @@ export const Viz3DMotionPathSync = () => {
     }
   }, [resolved, objectIds]);
 
-  const entries = useMemo(() => {
+  const trajectoryEntries = useMemo(() => {
     if (!resolved || !samples) return [];
     // 轨迹只是辅助显示：算出错就不画，不能连累整个页面
     try {
@@ -114,6 +114,21 @@ export const Viz3DMotionPathSync = () => {
       return [];
     }
   }, [resolved, samples, cursorMs, objectIds, selectedObjectIds, selectedBlockIds, invalid, shown, engine]);
+
+  const entries = useMemo(() => {
+    const contacts = builder.collisionObjectIds;
+    if (activeNav !== "sequences" || programPreviewId !== null || !contacts?.length) return trajectoryEntries;
+    const remaining = new Map(contacts.map((id) => [engine.resolveObjectId(String(id)) ?? String(id), id]));
+    const result: MotionPathEntry[] = trajectoryEntries.map((entry) =>
+      remaining.delete(entry.objectId) ? { ...entry, issueAtCursor: true } : entry,
+    );
+    // 静态布景和只随父物体运动的子件也能高亮，即便没有自己的轨迹。
+    for (const [objectId, id] of remaining) {
+      result.push({ objectId, selected: false, issues: [], issueAtCursor: true, samples: [], keyframes: [],
+        cursor: { atMs: cursorMs, values: shown.get(id) ?? {} } });
+    }
+    return result;
+  }, [trajectoryEntries, builder.collisionObjectIds, activeNav, programPreviewId, cursorMs, shown, engine]);
 
   useEffect(() => {
     engine.setMotionPaths(entries);

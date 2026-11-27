@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, renderHook } from "@testing-library/react";
+import { act, cleanup, render, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MOTION_DEFAULTS } from "@/app/project/configuration-rules";
 import {
@@ -11,7 +11,7 @@ import type { ActionSequenceConfig } from "@/app/project/action-sequence/types";
 import type { ControlledObjectConfig, ProjectDocument } from "@/app/project/project-document-types";
 import { createEmptyDocument } from "@/app/project/project-document-empty";
 import { SequencePreviewProvider } from "./sequence-preview-provider";
-import { useSequencePreview } from "./use-sequence-preview";
+import { useSequencePreview, useSequencePreviewPlaying } from "./use-sequence-preview";
 
 const OBJECT_ID = 1;
 
@@ -156,6 +156,19 @@ afterEach(() => {
 });
 
 describe("SequencePreviewProvider", () => {
+  it("only notifies playback subscribers on play and pause, across cursor updates", () => {
+    let preview: ReturnType<typeof useSequencePreview>;
+    const states: boolean[] = [];
+    const ReadPreview = () => { preview = useSequencePreview(); return null; };
+    const ReadPlaying = () => { states.push(useSequencePreviewPlaying()); return null; };
+    render(<SequencePreviewProvider><ReadPreview /><ReadPlaying /></SequencePreviewProvider>);
+    act(() => preview.startPreview(1, { autoplay: true }));
+    act(() => preview.setCursorMs(100));
+    act(() => preview.setCursorMs(200));
+    act(() => preview.pause());
+    expect(states).toEqual([false, true, false]);
+  });
+
   it("toggle enters preview and toggling the same id exits", () => {
     const { result } = renderHook(() => useSequencePreview(), { wrapper: SequencePreviewProvider });
 

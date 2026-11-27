@@ -56,7 +56,7 @@ contextBridge.exposeInMainWorld('projectAPI', {
       ipcRenderer.invoke('project:models:import', params),
     delete: (params: { modelId: string }) =>
       ipcRenderer.invoke('project:models:delete', params),
-    read: (params: { modelId: string }) =>
+    read: (params: { modelId: string; includeAssets?: boolean }) =>
       ipcRenderer.invoke('project:models:read', params),
   },
 })

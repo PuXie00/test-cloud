@@ -1,5 +1,5 @@
 import { usePermissions } from "@/app/auth/permissions";
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { MousePointerClick } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/app/components/ui/utils";
@@ -86,6 +86,7 @@ const SequenceEditor = () => {
     liveMode,
     setLiveMode,
     handleTimelinePlayingChange,
+    handleTimelineScrubbingChange,
     handleMoveTimelineBlock,
     handleShiftTimelineBlocks,
     handleShiftTimelineBlocksEnd,
@@ -133,6 +134,7 @@ const SequenceEditor = () => {
     handleTrajectoryModeChange,
     handleLoopChange,
     sequenceIssues,
+    inspectingCollision,
   } = useActionBuilder();
   // 这条序列的动作正在运行时删不了：按下时提示，不弹确认（保存由 handleSave 提示）
   const runningActionIds = useRunningActionIds();
@@ -242,6 +244,9 @@ const SequenceEditor = () => {
   const videoCapture = useSequenceVideoCapture({
     sequence, totalMs, cursorMs, onCursorMs: handlePlaybackCursorChange, pause, liveMode, setLiveMode,
   });
+  useLayoutEffect(() => {
+    if (inspectingCollision) pause();
+  }, [inspectingCollision, cursorRevealRequestId, pause]);
   // 播放中联机的影子不跟着游标走：把播放状态报给 context
   useEffect(() => {
     handleTimelinePlayingChange?.(isPlaying || videoCapture.capturing);
@@ -590,6 +595,7 @@ const SequenceEditor = () => {
             timelinePxPerSecond={timelinePxPerSecond}
             onSelectionChange={handleTimelineSelectionChange}
             onCursorChange={handleCursorChange}
+            onScrubbingChange={handleTimelineScrubbingChange}
             onPoseMove={canEdit ? handleMoveTimelineBlock : ignoreEdit}
             onPresetMove={canEdit ? handleMoveTimelineBlock : ignoreEdit}
             onBlocksShift={canEdit ? handleShiftTimelineBlocks : undefined}
