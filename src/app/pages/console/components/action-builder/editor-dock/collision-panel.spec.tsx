@@ -5,6 +5,7 @@ import { useLayoutEffect } from "react";
 import type { CollisionReport } from "@/app/project/collision/types";
 import { Viz3DEngine } from "@/app/viz3d/engine/Viz3DEngine";
 import { ViewMenu } from "../../../3d/overlays/ViewMenu";
+import { TimelineToolbar } from "../timeline/timeline-toolbar";
 import { CollisionPanel } from "./collision-panel";
 import { CollisionMenuProvider, usePublishCollisionMenu } from "./collision-menu-context";
 
@@ -18,28 +19,43 @@ const report: CollisionReport = {
 };
 const names = new Map([[7, "升降架"], [8, "布景"]]);
 
-describe("viewport collision detection", () => {
-  it("offers the manual command for the active sequence with no ordinary-edit status", () => {
-    const open = vi.fn();
-    function ActiveSequence() {
-      const publish = usePublishCollisionMenu();
-      useLayoutEffect(() => { publish({ open, label: "" }); return () => publish(null); }, [publish]);
-      return null;
-    }
-    const tree = (inEditor: boolean) => <CollisionMenuProvider>
-      {inEditor && <ActiveSequence />}
-      <ViewMenu showMotionPaths />
+const openCollision = vi.fn();
+
+function ActiveSequence() {
+  const publish = usePublishCollisionMenu();
+  useLayoutEffect(() => {
+    publish({ open: openCollision, label: "" });
+    return () => publish(null);
+  }, [publish]);
+  return null;
+}
+
+const openMenu = (name: string) =>
+  fireEvent.keyDown(screen.getByRole("button", { name, exact: true }), { key: "ArrowDown" });
+
+describe("action editor collision detection", () => {
+  it("offers a manual check in the timeline View menu when a sequence is active", () => {
+    openCollision.mockClear();
+    const tree = (active: boolean) => <CollisionMenuProvider>
+      {active && <ActiveSequence />}
+      <TimelineToolbar viewMode="tracks" onViewModeChange={() => {}} pxPerSecond={100} canDelete={false} />
     </CollisionMenuProvider>;
     const view = render(tree(false));
-    const openMenu = () => fireEvent.keyDown(screen.getByRole("button", { name: "视图菜单" }), { key: "ArrowDown" });
-    openMenu();
+    openMenu("视图");
     expect(screen.queryByRole("menuitem", { name: "碰撞检测" })).toBeNull();
     fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
     view.rerender(tree(true));
-    openMenu();
+    openMenu("视图");
     expect(screen.queryByText(/待检测|待更新/)).toBeNull();
     fireEvent.click(screen.getByRole("menuitem", { name: "碰撞检测" }));
-    expect(open).toHaveBeenCalledOnce();
+    expect(openCollision).toHaveBeenCalledOnce();
+  });
+
+  it("keeps collision detection out of the 3D viewport View menu even on the actions page", () => {
+    render(<CollisionMenuProvider><ActiveSequence /><ViewMenu showMotionPaths /></CollisionMenuProvider>);
+    openMenu("视图菜单");
+    expect(screen.getByRole("menuitem", { name: "轨迹" })).toBeDefined();
+    expect(screen.queryByRole("menuitem", { name: "碰撞检测" })).toBeNull();
   });
 
   it("locates both objects at the first confirmed contact in a saved report", () => {

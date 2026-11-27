@@ -3,7 +3,6 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
@@ -20,7 +19,6 @@ import {
 } from "@/app/viz3d";
 import { GRID_SIZE_PRESETS, isGridSizeM } from "@/app/viz3d/helpers/grid-config";
 import { useViz3DContext } from "../Viz3DProvider";
-import { useCollisionMenu } from "../../components/action-builder/editor-dock/collision-menu-context";
 import { LAYOUT_OPTIONS } from "./viewport-cell-labels";
 
 export const MENU_CONTENT_CLASS =
@@ -132,7 +130,6 @@ export type ViewMenuProps = {
  */
 export const ViewMenu = ({ onPointerGuard, showMotionPaths = false, children }: ViewMenuProps & { children?: ReactNode }) => {
   const engine = useViz3DContext();
-  const collision = useCollisionMenu();
   const [pathMode, setPathMode] = useState<MotionPathMode>(() => engine.getMotionPathMode());
   const [layout, setLayout] = useState<ViewportLayout>(() => engine.getLayout());
   const [gridSize, setGridSize] = useState<GridSizeM>(() => engine.getGridSize());
@@ -287,12 +284,6 @@ export const ViewMenu = ({ onPointerGuard, showMotionPaths = false, children }: 
             </DropdownMenuRadioGroup>
           </ViewMenuFlyout>
         ) : null}
-        {showMotionPaths && collision && (
-          <DropdownMenuItem className={MENU_ITEM_CLASS} onSelect={collision.open} aria-haspopup="dialog">
-            碰撞检测
-            {collision.label && <span className="ml-auto pl-3 text-xs text-muted-foreground">{collision.label}</span>}
-          </DropdownMenuItem>
-        )}
         {children}
       </DropdownMenuContent>
     </DropdownMenu>

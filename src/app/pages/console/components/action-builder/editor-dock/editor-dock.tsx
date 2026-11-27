@@ -171,6 +171,7 @@ const SequenceEditor = () => {
     replaceSelection(objectIds);
   };
   const rootRef = useRef<HTMLDivElement>(null);
+  const exportVideo = useRef<(() => void) | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [fitRequestId, setFitRequestId] = useState(0);
@@ -513,10 +514,10 @@ const SequenceEditor = () => {
       tabIndex={0}
       className="flex min-h-0 min-w-0 flex-1 flex-col outline-none"
     >
+      <SequenceVideoExport key={sequence.id} ref={exportVideo} name={sequence.name} captureState={videoCapture} />
       <TimelineToolbar
-        videoExportControl={
-          <SequenceVideoExport key={`video-${sequence.id}`} name={sequence.name} canExport={canPlay} captureState={videoCapture} />
-        }
+        onExportVideo={() => exportVideo.current?.()}
+        canExportVideo={canPlay}
         readOnly={!canEdit}
         trajectoryMode={sequence.trajectoryMode}
         onTrajectoryModeChange={handleTrajectoryModeChange}

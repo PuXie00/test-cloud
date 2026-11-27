@@ -53,7 +53,7 @@ const SequenceCollisionControl = memo(function SequenceCollisionControl({ sequen
   const [opened, setOpened] = useState(false);
   const publish = usePublishCollisionMenu();
   const names = useMemo(() => new Map(setup?.controlledObjects.map((object) => [object.id, object.name])), [setup?.controlledObjects]);
-  // 普通编辑只更新命令指向的草稿，已经挂载的 3D 菜单无需跟着重渲染。
+  // 编辑时更新命令读取的草稿，避免向视图菜单重复发布同一个入口。
   const command = useRef({ status, runFull });
   useLayoutEffect(() => { command.current = { status, runFull }; }, [status, runFull]);
   const open = useCallback(() => {
