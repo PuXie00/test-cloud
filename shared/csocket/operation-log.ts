@@ -28,6 +28,8 @@ export const LOG_RESULT = { ok: 0, failed: 1, timeout: 103 } as const
 
 export type LogTimeRange = { start: number; end: number }
 
+export type LogExportResult = { canceled: boolean }
+
 export type LogRecord = {
   /** 库里的自增 id，转成字符串 */
   id: string

@@ -1,6 +1,7 @@
 import { ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { ActionDataSaveItem } from '../../shared/csocket/action-data-save'
 import { CSOCKET_CHANNELS } from '../../shared/csocket/channels'
+import type { LogExportResult } from '../../shared/csocket/operation-log'
 import type {
   CsocketConfigureContext,
   CsocketMessageEvent,
@@ -105,6 +106,7 @@ export const createCsocketApi = () => ({
 
   // 操作日志与报警记录
   logQuery: invokeSend(CSOCKET_CHANNELS.logQuery),
+  logExport: () => ipcRenderer.invoke(CSOCKET_CHANNELS.logExport) as Promise<LogExportResult>,
   logFilterOptions: invokeOptionalSend(CSOCKET_CHANNELS.logFilterOptions),
   logAlarmReview: invokeSend(CSOCKET_CHANNELS.logAlarmReview),
   logWrite: invokeSend(CSOCKET_CHANNELS.logWrite),

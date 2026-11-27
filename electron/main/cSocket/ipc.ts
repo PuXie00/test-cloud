@@ -1,7 +1,9 @@
-import { ipcMain } from 'electron'
+import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
+import path from 'node:path'
 import type { ActionDataSaveItem } from '../../../shared/csocket/action-data-save'
 import type {
   LogAlarmReviewParams,
+  LogExportResult,
   LogQueryParams,
   LogWriteParams,
 } from '../../../shared/csocket/operation-log'
@@ -11,9 +13,42 @@ import type {
   CsocketConfigureContext,
   CsocketSendOpts,
 } from '../../../shared/csocket/types'
+import { getProjectDir } from '../project/paths'
+import { getCurrentProjectName } from '../project/service'
 import type { CsocketApiService } from './api'
+import { exportProjectLog } from './operation-log-export'
 
 let registered = false
+
+async function exportCurrentProjectLog(event: IpcMainInvokeEvent): Promise<LogExportResult> {
+  const name = getCurrentProjectName()
+  if (!name) throw new Error('没有打开工程')
+  const projectDir = getProjectDir(name)
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (!win) throw new Error('找不到导出窗口')
+
+  let defaultPath = `${name}.log`
+  while (true) {
+    const selected = await dialog.showSaveDialog(win, {
+      title: '导出工程日志',
+      defaultPath,
+      filters: [{ name: '日志文件', extensions: ['log'] }],
+      properties: ['showOverwriteConfirmation'],
+    })
+    if (selected.canceled || !selected.filePath) return { canceled: true }
+
+    const exactName = path.extname(selected.filePath).toLowerCase() === '.log'
+    const destination = exactName ? selected.filePath : `${selected.filePath}.log`
+    try {
+      await exportProjectLog(projectDir, destination, exactName)
+      return { canceled: false }
+    } catch (err) {
+      // 补后缀后的文件名可能已经存在，让用户在保存框确认该文件。
+      if (exactName || (err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
+      defaultPath = destination
+    }
+  }
+}
 
 type ItemsHandler = (
   items: unknown[],
@@ -289,6 +324,7 @@ export const registerCppSocketIpc = (api: CsocketApiService): void => {
   )
 
   // 操作日志与报警记录
+  ipcMain.handle(CSOCKET_CHANNELS.logExport, exportCurrentProjectLog)
   handleItems(CSOCKET_CHANNELS.logQuery, (items, opts) =>
     api.logQuery(items as LogQueryParams[], opts),
   )

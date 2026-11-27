@@ -71,8 +71,9 @@ export const CSOCKET_CHANNELS = {
   readRuleListPlc: 'csocket:read-rule-list-plc',
   autoListReadPlc: 'csocket:auto-list-read-plc',
 
-  // 操作日志与报警记录（C++ 写入与查询）
+  // 操作日志与报警记录
   logQuery: 'csocket:log-query',
+  logExport: 'csocket:log-export',
   logFilterOptions: 'csocket:log-filter-options',
   logAlarmReview: 'csocket:log-alarm-review',
   logWrite: 'csocket:log-write',

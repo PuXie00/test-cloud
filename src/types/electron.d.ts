@@ -37,6 +37,7 @@ import type {
   LogAlarmReviewParams,
   LogFilterOptions,
   LogQueryPage,
+  LogExportResult,
   LogQueryParams,
   LogRecord,
   LogWriteParams,
@@ -198,8 +199,9 @@ export type CsocketAPI = {
   readRuleListPlc: CsocketSendFn
   autoListReadPlc: CsocketSendFn
 
-  // 操作日志与报警记录（C++ 写入与查询，均针对当前打开的工程）
+  // 操作日志与报警记录，均针对当前打开的工程
   logQuery: (items: LogQueryParams[], opts?: CsocketSendOpts) => Promise<CppAckResult<LogQueryPage>>
+  logExport: () => Promise<LogExportResult>
   logFilterOptions: (items?: unknown[], opts?: CsocketSendOpts) => Promise<CppAckResult<LogFilterOptions>>
   logAlarmReview: (
     items: LogAlarmReviewParams[],
