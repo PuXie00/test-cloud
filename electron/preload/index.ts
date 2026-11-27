@@ -24,6 +24,7 @@ import { createKinematicsApi } from './kinematics-api'
 import { createAiBridgeApi } from './ai-bridge-api'
 import { createAuthApi } from './auth-api'
 import { createHaApi } from './ha-api'
+import { RECORDING_CHANNELS, type RecordingAPI } from '../../shared/recording'
 import './loading'
 
 contextBridge.exposeInMainWorld('configAPI', {
@@ -59,6 +60,11 @@ contextBridge.exposeInMainWorld('projectAPI', {
       ipcRenderer.invoke('project:models:read', params),
   },
 })
+
+contextBridge.exposeInMainWorld('recordingAPI', {
+  saveVideo: (bytes) => ipcRenderer.invoke(RECORDING_CHANNELS.saveVideo, bytes),
+  revealVideo: (filePath) => ipcRenderer.invoke(RECORDING_CHANNELS.revealVideo, filePath),
+} satisfies RecordingAPI)
 
 contextBridge.exposeInMainWorld('toolAPI', {
   confirm: (params: unknown) => ipcRenderer.invoke('tool:confirm', params) as Promise<boolean>,

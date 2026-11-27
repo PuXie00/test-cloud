@@ -510,8 +510,9 @@ describe("editor dock sequence editor", () => {
     expect(handleLoopChange).toHaveBeenCalledWith(false);
   });
 
-  it("disables 播放 when the sequence has no duration", () => {
+  it("disables 播放 and 导出视频 when the sequence has no duration", () => {
     render(<EditorDock />);
+    expect((screen.getByRole("button", { name: "导出视频" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "播放" }) as HTMLButtonElement).disabled).toBe(
       true,
     );

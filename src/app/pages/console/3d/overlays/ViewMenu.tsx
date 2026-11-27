@@ -118,7 +118,7 @@ const ViewMenuFlyout = ({
   );
 };
 
-type ViewMenuProps = {
+export type ViewMenuProps = {
   onPointerGuard?: (event: { stopPropagation(): void }) => void;
   /** 动作页：多一项「轨迹」（选中的 / 全部 / 关） */
   showMotionPaths?: boolean;
@@ -128,7 +128,7 @@ type ViewMenuProps = {
  * 顶栏「视图」：只放整块区域的设置（分区布局、网格、标签；动作页多一项轨迹）。
  * 视角、透视 / 正交、聚焦、跟随是每格自己的，在各格左上角的格名菜单里。
  */
-export const ViewMenu = ({ onPointerGuard, showMotionPaths = false }: ViewMenuProps) => {
+export const ViewMenu = ({ onPointerGuard, showMotionPaths = false, children }: ViewMenuProps & { children?: ReactNode }) => {
   const engine = useViz3DContext();
   const [pathMode, setPathMode] = useState<MotionPathMode>(() => engine.getMotionPathMode());
   const [layout, setLayout] = useState<ViewportLayout>(() => engine.getLayout());
@@ -284,6 +284,7 @@ export const ViewMenu = ({ onPointerGuard, showMotionPaths = false }: ViewMenuPr
             </DropdownMenuRadioGroup>
           </ViewMenuFlyout>
         ) : null}
+        {children}
       </DropdownMenuContent>
     </DropdownMenu>
   );

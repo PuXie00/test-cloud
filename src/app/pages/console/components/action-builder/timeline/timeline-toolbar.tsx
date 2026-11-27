@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ElementType } from "react";
+import type { ButtonHTMLAttributes, ElementType, ReactNode } from "react";
 import {
   Magnet,
   Maximize2,
@@ -45,6 +45,7 @@ import { pxPerSecondFromZoomSlider, ZOOM_SLIDER_STEPS, zoomSliderValue } from ".
 import { formatProjectHistoryShortcutHint } from "@/app/project/project-history-shortcuts";
 
 type TimelineToolbarProps = {
+  videoExportControl?: ReactNode;
   /** 没有编辑权限：不显示删除、保存，开关只读 */
   readOnly?: boolean;
   trajectoryMode?: TrajectoryMode;
@@ -130,6 +131,7 @@ const viewMenuItemClass = "[@media(pointer:coarse)]:py-2.5";
 const keepMenuOpen = (event: Event) => event.preventDefault();
 
 export const TimelineToolbar = ({
+  videoExportControl,
   trajectoryMode,
   onTrajectoryModeChange,
   readOnly = false,
@@ -425,6 +427,7 @@ export const TimelineToolbar = ({
     ) : null}
 
     <div className="ml-auto flex items-center gap-1">
+      {videoExportControl}
       {readOnly ? (
         <span className="px-2 text-body-sm text-muted-foreground">只读</span>
       ) : (

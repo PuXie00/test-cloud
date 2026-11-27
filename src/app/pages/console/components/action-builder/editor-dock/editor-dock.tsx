@@ -45,12 +45,14 @@ import {
   previousKeyframeMs,
 } from "../timeline/timeline-keyframes";
 import { TimelineEditor } from "../timeline/timeline-editor";
+import { SequenceVideoExport } from "./sequence-video-export";
 import { TimelineToolbar } from "../timeline/timeline-toolbar";
 import { MarkerRenameDialog } from "./marker-rename-dialog";
 import { SecondsPromptDialog, type SecondsPrompt } from "./seconds-prompt-dialog";
 import { ScalePromptDialog, type ScalePrompt } from "./scale-prompt-dialog";
 import { SequenceDeleteDialog } from "./sequence-delete-dialog";
 import { sortedMarkers } from "../marker-ops";
+import { useSequenceVideoCapture } from "../timeline/use-sequence-video-capture";
 import { useTimelinePlayback } from "../timeline/use-timeline-playback";
 
 const isEditableTarget = (target: EventTarget | null): boolean => {
@@ -81,6 +83,8 @@ const SequenceEditor = () => {
     handleObjectsFollow,
     handleCursorChange,
     handlePlaybackCursorChange,
+    liveMode,
+    setLiveMode,
     handleTimelinePlayingChange,
     handleMoveTimelineBlock,
     handleShiftTimelineBlocks,
@@ -229,16 +233,19 @@ const SequenceEditor = () => {
     handleSelectionChange({ kind: "markers", markerIds: [marker.id] });
     jumpTo(marker.atMs);
   };
-  const { isPlaying, toggle: handlePlayToggle } = useTimelinePlayback({
+  const { isPlaying, pause, toggle: handlePlayToggle } = useTimelinePlayback({
     cursorMs,
     totalMs,
     onCursorMs: handlePlaybackCursorChange ?? (() => {}),
     pauseKey: sequence,
   });
+  const videoCapture = useSequenceVideoCapture({
+    sequence, totalMs, cursorMs, onCursorMs: handlePlaybackCursorChange, pause, liveMode, setLiveMode,
+  });
   // 播放中联机的影子不跟着游标走：把播放状态报给 context
   useEffect(() => {
-    handleTimelinePlayingChange?.(isPlaying);
-  }, [isPlaying, handleTimelinePlayingChange]);
+    handleTimelinePlayingChange?.(isPlaying || videoCapture.capturing);
+  }, [isPlaying, videoCapture.capturing, handleTimelinePlayingChange]);
   useEffect(() => () => handleTimelinePlayingChange?.(false), [handleTimelinePlayingChange]);
 
   // 选中位姿（同一时刻）时游标跳过去，3D 显示的就是正在改的那一帧；改了位姿的时刻也跟着走。
@@ -502,6 +509,9 @@ const SequenceEditor = () => {
       className="flex min-h-0 min-w-0 flex-1 flex-col outline-none"
     >
       <TimelineToolbar
+        videoExportControl={
+          <SequenceVideoExport key={`video-${sequence.id}`} name={sequence.name} canExport={canPlay} captureState={videoCapture} />
+        }
         readOnly={!canEdit}
         trajectoryMode={sequence.trajectoryMode}
         onTrajectoryModeChange={handleTrajectoryModeChange}
