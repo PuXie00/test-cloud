@@ -9,7 +9,8 @@ import { MonitorEmptyGuide } from "./monitor-empty-guide";
 import { MonitorGridToolbar } from "./monitor-grid-toolbar";
 import { MotorMonitorTable } from "./motor-monitor-table";
 import { ObjectMonitorCard } from "./object-monitor-card";
-import { ObjectMonitorTable } from "./object-monitor-table";
+import { ObjectMonitorTable, sortMonitorObjects } from "./object-monitor-table";
+import { useMonitorSort } from "./monitor-table-sort";
 import type { ControlledObjectStatus } from "./monitor-data";
 import { isMonitoredControlType, isMonitorEmpty, isMonitorMotorsEmpty } from "./monitor-utils";
 
@@ -25,6 +26,8 @@ export const MonitorGrid = ({ className }: MonitorGridProps) => {
   const [search, setSearch] = useState("");
   const [objectStatusFilter, setObjectStatusFilter] = useState<ControlledObjectStatus | "all">("all");
   const [motorStatusFilter, setMotorStatusFilter] = useState<string>("all");
+  const [objectSort, onObjectSort] = useMonitorSort();
+  const [motorSort, onMotorSort] = useMonitorSort();
 
   // 占位物体不进监控
   const monitoredIds = useMemo(
@@ -65,9 +68,12 @@ export const MonitorGrid = ({ className }: MonitorGridProps) => {
     [motorSnapshots, search, motorStatusFilter],
   );
 
+  const visibleObjects = useMemo(() =>
+    entity === "object" && objectLayout === "table" ? sortMonitorObjects(filteredObjects, objectSort) : filteredObjects,
+  [entity, objectLayout, filteredObjects, objectSort]);
   const orderedIds = useMemo(
-    () => filteredObjects.map((snapshot) => snapshot.descriptor.id),
-    [filteredObjects],
+    () => visibleObjects.map((snapshot) => snapshot.descriptor.id),
+    [visibleObjects],
   );
 
   const handleObjectSelect = (id: number, event: MouseEvent | KeyboardEvent) => {
@@ -123,16 +129,18 @@ export const MonitorGrid = ({ className }: MonitorGridProps) => {
             {entity === "object" ? "无符合条件的受控物体" : "无符合条件的电机"}
           </p>
         ) : entity === "motor" ? (
-          <MotorMonitorTable motors={filteredMotors} />
+          <MotorMonitorTable motors={filteredMotors} sort={motorSort} onSort={onMotorSort} />
         ) : objectLayout === "table" ? (
           <ObjectMonitorTable
-            snapshots={filteredObjects}
+            snapshots={visibleObjects}
+            sort={objectSort}
+            onSort={onObjectSort}
             selectedIds={multiSelectedIds}
             onSelect={handleObjectSelect}
           />
         ) : (
           <div className="flex w-max min-h-full flex-nowrap items-start gap-3">
-            {filteredObjects.map((snapshot) => (
+            {visibleObjects.map((snapshot) => (
               <ObjectMonitorCard
                 key={snapshot.descriptor.id}
                 snapshot={snapshot}

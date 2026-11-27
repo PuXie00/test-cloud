@@ -2,23 +2,55 @@ import { useEffect, useMemo, useState } from "react";
 import type { DisplayAttribute } from "@shared/config";
 import { cn } from "@/app/components/ui/utils";
 import { MotorStatusBadge } from "../build-debug/motor-status-badge";
-import { motorRuntimeStatusFromLive } from "./monitor-status";
+import { motorRuntimeStatusFromLive, type MotorRuntimeStatus } from "./monitor-status";
 import {
   getExtendedStateAttrs,
   preloadMotorModelConfigs,
 } from "../../hooks/motor-config";
 import { FIXED_AXIS_FIELD_IDS, type MotorMonitorSnapshot } from "./monitor-data";
 import { formatExtendedValue, formatMonitorNullableNumber } from "./monitor-format";
+import { SortableMonitorHeader, sortMonitorRows, type MonitorSort } from "./monitor-table-sort";
 
-const FIXED_HEADERS = ["ID", "状态", "位置", "速度", "负载率", "温度", "扭矩"];
+type MotorColumn = {
+  key: string;
+  label: string;
+  value: (motor: MotorMonitorSnapshot) => number | string | null | undefined;
+};
 
-type Column = { key: string; label: string };
+const statusPriority: Record<MotorRuntimeStatus, number> = { error: 0, moving: 1, idle: 2, powerOff: 3 };
+
+const numericColumn = (
+  key: "id" | "actualPosition" | "actualSpeed" | "actualLoadRate" | "actualTemperature" | "actualTorque" | "driveAlarmCode",
+  label: string,
+): MotorColumn => ({ key, label, value: motor => motor[key] });
+
+const fixedColumns: MotorColumn[] = [
+  numericColumn("id", "ID"),
+  { key: "status", label: "状态", value: motor => statusPriority[motorRuntimeStatusFromLive(motor)] },
+  numericColumn("actualPosition", "位置"),
+  numericColumn("actualSpeed", "速度"),
+  numericColumn("actualLoadRate", "负载率"),
+  numericColumn("actualTemperature", "温度"),
+  numericColumn("actualTorque", "扭矩"),
+];
+const alarmColumn = numericColumn("driveAlarmCode", "报警码");
+
+const extendedColumn = (attr: DisplayAttribute): MotorColumn => ({
+  key: `extra:${attr.id}`,
+  label: attr.label,
+  value: motor => {
+    const raw = attr.id === "actualWeight" ? motor.actualWeight ?? motor.extras[attr.id] : motor.extras[attr.id];
+    return raw != null && attr.dataType === "enum" ? formatExtendedValue(attr, raw) : raw;
+  },
+});
 
 type MotorMonitorTableProps = {
   motors: MotorMonitorSnapshot[];
+  sort: MonitorSort;
+  onSort: (key: string) => void;
 };
 
-export const MotorMonitorTable = ({ motors }: MotorMonitorTableProps) => {
+export const MotorMonitorTable = ({ motors, sort, onSort }: MotorMonitorTableProps) => {
   const [catalogReady, setCatalogReady] = useState(false);
 
   useEffect(() => {
@@ -31,88 +63,62 @@ export const MotorMonitorTable = ({ motors }: MotorMonitorTableProps) => {
     };
   }, []);
 
-  const extendedAttrs = useMemo<DisplayAttribute[]>(() => {
-    if (!catalogReady) return [];
-    return getExtendedStateAttrs(motors.map((motor) => motor.productModel)).filter(
-      (attr) => !FIXED_AXIS_FIELD_IDS.has(attr.id),
-    );
+  const columns = useMemo(() => {
+    const models = new Set(motors.map(motor => motor.productModel));
+    const attrs = catalogReady ? getExtendedStateAttrs([...models]) : [];
+    const extraColumns = attrs.filter(attr => !FIXED_AXIS_FIELD_IDS.has(attr.id)).map(extendedColumn);
+    return [...fixedColumns, ...extraColumns, alarmColumn];
   }, [catalogReady, motors]);
 
-  const columns = useMemo<Column[]>(
-    () => [
-      ...FIXED_HEADERS.map((label) => ({ key: label, label })),
-      ...extendedAttrs.map((attr) => ({ key: attr.id, label: attr.label })),
-      { key: "driveAlarmCode", label: "报警码" },
-    ],
-    [extendedAttrs],
-  );
+  const rows = useMemo(() => {
+    const column = columns.find(item => item.key === sort?.key);
+    return column ? sortMonitorRows(motors, sort, column.value) : motors;
+  }, [columns, motors, sort]);
 
   return (
     <table className="w-full min-w-[720px] border-collapse text-body-sm">
       <thead>
         <tr>
-          {columns.map((column) => (
-            <th
+          {columns.map(column => (
+            <SortableMonitorHeader
               key={column.key}
-              scope="col"
-              className="px-3 py-2 text-left text-label-caps text-muted-foreground"
-            >
-              {column.label}
-            </th>
+              columnKey={column.key}
+              label={column.label}
+              sort={sort}
+              onSort={onSort}
+              hint={column.key === "status" ? "升序优先显示错误" : undefined}
+            />
           ))}
         </tr>
       </thead>
       <tbody>
-        {motors.map((motor, index) => (
+        {rows.map((motor, index) => (
           <tr
             key={motor.id}
             className={index % 2 === 0 ? "bg-input-background" : "bg-accent/40"}
           >
-            <td className="px-3 py-2 font-mono text-mono-sm tabular-nums text-foreground">
-              {motor.id}
-            </td>
-            <td className="px-3 py-2">
-              <MotorStatusBadge
-                kind={{
-                  type: "runtime",
-                  status: motorRuntimeStatusFromLive(motor),
-                }}
-              />
-            </td>
-            <td className="px-3 py-2 font-mono text-mono-sm tabular-nums text-muted-foreground">
-              {formatMonitorNullableNumber(motor.actualPosition)}
-            </td>
-            <td className="px-3 py-2 font-mono text-mono-sm tabular-nums text-muted-foreground">
-              {formatMonitorNullableNumber(motor.actualSpeed)}
-            </td>
-            <td className="px-3 py-2 font-mono text-mono-sm tabular-nums text-muted-foreground">
-              {formatMonitorNullableNumber(motor.actualLoadRate)}
-            </td>
-            <td className="px-3 py-2 font-mono text-mono-sm tabular-nums text-muted-foreground">
-              {formatMonitorNullableNumber(motor.actualTemperature)}
-            </td>
-            <td className="px-3 py-2 font-mono text-mono-sm tabular-nums text-muted-foreground">
-              {formatMonitorNullableNumber(motor.actualTorque)}
-            </td>
-            {extendedAttrs.map((attr) => (
-              <td
-                key={attr.id}
-                className="px-3 py-2 font-mono text-mono-sm tabular-nums text-muted-foreground"
-              >
-                {formatExtendedValue(attr, motor.extras[attr.id])}
-              </td>
-            ))}
-            <td
-              className={cn(
-                "px-3 py-2 font-mono text-mono-sm tabular-nums",
-                motor.driveAlarmCode !== null && motor.driveAlarmCode !== 0
-                  ? "text-destructive"
-                  : "text-muted-foreground",
-              )}
-            >
-              {formatMonitorNullableNumber(motor.driveAlarmCode)}
-            </td>
-            
+            {columns.map(column => {
+              if (column.key === "status") {
+                return (
+                  <td key={column.key} className="px-3 py-2">
+                    <MotorStatusBadge kind={{ type: "runtime", status: motorRuntimeStatusFromLive(motor) }} />
+                  </td>
+                );
+              }
+              const value = column.value(motor);
+              return (
+                <td
+                  key={column.key}
+                  className={cn(
+                    "px-3 py-2 font-mono text-mono-sm tabular-nums text-muted-foreground",
+                    column.key === "id" && "text-foreground",
+                    column.key === "driveAlarmCode" && !!value && "text-destructive",
+                  )}
+                >
+                  {typeof value === "string" ? value : formatMonitorNullableNumber(value ?? null)}
+                </td>
+              );
+            })}
           </tr>
         ))}
       </tbody>
