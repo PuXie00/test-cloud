@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { MOTION_DEFAULTS } from "@/app/project/configuration-rules";
 import type { WizardSetupState } from "@/app/project/setup-persist";
 import type { ControlledObject } from "../components/right-sidebar/config-wizard/config-wizard-types";
+import { distributeMounts } from "../components/right-sidebar/config-wizard/multi-point-axes/multi-point-axes-distribute";
 import { applyMultiPointAxesConfiguration, changeObjectControlType } from "./setup-operations";
 
 const objectOf = (overrides: Partial<ControlledObject>): ControlledObject => ({
@@ -154,10 +155,20 @@ describe("multi-point swing params", () => {
       [{ x: -500, z: 100 }, { x: 500, z: 100 }],
       [{ x: 200, z: 0 }, { x: 500, z: 0 }],
       [{ x: -500, z: -500 }, { x: 500, z: 500 }],
+      [{ x: 0.01, z: -675 }, { x: 0.01, z: 675 }],
+      [{ x: 0, z: 0 }, { x: 0, z: 0 }],
     ]) {
       const result = apply(dualTilt(), mounts);
       expect(result.applied).toBe(false);
       expect(result.reason).toContain("同一 X 或 Y 轴");
     }
+  });
+
+  it("accepts the opposite edge midpoints produced by perimeter distribution", () => {
+    const mounts = distributeMounts(
+      { kind: "rectangle", halfWidth: 1000, halfDepth: 750 }, "rect-perimeter", 2,
+    );
+    expect(mounts.map(({ z }) => z)).toEqual([-675, 675]);
+    expect(apply(dualTilt(), mounts).applied).toBe(true);
   });
 });

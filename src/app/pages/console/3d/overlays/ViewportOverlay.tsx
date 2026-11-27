@@ -26,6 +26,7 @@ import { SequencePreviewBar } from "./sequence-preview-bar";
 import { MeasureToolPanel } from "./MeasureToolPanel";
 import { ShapePresetPalette } from "./ShapePresetPalette";
 import { ViewMenu } from "./ViewMenu";
+import { QuickGroupMenu } from "./QuickGroupMenu";
 import { ViewportCellsOverlay } from "./ViewportCellsOverlay";
 
 const MODE_BUTTONS: { mode: ToolMode; icon: LucideIcon; label: string }[] = [
@@ -273,7 +274,10 @@ export const ViewportOverlay = () => {
           backgroundColor: "rgba(167, 164, 163, 0.14)",
         }}
       >
-        <ViewMenu onPointerGuard={stopPointer} showMotionPaths={isSequences} />
+        <div className="flex items-center gap-1">
+          <ViewMenu onPointerGuard={stopPointer} showMotionPaths={isSequences} />
+          <QuickGroupMenu canEdit={canEdit} />
+        </div>
         {isControl ? (
           <div className="ml-auto flex items-center gap-2">
             <ViewportGoControls />

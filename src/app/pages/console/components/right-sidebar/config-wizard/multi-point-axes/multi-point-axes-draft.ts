@@ -549,12 +549,19 @@ export const getEffectiveDraftMotorId = (
 
 const isFiniteCoordinate = (value: number): boolean => Number.isFinite(value);
 
+// 均布插值和极坐标换算可能让轴线上的点残留极小的非零坐标（mm）。
+const zeroWithinRoundoff = (value: number): number => Math.abs(value) <= 1e-9 ? 0 : value;
+
 /** 多点倾斜（XY）两个吊点：须在同一条 X 或 Y 轴上，且原点在两点之间（可与一点重合） */
 export const isValidTwoPointTiltLayout = (mounts: readonly AxisMount[]): boolean => {
   if (mounts.length !== 2) return true;
   const [a, b] = mounts as [AxisMount, AxisMount];
-  const onX = a.z === 0 && b.z === 0 && a.x !== b.x && Math.min(a.x, b.x) <= 0 && Math.max(a.x, b.x) >= 0;
-  const onZ = a.x === 0 && b.x === 0 && a.z !== b.z && Math.min(a.z, b.z) <= 0 && Math.max(a.z, b.z) >= 0;
+  const ax = zeroWithinRoundoff(a.x);
+  const az = zeroWithinRoundoff(a.z);
+  const bx = zeroWithinRoundoff(b.x);
+  const bz = zeroWithinRoundoff(b.z);
+  const onX = az === 0 && bz === 0 && ax !== bx && Math.min(ax, bx) <= 0 && Math.max(ax, bx) >= 0;
+  const onZ = ax === 0 && bx === 0 && az !== bz && Math.min(az, bz) <= 0 && Math.max(az, bz) >= 0;
   return onX || onZ;
 };
 
